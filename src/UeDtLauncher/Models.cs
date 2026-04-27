@@ -5,6 +5,8 @@ namespace UeDtLauncher;
 public sealed class LauncherConfig
 {
     public string ManifestUrl { get; set; } = "http://localhost:8080/manifest.json";
+    public string? ManifestSignatureUrl { get; set; }
+    public string? ManifestPublicKeyPath { get; set; }
     public string InstallDir { get; set; } = "app";
     public string StagingDir { get; set; } = ".staging";
     public string BackupDir { get; set; } = ".backup";
@@ -15,6 +17,41 @@ public sealed class LauncherConfig
     public int MaxRetryCount { get; set; } = 3;
     public int HttpTimeoutSeconds { get; set; } = 120;
     public string[]? LaunchArguments { get; set; }
+    public List<LauncherPackage> Packages { get; set; } = new();
+    public SelfUpdateConfig? SelfUpdate { get; set; }
+    public WindowsIntegrationConfig WindowsIntegration { get; set; } = new();
+}
+
+public sealed class LauncherPackage
+{
+    public string Id { get; set; } = string.Empty;
+    public string Url { get; set; } = string.Empty;
+    public string Sha256 { get; set; } = string.Empty;
+    public long Size { get; set; }
+    public string ExtractTo { get; set; } = ".";
+    public bool Required { get; set; } = true;
+    public string? Format { get; set; }
+}
+
+public sealed class SelfUpdateConfig
+{
+    public bool Enabled { get; set; }
+    public string ManifestUrl { get; set; } = string.Empty;
+    public string? ManifestSignatureUrl { get; set; }
+    public string? ManifestPublicKeyPath { get; set; }
+    public string InstallDir { get; set; } = "launcher-update";
+    public string EntryPoint { get; set; } = OperatingSystem.IsWindows() ? "UeDtLauncher.exe" : "UeDtLauncher";
+}
+
+public sealed class WindowsIntegrationConfig
+{
+    public string AppName { get; set; } = "UE Digital Twin";
+    public string Publisher { get; set; } = "UE-DT";
+    public string? ShortcutName { get; set; } = "UE Digital Twin Launcher";
+    public string? IconPath { get; set; }
+    public bool CreateDesktopShortcut { get; set; }
+    public bool CreateStartMenuShortcut { get; set; }
+    public bool RegisterAppEntry { get; set; }
 }
 
 public sealed class LauncherManifest
@@ -45,3 +82,5 @@ public sealed class UpdatePlan
     [JsonIgnore]
     public bool HasChanges => DownloadOrRepair.Count > 0 || Remove.Count > 0;
 }
+
+public sealed record LauncherProgress(string Stage, string Message, double? Percent = null);
