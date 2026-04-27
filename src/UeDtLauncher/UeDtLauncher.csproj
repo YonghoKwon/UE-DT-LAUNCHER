@@ -6,6 +6,8 @@
     <Nullable>enable</Nullable>
     <AssemblyName>UeDtLauncher</AssemblyName>
     <RootNamespace>UeDtLauncher</RootNamespace>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
   </PropertyGroup>
 
   <ItemGroup>
