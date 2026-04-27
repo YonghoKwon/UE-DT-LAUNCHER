@@ -1,12 +1,33 @@
+using Avalonia;
+using UeDtLauncher.Gui;
+
 namespace UeDtLauncher;
 
 public static class Program
 {
-    public static async Task<int> Main(string[] args)
+    [STAThread]
+    public static int Main(string[] args)
+    {
+        if (args.Length == 0 || string.Equals(args[0], "gui", StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args.Length == 0 ? Array.Empty<string>() : args.Skip(1).ToArray());
+        }
+
+        return MainAsync(args).GetAwaiter().GetResult();
+    }
+
+    public static AppBuilder BuildAvaloniaApp()
+    {
+        return AppBuilder.Configure<App>()
+            .UsePlatformDetect()
+            .LogToTrace();
+    }
+
+    private static async Task<int> MainAsync(string[] args)
     {
         try
         {
-            if (args.Length == 0 || Has(args, "--help") || Has(args, "-h"))
+            if (Has(args, "--help") || Has(args, "-h"))
             {
                 PrintHelp();
                 return 0;
@@ -18,6 +39,7 @@ public static class Program
                 "run" => await RunLauncherAsync(args.Skip(1).ToArray()),
                 "generate-manifest" => await GenerateManifestAsync(args.Skip(1).ToArray()),
                 "sample-config" => await WriteSampleConfigAsync(args.Skip(1).ToArray()),
+                "sign-manifest" => await SignManifestAsync(args.Skip(1).ToArray()),
                 _ => UnknownCommand(command)
             };
         }
@@ -36,14 +58,8 @@ public static class Program
         var noLaunch = Has(args, "--no-launch");
 
         var config = await JsonFiles.ReadAsync<LauncherConfig>(configPath);
-        if (repair)
-        {
-            config.RepairMode = true;
-        }
-        if (noLaunch)
-        {
-            config.LaunchAfterUpdate = false;
-        }
+        if (repair) config.RepairMode = true;
+        if (noLaunch) config.LaunchAfterUpdate = false;
 
         await new LauncherEngine(config).RunAsync();
         return 0;
@@ -63,12 +79,26 @@ public static class Program
         return 0;
     }
 
+    private static async Task<int> SignManifestAsync(string[] args)
+    {
+        var manifestPath = Required(args, "--manifest");
+        var privateKeyPath = Required(args, "--private-key");
+        var output = Get(args, "--output") ?? manifestPath + ".sig";
+        var payload = await File.ReadAllTextAsync(manifestPath);
+        var privateKey = await File.ReadAllTextAsync(privateKeyPath);
+        await File.WriteAllTextAsync(output, ManifestSignatureVerifier.Sign(payload, privateKey));
+        Console.WriteLine($"Manifest signature written: {output}");
+        return 0;
+    }
+
     private static async Task<int> WriteSampleConfigAsync(string[] args)
     {
         var output = Get(args, "--output") ?? "launcher.config.json";
         var config = new LauncherConfig
         {
             ManifestUrl = "https://your-update-server.example.com/windows-x64/manifest.json",
+            ManifestSignatureUrl = "https://your-update-server.example.com/windows-x64/manifest.json.sig",
+            ManifestPublicKeyPath = "manifest-public-key.pem",
             InstallDir = "app",
             StagingDir = ".staging",
             BackupDir = ".backup",
@@ -78,7 +108,13 @@ public static class Program
             RemoveFilesNotInManifest = false,
             MaxRetryCount = 3,
             HttpTimeoutSeconds = 300,
-            LaunchArguments = new[] { "-log" }
+            LaunchArguments = new[] { "-log" },
+            WindowsIntegration = new WindowsIntegrationConfig
+            {
+                CreateDesktopShortcut = false,
+                CreateStartMenuShortcut = false,
+                RegisterAppEntry = false
+            }
         };
         await JsonFiles.WriteAsync(output, config);
         Console.WriteLine($"Sample config written: {output}");
@@ -95,10 +131,7 @@ public static class Program
     private static string Required(string[] args, string name)
     {
         var value = Get(args, name);
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new ArgumentException($"Missing required argument: {name}");
-        }
+        if (string.IsNullOrWhiteSpace(value)) throw new ArgumentException($"Missing required argument: {name}");
         return value;
     }
 
@@ -106,10 +139,7 @@ public static class Program
     {
         for (var i = 0; i < args.Length; i++)
         {
-            if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
-            {
-                return args[i + 1];
-            }
+            if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length) return args[i + 1];
         }
         return null;
     }
@@ -121,11 +151,10 @@ public static class Program
         Console.WriteLine("UE-DT-LAUNCHER");
         Console.WriteLine();
         Console.WriteLine("Commands:");
+        Console.WriteLine("  gui");
         Console.WriteLine("  sample-config --output launcher.config.json");
         Console.WriteLine("  generate-manifest --package-dir <dir> --base-url <url> --entry-point <relative path> --version <version> --output <manifest.json>");
+        Console.WriteLine("  sign-manifest --manifest <manifest.json> --private-key <private.pem> --output <manifest.json.sig>");
         Console.WriteLine("  run --config launcher.config.json [--repair] [--no-launch]");
-        Console.WriteLine();
-        Console.WriteLine("Example:");
-        Console.WriteLine("  UeDtLauncher run --config launcher.config.json");
     }
 }
