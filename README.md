@@ -4,6 +4,48 @@ UE-DT-LAUNCHER는 Unreal Engine 패키징 결과물을 Windows/Linux PC에 배�
 
 이 브랜치는 Netmarble Launcher 분석 결과를 바탕으로, PC 배포에 필요한 핵심 기능을 2차로 확장한 버전입니다.
 
+## 먼저 알아둘 점
+
+GitHub 저장소에는 `UeDtLauncher.exe` 실행 파일을 직접 커밋하지 않습니다. 저장소에는 소스 코드만 들어있고, 실행 파일은 로컬 PC 또는 GitHub Actions에서 `dotnet publish`로 생성해야 합니다.
+
+Windows에서 바로 실행 파일을 만들려면:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\scripts\publish-win-x64.ps1
+```
+
+생성 후 실행 파일 위치:
+
+```text
+publish\win-x64\UeDtLauncher.exe
+```
+
+GUI 실행:
+
+```powershell
+.\publish\win-x64\UeDtLauncher.exe
+```
+
+CLI 실행:
+
+```powershell
+.\publish\win-x64\UeDtLauncher.exe run --config launcher.config.json
+```
+
+Linux에서 실행 파일을 만들려면:
+
+```bash
+chmod +x ./scripts/publish-linux-x64.sh
+./scripts/publish-linux-x64.sh
+```
+
+생성 후 실행 파일 위치:
+
+```text
+publish/linux-x64/UeDtLauncher
+```
+
 ## 현재 구현된 기능
 
 - Avalonia 기반 Windows/Linux GUI 런처
@@ -27,36 +69,30 @@ UE-DT-LAUNCHER는 Unreal Engine 패키징 결과물을 Windows/Linux PC에 배�
 - manifest 서명 생성 명령
 - sample config 생성 명령
 
-## 실행 방법
+## 저장소 구조
 
-GUI 실행:
-
-```powershell
-.\UeDtLauncher.exe
-```
-
-또는 명시적으로:
-
-```powershell
-.\UeDtLauncher.exe gui
-```
-
-CLI 실행:
-
-```powershell
-.\UeDtLauncher.exe run --config launcher.config.json
-```
-
-복구 모드:
-
-```powershell
-.\UeDtLauncher.exe run --config launcher.config.json --repair
-```
-
-업데이트만 하고 앱 실행은 하지 않기:
-
-```powershell
-.\UeDtLauncher.exe run --config launcher.config.json --no-launch
+```text
+UE-DT-LAUNCHER/
+  scripts/
+    publish-win-x64.ps1
+    publish-linux-x64.sh
+  src/
+    UeDtLauncher/
+      UeDtLauncher.csproj
+      Program.cs
+      LauncherEngine.cs
+      ManifestGenerator.cs
+      ManifestSignatureVerifier.cs
+      PackageExtractor.cs
+      SelfUpdateManager.cs
+      WindowsIntegration.cs
+      Gui/
+        App.axaml
+        App.axaml.cs
+        MainWindow.axaml
+        MainWindow.axaml.cs
+  docs/
+    netmarble-launcher-analysis.md
 ```
 
 ## 빌드 방법
@@ -70,6 +106,12 @@ dotnet build src/UeDtLauncher/UeDtLauncher.csproj -c Release
 Windows publish:
 
 ```powershell
+.\scripts\publish-win-x64.ps1
+```
+
+또는 직접:
+
+```powershell
 dotnet publish src/UeDtLauncher/UeDtLauncher.csproj `
   -c Release `
   -r win-x64 `
@@ -81,12 +123,56 @@ dotnet publish src/UeDtLauncher/UeDtLauncher.csproj `
 Linux publish:
 
 ```bash
+./scripts/publish-linux-x64.sh
+```
+
+또는 직접:
+
+```bash
 dotnet publish src/UeDtLauncher/UeDtLauncher.csproj \
   -c Release \
   -r linux-x64 \
   --self-contained true \
   -p:PublishSingleFile=true \
   -o publish/linux-x64
+```
+
+## 실행 방법
+
+Windows GUI:
+
+```powershell
+.\publish\win-x64\UeDtLauncher.exe
+```
+
+Windows CLI:
+
+```powershell
+.\publish\win-x64\UeDtLauncher.exe run --config launcher.config.json
+```
+
+Linux GUI:
+
+```bash
+./publish/linux-x64/UeDtLauncher
+```
+
+Linux CLI:
+
+```bash
+./publish/linux-x64/UeDtLauncher run --config launcher.config.json
+```
+
+복구 모드:
+
+```powershell
+.\publish\win-x64\UeDtLauncher.exe run --config launcher.config.json --repair
+```
+
+업데이트만 하고 앱 실행은 하지 않기:
+
+```powershell
+.\publish\win-x64\UeDtLauncher.exe run --config launcher.config.json --no-launch
 ```
 
 ## manifest 생성
@@ -129,7 +215,7 @@ openssl ec -in manifest-private-key.pem -pubout -out manifest-public-key.pem
 manifest 서명 생성:
 
 ```powershell
-.\UeDtLauncher.exe sign-manifest `
+.\publish\win-x64\UeDtLauncher.exe sign-manifest `
   --manifest "C:\UpdateServer\files\windows-x64\manifest.json" `
   --private-key "manifest-private-key.pem" `
   --output "C:\UpdateServer\files\windows-x64\manifest.json.sig"
@@ -240,21 +326,6 @@ python -m http.server 8080
 https://updates.your-company.com/files/windows-x64/manifest.json
 https://updates.your-company.com/files/linux-x64/manifest.json
 ```
-
-## Netmarble Launcher와의 차이
-
-자세한 분석은 `docs/netmarble-launcher-analysis.md`에 정리했습니다.
-
-UE-DT-LAUNCHER는 아래에 집중합니다.
-
-- UE 패키징 파일 업데이트
-- manifest 서명 검증
-- 파일 검증
-- 패키지 압축 해제
-- 실패 시 rollback
-- Windows/Linux GUI 실행
-
-Netmarble Launcher의 계정, 게임 라이브러리, 마케팅 배너, 원격 agent, 복잡한 registry/installer 체계는 아직 포함하지 않았습니다.
 
 ## CI
 
