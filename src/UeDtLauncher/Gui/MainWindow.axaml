@@ -14,7 +14,7 @@
 
     <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
       <TextBox x:Name="ConfigPathBox" Text="launcher.config.json" Watermark="launcher.config.json" />
-      <Button Grid.Column="1" Content="Update && Launch" Click="OnUpdateLaunchClicked" />
+      <Button Grid.Column="1" Content="Update &amp;&amp; Launch" Click="OnUpdateLaunchClicked" />
       <Button Grid.Column="2" Content="Repair" Click="OnRepairClicked" />
       <Button Grid.Column="3" Content="Update Only" Click="OnUpdateOnlyClicked" />
     </Grid>
