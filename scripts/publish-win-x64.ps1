@@ -13,11 +13,17 @@ Write-Host "Publishing UE-DT-LAUNCHER for Windows x64..."
 Write-Host "Project: $project"
 Write-Host "Output : $output"
 
+if (Test-Path $output) {
+    Remove-Item $output -Recurse -Force
+}
+
 & dotnet publish $project `
     -c $Configuration `
     -r win-x64 `
     --self-contained true `
     -p:PublishSingleFile=true `
+    -p:IncludeNativeLibrariesForSelfExtract=true `
+    -p:IncludeAllContentForSelfExtract=true `
     -o $output
 
 if ($LASTEXITCODE -ne 0) {
