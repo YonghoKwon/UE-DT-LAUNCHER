@@ -21,5 +21,30 @@
   "maxRetryCount": 3,
   "httpTimeoutSeconds": 300,
   "launchArguments": ["-log"],
+  "projectAssetsDir": "assets/projects",
+  "projects": [
+    {
+      "projectId": "ue-dt-simulator",
+      "displayName": "UE-DT Simulator",
+      "description": "센서/디지털 트윈 개발 검증용 빌드입니다.",
+      "thumbnailPath": "assets/projects/ue-dt-simulator/thumbnail.png",
+      "heroPath": "assets/projects/ue-dt-simulator/hero.png",
+      "status": "개발 중",
+      "installPath": "app",
+      "engineVersion": "Unreal 5.4",
+      "technology": "Windows"
+    },
+    {
+      "projectId": "ue-dt-client",
+      "displayName": "UE-DT Client",
+      "description": "클라이언트 패키징/업데이트 테스트 프로젝트입니다.",
+      "thumbnailPath": "assets/projects/ue-dt-client/thumbnail.png",
+      "heroPath": "assets/projects/ue-dt-client/hero.png",
+      "status": "개발 중",
+      "installPath": "app-client",
+      "engineVersion": "Unreal",
+      "technology": "Windows"
+    }
+  ],
   "packages": []
 }
