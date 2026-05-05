@@ -51,6 +51,9 @@ public sealed class ProjectUiConfig
     public string? InstallPath { get; set; }
     public string? EngineVersion { get; set; }
     public string? Technology { get; set; }
+    public int SortOrder { get; set; }
+    public bool IsPinned { get; set; }
+    public List<string> VisibleToProfiles { get; set; } = new();
 }
 
 public sealed class DistributionCatalog
