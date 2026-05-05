@@ -53,6 +53,13 @@ publish/linux-x64/UeDtLauncher
 - release catalog 기반 프로젝트/버전/OS/환경/클라이언트 프로필 선택
 - 일반 사용자 프로필 제한: `windows-x64` + `prod` + `stable` + `latest`만 허용
 - 개발자 프로필: catalog 권한에 따라 Windows/Linux 개발 버전 선택 가능
+- 일반 사용자용 설정 팝업
+- 개발자용 환경/채널/플랫폼/버전 정책 ComboBox
+- 프로젝트 검색, 고정, 정렬, 프로필별 표시 제어
+- 설치됨/업데이트 가능/오류 상태 확인
+- 업데이트 실패 시 다시 시도 버튼
+- 로그 저장 및 로그 지우기
+- 캐시/백업 용량 표시
 - GitHub Actions 기반 Windows/Linux 빌드 검증 워크플로
 - 원격 `manifest.json` 다운로드
 - catalog/manifest ECDSA SHA-256 서명 검증 옵션
@@ -72,12 +79,60 @@ publish/linux-x64/UeDtLauncher
 - catalog/manifest 서명 생성 명령
 - sample config 생성 명령
 
+## GUI 사용법
+
+### 일반 사용자 모드
+
+`launcher.config.json`의 `clientProfile`이 `general`이면 일반 사용자용 화면으로 표시됩니다.
+
+일반 사용자에게는 다음 기능만 노출됩니다.
+
+```text
+프로젝트 검색
+프로젝트 선택
+실행
+상태 확인
+설정 팝업
+설치 폴더 열기
+문제 보고용 로그 저장
+```
+
+일반 사용자 설정 팝업에서는 프로젝트명, 설치 위치, 배포 채널, 설치 상태, 캐시/백업 용량을 확인할 수 있습니다.
+
+### 개발자 모드
+
+`launcher.config.json`의 `clientProfile`이 `developer`이면 개발자용 화면으로 표시됩니다.
+
+개발자 화면에서는 다음 기능이 추가됩니다.
+
+```text
+환경 ComboBox: prod / dev
+채널 ComboBox: stable / beta / dev
+플랫폼 ComboBox: windows-x64 / linux-x64
+버전 정책 ComboBox: latest / exact
+업데이트
+검증/복구
+캐시 정리
+로그 저장
+로그 지우기
+다시 시도
+폴더 크기 새로고침
+```
+
+개발자 화면에서 ComboBox를 변경하면 현재 UI 설정에 반영되고, 실행/업데이트/상태 확인 시 변경된 값으로 catalog release를 선택합니다.
+
 ## 문서
 
 Red Hat 8.4/Nginx 기반 다중 프로젝트 업데이트 서버 구성은 아래 문서를 보세요.
 
 ```text
 docs/redhat-distribution-server.md
+```
+
+런처 UI 커스터마이징은 아래 문서를 보세요.
+
+```text
+docs/launcher-ui-customization.md
 ```
 
 예시 파일:
@@ -117,6 +172,7 @@ UE-DT-LAUNCHER/
         MainWindow.axaml
         MainWindow.axaml.cs
   docs/
+    launcher-ui-customization.md
     netmarble-launcher-analysis.md
     redhat-distribution-server.md
 ```
@@ -183,6 +239,40 @@ projectId + clientProfile + environment + channel + targetPlatform + versionPoli
   "versionPolicy": "latest",
   "targetPlatform": "linux-x64"
 }
+```
+
+## 프로젝트 UI 설정
+
+`projects` 배열로 프로젝트 목록, 이미지, 정렬, 프로필별 표시를 제어합니다.
+
+```json
+{
+  "projectAssetsDir": "assets/projects",
+  "projects": [
+    {
+      "projectId": "ue-dt-simulator",
+      "displayName": "UE-DT Simulator",
+      "description": "센서/디지털 트윈 개발 검증용 빌드입니다.",
+      "thumbnailPath": "assets/projects/ue-dt-simulator/thumbnail.png",
+      "heroPath": "assets/projects/ue-dt-simulator/hero.png",
+      "status": "최신 버전",
+      "installPath": "app",
+      "engineVersion": "Unreal 5.4",
+      "technology": "Windows",
+      "sortOrder": 0,
+      "isPinned": true,
+      "visibleToProfiles": ["general", "developer"]
+    }
+  ]
+}
+```
+
+정렬 기준:
+
+```text
+1. isPinned = true 먼저
+2. sortOrder 낮은 순
+3. displayName 이름순
 ```
 
 ## 보안상 중요한 점
