@@ -35,8 +35,17 @@ public sealed partial class MainWindow : Window
             var path = GetConfigPath();
             var config = new LauncherConfig
             {
-                ManifestUrl = "https://your-update-server.example.com/files/windows-x64/manifest.json",
-                ManifestSignatureUrl = "https://your-update-server.example.com/files/windows-x64/manifest.json.sig",
+                CatalogUrl = "https://updates.example.com/catalogs/general/catalog.json",
+                CatalogSignatureUrl = "https://updates.example.com/catalogs/general/catalog.json.sig",
+                CatalogPublicKeyPath = "manifest-public-key.pem",
+                ProjectId = "ue-dt-simulator",
+                ClientProfile = "general",
+                Environment = "prod",
+                Channel = "stable",
+                VersionPolicy = "latest",
+                TargetPlatform = "windows-x64",
+                ManifestUrl = "https://updates.example.com/projects/ue-dt-simulator/prod/stable/latest/windows-x64/manifest.json",
+                ManifestSignatureUrl = "https://updates.example.com/projects/ue-dt-simulator/prod/stable/latest/windows-x64/manifest.json.sig",
                 ManifestPublicKeyPath = "manifest-public-key.pem",
                 InstallDir = "app",
                 StagingDir = ".staging",
@@ -76,6 +85,14 @@ public sealed partial class MainWindow : Window
             var config = await JsonFiles.ReadAsync<LauncherConfig>(GetConfigPath());
             config.RepairMode = repair;
             config.LaunchAfterUpdate = launch;
+
+            using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(10, config.HttpTimeoutSeconds)) };
+            await CatalogResolver.ResolveAsync(config, httpClient, (stage, message, percent) => Dispatcher.UIThread.Post(() =>
+            {
+                StatusText.Text = $"{stage}: {message}";
+                if (percent.HasValue) Progress.Value = percent.Value;
+                AppendLog($"[{stage}] {message}");
+            }));
 
             var engine = new LauncherEngine(config, progress => Dispatcher.UIThread.Post(() =>
             {
