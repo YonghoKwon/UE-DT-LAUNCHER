@@ -4,9 +4,23 @@ namespace UeDtLauncher;
 
 public sealed class LauncherConfig
 {
+    // Direct manifest mode. Used when CatalogUrl is empty.
     public string ManifestUrl { get; set; } = "http://localhost:8080/manifest.json";
     public string? ManifestSignatureUrl { get; set; }
     public string? ManifestPublicKeyPath { get; set; }
+
+    // Release catalog mode. Recommended for multi-project / multi-version / multi-client deployment.
+    public string? CatalogUrl { get; set; }
+    public string? CatalogSignatureUrl { get; set; }
+    public string? CatalogPublicKeyPath { get; set; }
+    public string? ProjectId { get; set; }
+    public string ClientProfile { get; set; } = "general"; // general, developer
+    public string Environment { get; set; } = "prod"; // prod, dev
+    public string Channel { get; set; } = "stable"; // stable, beta, dev
+    public string VersionPolicy { get; set; } = "latest"; // latest, exact
+    public string? RequestedVersion { get; set; }
+    public string TargetPlatform { get; set; } = OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64";
+
     public string InstallDir { get; set; } = "app";
     public string StagingDir { get; set; } = ".staging";
     public string BackupDir { get; set; } = ".backup";
@@ -20,6 +34,33 @@ public sealed class LauncherConfig
     public List<LauncherPackage> Packages { get; set; } = new();
     public SelfUpdateConfig? SelfUpdate { get; set; }
     public WindowsIntegrationConfig WindowsIntegration { get; set; } = new();
+}
+
+public sealed class DistributionCatalog
+{
+    public int SchemaVersion { get; set; } = 1;
+    public string GeneratedAt { get; set; } = DateTimeOffset.UtcNow.ToString("O");
+    public List<DistributionProject> Projects { get; set; } = new();
+}
+
+public sealed class DistributionProject
+{
+    public string ProjectId { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public List<DistributionRelease> Releases { get; set; } = new();
+}
+
+public sealed class DistributionRelease
+{
+    public string Version { get; set; } = string.Empty;
+    public string Channel { get; set; } = "stable";
+    public string Environment { get; set; } = "prod";
+    public string Platform { get; set; } = OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64";
+    public string ManifestUrl { get; set; } = string.Empty;
+    public string? ManifestSignatureUrl { get; set; }
+    public List<string> AllowedClientProfiles { get; set; } = new() { "general" };
+    public bool IsLatest { get; set; }
+    public string? Notes { get; set; }
 }
 
 public sealed class LauncherPackage
