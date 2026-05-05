@@ -34,6 +34,23 @@ public sealed class LauncherConfig
     public List<LauncherPackage> Packages { get; set; } = new();
     public SelfUpdateConfig? SelfUpdate { get; set; }
     public WindowsIntegrationConfig WindowsIntegration { get; set; } = new();
+
+    // UI metadata. Images are optional and loaded from local files.
+    public string ProjectAssetsDir { get; set; } = "assets/projects";
+    public List<ProjectUiConfig> Projects { get; set; } = new();
+}
+
+public sealed class ProjectUiConfig
+{
+    public string ProjectId { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public string? ThumbnailPath { get; set; }
+    public string? HeroPath { get; set; }
+    public string? Status { get; set; }
+    public string? InstallPath { get; set; }
+    public string? EngineVersion { get; set; }
+    public string? Technology { get; set; }
 }
 
 public sealed class DistributionCatalog
