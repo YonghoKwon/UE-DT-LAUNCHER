@@ -32,7 +32,10 @@
       "status": "최신 버전",
       "installPath": "app",
       "engineVersion": "Unreal 5.4",
-      "technology": "Windows"
+      "technology": "Windows",
+      "sortOrder": 0,
+      "isPinned": true,
+      "visibleToProfiles": ["general", "developer"]
     },
     {
       "projectId": "ue-dt-client",
@@ -41,9 +44,12 @@
       "thumbnailPath": "assets/projects/ue-dt-client/thumbnail.png",
       "heroPath": "assets/projects/ue-dt-client/hero.png",
       "status": "설치 가능",
-      "installPath": "app",
+      "installPath": "app-client",
       "engineVersion": "Unreal",
-      "technology": "Windows"
+      "technology": "Windows",
+      "sortOrder": 10,
+      "isPinned": false,
+      "visibleToProfiles": ["general", "developer"]
     }
   ],
   "packages": [],
