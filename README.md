@@ -2,7 +2,7 @@
 
 UE-DT-LAUNCHER는 Unreal Engine 패키징 결과물을 Windows/Linux PC에 배포하고, 실행 전에 최신 파일로 자동 업데이트한 뒤 앱을 실행하기 위한 경량 런처입니다.
 
-이 브랜치는 Netmarble Launcher 분석 결과를 바탕으로, PC 배포에 필요한 핵심 기능을 2차로 확장한 버전입니다.
+이 브랜치는 Netmarble Launcher 분석 결과를 바탕으로, PC 배포에 필요한 핵심 기능과 여러 프로젝트/버전/OS/환경/클라이언트 프로필을 관리하는 release catalog 기능을 포함합니다.
 
 ## 먼저 알아둘 점
 
@@ -50,9 +50,12 @@ publish/linux-x64/UeDtLauncher
 
 - Avalonia 기반 Windows/Linux GUI 런처
 - CLI 런처 유지
+- release catalog 기반 프로젝트/버전/OS/환경/클라이언트 프로필 선택
+- 일반 사용자 프로필 제한: `windows-x64` + `prod` + `stable` + `latest`만 허용
+- 개발자 프로필: catalog 권한에 따라 Windows/Linux 개발 버전 선택 가능
 - GitHub Actions 기반 Windows/Linux 빌드 검증 워크플로
 - 원격 `manifest.json` 다운로드
-- manifest ECDSA SHA-256 서명 검증 옵션
+- catalog/manifest ECDSA SHA-256 서명 검증 옵션
 - 파일별 SHA-256 비교
 - 변경/누락 파일만 다운로드
 - `.staging` 다운로드 후 검증
@@ -66,8 +69,26 @@ publish/linux-x64/UeDtLauncher
 - 런처 자기 자신 업데이트 준비 기능
 - Windows 바탕화면/시작 메뉴 shortcut 생성 옵션
 - manifest 생성 명령
-- manifest 서명 생성 명령
+- catalog/manifest 서명 생성 명령
 - sample config 생성 명령
+
+## 문서
+
+Red Hat 8.4/Nginx 기반 다중 프로젝트 업데이트 서버 구성은 아래 문서를 보세요.
+
+```text
+docs/redhat-distribution-server.md
+```
+
+예시 파일:
+
+```text
+examples/catalogs/general/catalog.json
+examples/catalogs/developer/catalog.json
+examples/configs/general-windows-launcher.config.json
+examples/configs/developer-windows-launcher.config.json
+examples/configs/developer-linux-launcher.config.json
+```
 
 ## 저장소 구조
 
@@ -76,10 +97,14 @@ UE-DT-LAUNCHER/
   scripts/
     publish-win-x64.ps1
     publish-linux-x64.sh
+  examples/
+    catalogs/
+    configs/
   src/
     UeDtLauncher/
       UeDtLauncher.csproj
       Program.cs
+      CatalogResolver.cs
       LauncherEngine.cs
       ManifestGenerator.cs
       ManifestSignatureVerifier.cs
@@ -93,7 +118,87 @@ UE-DT-LAUNCHER/
         MainWindow.axaml.cs
   docs/
     netmarble-launcher-analysis.md
+    redhat-distribution-server.md
 ```
+
+## release catalog 방식
+
+기존에는 클라이언트가 `manifestUrl` 하나만 바라봤습니다. 이제는 다음 구조를 권장합니다.
+
+```text
+launcher.config.json
+  ↓
+catalogUrl
+  ↓
+projectId + clientProfile + environment + channel + targetPlatform + versionPolicy 기준 release 선택
+  ↓
+선택된 release의 manifestUrl 다운로드
+  ↓
+업데이트/실행
+```
+
+일반 사용자 PC 예시:
+
+```json
+{
+  "catalogUrl": "https://updates.example.com/catalogs/general/catalog.json",
+  "catalogSignatureUrl": "https://updates.example.com/catalogs/general/catalog.json.sig",
+  "catalogPublicKeyPath": "manifest-public-key.pem",
+  "projectId": "ue-dt-simulator",
+  "clientProfile": "general",
+  "environment": "prod",
+  "channel": "stable",
+  "versionPolicy": "latest",
+  "targetPlatform": "windows-x64"
+}
+```
+
+개발자 Windows PC 예시:
+
+```json
+{
+  "catalogUrl": "https://updates.example.com/catalogs/developer/catalog.json",
+  "catalogSignatureUrl": "https://updates.example.com/catalogs/developer/catalog.json.sig",
+  "catalogPublicKeyPath": "manifest-public-key.pem",
+  "projectId": "ue-dt-simulator",
+  "clientProfile": "developer",
+  "environment": "dev",
+  "channel": "dev",
+  "versionPolicy": "latest",
+  "targetPlatform": "windows-x64"
+}
+```
+
+개발자 Linux PC 예시:
+
+```json
+{
+  "catalogUrl": "https://updates.example.com/catalogs/developer/catalog.json",
+  "catalogSignatureUrl": "https://updates.example.com/catalogs/developer/catalog.json.sig",
+  "catalogPublicKeyPath": "manifest-public-key.pem",
+  "projectId": "ue-dt-simulator",
+  "clientProfile": "developer",
+  "environment": "dev",
+  "channel": "dev",
+  "versionPolicy": "latest",
+  "targetPlatform": "linux-x64"
+}
+```
+
+## 보안상 중요한 점
+
+일반 사용자가 개발 버전을 못 받게 하려면 런처 코드만 믿으면 안 됩니다.
+
+반드시 서버에서도 다음처럼 나눠야 합니다.
+
+```text
+/catalogs/general/        공개
+/projects/*/prod/stable/ 공개
+/catalogs/developer/      인증 필요
+/projects/*/dev/          인증 필요
+```
+
+자세한 Nginx 설정은 `docs/redhat-distribution-server.md`에 있습니다.
 
 ## 빌드 방법
 
@@ -109,32 +214,10 @@ Windows publish:
 .\scripts\publish-win-x64.ps1
 ```
 
-또는 직접:
-
-```powershell
-dotnet publish src/UeDtLauncher/UeDtLauncher.csproj `
-  -c Release `
-  -r win-x64 `
-  --self-contained true `
-  -p:PublishSingleFile=true `
-  -o publish/win-x64
-```
-
 Linux publish:
 
 ```bash
 ./scripts/publish-linux-x64.sh
-```
-
-또는 직접:
-
-```bash
-dotnet publish src/UeDtLauncher/UeDtLauncher.csproj \
-  -c Release \
-  -r linux-x64 \
-  --self-contained true \
-  -p:PublishSingleFile=true \
-  -o publish/linux-x64
 ```
 
 ## 실행 방법
@@ -181,29 +264,29 @@ Windows 패키징 파일용 manifest 생성 예시:
 
 ```powershell
 .\publish\win-x64\UeDtLauncher.exe generate-manifest `
-  --package-dir "C:\UpdateServer\files\windows-x64" `
-  --base-url "https://your-server.example.com/files/windows-x64" `
+  --package-dir "C:\PackageBuilds\ue-dt-simulator\1.0.0\windows-x64" `
+  --base-url "https://updates.example.com/projects/ue-dt-simulator/prod/stable/1.0.0/windows-x64/files" `
   --entry-point "Windows/m7at10_dt.exe" `
   --version "1.0.0" `
   --platform "windows-x64" `
-  --output "C:\UpdateServer\files\windows-x64\manifest.json"
+  --output "manifest.json"
 ```
 
 Linux 패키징 파일용 manifest 생성 예시:
 
 ```bash
 ./publish/linux-x64/UeDtLauncher generate-manifest \
-  --package-dir "/home/ue/update-server/files/linux-x64" \
-  --base-url "https://your-server.example.com/files/linux-x64" \
+  --package-dir "/home/builds/ue-dt-simulator/1.1.0-dev.3/linux-x64" \
+  --base-url "https://updates.example.com/projects/ue-dt-simulator/dev/dev/1.1.0-dev.3/linux-x64/files" \
   --entry-point "Linux/m7at10_dt.sh" \
-  --version "1.0.0" \
+  --version "1.1.0-dev.3" \
   --platform "linux-x64" \
-  --output "/home/ue/update-server/files/linux-x64/manifest.json"
+  --output "manifest.json"
 ```
 
-## manifest 서명
+## catalog/manifest 서명
 
-운영 환경에서는 manifest 변조 방지를 위해 서명 검증을 켜는 것을 권장합니다.
+운영 환경에서는 catalog와 manifest 변조 방지를 위해 서명 검증을 켜는 것을 권장합니다.
 
 ECDSA P-256 키 생성 예시:
 
@@ -212,62 +295,16 @@ openssl ecparam -name prime256v1 -genkey -noout -out manifest-private-key.pem
 openssl ec -in manifest-private-key.pem -pubout -out manifest-public-key.pem
 ```
 
-manifest 서명 생성:
+manifest 또는 catalog 서명 생성:
 
 ```powershell
 .\publish\win-x64\UeDtLauncher.exe sign-manifest `
-  --manifest "C:\UpdateServer\files\windows-x64\manifest.json" `
+  --manifest "catalog.json" `
   --private-key "manifest-private-key.pem" `
-  --output "C:\UpdateServer\files\windows-x64\manifest.json.sig"
+  --output "catalog.json.sig"
 ```
 
 클라이언트에는 public key만 배포합니다.
-
-```json
-{
-  "manifestUrl": "https://your-server.example.com/files/windows-x64/manifest.json",
-  "manifestSignatureUrl": "https://your-server.example.com/files/windows-x64/manifest.json.sig",
-  "manifestPublicKeyPath": "manifest-public-key.pem"
-}
-```
-
-## launcher.config.json 예시
-
-```json
-{
-  "manifestUrl": "https://your-server.example.com/files/windows-x64/manifest.json",
-  "manifestSignatureUrl": "https://your-server.example.com/files/windows-x64/manifest.json.sig",
-  "manifestPublicKeyPath": "manifest-public-key.pem",
-  "installDir": "app",
-  "stagingDir": ".staging",
-  "backupDir": ".backup",
-  "installedManifestPath": "installed-manifest.json",
-  "launchAfterUpdate": true,
-  "repairMode": false,
-  "removeFilesNotInManifest": false,
-  "maxRetryCount": 3,
-  "httpTimeoutSeconds": 300,
-  "launchArguments": ["-log"],
-  "packages": [],
-  "selfUpdate": {
-    "enabled": false,
-    "manifestUrl": "https://your-server.example.com/launcher/win-x64/manifest.json",
-    "manifestSignatureUrl": "https://your-server.example.com/launcher/win-x64/manifest.json.sig",
-    "manifestPublicKeyPath": "manifest-public-key.pem",
-    "installDir": "launcher-update",
-    "entryPoint": "UeDtLauncher.exe"
-  },
-  "windowsIntegration": {
-    "appName": "UE Digital Twin",
-    "publisher": "UE-DT",
-    "shortcutName": "UE Digital Twin Launcher",
-    "iconPath": null,
-    "createDesktopShortcut": false,
-    "createStartMenuShortcut": false,
-    "registerAppEntry": false
-  }
-}
-```
 
 ## ZIP/7z 패키지 업데이트
 
@@ -290,42 +327,6 @@ manifest 서명 생성:
 ```
 
 7z를 쓰려면 클라이언트 PC의 PATH에서 `7z`, `7zz`, `7za` 중 하나가 발견되어야 합니다.
-
-## 런처 자기 자신 업데이트
-
-현재 구현은 자동 교체가 아니라 안전한 준비 단계입니다.
-
-```text
-1. selfUpdate.enabled=true
-2. 별도 self update manifest 다운로드
-3. 새 런처 파일을 launcher-update 폴더에 다운로드/검증
-4. SELF_UPDATE_READY.txt 생성
-5. 운영자 또는 설치 관리자가 기존 런처를 교체
-```
-
-실제 운영에서 완전 자동 교체를 하려면 별도의 bootstrapper 또는 installer를 두는 구조를 권장합니다.
-
-## Windows shortcut / app entry
-
-`windowsIntegration.createDesktopShortcut=true` 또는 `createStartMenuShortcut=true`로 shortcut을 만들 수 있습니다.
-
-현재는 무거운 MSI/MSIX installer를 직접 생성하지 않고, `.url` shortcut과 앱 등록 설명 파일을 생성하는 가벼운 형태입니다. 정식 배포에서는 WiX, MSIX, Inno Setup, NSIS 같은 installer를 붙이는 것을 권장합니다.
-
-## 업데이트 서버 구성
-
-테스트 서버:
-
-```powershell
-cd C:\UpdateServer\files
-python -m http.server 8080
-```
-
-운영에서는 `localhost`가 아니라 외부 접근 가능한 HTTPS 서버를 사용해야 합니다.
-
-```text
-https://updates.your-company.com/files/windows-x64/manifest.json
-https://updates.your-company.com/files/linux-x64/manifest.json
-```
 
 ## CI
 
