@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
@@ -16,13 +17,7 @@ public sealed partial class MainWindow : Window
     private TextBox _configPathBox = null!;
     private TextBox _logBox = null!;
     private TextBlock _statusText = null!;
-    private TextBlock _titleText = null!;
-    private TextBlock _versionText = null!;
-    private TextBlock _installPathText = null!;
     private ProgressBar _progress = null!;
-    private StackPanel _developerPanel = null!;
-    private StackPanel _projectList = null!;
-    private Border _heroHost = null!;
 
     private bool IsDeveloper => string.Equals(_config.ClientProfile, "developer", StringComparison.OrdinalIgnoreCase);
 
@@ -40,8 +35,7 @@ public sealed partial class MainWindow : Window
         {
             try
             {
-                var json = File.ReadAllText(path);
-                _config = JsonSerializer.Deserialize<LauncherConfig>(json, JsonFiles.Options) ?? new LauncherConfig();
+                _config = JsonSerializer.Deserialize<LauncherConfig>(File.ReadAllText(path), JsonFiles.Options) ?? new LauncherConfig();
             }
             catch
             {
@@ -55,7 +49,7 @@ public sealed partial class MainWindow : Window
             {
                 ProjectId = _config.ProjectId ?? "ue-dt-simulator",
                 DisplayName = "UE-DT 프로젝트",
-                Description = IsDeveloper ? "Unreal 패키지 개발/테스트 빌드" : "Unreal 패키지 애플리케이션",
+                Description = IsDeveloper ? "개발/테스트용 Unreal 패키지" : "운영 안정화 Unreal 패키지",
                 Status = IsDeveloper ? "개발 중" : "최신 버전",
                 InstallPath = _config.InstallDir,
                 EngineVersion = "Unreal",
@@ -63,25 +57,27 @@ public sealed partial class MainWindow : Window
             });
         }
 
-        _selectedProject = _config.Projects.First();
+        _selectedProject = _config.Projects.FirstOrDefault(p => string.Equals(p.ProjectId, _config.ProjectId, StringComparison.OrdinalIgnoreCase))
+                           ?? _config.Projects.First();
     }
 
     private void BuildDashboard()
     {
+        Title = IsDeveloper ? "UE-DT Launcher - Developer" : "UE-DT Launcher";
         Width = IsDeveloper ? 1440 : 1280;
         Height = IsDeveloper ? 900 : 820;
-        Background = Brush(IsDeveloper ? "#0B111A" : "#F5F7FB");
+        Background = B(IsDeveloper ? "#0B111A" : "#F5F7FB");
 
         var root = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("320,*"),
             RowDefinitions = new RowDefinitions("Auto,*"),
-            Background = Brush(IsDeveloper ? "#0B111A" : "#F5F7FB")
+            ColumnDefinitions = new ColumnDefinitions("320,*"),
+            Background = B(IsDeveloper ? "#0B111A" : "#F5F7FB")
         };
 
         root.Children.Add(BuildHeader());
         root.Children.Add(BuildSidebar());
-        root.Children.Add(BuildMainContent());
+        root.Children.Add(BuildMainArea());
         Content = root;
     }
 
@@ -89,23 +85,23 @@ public sealed partial class MainWindow : Window
     {
         var header = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
-            Height = 66,
-            Margin = new Thickness(18, 10, 18, 0)
+            Height = 72,
+            Margin = new Thickness(18, 10, 18, 0),
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto")
         };
         Grid.SetColumnSpan(header, 2);
 
         var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, VerticalAlignment = VerticalAlignment.Center };
         brand.Children.Add(new Border
         {
-            Width = 36,
-            Height = 36,
-            CornerRadius = new CornerRadius(10),
-            Background = Brush("#2563EB"),
+            Width = 38,
+            Height = 38,
+            CornerRadius = new CornerRadius(11),
+            Background = B("#2563EB"),
             Child = new TextBlock
             {
                 Text = "U",
-                FontSize = 23,
+                FontSize = 24,
                 FontWeight = FontWeight.Bold,
                 Foreground = Brushes.White,
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -116,8 +112,8 @@ public sealed partial class MainWindow : Window
         {
             Children =
             {
-                new TextBlock { Text = IsDeveloper ? "UE-DT Launcher" : "UE-DT 런처", FontSize = 24, FontWeight = FontWeight.Bold, Foreground = ForegroundBrush() },
-                new TextBlock { Text = IsDeveloper ? "Developer distribution console" : "프로젝트 업데이트 및 실행", FontSize = 12, Foreground = MutedBrush() }
+                T(IsDeveloper ? "UE-DT Launcher" : "UE-DT 런처", 24, true),
+                Muted(IsDeveloper ? "개발자용 배포 콘솔" : "프로젝트 업데이트 및 실행", 12)
             }
         });
         header.Children.Add(brand);
@@ -130,203 +126,197 @@ public sealed partial class MainWindow : Window
 
     private Control BuildSidebar()
     {
-        var sidebar = new Border
-        {
-            GridRow = 1,
-            Width = 320,
-            Margin = new Thickness(14, 8, 8, 14),
-            Padding = new Thickness(14),
-            CornerRadius = new CornerRadius(18),
-            Background = Brush(IsDeveloper ? "#111827" : "#FFFFFF"),
-            BorderBrush = Brush(IsDeveloper ? "#253142" : "#E5E7EB"),
-            BorderThickness = new Thickness(1)
-        };
+        var sidebar = Card(new DockPanel(), 14);
+        sidebar.Margin = new Thickness(14, 8, 8, 14);
+        Grid.SetRow(sidebar, 1);
 
-        var panel = new DockPanel();
-        var title = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(2, 0, 2, 14) };
-        title.Children.Add(new TextBlock { Text = "프로젝트", FontSize = 18, FontWeight = FontWeight.SemiBold, Foreground = ForegroundBrush(), VerticalAlignment = VerticalAlignment.Center });
-        var addButton = SmallButton("+", null);
-        Grid.SetColumn(addButton, 1);
-        title.Children.Add(addButton);
+        var panel = (DockPanel)sidebar.Child!;
+        var title = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 14) };
+        title.Children.Add(T("프로젝트", 18, true));
+        var reloadButton = SmallButton("↻", (_, _) => { LoadConfigForUi(); BuildDashboard(); });
+        Grid.SetColumn(reloadButton, 1);
+        title.Children.Add(reloadButton);
         DockPanel.SetDock(title, Dock.Top);
         panel.Children.Add(title);
 
-        _projectList = new StackPanel { Spacing = 12 };
+        var list = new StackPanel { Spacing = 12 };
         foreach (var project in _config.Projects)
         {
-            _projectList.Children.Add(ProjectCard(project));
+            list.Children.Add(ProjectCard(project));
         }
-        panel.Children.Add(new ScrollViewer { Content = _projectList });
+        panel.Children.Add(new ScrollViewer { Content = list });
 
-        var footer = new StackPanel { Spacing = 8, Margin = new Thickness(0, 12, 0, 0) };
+        var bottom = new StackPanel { Spacing = 8, Margin = new Thickness(0, 12, 0, 0) };
         _configPathBox = new TextBox
         {
             Text = GetConfigPathSafe(),
             Watermark = "launcher.config.json",
             FontSize = 12,
-            Background = Brush(IsDeveloper ? "#0F172A" : "#F9FAFB"),
-            Foreground = ForegroundBrush()
+            Background = B(IsDeveloper ? "#0F172A" : "#F9FAFB"),
+            Foreground = Fg()
         };
-        footer.Children.Add(_configPathBox);
-        footer.Children.Add(SmallButton("설정 파일 다시 읽기", (_, _) => { LoadConfigForUi(); BuildDashboard(); }));
-        DockPanel.SetDock(footer, Dock.Bottom);
-        panel.Children.Add(footer);
-
-        sidebar.Child = panel;
+        bottom.Children.Add(_configPathBox);
+        bottom.Children.Add(SecondaryButton("설정 파일 다시 읽기", (_, _) => { LoadConfigForUi(); BuildDashboard(); }, 38));
+        DockPanel.SetDock(bottom, Dock.Bottom);
+        panel.Children.Add(bottom);
         return sidebar;
     }
 
     private Control ProjectCard(ProjectUiConfig project)
     {
-        var isSelected = string.Equals(project.ProjectId, _selectedProject.ProjectId, StringComparison.OrdinalIgnoreCase);
+        var selected = string.Equals(project.ProjectId, _selectedProject.ProjectId, StringComparison.OrdinalIgnoreCase);
         var card = new Border
         {
             Padding = new Thickness(10),
-            CornerRadius = new CornerRadius(14),
-            Background = Brush(IsDeveloper ? (isSelected ? "#1E293B" : "#151E2A") : "#FFFFFF"),
-            BorderBrush = Brush(isSelected ? "#2563EB" : IsDeveloper ? "#253142" : "#E5E7EB"),
-            BorderThickness = new Thickness(isSelected ? 2 : 1),
+            CornerRadius = new CornerRadius(16),
+            Background = B(IsDeveloper ? selected ? "#1E293B" : "#151E2A" : "#FFFFFF"),
+            BorderBrush = B(selected ? "#2563EB" : IsDeveloper ? "#253142" : "#E5E7EB"),
+            BorderThickness = new Thickness(selected ? 2 : 1),
             Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand)
         };
-        card.PointerPressed += (_, _) => { _selectedProject = project; BuildDashboard(); };
+        card.PointerPressed += (_, _) => { _selectedProject = project; _config.ProjectId = project.ProjectId; BuildDashboard(); };
 
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("96,*"), ColumnSpacing = 12 };
-        grid.Children.Add(ImageBox(project.ThumbnailPath, 96, 64, 10, project.DisplayName));
-
-        var text = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
-        text.Children.Add(new TextBlock { Text = project.DisplayName, FontSize = 14, FontWeight = FontWeight.SemiBold, Foreground = ForegroundBrush() });
-        text.Children.Add(new TextBlock { Text = project.Status ?? StatusTextForConfig(), FontSize = 12, Foreground = AccentBrush() });
-        text.Children.Add(new TextBlock { Text = _config.TargetPlatform, FontSize = 11, Foreground = MutedBrush() });
-        Grid.SetColumn(text, 1);
-        grid.Children.Add(text);
-        card.Child = grid;
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("96,*"), ColumnSpacing = 12 };
+        row.Children.Add(ImageBox(project.ThumbnailPath, 96, 64, 10, project.DisplayName, thumbnail: true));
+        var info = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
+        info.Children.Add(T(project.DisplayName, 14, true));
+        info.Children.Add(new TextBlock { Text = project.Status ?? ModeStatus(), FontSize = 12, Foreground = Accent() });
+        info.Children.Add(Muted(_config.TargetPlatform, 11));
+        Grid.SetColumn(info, 1);
+        row.Children.Add(info);
+        card.Child = row;
         return card;
     }
 
-    private Control BuildMainContent()
+    private Control BuildMainArea()
     {
-        var main = new ScrollViewer
+        var scroll = new ScrollViewer
         {
-            GridColumn = 1,
-            GridRow = 1,
             Margin = new Thickness(8, 8, 14, 14),
-            Content = IsDeveloper ? BuildDeveloperContent() : BuildGeneralContent()
+            Content = IsDeveloper ? DeveloperBody() : GeneralBody()
         };
-        return main;
+        Grid.SetRow(scroll, 1);
+        Grid.SetColumn(scroll, 1);
+        return scroll;
     }
 
-    private Control BuildGeneralContent()
+    private Control GeneralBody()
     {
-        var panel = new StackPanel { Spacing = 20 };
-        panel.Children.Add(BuildHero(generalMode: true));
-        panel.Children.Add(BuildInfoStrip());
-        panel.Children.Add(BuildGeneralActions());
-        panel.Children.Add(BuildStatusCard(showLog: false));
-        return panel;
+        var body = new StackPanel { Spacing = 20 };
+        body.Children.Add(Hero(height: 320));
+        body.Children.Add(GeneralInfo());
+        body.Children.Add(GeneralActions());
+        body.Children.Add(StatusPanel(showDeveloperLog: false));
+        return body;
     }
 
-    private Control BuildDeveloperContent()
+    private Control DeveloperBody()
     {
-        var panel = new StackPanel { Spacing = 16 };
-        panel.Children.Add(BuildHero(generalMode: false));
-        panel.Children.Add(BuildDeveloperControls());
-        panel.Children.Add(BuildDeveloperLowerArea());
-        return panel;
+        var body = new StackPanel { Spacing = 16 };
+        body.Children.Add(Hero(height: 260));
+        body.Children.Add(DeveloperControls());
+        var lower = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), ColumnSpacing = 16 };
+        lower.Children.Add(ReleaseInfo());
+        var status = StatusPanel(showDeveloperLog: true);
+        Grid.SetColumn(status, 1);
+        lower.Children.Add(status);
+        body.Children.Add(lower);
+        return body;
     }
 
-    private Control BuildHero(bool generalMode)
+    private Control Hero(double height)
     {
-        _heroHost = new Border
-        {
-            Height = generalMode ? 320 : 260,
-            CornerRadius = new CornerRadius(22),
-            ClipToBounds = true,
-            Background = Brush(IsDeveloper ? "#111827" : "#E5E7EB"),
-            Child = ImageBox(_selectedProject.HeroPath, 1000, generalMode ? 320 : 260, 0, _selectedProject.DisplayName)
-        };
-
-        var overlay = new Grid();
-        overlay.Children.Add(_heroHost);
+        var overlay = new Grid { Height = height };
         overlay.Children.Add(new Border
         {
+            CornerRadius = new CornerRadius(24),
+            ClipToBounds = true,
+            Background = B(IsDeveloper ? "#111827" : "#E5E7EB"),
+            Child = ImageBox(_selectedProject.HeroPath, 1000, height, 0, _selectedProject.DisplayName, thumbnail: false)
+        });
+        overlay.Children.Add(new Border
+        {
+            CornerRadius = new CornerRadius(24),
             Background = new LinearGradientBrush
             {
                 StartPoint = new RelativePoint(0, 0.5, RelativeUnit.Relative),
                 EndPoint = new RelativePoint(1, 0.5, RelativeUnit.Relative),
                 GradientStops =
                 {
-                    new GradientStop(Color.Parse("#AA000000"), 0),
-                    new GradientStop(Color.Parse("#22000000"), 0.65),
+                    new GradientStop(Color.Parse("#B0000000"), 0),
+                    new GradientStop(Color.Parse("#44000000"), 0.55),
                     new GradientStop(Color.Parse("#00000000"), 1)
                 }
-            },
-            CornerRadius = new CornerRadius(22)
+            }
         });
-
-        var heroText = new StackPanel { Spacing = 10, Margin = new Thickness(34), VerticalAlignment = VerticalAlignment.Bottom };
-        _titleText = new TextBlock { Text = _selectedProject.DisplayName, FontSize = generalMode ? 36 : 28, FontWeight = FontWeight.Bold, Foreground = Brushes.White };
-        _versionText = new TextBlock { Text = generalMode ? $"안정 버전 · {_config.Channel}" : $"{_config.Environment} / {_config.Channel} / {_config.TargetPlatform}", FontSize = 16, Foreground = Brush("#93C5FD") };
-        heroText.Children.Add(_titleText);
-        heroText.Children.Add(_versionText);
-        heroText.Children.Add(new TextBlock { Text = _selectedProject.Description ?? "프로젝트를 최신 상태로 유지합니다.", FontSize = 13, Foreground = Brush("#D1D5DB") });
-        overlay.Children.Add(heroText);
+        overlay.Children.Add(new StackPanel
+        {
+            Spacing = 10,
+            Margin = new Thickness(34),
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Children =
+            {
+                new TextBlock { Text = _selectedProject.DisplayName, FontSize = IsDeveloper ? 30 : 38, FontWeight = FontWeight.Bold, Foreground = Brushes.White },
+                new TextBlock { Text = IsDeveloper ? $"{_config.Environment} · {_config.Channel} · {_config.TargetPlatform}" : $"안정 버전 · {_config.Channel}", FontSize = 16, Foreground = B("#93C5FD") },
+                new TextBlock { Text = _selectedProject.Description ?? "프로젝트를 최신 상태로 유지합니다.", FontSize = 13, Foreground = B("#D1D5DB") }
+            }
+        });
         return overlay;
     }
 
-    private Control BuildInfoStrip()
+    private Control GeneralInfo()
     {
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*"), ColumnSpacing = 12 };
-        grid.Children.Add(InfoTile("최신 업데이트", DateTime.Now.ToString("yyyy. MM. dd."), "버전 정책: 최신 안정화"));
+        grid.Children.Add(InfoTile("최신 업데이트", DateTime.Now.ToString("yyyy. MM. dd."), "최신 안정화 버전만 제공"));
         var install = InfoTile("설치 위치", _selectedProject.InstallPath ?? _config.InstallDir, "프로젝트 파일 위치");
         Grid.SetColumn(install, 1);
         grid.Children.Add(install);
-        var size = InfoTile("프로필", "일반 사용자", "운영 안정화 버전만 허용");
-        Grid.SetColumn(size, 2);
-        grid.Children.Add(size);
+        var profile = InfoTile("사용자 유형", "일반 사용자", "운영/안정 버전 전용");
+        Grid.SetColumn(profile, 2);
+        grid.Children.Add(profile);
         return grid;
     }
 
-    private Control BuildGeneralActions()
+    private Control GeneralActions()
     {
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("2*,*"), ColumnSpacing = 16 };
-        grid.Children.Add(PrimaryButton("▶ 실행", (_, _) => _ = RunAsync(repair: false, launch: true)));
-        var setting = SecondaryButton("⚙ 설정", (_, _) => ToggleLogPanel());
-        Grid.SetColumn(setting, 1);
-        grid.Children.Add(setting);
+        grid.Children.Add(PrimaryButton("▶ 실행", (_, _) => _ = RunAsync(repair: false, launch: true), 64));
+        var settings = SecondaryButton("⚙ 설정", (_, _) => ShowInfo(), 64);
+        Grid.SetColumn(settings, 1);
+        grid.Children.Add(settings);
         return grid;
     }
 
-    private Control BuildDeveloperControls()
+    private Control DeveloperControls()
     {
-        _developerPanel = new StackPanel { Spacing = 12 };
+        var panel = new StackPanel { Spacing = 12 };
         var row1 = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*,*,Auto,Auto"), ColumnSpacing = 10 };
         row1.Children.Add(SelectorTile("환경", _config.Environment));
-        var channel = SelectorTile("채널", _config.Channel); Grid.SetColumn(channel, 1); row1.Children.Add(channel);
-        var platform = SelectorTile("플랫폼", _config.TargetPlatform); Grid.SetColumn(platform, 2); row1.Children.Add(platform);
-        var version = SelectorTile("버전 정책", _config.VersionPolicy); Grid.SetColumn(version, 3); row1.Children.Add(version);
-        var run = PrimaryButton("▶ 실행", (_, _) => _ = RunAsync(repair: false, launch: true)); Grid.SetColumn(run, 4); row1.Children.Add(run);
-        var update = SecondaryButton("⇩ 업데이트", (_, _) => _ = RunAsync(repair: false, launch: false)); Grid.SetColumn(update, 5); row1.Children.Add(update);
-        _developerPanel.Children.Add(row1);
+        Add(row1, SelectorTile("채널", _config.Channel), 1);
+        Add(row1, SelectorTile("플랫폼", _config.TargetPlatform), 2);
+        Add(row1, SelectorTile("버전 정책", _config.VersionPolicy), 3);
+        Add(row1, PrimaryButton("▶ 실행", (_, _) => _ = RunAsync(repair: false, launch: true), 54), 4);
+        Add(row1, SecondaryButton("⇩ 업데이트", (_, _) => _ = RunAsync(repair: false, launch: false), 54), 5);
+        panel.Children.Add(row1);
 
         var row2 = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*,*,*"), ColumnSpacing = 10 };
-        row2.Children.Add(SecondaryButton("복구", (_, _) => _ = RunAsync(repair: true, launch: false)));
-        var log = SecondaryButton("로그 보기", (_, _) => ToggleLogPanel()); Grid.SetColumn(log, 1); row2.Children.Add(log);
-        var manifest = SecondaryButton("매니페스트 검증", (_, _) => AppendLog("매니페스트 검증은 업데이트 실행 시 자동 수행됩니다.")); Grid.SetColumn(manifest, 2); row2.Children.Add(manifest);
-        var cache = SecondaryButton("캐시 정리", (_, _) => AppendLog("캐시 정리 기능은 다음 단계에서 실제 삭제 동작으로 확장 예정입니다.")); Grid.SetColumn(cache, 3); row2.Children.Add(cache);
-        var settings = SecondaryButton("설정", (_, _) => AppendLog("설정 파일: " + GetConfigPathSafe())); Grid.SetColumn(settings, 4); row2.Children.Add(settings);
-        _developerPanel.Children.Add(row2);
-        return PanelCard(_developerPanel, 16);
+        row2.Children.Add(SecondaryButton("복구", (_, _) => _ = RunAsync(repair: true, launch: false), 46));
+        Add(row2, SecondaryButton("로그 보기", (_, _) => ShowInfo(), 46), 1);
+        Add(row2, SecondaryButton("매니페스트 검증", (_, _) => AppendLog("매니페스트 검증은 업데이트 실행 시 자동 수행됩니다."), 46), 2);
+        Add(row2, SecondaryButton("캐시 정리", (_, _) => AppendLog("캐시 정리 기능은 다음 단계에서 실제 삭제 동작으로 확장 예정입니다."), 46), 3);
+        Add(row2, SecondaryButton("설정", (_, _) => AppendLog("설정 파일: " + GetConfigPathSafe()), 46), 4);
+        panel.Children.Add(row2);
+        return Card(panel, 16);
     }
 
-    private Control BuildDeveloperLowerArea()
+    private Control ReleaseInfo()
     {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), ColumnSpacing = 16 };
-        var release = PanelCard(new StackPanel
+        return Card(new StackPanel
         {
             Spacing = 8,
             Children =
             {
-                SectionTitle("릴리스 정보"),
+                T("릴리스 정보", 18, true),
                 KeyValue("프로젝트", _selectedProject.ProjectId),
                 KeyValue("환경", _config.Environment),
                 KeyValue("채널", _config.Channel),
@@ -334,19 +324,13 @@ public sealed partial class MainWindow : Window
                 KeyValue("설치 경로", _selectedProject.InstallPath ?? _config.InstallDir),
                 KeyValue("카탈로그", string.IsNullOrWhiteSpace(_config.CatalogUrl) ? "직접 manifest" : "사용 중")
             }
-        }, 16);
-        grid.Children.Add(release);
-
-        var logPanel = BuildStatusCard(showLog: true);
-        Grid.SetColumn(logPanel, 1);
-        grid.Children.Add(logPanel);
-        return grid;
+        }, 18);
     }
 
-    private Control BuildStatusCard(bool showLog)
+    private Control StatusPanel(bool showDeveloperLog)
     {
         var panel = new StackPanel { Spacing = 10 };
-        _statusText = new TextBlock { Text = "준비 완료", FontSize = 17, FontWeight = FontWeight.SemiBold, Foreground = ForegroundBrush() };
+        _statusText = T("준비 완료", 18, true);
         panel.Children.Add(_statusText);
         _progress = new ProgressBar { Minimum = 0, Maximum = 100, Value = 0, Height = 10 };
         panel.Children.Add(_progress);
@@ -355,78 +339,69 @@ public sealed partial class MainWindow : Window
             IsReadOnly = true,
             AcceptsReturn = true,
             TextWrapping = TextWrapping.Wrap,
-            Height = showLog ? 260 : 92,
-            Text = showLog ? "실행 로그가 여기에 표시됩니다." : "상태 메시지가 여기에 표시됩니다.",
-            Background = Brush(IsDeveloper ? "#0B1220" : "#FFFFFF"),
-            Foreground = ForegroundBrush()
+            Height = showDeveloperLog ? 270 : 92,
+            Text = showDeveloperLog ? "실행 로그가 여기에 표시됩니다." : "상태 메시지가 여기에 표시됩니다.",
+            Background = B(IsDeveloper ? "#0B1220" : "#FFFFFF"),
+            Foreground = Fg()
         };
         panel.Children.Add(_logBox);
-        return PanelCard(panel, 20);
+        return Card(panel, 20);
     }
 
     private Control InfoTile(string title, string value, string caption)
     {
-        return PanelCard(new StackPanel
+        return Card(new StackPanel
         {
             Spacing = 6,
             Children =
             {
-                new TextBlock { Text = title, FontSize = 13, Foreground = MutedBrush() },
-                new TextBlock { Text = value, FontSize = 17, FontWeight = FontWeight.SemiBold, Foreground = ForegroundBrush() },
-                new TextBlock { Text = caption, FontSize = 12, Foreground = MutedBrush() }
+                Muted(title, 13),
+                T(value, 17, true),
+                Muted(caption, 12)
             }
         }, 18);
     }
 
     private Control SelectorTile(string label, string value)
     {
-        return PanelCard(new StackPanel
+        return Card(new StackPanel
         {
             Spacing = 4,
-            Children =
-            {
-                new TextBlock { Text = label, FontSize = 12, Foreground = MutedBrush() },
-                new TextBlock { Text = value, FontSize = 15, FontWeight = FontWeight.SemiBold, Foreground = ForegroundBrush() }
-            }
+            Children = { Muted(label, 12), T(value, 15, true) }
         }, 12);
     }
 
     private Control KeyValue(string key, string? value)
     {
-        return new Grid
-        {
-            ColumnDefinitions = new ColumnDefinitions("130,*"),
-            Children =
-            {
-                new TextBlock { Text = key, Foreground = MutedBrush(), FontSize = 13 },
-                new TextBlock { Text = value ?? "-", Foreground = ForegroundBrush(), FontSize = 13, [Grid.ColumnProperty] = 1 }
-            }
-        };
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("130,*") };
+        grid.Children.Add(Muted(key, 13));
+        var valueBlock = T(value ?? "-", 13, false);
+        Grid.SetColumn(valueBlock, 1);
+        grid.Children.Add(valueBlock);
+        return grid;
     }
 
-    private TextBlock SectionTitle(string text) => new() { Text = text, FontSize = 17, FontWeight = FontWeight.SemiBold, Foreground = ForegroundBrush(), Margin = new Thickness(0, 0, 0, 4) };
-
-    private Control PanelCard(Control child, double padding)
+    private Border Card(Control child, double padding)
     {
         return new Border
         {
             Padding = new Thickness(padding),
             CornerRadius = new CornerRadius(18),
-            Background = Brush(IsDeveloper ? "#111827" : "#FFFFFF"),
-            BorderBrush = Brush(IsDeveloper ? "#243244" : "#E5E7EB"),
+            Background = B(IsDeveloper ? "#111827" : "#FFFFFF"),
+            BorderBrush = B(IsDeveloper ? "#243244" : "#E5E7EB"),
             BorderThickness = new Thickness(1),
             Child = child
         };
     }
 
-    private Button PrimaryButton(string text, EventHandler<RoutedEventArgs> handler)
+    private Button PrimaryButton(string text, EventHandler<RoutedEventArgs> handler, double height)
     {
         var button = new Button
         {
             Content = text,
-            Height = 58,
-            Padding = new Thickness(26, 0),
-            Background = Brush("#2563EB"),
+            Height = height,
+            Padding = new Thickness(24, 0),
+            Background = B("#2563EB"),
             Foreground = Brushes.White,
             FontSize = 18,
             FontWeight = FontWeight.SemiBold,
@@ -437,16 +412,16 @@ public sealed partial class MainWindow : Window
         return button;
     }
 
-    private Button SecondaryButton(string text, EventHandler<RoutedEventArgs> handler)
+    private Button SecondaryButton(string text, EventHandler<RoutedEventArgs> handler, double height)
     {
         var button = new Button
         {
             Content = text,
-            Height = 50,
+            Height = height,
             Padding = new Thickness(18, 0),
-            Background = Brush(IsDeveloper ? "#1F2937" : "#FFFFFF"),
-            Foreground = ForegroundBrush(),
-            BorderBrush = Brush(IsDeveloper ? "#374151" : "#D1D5DB"),
+            Background = B(IsDeveloper ? "#1F2937" : "#FFFFFF"),
+            Foreground = Fg(),
+            BorderBrush = B(IsDeveloper ? "#374151" : "#D1D5DB"),
             BorderThickness = new Thickness(1),
             FontSize = 15,
             HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -463,9 +438,9 @@ public sealed partial class MainWindow : Window
         return button;
     }
 
-    private Control ImageBox(string? path, double width, double height, double radius, string label)
+    private Control ImageBox(string? path, double width, double height, double radius, string label, bool thumbnail)
     {
-        var fullPath = ResolveAssetPath(path);
+        var fullPath = ResolveAssetPath(path, thumbnail);
         if (!string.IsNullOrWhiteSpace(fullPath) && File.Exists(fullPath))
         {
             return new Border
@@ -474,11 +449,7 @@ public sealed partial class MainWindow : Window
                 Height = height,
                 CornerRadius = new CornerRadius(radius),
                 ClipToBounds = true,
-                Child = new Image
-                {
-                    Source = new Bitmap(fullPath),
-                    Stretch = Stretch.UniformToFill
-                }
+                Child = new Image { Source = new Bitmap(fullPath), Stretch = Stretch.UniformToFill }
             };
         }
 
@@ -500,7 +471,7 @@ public sealed partial class MainWindow : Window
             Child = new TextBlock
             {
                 Text = label,
-                Foreground = IsDeveloper ? Brushes.White : Brush("#1E40AF"),
+                Foreground = IsDeveloper ? Brushes.White : B("#1E40AF"),
                 FontWeight = FontWeight.SemiBold,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
@@ -511,18 +482,17 @@ public sealed partial class MainWindow : Window
         };
     }
 
-    private string? ResolveAssetPath(string? path)
+    private string? ResolveAssetPath(string? path, bool thumbnail)
     {
-        if (string.IsNullOrWhiteSpace(path))
+        if (!string.IsNullOrWhiteSpace(path))
         {
-            var baseDir = Path.Combine(AppContext.BaseDirectory, _config.ProjectAssetsDir, _selectedProject.ProjectId);
-            var hero = Path.Combine(baseDir, "hero.png");
-            var thumb = Path.Combine(baseDir, "thumbnail.png");
-            return File.Exists(hero) ? hero : File.Exists(thumb) ? thumb : null;
+            return Path.IsPathRooted(path) ? path : Path.Combine(AppContext.BaseDirectory, path);
         }
 
-        if (Path.IsPathRooted(path)) return path;
-        return Path.Combine(AppContext.BaseDirectory, path);
+        var baseDir = Path.Combine(AppContext.BaseDirectory, _config.ProjectAssetsDir, _selectedProject.ProjectId);
+        var preferred = Path.Combine(baseDir, thumbnail ? "thumbnail.png" : "hero.png");
+        var fallback = Path.Combine(baseDir, thumbnail ? "hero.png" : "thumbnail.png");
+        return File.Exists(preferred) ? preferred : File.Exists(fallback) ? fallback : null;
     }
 
     private async Task RunAsync(bool repair, bool launch)
@@ -582,24 +552,10 @@ public sealed partial class MainWindow : Window
         return message;
     }
 
-    private void ToggleLogPanel()
+    private void ShowInfo()
     {
-        AppendLog("현재 설정 파일: " + GetConfigPathSafe());
+        AppendLog("설정 파일: " + GetConfigPathSafe());
         AppendLog("프로젝트 이미지 위치: " + Path.Combine(AppContext.BaseDirectory, _config.ProjectAssetsDir, _selectedProject.ProjectId));
-    }
-
-    private async void OnSampleConfigClicked(object? sender, RoutedEventArgs e)
-    {
-        try
-        {
-            var path = GetConfigPathSafe();
-            await JsonFiles.WriteAsync(path, _config);
-            AppendLog($"샘플 설정 저장: {path}");
-        }
-        catch (Exception ex)
-        {
-            AppendLog("오류: " + ex.Message);
-        }
     }
 
     private string GetConfigPathSafe()
@@ -612,11 +568,12 @@ public sealed partial class MainWindow : Window
         return "launcher.config.json";
     }
 
-    private string StatusTextForConfig() => IsDeveloper ? "개발자 빌드" : "안정 버전";
-    private IBrush ForegroundBrush() => Brush(IsDeveloper ? "#E5E7EB" : "#111827");
-    private IBrush MutedBrush() => Brush(IsDeveloper ? "#94A3B8" : "#6B7280");
-    private IBrush AccentBrush() => Brush(IsDeveloper ? "#60A5FA" : "#2563EB");
-    private static IBrush Brush(string hex) => new SolidColorBrush(Color.Parse(hex));
+    private string ModeStatus() => IsDeveloper ? "개발자 빌드" : "안정 버전";
+    private TextBlock T(string text, double size, bool bold) => new() { Text = text, FontSize = size, FontWeight = bold ? FontWeight.SemiBold : FontWeight.Normal, Foreground = Fg() };
+    private TextBlock Muted(string text, double size) => new() { Text = text, FontSize = size, Foreground = B(IsDeveloper ? "#94A3B8" : "#6B7280") };
+    private IBrush Fg() => B(IsDeveloper ? "#E5E7EB" : "#111827");
+    private IBrush Accent() => B(IsDeveloper ? "#60A5FA" : "#2563EB");
+    private static IBrush B(string hex) => new SolidColorBrush(Color.Parse(hex));
 
     private static Border Pill(string text, string background, string foreground)
     {
@@ -624,9 +581,15 @@ public sealed partial class MainWindow : Window
         {
             Padding = new Thickness(14, 7),
             CornerRadius = new CornerRadius(14),
-            Background = Brush(background),
-            Child = new TextBlock { Text = text, FontWeight = FontWeight.SemiBold, Foreground = Brush(foreground), FontSize = 13 }
+            Background = B(background),
+            Child = new TextBlock { Text = text, FontWeight = FontWeight.SemiBold, Foreground = B(foreground), FontSize = 13 }
         };
+    }
+
+    private static void Add(Grid grid, Control control, int column)
+    {
+        Grid.SetColumn(control, column);
+        grid.Children.Add(control);
     }
 
     private void AppendLog(string message)
