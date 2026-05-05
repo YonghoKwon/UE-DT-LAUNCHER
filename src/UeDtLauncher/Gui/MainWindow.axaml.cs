@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Avalonia;
 using Avalonia.Controls;
@@ -53,19 +54,32 @@ public sealed partial class MainWindow : Window
                 Status = IsDeveloper ? "개발 중" : "최신 버전",
                 InstallPath = _config.InstallDir,
                 EngineVersion = "Unreal",
-                Technology = _config.TargetPlatform
+                Technology = _config.TargetPlatform,
+                SortOrder = 0,
+                IsPinned = true
             });
         }
 
-        _selectedProject = _config.Projects.FirstOrDefault(p => string.Equals(p.ProjectId, _config.ProjectId, StringComparison.OrdinalIgnoreCase))
+        var projects = VisibleProjects().ToList();
+        _selectedProject = projects.FirstOrDefault(p => string.Equals(p.ProjectId, _config.ProjectId, StringComparison.OrdinalIgnoreCase))
+                           ?? projects.FirstOrDefault()
                            ?? _config.Projects.First();
+    }
+
+    private IEnumerable<ProjectUiConfig> VisibleProjects()
+    {
+        return _config.Projects
+            .Where(project => project.VisibleToProfiles.Count == 0 || project.VisibleToProfiles.Any(profile => string.Equals(profile, _config.ClientProfile, StringComparison.OrdinalIgnoreCase)))
+            .OrderByDescending(project => project.IsPinned)
+            .ThenBy(project => project.SortOrder)
+            .ThenBy(project => project.DisplayName, StringComparer.CurrentCultureIgnoreCase);
     }
 
     private void BuildDashboard()
     {
         Title = IsDeveloper ? "UE-DT Launcher - Developer" : "UE-DT Launcher";
-        Width = IsDeveloper ? 1440 : 1280;
-        Height = IsDeveloper ? 900 : 820;
+        Width = IsDeveloper ? 1440 : 1260;
+        Height = IsDeveloper ? 900 : 800;
         Background = B(IsDeveloper ? "#0B111A" : "#F5F7FB");
 
         var root = new Grid
@@ -133,30 +147,43 @@ public sealed partial class MainWindow : Window
         var panel = (DockPanel)sidebar.Child!;
         var title = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 14) };
         title.Children.Add(T("프로젝트", 18, true));
-        var reloadButton = SmallButton("↻", (_, _) => { LoadConfigForUi(); BuildDashboard(); });
-        Grid.SetColumn(reloadButton, 1);
-        title.Children.Add(reloadButton);
+        if (IsDeveloper)
+        {
+            var reloadButton = SmallButton("↻", (_, _) => { LoadConfigForUi(); BuildDashboard(); });
+            Grid.SetColumn(reloadButton, 1);
+            title.Children.Add(reloadButton);
+        }
         DockPanel.SetDock(title, Dock.Top);
         panel.Children.Add(title);
 
         var list = new StackPanel { Spacing = 12 };
-        foreach (var project in _config.Projects)
+        foreach (var project in VisibleProjects())
         {
             list.Children.Add(ProjectCard(project));
         }
         panel.Children.Add(new ScrollViewer { Content = list });
 
         var bottom = new StackPanel { Spacing = 8, Margin = new Thickness(0, 12, 0, 0) };
-        _configPathBox = new TextBox
+        if (IsDeveloper)
         {
-            Text = GetConfigPathSafe(),
-            Watermark = "launcher.config.json",
-            FontSize = 12,
-            Background = B(IsDeveloper ? "#0F172A" : "#F9FAFB"),
-            Foreground = Fg()
-        };
-        bottom.Children.Add(_configPathBox);
-        bottom.Children.Add(SecondaryButton("설정 파일 다시 읽기", (_, _) => { LoadConfigForUi(); BuildDashboard(); }, 38));
+            _configPathBox = new TextBox
+            {
+                Text = GetConfigPathSafe(),
+                Watermark = "launcher.config.json",
+                FontSize = 12,
+                Background = B("#0F172A"),
+                Foreground = Fg()
+            };
+            bottom.Children.Add(_configPathBox);
+            bottom.Children.Add(SecondaryButton("설정 파일 다시 읽기", (_, _) => { LoadConfigForUi(); BuildDashboard(); }, 38));
+        }
+        else
+        {
+            _configPathBox = new TextBox { Text = GetConfigPathSafe(), IsVisible = false };
+            bottom.Children.Add(SecondaryButton("설치 폴더 열기", (_, _) => OpenInstallFolder(), 42));
+            bottom.Children.Add(SecondaryButton("버전 정보", (_, _) => ShowInfo(), 42));
+        }
+
         DockPanel.SetDock(bottom, Dock.Bottom);
         panel.Children.Add(bottom);
         return sidebar;
@@ -180,8 +207,8 @@ public sealed partial class MainWindow : Window
         row.Children.Add(ImageBox(project.ThumbnailPath, 96, 64, 10, project.DisplayName, thumbnail: true));
         var info = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
         info.Children.Add(T(project.DisplayName, 14, true));
-        info.Children.Add(new TextBlock { Text = project.Status ?? ModeStatus(), FontSize = 12, Foreground = Accent() });
-        info.Children.Add(Muted(_config.TargetPlatform, 11));
+        info.Children.Add(new TextBlock { Text = project.Status ?? ModeStatus(), FontSize = 12, Foreground = StatusBrush(project.Status) });
+        info.Children.Add(Muted(project.Technology ?? _config.TargetPlatform, 11));
         Grid.SetColumn(info, 1);
         row.Children.Add(info);
         card.Child = row;
@@ -202,7 +229,7 @@ public sealed partial class MainWindow : Window
 
     private Control GeneralBody()
     {
-        var body = new StackPanel { Spacing = 20 };
+        var body = new StackPanel { Spacing = 18 };
         body.Children.Add(Hero(height: 320));
         body.Children.Add(GeneralInfo());
         body.Children.Add(GeneralActions());
@@ -257,7 +284,7 @@ public sealed partial class MainWindow : Window
             Children =
             {
                 new TextBlock { Text = _selectedProject.DisplayName, FontSize = IsDeveloper ? 30 : 38, FontWeight = FontWeight.Bold, Foreground = Brushes.White },
-                new TextBlock { Text = IsDeveloper ? $"{_config.Environment} · {_config.Channel} · {_config.TargetPlatform}" : $"안정 버전 · {_config.Channel}", FontSize = 16, Foreground = B("#93C5FD") },
+                new TextBlock { Text = IsDeveloper ? $"{_config.Environment} · {_config.Channel} · {_config.TargetPlatform}" : "안정화 최신 버전", FontSize = 16, Foreground = B("#93C5FD") },
                 new TextBlock { Text = _selectedProject.Description ?? "프로젝트를 최신 상태로 유지합니다.", FontSize = 13, Foreground = B("#D1D5DB") }
             }
         });
@@ -267,11 +294,11 @@ public sealed partial class MainWindow : Window
     private Control GeneralInfo()
     {
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*"), ColumnSpacing = 12 };
-        grid.Children.Add(InfoTile("최신 업데이트", DateTime.Now.ToString("yyyy. MM. dd."), "최신 안정화 버전만 제공"));
+        grid.Children.Add(InfoTile("업데이트 정책", "최신 안정화", "일반 사용자는 안정 버전만 사용합니다."));
         var install = InfoTile("설치 위치", _selectedProject.InstallPath ?? _config.InstallDir, "프로젝트 파일 위치");
         Grid.SetColumn(install, 1);
         grid.Children.Add(install);
-        var profile = InfoTile("사용자 유형", "일반 사용자", "운영/안정 버전 전용");
+        var profile = InfoTile("사용자 유형", "일반 사용자", "개발 빌드는 표시되지 않습니다.");
         Grid.SetColumn(profile, 2);
         grid.Children.Add(profile);
         return grid;
@@ -279,11 +306,14 @@ public sealed partial class MainWindow : Window
 
     private Control GeneralActions()
     {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("2*,*"), ColumnSpacing = 16 };
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("2*,*,*"), ColumnSpacing = 14 };
         grid.Children.Add(PrimaryButton("▶ 실행", (_, _) => _ = RunAsync(repair: false, launch: true), 64));
-        var settings = SecondaryButton("⚙ 설정", (_, _) => ShowInfo(), 64);
-        Grid.SetColumn(settings, 1);
-        grid.Children.Add(settings);
+        var update = SecondaryButton("업데이트 확인", (_, _) => _ = RunAsync(repair: false, launch: false), 64);
+        Grid.SetColumn(update, 1);
+        grid.Children.Add(update);
+        var folder = SecondaryButton("폴더 열기", (_, _) => OpenInstallFolder(), 64);
+        Grid.SetColumn(folder, 2);
+        grid.Children.Add(folder);
         return grid;
     }
 
@@ -296,15 +326,15 @@ public sealed partial class MainWindow : Window
         Add(row1, SelectorTile("플랫폼", _config.TargetPlatform), 2);
         Add(row1, SelectorTile("버전 정책", _config.VersionPolicy), 3);
         Add(row1, PrimaryButton("▶ 실행", (_, _) => _ = RunAsync(repair: false, launch: true), 54), 4);
-        Add(row1, SecondaryButton("⇩ 업데이트", (_, _) => _ = RunAsync(repair: false, launch: false), 54), 5);
+        Add(row1, SecondaryButton("업데이트", (_, _) => _ = RunAsync(repair: false, launch: false), 54), 5);
         panel.Children.Add(row1);
 
         var row2 = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*,*,*"), ColumnSpacing = 10 };
-        row2.Children.Add(SecondaryButton("복구", (_, _) => _ = RunAsync(repair: true, launch: false), 46));
-        Add(row2, SecondaryButton("로그 보기", (_, _) => ShowInfo(), 46), 1);
-        Add(row2, SecondaryButton("매니페스트 검증", (_, _) => AppendLog("매니페스트 검증은 업데이트 실행 시 자동 수행됩니다."), 46), 2);
-        Add(row2, SecondaryButton("캐시 정리", (_, _) => AppendLog("캐시 정리 기능은 다음 단계에서 실제 삭제 동작으로 확장 예정입니다."), 46), 3);
-        Add(row2, SecondaryButton("설정", (_, _) => AppendLog("설정 파일: " + GetConfigPathSafe()), 46), 4);
+        row2.Children.Add(SecondaryButton("검증/복구", (_, _) => _ = RunAsync(repair: true, launch: false), 46));
+        Add(row2, SecondaryButton("설치 폴더", (_, _) => OpenInstallFolder(), 46), 1);
+        Add(row2, SecondaryButton("캐시 정리", (_, _) => ClearCache(), 46), 2);
+        Add(row2, SecondaryButton("설정 다시 읽기", (_, _) => { LoadConfigForUi(); BuildDashboard(); }, 46), 3);
+        Add(row2, SecondaryButton("로그 지우기", (_, _) => ClearLog(), 46), 4);
         panel.Children.Add(row2);
         return Card(panel, 16);
     }
@@ -321,6 +351,7 @@ public sealed partial class MainWindow : Window
                 KeyValue("환경", _config.Environment),
                 KeyValue("채널", _config.Channel),
                 KeyValue("플랫폼", _config.TargetPlatform),
+                KeyValue("엔진", _selectedProject.EngineVersion ?? "-"),
                 KeyValue("설치 경로", _selectedProject.InstallPath ?? _config.InstallDir),
                 KeyValue("카탈로그", string.IsNullOrWhiteSpace(_config.CatalogUrl) ? "직접 manifest" : "사용 중")
             }
@@ -339,8 +370,8 @@ public sealed partial class MainWindow : Window
             IsReadOnly = true,
             AcceptsReturn = true,
             TextWrapping = TextWrapping.Wrap,
-            Height = showDeveloperLog ? 270 : 92,
-            Text = showDeveloperLog ? "실행 로그가 여기에 표시됩니다." : "상태 메시지가 여기에 표시됩니다.",
+            Height = showDeveloperLog ? 260 : 70,
+            Text = showDeveloperLog ? "실행 로그가 여기에 표시됩니다." : "업데이트 상태가 여기에 표시됩니다.",
             Background = B(IsDeveloper ? "#0B1220" : "#FFFFFF"),
             Foreground = Fg()
         };
@@ -499,7 +530,7 @@ public sealed partial class MainWindow : Window
     {
         if (_isRunning)
         {
-            AppendLog("이미 작업이 실행 중입니다.");
+            AppendLog("이미 작업이 실행 중입니다.", forceGeneral: true);
             return;
         }
 
@@ -507,7 +538,7 @@ public sealed partial class MainWindow : Window
         try
         {
             _progress.Value = 0;
-            _statusText.Text = launch ? "업데이트 확인 후 실행합니다..." : "업데이트를 확인합니다...";
+            _statusText.Text = launch ? "실행 준비 중..." : "업데이트 확인 중...";
             var config = await JsonFiles.ReadAsync<LauncherConfig>(GetConfigPathSafe());
             config.ProjectId = _selectedProject.ProjectId;
             config.RepairMode = repair;
@@ -517,13 +548,13 @@ public sealed partial class MainWindow : Window
             await CatalogResolver.ResolveAsync(config, httpClient, UiProgress);
             await new LauncherEngine(config, progress => Dispatcher.UIThread.Post(() => UiProgress(progress.Stage, progress.Message, progress.Percent))).RunAsync();
             _progress.Value = 100;
-            _statusText.Text = launch ? "실행 준비가 완료되었습니다." : "업데이트가 완료되었습니다.";
-            AppendLog("완료");
+            _statusText.Text = launch ? "실행되었습니다." : "최신 상태입니다.";
+            AppendLog(launch ? "프로젝트 실행 요청이 완료되었습니다." : "업데이트 확인이 완료되었습니다.", forceGeneral: true);
         }
         catch (Exception ex)
         {
             _statusText.Text = "작업 실패";
-            AppendLog("오류: " + FriendlyError(ex));
+            AppendLog("오류: " + FriendlyError(ex), forceGeneral: true);
             if (IsDeveloper) AppendLog(ex.ToString());
         }
         finally
@@ -536,10 +567,25 @@ public sealed partial class MainWindow : Window
     {
         Dispatcher.UIThread.Post(() =>
         {
-            _statusText.Text = $"{stage}: {message}";
+            _statusText.Text = FriendlyProgress(stage, message);
             if (percent.HasValue) _progress.Value = percent.Value;
-            AppendLog($"[{stage}] {message}");
+            AppendLog(IsDeveloper ? $"[{stage}] {message}" : FriendlyProgress(stage, message));
         });
+    }
+
+    private string FriendlyProgress(string stage, string message)
+    {
+        if (IsDeveloper) return $"{stage}: {message}";
+        return stage switch
+        {
+            "Catalog" => "배포 정보를 확인하고 있습니다...",
+            "Manifest" => "업데이트 정보를 확인하고 있습니다...",
+            "Plan" => "필요한 파일을 확인하고 있습니다...",
+            "Download" => "필요한 파일을 다운로드하고 있습니다...",
+            "Apply" => "업데이트를 적용하고 있습니다...",
+            "Launch" => "프로젝트를 실행하고 있습니다...",
+            _ => message
+        };
     }
 
     private string FriendlyError(Exception ex)
@@ -549,13 +595,56 @@ public sealed partial class MainWindow : Window
             return "업데이트 서버에 연결할 수 없습니다. 네트워크와 서버 주소를 확인하세요.";
         if (message.Contains("No allowed release", StringComparison.OrdinalIgnoreCase))
             return "현재 사용자 권한으로 받을 수 있는 배포 버전이 없습니다.";
+        if (!IsDeveloper) return "작업 중 문제가 발생했습니다. 잠시 후 다시 시도하거나 관리자에게 문의하세요.";
         return message;
     }
 
     private void ShowInfo()
     {
-        AppendLog("설정 파일: " + GetConfigPathSafe());
-        AppendLog("프로젝트 이미지 위치: " + Path.Combine(AppContext.BaseDirectory, _config.ProjectAssetsDir, _selectedProject.ProjectId));
+        AppendLog($"프로젝트: {_selectedProject.DisplayName}", forceGeneral: true);
+        AppendLog($"설치 위치: {_selectedProject.InstallPath ?? _config.InstallDir}", forceGeneral: true);
+        if (IsDeveloper)
+        {
+            AppendLog("설정 파일: " + GetConfigPathSafe());
+            AppendLog("프로젝트 이미지 위치: " + Path.Combine(AppContext.BaseDirectory, _config.ProjectAssetsDir, _selectedProject.ProjectId));
+        }
+    }
+
+    private void OpenInstallFolder()
+    {
+        var path = Path.GetFullPath(_selectedProject.InstallPath ?? _config.InstallDir);
+        Directory.CreateDirectory(path);
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            AppendLog("폴더를 열 수 없습니다: " + FriendlyError(ex), forceGeneral: true);
+        }
+    }
+
+    private void ClearCache()
+    {
+        try
+        {
+            if (Directory.Exists(_config.StagingDir)) Directory.Delete(_config.StagingDir, recursive: true);
+            Directory.CreateDirectory(_config.StagingDir);
+            AppendLog("캐시를 정리했습니다.", forceGeneral: true);
+        }
+        catch (Exception ex)
+        {
+            AppendLog("캐시 정리에 실패했습니다: " + FriendlyError(ex), forceGeneral: true);
+        }
+    }
+
+    private void ClearLog()
+    {
+        if (_logBox is not null) _logBox.Text = string.Empty;
     }
 
     private string GetConfigPathSafe()
@@ -573,6 +662,13 @@ public sealed partial class MainWindow : Window
     private TextBlock Muted(string text, double size) => new() { Text = text, FontSize = size, Foreground = B(IsDeveloper ? "#94A3B8" : "#6B7280") };
     private IBrush Fg() => B(IsDeveloper ? "#E5E7EB" : "#111827");
     private IBrush Accent() => B(IsDeveloper ? "#60A5FA" : "#2563EB");
+    private IBrush StatusBrush(string? status)
+    {
+        var normalized = status ?? string.Empty;
+        if (normalized.Contains("업데이트", StringComparison.OrdinalIgnoreCase)) return B("#F97316");
+        if (normalized.Contains("설치", StringComparison.OrdinalIgnoreCase) || normalized.Contains("최신", StringComparison.OrdinalIgnoreCase)) return B("#16A34A");
+        return Accent();
+    }
     private static IBrush B(string hex) => new SolidColorBrush(Color.Parse(hex));
 
     private static Border Pill(string text, string background, string foreground)
@@ -592,9 +688,10 @@ public sealed partial class MainWindow : Window
         grid.Children.Add(control);
     }
 
-    private void AppendLog(string message)
+    private void AppendLog(string message, bool forceGeneral = false)
     {
         if (_logBox is null) return;
+        if (!IsDeveloper && !forceGeneral && _logBox.Text?.Contains(message, StringComparison.OrdinalIgnoreCase) == true) return;
         _logBox.Text += $"{DateTime.Now:HH:mm:ss} {message}{Environment.NewLine}";
         _logBox.CaretIndex = _logBox.Text?.Length ?? 0;
     }
