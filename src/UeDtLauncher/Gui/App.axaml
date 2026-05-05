@@ -3,5 +3,28 @@
              x:Class="UeDtLauncher.Gui.App">
   <Application.Styles>
     <FluentTheme />
+
+    <!--
+      The launcher builds most of its UI in C# because the screen changes heavily
+      between general and developer profiles. Keep button hover/pressed colors here
+      so FluentTheme pointer-over defaults do not make text unreadable on dark mode.
+    -->
+    <Style Selector="Button:pointerover">
+      <Setter Property="Foreground" Value="#FFFFFF" />
+      <Setter Property="Background" Value="#2563EB" />
+      <Setter Property="BorderBrush" Value="#2563EB" />
+    </Style>
+
+    <Style Selector="Button:pressed">
+      <Setter Property="Foreground" Value="#FFFFFF" />
+      <Setter Property="Background" Value="#1D4ED8" />
+      <Setter Property="BorderBrush" Value="#1D4ED8" />
+    </Style>
+
+    <Style Selector="Button:disabled">
+      <Setter Property="Foreground" Value="#9CA3AF" />
+      <Setter Property="Background" Value="#E5E7EB" />
+      <Setter Property="BorderBrush" Value="#D1D5DB" />
+    </Style>
   </Application.Styles>
 </Application>
