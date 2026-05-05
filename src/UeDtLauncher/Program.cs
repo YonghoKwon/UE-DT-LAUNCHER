@@ -61,8 +61,18 @@ public static class Program
         if (repair) config.RepairMode = true;
         if (noLaunch) config.LaunchAfterUpdate = false;
 
+        await ResolveCatalogForCliAsync(config);
         await new LauncherEngine(config).RunAsync();
         return 0;
+    }
+
+    private static async Task ResolveCatalogForCliAsync(LauncherConfig config)
+    {
+        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(10, config.HttpTimeoutSeconds)) };
+        await CatalogResolver.ResolveAsync(config, httpClient, (stage, message, percent) =>
+        {
+            Console.WriteLine(percent.HasValue ? $"[{stage}] {message} ({percent:0}%)" : $"[{stage}] {message}");
+        });
     }
 
     private static async Task<int> GenerateManifestAsync(string[] args)
@@ -96,6 +106,15 @@ public static class Program
         var output = Get(args, "--output") ?? "launcher.config.json";
         var config = new LauncherConfig
         {
+            CatalogUrl = "https://updates.example.com/catalogs/general/catalog.json",
+            CatalogSignatureUrl = "https://updates.example.com/catalogs/general/catalog.json.sig",
+            CatalogPublicKeyPath = "manifest-public-key.pem",
+            ProjectId = "ue-dt-simulator",
+            ClientProfile = "general",
+            Environment = "prod",
+            Channel = "stable",
+            VersionPolicy = "latest",
+            TargetPlatform = "windows-x64",
             ManifestUrl = "https://your-update-server.example.com/windows-x64/manifest.json",
             ManifestSignatureUrl = "https://your-update-server.example.com/windows-x64/manifest.json.sig",
             ManifestPublicKeyPath = "manifest-public-key.pem",
