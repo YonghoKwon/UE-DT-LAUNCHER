@@ -11,8 +11,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- MainWindow UI is implemented in MainWindowDashboard.cs. Keep the old code-behind file out of compilation. -->
+    <!-- MainWindow UI is implemented in MainWindowProductDashboard.cs. Keep legacy dashboard files out of compilation. -->
     <Compile Remove="Gui\MainWindow.axaml.cs" />
+    <Compile Remove="Gui\MainWindowDashboard.cs" />
   </ItemGroup>
 
   <ItemGroup>
