@@ -5,20 +5,41 @@
     <FluentTheme />
 
     <!--
-      The launcher builds most of its UI in C# because the screen changes heavily
-      between general and developer profiles. Keep button hover/pressed colors here
-      so FluentTheme pointer-over defaults do not make text unreadable on dark mode.
+      FluentTheme can override pointer-over foreground resources inside the Button
+      template. Keep hover/pressed text readable by setting the Button itself and
+      the template/content text presenters explicitly.
     -->
+    <Style Selector="Button">
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
     <Style Selector="Button:pointerover">
       <Setter Property="Foreground" Value="#FFFFFF" />
       <Setter Property="Background" Value="#2563EB" />
       <Setter Property="BorderBrush" Value="#2563EB" />
     </Style>
 
+    <Style Selector="Button:pointerover /template/ ContentPresenter">
+      <Setter Property="Foreground" Value="#FFFFFF" />
+    </Style>
+
+    <Style Selector="Button:pointerover TextBlock">
+      <Setter Property="Foreground" Value="#FFFFFF" />
+    </Style>
+
     <Style Selector="Button:pressed">
       <Setter Property="Foreground" Value="#FFFFFF" />
       <Setter Property="Background" Value="#1D4ED8" />
       <Setter Property="BorderBrush" Value="#1D4ED8" />
+    </Style>
+
+    <Style Selector="Button:pressed /template/ ContentPresenter">
+      <Setter Property="Foreground" Value="#FFFFFF" />
+    </Style>
+
+    <Style Selector="Button:pressed TextBlock">
+      <Setter Property="Foreground" Value="#FFFFFF" />
     </Style>
 
     <Style Selector="Button:disabled">
