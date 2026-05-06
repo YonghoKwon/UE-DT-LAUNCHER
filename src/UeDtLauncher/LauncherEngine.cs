@@ -77,10 +77,11 @@ public sealed class LauncherEngine
         {
             Log("Launch", "Launching application...", 98);
             Launch(remoteManifest);
+            Log("Complete", "Application launched.", 100);
         }
         else
         {
-            Log("Launch", "Launch skipped by configuration.", 100);
+            Log("Complete", "Update completed. Launch skipped by configuration.", 100);
         }
     }
 
