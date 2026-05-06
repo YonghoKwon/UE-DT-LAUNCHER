@@ -213,18 +213,67 @@ public sealed class LauncherEngine
         if (existingLength > 0 && response.StatusCode != HttpStatusCode.PartialContent)
         {
             existingLength = 0;
-            File.Delete(tempPath);
+            await DeleteFileWithRetryAsync(tempPath, cancellationToken);
         }
         response.EnsureSuccessStatusCode();
 
-        await using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
-        await using var target = new FileStream(tempPath, existingLength > 0 ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.None);
-        await source.CopyToAsync(target, cancellationToken);
-        await target.FlushAsync(cancellationToken);
+        await using (var source = await response.Content.ReadAsStreamAsync(cancellationToken))
+        await using (var target = new FileStream(tempPath, existingLength > 0 ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            await source.CopyToAsync(target, cancellationToken);
+            await target.FlushAsync(cancellationToken);
+        }
 
         var actualSize = new FileInfo(tempPath).Length;
         if (expectedSize > 0 && actualSize != expectedSize) throw new IOException($"Size mismatch. Expected {expectedSize}, actual {actualSize}.");
-        File.Move(tempPath, targetPath, overwrite: true);
+        await MoveFileWithRetryAsync(tempPath, targetPath, cancellationToken);
+    }
+
+    private static async Task MoveFileWithRetryAsync(string sourcePath, string targetPath, CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+        Exception? lastError = null;
+
+        for (var attempt = 1; attempt <= 6; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                if (File.Exists(targetPath)) File.Delete(targetPath);
+                File.Move(sourcePath, targetPath);
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                lastError = ex;
+                await Task.Delay(TimeSpan.FromMilliseconds(150 * attempt), cancellationToken);
+            }
+        }
+
+        throw new IOException($"Failed to move downloaded file from '{sourcePath}' to '{targetPath}'.", lastError);
+    }
+
+    private static async Task DeleteFileWithRetryAsync(string path, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(path)) return;
+        Exception? lastError = null;
+
+        for (var attempt = 1; attempt <= 6; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                File.Delete(path);
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                lastError = ex;
+                await Task.Delay(TimeSpan.FromMilliseconds(150 * attempt), cancellationToken);
+            }
+        }
+
+        throw new IOException($"Failed to delete file '{path}'.", lastError);
     }
 
     private async Task ApplyUpdateAsync(UpdatePlan plan, CancellationToken cancellationToken)
