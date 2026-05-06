@@ -11,12 +11,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- MainWindow UI is implemented in MainWindowStructuredDashboard.cs. Keep legacy dashboard files out of compilation. -->
+    <!-- MainWindow UI is implemented in MainWindowRefinedDashboard.cs. Keep legacy dashboard files out of compilation. -->
     <Compile Remove="Gui\MainWindow.axaml.cs" />
     <Compile Remove="Gui\MainWindowDashboard.cs" />
     <Compile Remove="Gui\MainWindowProductDashboard.cs" />
     <Compile Remove="Gui\MainWindowProductDashboardV2.cs" />
     <Compile Remove="Gui\MainWindowModeFixedDashboard.cs" />
+    <Compile Remove="Gui\MainWindowStructuredDashboard.cs" />
   </ItemGroup>
 
   <ItemGroup>
