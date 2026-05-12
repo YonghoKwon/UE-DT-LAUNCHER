@@ -1,0 +1,42 @@
+{
+  "catalogUrl": "http://updates.example.internal/updates/catalogs/developer/catalog.json",
+  "catalogSignatureUrl": null,
+  "catalogPublicKeyPath": null,
+  "projectId": "m7at10",
+  "clientProfile": "developer",
+  "environment": "dev",
+  "channel": "stable",
+  "versionPolicy": "latest",
+  "requestedVersion": null,
+  "targetPlatform": "windows-x64",
+  "manifestUrl": "http://updates.example.internal/updates/projects/m7at10/dev/stable/1.0.3/windows-x64/manifest.json",
+  "manifestSignatureUrl": null,
+  "manifestPublicKeyPath": null,
+  "installDir": "app",
+  "stagingDir": ".staging",
+  "backupDir": ".backup",
+  "installedManifestPath": "installed-manifest.json",
+  "launchAfterUpdate": true,
+  "repairMode": false,
+  "removeFilesNotInManifest": false,
+  "maxRetryCount": 3,
+  "httpTimeoutSeconds": 300,
+  "launchArguments": ["-log"],
+  "projectAssetsDir": "assets/projects",
+  "projects": [
+    {
+      "projectId": "m7at10",
+      "displayName": "m7at10 Local",
+      "description": "사내 RHEL 8.4 업데이트 서버 테스트 프로젝트입니다.",
+      "status": "사내 테스트",
+      "installPath": "app",
+      "engineVersion": "Unreal",
+      "technology": "Windows",
+      "sortOrder": 0,
+      "isPinned": true,
+      "visibleToProfiles": ["developer"]
+    }
+  ],
+  "packages": []
+}
+

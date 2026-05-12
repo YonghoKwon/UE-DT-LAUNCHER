@@ -129,6 +129,12 @@ Red Hat 8.4/Nginx 기반 다중 프로젝트 업데이트 서버 구성은 아�
 docs/redhat-distribution-server.md
 ```
 
+회사 RHEL 8.4 가상 서버의 `/dt` 경로에 nginx 업데이트 서버를 구축하는 실전 절차는 아래 문서를 보세요.
+
+```text
+docs/company-rhel84-dt-update-server.md
+```
+
 런처 UI 커스터마이징은 아래 문서를 보세요.
 
 ```text
@@ -140,9 +146,11 @@ docs/launcher-ui-customization.md
 ```text
 examples/catalogs/general/catalog.json
 examples/catalogs/developer/catalog.json
+examples/catalogs/developer/m7at10-catalog.json
 examples/configs/general-windows-launcher.config.json
 examples/configs/developer-windows-launcher.config.json
 examples/configs/developer-linux-launcher.config.json
+examples/configs/m7at10-developer-windows-launcher.config.json
 ```
 
 ## 저장소 구조
@@ -175,6 +183,7 @@ UE-DT-LAUNCHER/
     launcher-ui-customization.md
     netmarble-launcher-analysis.md
     redhat-distribution-server.md
+    company-rhel84-dt-update-server.md
 ```
 
 ## release catalog 방식
