@@ -49,7 +49,7 @@ public static class CatalogResolver
         ManifestSignatureVerifier.Verify(catalogJson, signatureBase64.Trim(), await File.ReadAllTextAsync(config.CatalogPublicKeyPath, cancellationToken));
     }
 
-    private static DistributionRelease SelectRelease(DistributionCatalog catalog, LauncherConfig config)
+    internal static DistributionRelease SelectRelease(DistributionCatalog catalog, LauncherConfig config)
     {
         if (string.IsNullOrWhiteSpace(config.ProjectId))
         {
@@ -97,7 +97,7 @@ public static class CatalogResolver
             ?? throw new InvalidOperationException("No allowed release matched this client configuration.");
     }
 
-    private static void ValidateClientSelection(LauncherConfig config)
+    internal static void ValidateClientSelection(LauncherConfig config)
     {
         if (string.Equals(config.ClientProfile, "general", StringComparison.OrdinalIgnoreCase))
         {

@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feature/**
+      - claude/**
   pull_request:
     branches:
       - main
@@ -26,10 +27,13 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore
-        run: dotnet restore src/UeDtLauncher/UeDtLauncher.csproj
+        run: dotnet restore UeDtLauncher.sln
 
       - name: Build
-        run: dotnet build src/UeDtLauncher/UeDtLauncher.csproj -c Release --no-restore
+        run: dotnet build UeDtLauncher.sln -c Release --no-restore
+
+      - name: Test
+        run: dotnet test src/UeDtLauncher.Tests/UeDtLauncher.Tests.csproj -c Release --no-build
 
       - name: Publish Windows
         if: runner.os == 'Windows'
