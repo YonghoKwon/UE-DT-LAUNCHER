@@ -108,6 +108,16 @@ public sealed class SelfUpdateConfig
     public string? ManifestPublicKeyPath { get; set; }
     public string InstallDir { get; set; } = "launcher-update";
     public string EntryPoint { get; set; } = OperatingSystem.IsWindows() ? "UeDtLauncher.exe" : "UeDtLauncher";
+    // When true, the downloaded launcher is swapped in automatically on the next start.
+    public bool AutoApply { get; set; }
+}
+
+/// <summary>Marker written next to the launcher binary when a staged self-update awaits apply.</summary>
+public sealed class SelfUpdatePending
+{
+    public string StagedDir { get; set; } = string.Empty;
+    public string EntryPoint { get; set; } = string.Empty;
+    public string PreparedAtUtc { get; set; } = DateTimeOffset.UtcNow.ToString("O");
 }
 
 public sealed class WindowsIntegrationConfig

@@ -8,6 +8,8 @@ public static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        if (SelfUpdateManager.TryApplyPendingUpdate(args)) return 0;
+
         if (args.Length == 0 || string.Equals(args[0], "gui", StringComparison.OrdinalIgnoreCase))
         {
             return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args.Length == 0 ? Array.Empty<string>() : args.Skip(1).ToArray());
