@@ -62,7 +62,8 @@ public static class Program
         if (noLaunch) config.LaunchAfterUpdate = false;
 
         await ResolveCatalogForCliAsync(config);
-        await new LauncherEngine(config).RunAsync();
+        using var engine = new LauncherEngine(config);
+        await engine.RunAsync();
         return 0;
     }
 

@@ -18,7 +18,16 @@ public static class CatalogResolver
         response.EnsureSuccessStatusCode();
         var catalogJson = await response.Content.ReadAsStringAsync(cancellationToken);
 
-        await VerifyCatalogIfConfiguredAsync(catalogJson, config, httpClient, cancellationToken);
+        var signatureVerified = await VerifyCatalogIfConfiguredAsync(catalogJson, config, httpClient, cancellationToken);
+        if (!signatureVerified)
+        {
+            if (config.RequireSignedManifests)
+            {
+                throw new InvalidOperationException("requireSignedManifests is enabled, but catalogSignatureUrl or catalogPublicKeyPath is not configured.");
+            }
+
+            log?.Invoke("Security", "WARNING: catalog signature verification skipped (no signature URL or public key configured).", null);
+        }
 
         var catalog = JsonSerializer.Deserialize<DistributionCatalog>(catalogJson, JsonFiles.Options)
             ?? throw new InvalidOperationException("Release catalog JSON was empty or invalid.");
@@ -33,11 +42,11 @@ public static class CatalogResolver
         log?.Invoke("Catalog", $"Selected {config.ProjectId} {release.Version} / {release.Environment} / {release.Platform} / {release.Channel}", 4);
     }
 
-    private static async Task VerifyCatalogIfConfiguredAsync(string catalogJson, LauncherConfig config, HttpClient httpClient, CancellationToken cancellationToken)
+    private static async Task<bool> VerifyCatalogIfConfiguredAsync(string catalogJson, LauncherConfig config, HttpClient httpClient, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(config.CatalogSignatureUrl) || string.IsNullOrWhiteSpace(config.CatalogPublicKeyPath))
         {
-            return;
+            return false;
         }
 
         if (!File.Exists(config.CatalogPublicKeyPath))
@@ -47,6 +56,7 @@ public static class CatalogResolver
 
         var signatureBase64 = await httpClient.GetStringAsync(config.CatalogSignatureUrl, cancellationToken);
         ManifestSignatureVerifier.Verify(catalogJson, signatureBase64.Trim(), await File.ReadAllTextAsync(config.CatalogPublicKeyPath, cancellationToken));
+        return true;
     }
 
     internal static DistributionRelease SelectRelease(DistributionCatalog catalog, LauncherConfig config)

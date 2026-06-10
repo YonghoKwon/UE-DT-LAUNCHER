@@ -26,7 +26,10 @@ public static class SelfUpdateManager
         };
 
         log?.Invoke("SelfUpdate", "Checking launcher self update manifest.", null);
-        await new LauncherEngine(updateConfig, progress => log?.Invoke(progress.Stage, progress.Message, progress.Percent)).RunAsync(cancellationToken);
+        using (var updateEngine = new LauncherEngine(updateConfig, progress => log?.Invoke(progress.Stage, progress.Message, progress.Percent)))
+        {
+            await updateEngine.RunAsync(cancellationToken);
+        }
 
         var newEntry = SafePath.ResolveInside(selfUpdate.InstallDir, selfUpdate.EntryPoint);
         if (File.Exists(newEntry))

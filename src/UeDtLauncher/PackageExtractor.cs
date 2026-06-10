@@ -13,7 +13,7 @@ public static class PackageExtractor
         if (normalizedFormat is "zip")
         {
             log?.Invoke($"Extracting ZIP: {archivePath}");
-            ZipFile.ExtractToDirectory(archivePath, destinationDir, overwriteFiles: true);
+            ExtractZip(archivePath, destinationDir);
             return;
         }
 
@@ -26,6 +26,36 @@ public static class PackageExtractor
         throw new NotSupportedException($"Unsupported package format: {normalizedFormat}");
     }
 
+    private static void ExtractZip(string archivePath, string destinationDir)
+    {
+        // Extract entry by entry so every target path is validated against the destination,
+        // instead of trusting archive-supplied paths.
+        using var archive = ZipFile.OpenRead(archivePath);
+        foreach (var entry in archive.Entries)
+        {
+            if (string.IsNullOrEmpty(entry.Name))
+            {
+                if (!string.IsNullOrWhiteSpace(entry.FullName)) Directory.CreateDirectory(SafePath.ResolveInside(destinationDir, entry.FullName));
+                continue;
+            }
+
+            var targetPath = SafePath.ResolveInsideChecked(destinationDir, entry.FullName);
+            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+            entry.ExtractToFile(targetPath, overwrite: true);
+        }
+    }
+
+    private static void MoveExtractedTree(string tempDir, string destinationDir)
+    {
+        foreach (var sourceFile in Directory.EnumerateFiles(tempDir, "*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(tempDir, sourceFile);
+            var targetPath = SafePath.ResolveInsideChecked(destinationDir, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+            File.Move(sourceFile, targetPath, overwrite: true);
+        }
+    }
+
     private static async Task ExtractWith7ZipAsync(string archivePath, string destinationDir, Action<string>? log, CancellationToken cancellationToken)
     {
         var tool = Find7ZipTool();
@@ -35,31 +65,51 @@ public static class PackageExtractor
         }
 
         log?.Invoke($"Extracting with {tool}: {archivePath}");
-        var startInfo = new ProcessStartInfo
+        // 7z writes archive-supplied paths directly, so extract into a scratch directory first
+        // and only move entries that resolve inside the destination.
+        var tempDir = destinationDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + ".extract-" + Guid.NewGuid().ToString("N");
+        Directory.CreateDirectory(tempDir);
+        try
         {
-            FileName = tool,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true
-        };
-        startInfo.ArgumentList.Add("x");
-        startInfo.ArgumentList.Add(archivePath);
-        startInfo.ArgumentList.Add("-y");
-        startInfo.ArgumentList.Add("-o" + destinationDir);
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = tool,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            startInfo.ArgumentList.Add("x");
+            startInfo.ArgumentList.Add(archivePath);
+            startInfo.ArgumentList.Add("-y");
+            startInfo.ArgumentList.Add("-o" + tempDir);
 
-        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Failed to start 7z process.");
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
+            using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Failed to start 7z process.");
+            var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+            var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+            await process.WaitForExitAsync(cancellationToken);
 
-        var stdout = await stdoutTask;
-        var stderr = await stderrTask;
-        if (!string.IsNullOrWhiteSpace(stdout)) log?.Invoke(stdout.Trim());
-        if (!string.IsNullOrWhiteSpace(stderr)) log?.Invoke(stderr.Trim());
+            var stdout = await stdoutTask;
+            var stderr = await stderrTask;
+            if (!string.IsNullOrWhiteSpace(stdout)) log?.Invoke(stdout.Trim());
+            if (!string.IsNullOrWhiteSpace(stderr)) log?.Invoke(stderr.Trim());
 
-        if (process.ExitCode != 0)
+            if (process.ExitCode != 0)
+            {
+                throw new InvalidOperationException($"7z extraction failed with exit code {process.ExitCode}.");
+            }
+
+            MoveExtractedTree(tempDir, destinationDir);
+        }
+        finally
         {
-            throw new InvalidOperationException($"7z extraction failed with exit code {process.ExitCode}.");
+            try
+            {
+                if (Directory.Exists(tempDir)) Directory.Delete(tempDir, recursive: true);
+            }
+            catch (IOException)
+            {
+                // Leftover scratch directory is harmless; the next update run recreates a fresh one.
+            }
         }
     }
 

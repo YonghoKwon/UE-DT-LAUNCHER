@@ -6,7 +6,7 @@ using System.Text.Json;
 
 namespace UeDtLauncher;
 
-public sealed class LauncherEngine
+public sealed class LauncherEngine : IDisposable
 {
     private readonly LauncherConfig _config;
     private readonly HttpClient _httpClient;
@@ -22,8 +22,12 @@ public sealed class LauncherEngine
         };
     }
 
+    public void Dispose() => _httpClient.Dispose();
+
     public async Task RunAsync(CancellationToken cancellationToken = default)
     {
+        using var instanceLock = SingleInstanceLock.Acquire(SingleInstanceLock.LockPathFor(_config.InstallDir));
+
         Directory.CreateDirectory(_config.InstallDir);
         Directory.CreateDirectory(_config.StagingDir);
         Directory.CreateDirectory(_config.BackupDir);
@@ -45,6 +49,10 @@ public sealed class LauncherEngine
         }
         else
         {
+            var requiredBytes = plan.DownloadOrRepair.Sum(file => Math.Max(0, file.Size));
+            DiskSpace.EnsureAvailable(_config.StagingDir, requiredBytes, (stage, message) => Log(stage, message));
+            DiskSpace.EnsureAvailable(_config.InstallDir, requiredBytes, (stage, message) => Log(stage, message));
+
             Log("Download", "Downloading changed files to staging...", 35);
             await PrepareStagingAsync(plan, remoteManifest, cancellationToken);
 
@@ -96,7 +104,17 @@ public sealed class LauncherEngine
         using var response = await _httpClient.GetAsync(_config.ManifestUrl, cancellationToken);
         response.EnsureSuccessStatusCode();
         var json = await response.Content.ReadAsStringAsync(cancellationToken);
-        await ManifestSignatureVerifier.VerifyIfConfiguredAsync(json, _config, _httpClient, cancellationToken);
+        var signatureVerified = await ManifestSignatureVerifier.VerifyIfConfiguredAsync(json, _config, _httpClient, cancellationToken);
+        if (!signatureVerified)
+        {
+            if (_config.RequireSignedManifests)
+            {
+                throw new InvalidOperationException("requireSignedManifests is enabled, but manifestSignatureUrl or manifestPublicKeyPath is not configured.");
+            }
+
+            Log("Security", "WARNING: manifest signature verification skipped (no signature URL or public key configured).");
+        }
+
         return JsonSerializer.Deserialize<LauncherManifest>(json, JsonFiles.Options) ?? throw new InvalidOperationException("Remote manifest JSON was empty or invalid.");
     }
 
@@ -178,28 +196,50 @@ public sealed class LauncherEngine
     private async Task DownloadWithRetryAsync(Uri uri, string targetPath, ManifestFile file, CancellationToken cancellationToken)
     {
         Exception? lastError = null;
-        for (var attempt = 1; attempt <= Math.Max(1, _config.MaxRetryCount); attempt++)
+        var maxAttempts = Math.Max(1, _config.MaxRetryCount);
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
             try
             {
                 await DownloadFileAsync(uri, targetPath, file.Size, cancellationToken);
                 if (!await Hashing.Sha256MatchesAsync(targetPath, file.Sha256, cancellationToken))
-                    throw new InvalidOperationException($"SHA-256 mismatch after download: {file.Path}");
+                    throw new IOException($"SHA-256 mismatch after download: {file.Path}");
                 return;
             }
-            catch (Exception ex) when (attempt < Math.Max(1, _config.MaxRetryCount))
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                lastError = ex;
-                Log("Retry", $"{file.Path}: retry {attempt}/{_config.MaxRetryCount}: {ex.Message}");
-                await Task.Delay(TimeSpan.FromSeconds(1 + attempt), cancellationToken);
+                throw;
             }
             catch (Exception ex)
             {
                 lastError = ex;
+                if (!IsTransientDownloadError(ex))
+                {
+                    throw new InvalidOperationException($"Download failed (not retryable): {file.Path}: {ex.Message}", ex);
+                }
+
+                if (attempt >= maxAttempts) break;
+
+                var delay = TimeSpan.FromSeconds(Math.Min(30, Math.Pow(2, attempt - 1))) + TimeSpan.FromMilliseconds(Random.Shared.Next(0, 500));
+                Log("Retry", $"{file.Path}: retry {attempt}/{maxAttempts} in {delay.TotalSeconds:0.#}s: {ex.Message}");
+                await Task.Delay(delay, cancellationToken);
             }
         }
 
         throw new InvalidOperationException($"Download failed: {file.Path}", lastError);
+    }
+
+    internal static bool IsTransientDownloadError(Exception ex)
+    {
+        if (ex is HttpRequestException http)
+        {
+            if (http.StatusCode is null) return true; // DNS/connection-level failure
+            var statusCode = (int)http.StatusCode.Value;
+            return statusCode == 408 || statusCode == 429 || statusCode >= 500;
+        }
+
+        // TaskCanceledException without external cancellation means the HttpClient timeout fired.
+        return ex is IOException or System.Net.Sockets.SocketException or TaskCanceledException;
     }
 
     private async Task DownloadFileAsync(Uri uri, string targetPath, long expectedSize, CancellationToken cancellationToken)
@@ -240,8 +280,7 @@ public sealed class LauncherEngine
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                if (File.Exists(targetPath)) File.Delete(targetPath);
-                File.Move(sourcePath, targetPath);
+                File.Move(sourcePath, targetPath, overwrite: true);
                 return;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -286,7 +325,7 @@ public sealed class LauncherEngine
             foreach (var relativePath in plan.Remove)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var installedPath = SafePath.ResolveInside(_config.InstallDir, relativePath);
+                var installedPath = SafePath.ResolveInsideChecked(_config.InstallDir, relativePath);
                 if (File.Exists(installedPath))
                 {
                     BackupFile(installedPath, SafePath.ResolveInside(backupRoot, relativePath));
@@ -298,7 +337,7 @@ public sealed class LauncherEngine
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var stagingPath = SafePath.ResolveInside(_config.StagingDir, file.Path);
-                var installedPath = SafePath.ResolveInside(_config.InstallDir, file.Path);
+                var installedPath = SafePath.ResolveInsideChecked(_config.InstallDir, file.Path);
                 var backupPath = SafePath.ResolveInside(backupRoot, file.Path);
                 if (File.Exists(installedPath)) BackupFile(installedPath, backupPath);
                 Directory.CreateDirectory(Path.GetDirectoryName(installedPath)!);
@@ -385,14 +424,24 @@ public sealed class LauncherEngine
         Process.Start(startInfo);
     }
 
-    private static void ValidateManifest(LauncherManifest manifest)
+    internal static void ValidateManifest(LauncherManifest manifest)
     {
         if (string.IsNullOrWhiteSpace(manifest.EntryPoint)) throw new InvalidOperationException("Manifest entryPoint is required.");
         if (manifest.Files.Count == 0) throw new InvalidOperationException("Manifest files list is empty.");
+
+        var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var file in manifest.Files)
         {
             _ = SafePath.ResolveInside("validation-root", file.Path);
+            if (!seenPaths.Add(file.Path)) throw new InvalidOperationException($"Duplicate file path in manifest: {file.Path}");
+            if (file.Size < 0) throw new InvalidOperationException($"Negative file size in manifest: {file.Path}");
             if (string.IsNullOrWhiteSpace(file.Sha256)) throw new InvalidOperationException($"Missing sha256 for {file.Path}");
+            if (file.Sha256.Length != 64 || !file.Sha256.All(Uri.IsHexDigit)) throw new InvalidOperationException($"Invalid sha256 format for {file.Path}");
+        }
+
+        if (!manifest.Files.Any(file => string.Equals(file.Path, manifest.EntryPoint, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException($"Manifest entryPoint is not listed in files: {manifest.EntryPoint}");
         }
     }
 }

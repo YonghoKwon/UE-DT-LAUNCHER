@@ -5,11 +5,12 @@ namespace UeDtLauncher;
 
 public static class ManifestSignatureVerifier
 {
-    public static async Task VerifyIfConfiguredAsync(string manifestJson, LauncherConfig config, HttpClient httpClient, CancellationToken cancellationToken = default)
+    /// <summary>Returns true when the signature was actually verified, false when verification was skipped.</summary>
+    public static async Task<bool> VerifyIfConfiguredAsync(string manifestJson, LauncherConfig config, HttpClient httpClient, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(config.ManifestSignatureUrl) || string.IsNullOrWhiteSpace(config.ManifestPublicKeyPath))
         {
-            return;
+            return false;
         }
 
         if (!File.Exists(config.ManifestPublicKeyPath))
@@ -19,6 +20,7 @@ public static class ManifestSignatureVerifier
 
         var signatureBase64 = await httpClient.GetStringAsync(config.ManifestSignatureUrl, cancellationToken);
         Verify(manifestJson, signatureBase64.Trim(), await File.ReadAllTextAsync(config.ManifestPublicKeyPath, cancellationToken));
+        return true;
     }
 
     public static void Verify(string payload, string signatureBase64, string publicKeyPem)

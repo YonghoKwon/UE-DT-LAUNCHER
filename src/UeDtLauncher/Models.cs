@@ -13,6 +13,9 @@ public sealed class LauncherConfig
     public string? CatalogUrl { get; set; }
     public string? CatalogSignatureUrl { get; set; }
     public string? CatalogPublicKeyPath { get; set; }
+
+    // When true, catalog/manifest downloads fail unless signature verification actually runs.
+    public bool RequireSignedManifests { get; set; }
     public string? ProjectId { get; set; }
     public string ClientProfile { get; set; } = "general"; // general, developer
     public string Environment { get; set; } = "prod"; // prod, dev

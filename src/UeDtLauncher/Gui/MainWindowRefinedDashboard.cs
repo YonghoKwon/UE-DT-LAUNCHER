@@ -431,7 +431,8 @@ public sealed partial class MainWindow : Window
             var c = await RunConfig(repair, launch);
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(10, c.HttpTimeoutSeconds)) };
             await CatalogResolver.ResolveAsync(c, http, UiProgress);
-            await new LauncherEngine(c, p => Dispatcher.UIThread.Post(() => UiProgress(p.Stage, p.Message, p.Percent))).RunAsync();
+            using var engine = new LauncherEngine(c, p => Dispatcher.UIThread.Post(() => UiProgress(p.Stage, p.Message, p.Percent)));
+            await engine.RunAsync();
             Progress(100); if (_statusText is not null) _statusText.Text = launch ? "실행되었습니다." : "최신 상태입니다."; _installState = "최신 상태"; _installDetail = "현재 설치된 파일이 최신 배포 정보와 일치합니다."; UpdateInstallTile();
         }
         catch (Exception ex) { MarkError(ex); }
@@ -449,7 +450,8 @@ public sealed partial class MainWindow : Window
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(10, c.HttpTimeoutSeconds)) };
             await CatalogResolver.ResolveAsync(c, http, UiProgress);
             var json = await http.GetStringAsync(c.ManifestUrl);
-            await ManifestSignatureVerifier.VerifyIfConfiguredAsync(json, c, http);
+            var signatureVerified = await ManifestSignatureVerifier.VerifyIfConfiguredAsync(json, c, http);
+            if (!signatureVerified && c.RequireSignedManifests) throw new InvalidOperationException("requireSignedManifests is enabled, but manifestSignatureUrl or manifestPublicKeyPath is not configured.");
             var manifest = JsonSerializer.Deserialize<LauncherManifest>(json, JsonFiles.Options) ?? throw new InvalidOperationException("manifest.json을 읽을 수 없습니다.");
             var missing = 0; var changed = 0;
             foreach (var file in manifest.Files)
