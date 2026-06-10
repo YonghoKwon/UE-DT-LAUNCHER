@@ -28,6 +28,9 @@ public sealed class LauncherConfig
     public string StagingDir { get; set; } = ".staging";
     public string BackupDir { get; set; } = ".backup";
     public string InstalledManifestPath { get; set; } = "installed-manifest.json";
+    public string InstallStatePath { get; set; } = "install-state.json";
+    public string LogDir { get; set; } = "logs";
+    public int MaxBackupCount { get; set; } = 3;
     public bool LaunchAfterUpdate { get; set; } = true;
     public bool RepairMode { get; set; }
     public bool RemoveFilesNotInManifest { get; set; }
@@ -136,6 +139,18 @@ public sealed class ManifestFile
     public long Size { get; set; }
     public string? Url { get; set; }
     public bool Executable { get; set; }
+}
+
+/// <summary>Snapshot of what is currently installed; used by rollback and service mode.</summary>
+public sealed class InstallState
+{
+    public string Version { get; set; } = string.Empty;
+    public string? Channel { get; set; }
+    public string? Environment { get; set; }
+    public string? Platform { get; set; }
+    public string? ManifestSha256 { get; set; }
+    public string InstalledAtUtc { get; set; } = DateTimeOffset.UtcNow.ToString("O");
+    public string? LastBackupRoot { get; set; }
 }
 
 public sealed class UpdatePlan

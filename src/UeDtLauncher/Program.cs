@@ -37,6 +37,7 @@ public static class Program
             return command switch
             {
                 "run" => await RunLauncherAsync(args.Skip(1).ToArray()),
+                "rollback" => await RollbackAsync(args.Skip(1).ToArray()),
                 "generate-manifest" => await GenerateManifestAsync(args.Skip(1).ToArray()),
                 "sample-config" => await WriteSampleConfigAsync(args.Skip(1).ToArray()),
                 "sign-manifest" => await SignManifestAsync(args.Skip(1).ToArray()),
@@ -61,9 +62,59 @@ public static class Program
         if (repair) config.RepairMode = true;
         if (noLaunch) config.LaunchAfterUpdate = false;
 
+        var fileLogger = new FileLogger(config.LogDir);
         await ResolveCatalogForCliAsync(config);
-        using var engine = new LauncherEngine(config);
+        using var engine = new LauncherEngine(config, progress: null, fileLogger);
         await engine.RunAsync();
+        return 0;
+    }
+
+    private static async Task<int> RollbackAsync(string[] args)
+    {
+        var configPath = Get(args, "--config") ?? "launcher.config.json";
+        var config = await JsonFiles.ReadAsync<LauncherConfig>(configPath);
+        var backups = BackupManager.List(config.BackupDir);
+
+        if (Has(args, "--list"))
+        {
+            if (backups.Count == 0)
+            {
+                Console.WriteLine("No backups found in: " + config.BackupDir);
+                return 0;
+            }
+
+            Console.WriteLine("Available backups (newest first):");
+            foreach (var (backupRoot, info) in backups)
+            {
+                var name = Path.GetFileName(backupRoot);
+                Console.WriteLine($"  {name}  previous: {info?.PreviousVersion ?? "?"}  updated to: {info?.NewVersion ?? "?"}  created: {info?.CreatedAtUtc ?? "?"}");
+            }
+
+            return 0;
+        }
+
+        var requested = Get(args, "--backup");
+        var selected = string.IsNullOrWhiteSpace(requested)
+            ? backups.FirstOrDefault()
+            : backups.FirstOrDefault(backup => string.Equals(Path.GetFileName(backup.BackupRoot), requested, StringComparison.Ordinal));
+
+        if (selected.BackupRoot is null)
+        {
+            Console.Error.WriteLine(string.IsNullOrWhiteSpace(requested)
+                ? "No backups found in: " + config.BackupDir
+                : $"Backup not found: {requested}. Use 'rollback --list' to see available backups.");
+            return 1;
+        }
+
+        var fileLogger = new FileLogger(config.LogDir);
+        using var instanceLock = SingleInstanceLock.Acquire(SingleInstanceLock.LockPathFor(config.InstallDir));
+        Console.WriteLine($"Rolling back using backup {Path.GetFileName(selected.BackupRoot)}...");
+        await BackupManager.RestoreAsync(selected.BackupRoot, config.InstallDir, config.InstalledManifestPath, config.InstallStatePath, message =>
+        {
+            Console.WriteLine("[Rollback] " + message);
+            fileLogger.Log("Rollback", message);
+        });
+        Console.WriteLine("Rollback completed.");
         return 0;
     }
 
@@ -176,5 +227,6 @@ public static class Program
         Console.WriteLine("  generate-manifest --package-dir <dir> --base-url <url> --entry-point <relative path> --version <version> --output <manifest.json>");
         Console.WriteLine("  sign-manifest --manifest <manifest.json> --private-key <private.pem> --output <manifest.json.sig>");
         Console.WriteLine("  run --config launcher.config.json [--repair] [--no-launch]");
+        Console.WriteLine("  rollback --config launcher.config.json [--list] [--backup <timestamp>]");
     }
 }

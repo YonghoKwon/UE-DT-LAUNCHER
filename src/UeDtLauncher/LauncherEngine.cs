@@ -11,11 +11,13 @@ public sealed class LauncherEngine : IDisposable
     private readonly LauncherConfig _config;
     private readonly HttpClient _httpClient;
     private readonly Action<LauncherProgress>? _progress;
+    private readonly FileLogger? _fileLogger;
 
-    public LauncherEngine(LauncherConfig config, Action<LauncherProgress>? progress = null)
+    public LauncherEngine(LauncherConfig config, Action<LauncherProgress>? progress = null, FileLogger? fileLogger = null)
     {
         _config = config;
         _progress = progress;
+        _fileLogger = fileLogger;
         _httpClient = new HttpClient
         {
             Timeout = TimeSpan.FromSeconds(Math.Max(10, config.HttpTimeoutSeconds))
@@ -33,7 +35,7 @@ public sealed class LauncherEngine : IDisposable
         Directory.CreateDirectory(_config.BackupDir);
 
         Log("Manifest", "Downloading remote manifest...", 5);
-        var remoteManifest = await DownloadManifestAsync(cancellationToken);
+        var (remoteManifest, manifestJson) = await DownloadManifestAsync(cancellationToken);
         ValidateManifest(remoteManifest);
 
         Log("Manifest", $"App: {remoteManifest.AppId} / Version: {remoteManifest.Version} / Platform: {remoteManifest.Platform}", 10);
@@ -46,6 +48,10 @@ public sealed class LauncherEngine : IDisposable
         if (!plan.HasChanges)
         {
             Log("Plan", "Already up to date.", 35);
+            if (!File.Exists(_config.InstallStatePath))
+            {
+                await WriteInstallStateAsync(remoteManifest, manifestJson, backupRoot: null, cancellationToken);
+            }
         }
         else
         {
@@ -57,10 +63,12 @@ public sealed class LauncherEngine : IDisposable
             await PrepareStagingAsync(plan, remoteManifest, cancellationToken);
 
             Log("Apply", "Applying update with backup...", 70);
-            await ApplyUpdateAsync(plan, cancellationToken);
+            var backupRoot = await ApplyUpdateAsync(plan, localManifest, remoteManifest, cancellationToken);
 
             Log("Manifest", "Writing installed manifest...", 80);
             await JsonFiles.WriteAsync(_config.InstalledManifestPath, remoteManifest, cancellationToken);
+            await WriteInstallStateAsync(remoteManifest, manifestJson, backupRoot, cancellationToken);
+            BackupManager.Prune(_config.BackupDir, _config.MaxBackupCount, message => Log("Backup", message));
         }
 
         if (_config.Packages.Count > 0)
@@ -96,10 +104,25 @@ public sealed class LauncherEngine : IDisposable
     private void Log(string stage, string message, double? percent = null)
     {
         Console.WriteLine(percent.HasValue ? $"[{stage}] {message} ({percent:0}%)" : $"[{stage}] {message}");
+        _fileLogger?.Log(stage, message);
         _progress?.Invoke(new LauncherProgress(stage, message, percent));
     }
 
-    private async Task<LauncherManifest> DownloadManifestAsync(CancellationToken cancellationToken)
+    private async Task WriteInstallStateAsync(LauncherManifest manifest, string manifestJson, string? backupRoot, CancellationToken cancellationToken)
+    {
+        var state = new InstallState
+        {
+            Version = manifest.Version,
+            Channel = manifest.Channel,
+            Environment = _config.Environment,
+            Platform = manifest.Platform,
+            ManifestSha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(manifestJson))).ToLowerInvariant(),
+            LastBackupRoot = backupRoot
+        };
+        await JsonFiles.WriteAsync(_config.InstallStatePath, state, cancellationToken);
+    }
+
+    private async Task<(LauncherManifest Manifest, string Json)> DownloadManifestAsync(CancellationToken cancellationToken)
     {
         using var response = await _httpClient.GetAsync(_config.ManifestUrl, cancellationToken);
         response.EnsureSuccessStatusCode();
@@ -115,7 +138,8 @@ public sealed class LauncherEngine : IDisposable
             Log("Security", "WARNING: manifest signature verification skipped (no signature URL or public key configured).");
         }
 
-        return JsonSerializer.Deserialize<LauncherManifest>(json, JsonFiles.Options) ?? throw new InvalidOperationException("Remote manifest JSON was empty or invalid.");
+        var manifest = JsonSerializer.Deserialize<LauncherManifest>(json, JsonFiles.Options) ?? throw new InvalidOperationException("Remote manifest JSON was empty or invalid.");
+        return (manifest, json);
     }
 
     private async Task<LauncherManifest?> TryLoadLocalManifestAsync(CancellationToken cancellationToken)
@@ -316,10 +340,19 @@ public sealed class LauncherEngine : IDisposable
         throw new IOException($"Failed to delete file '{path}'.", lastError);
     }
 
-    private async Task ApplyUpdateAsync(UpdatePlan plan, CancellationToken cancellationToken)
+    private async Task<string> ApplyUpdateAsync(UpdatePlan plan, LauncherManifest? localManifest, LauncherManifest remoteManifest, CancellationToken cancellationToken)
     {
-        var backupRoot = Path.Combine(_config.BackupDir, DateTime.UtcNow.ToString("yyyyMMddHHmmss"));
-        Directory.CreateDirectory(backupRoot);
+        var backupRoot = BackupManager.CreateBackupRoot(_config.BackupDir);
+        var addedPaths = new List<string>();
+
+        // Capture pre-update metadata first: the installed manifest/state files still describe
+        // the previous version at this point.
+        await BackupManager.WriteBackupMetadataAsync(backupRoot, new BackupInfo
+        {
+            PreviousVersion = localManifest?.Version,
+            NewVersion = remoteManifest.Version
+        }, _config.InstalledManifestPath, _config.InstallStatePath, cancellationToken);
+
         try
         {
             foreach (var relativePath in plan.Remove)
@@ -340,6 +373,7 @@ public sealed class LauncherEngine : IDisposable
                 var installedPath = SafePath.ResolveInsideChecked(_config.InstallDir, file.Path);
                 var backupPath = SafePath.ResolveInside(backupRoot, file.Path);
                 if (File.Exists(installedPath)) BackupFile(installedPath, backupPath);
+                else addedPaths.Add(file.Path);
                 Directory.CreateDirectory(Path.GetDirectoryName(installedPath)!);
                 File.Move(stagingPath, installedPath, overwrite: true);
                 TryMarkExecutable(installedPath, file.Executable);
@@ -351,7 +385,15 @@ public sealed class LauncherEngine : IDisposable
             RestoreBackup(backupRoot, _config.InstallDir);
             throw;
         }
-        await Task.CompletedTask;
+
+        await BackupManager.WriteBackupMetadataAsync(backupRoot, new BackupInfo
+        {
+            PreviousVersion = localManifest?.Version,
+            NewVersion = remoteManifest.Version,
+            AddedPaths = addedPaths
+        }, _config.InstalledManifestPath, _config.InstallStatePath, cancellationToken);
+
+        return backupRoot;
     }
 
     private async Task ProcessPackagesAsync(CancellationToken cancellationToken)
