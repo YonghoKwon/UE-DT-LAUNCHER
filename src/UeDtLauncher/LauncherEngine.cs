@@ -197,18 +197,34 @@ public sealed class LauncherEngine : IDisposable
         if (Directory.Exists(_config.StagingDir)) Directory.Delete(_config.StagingDir, recursive: true);
         Directory.CreateDirectory(_config.StagingDir);
 
-        var total = Math.Max(1, plan.DownloadOrRepair.Count);
-        for (var index = 0; index < plan.DownloadOrRepair.Count; index++)
+        var fileCount = plan.DownloadOrRepair.Count;
+        var totalBytes = plan.DownloadOrRepair.Sum(file => Math.Max(0, file.Size));
+        long completedBytes = 0;
+
+        for (var index = 0; index < fileCount; index++)
         {
             var file = plan.DownloadOrRepair[index];
             cancellationToken.ThrowIfCancellationRequested();
             var stagingPath = SafePath.ResolveInside(_config.StagingDir, file.Path);
             Directory.CreateDirectory(Path.GetDirectoryName(stagingPath)!);
             var downloadUri = ResolveDownloadUri(remote, file);
-            Log("Download", file.Path, 35 + (index / (double)total) * 30);
-            await DownloadWithRetryAsync(downloadUri, stagingPath, file, cancellationToken);
+            Log("Download", $"({index + 1}/{fileCount}) {file.Path}", DownloadPercent(completedBytes, totalBytes));
+
+            var fileBaseBytes = completedBytes;
+            var fileIndex = index + 1;
+            void OnBytes(long bytesForFile) => _progress?.Invoke(new LauncherProgress(
+                "DownloadProgress", file.Path,
+                DownloadPercent(fileBaseBytes + bytesForFile, totalBytes),
+                fileBaseBytes + bytesForFile, totalBytes, fileIndex, fileCount));
+
+            await DownloadWithRetryAsync(downloadUri, stagingPath, file, OnBytes, cancellationToken);
+            completedBytes += Math.Max(0, file.Size);
         }
     }
+
+    // Downloads occupy the 35..65 band of the overall progress bar.
+    private static double DownloadPercent(long bytesDone, long totalBytes) =>
+        totalBytes <= 0 ? 35 : 35 + Math.Clamp(bytesDone / (double)totalBytes, 0, 1) * 30;
 
     private Uri ResolveDownloadUri(LauncherManifest manifest, ManifestFile file)
     {
@@ -217,7 +233,7 @@ public sealed class LauncherEngine : IDisposable
         return new Uri(baseUrl.TrimEnd('/') + "/" + (file.Url ?? file.Path).TrimStart('/'));
     }
 
-    private async Task DownloadWithRetryAsync(Uri uri, string targetPath, ManifestFile file, CancellationToken cancellationToken)
+    private async Task DownloadWithRetryAsync(Uri uri, string targetPath, ManifestFile file, Action<long>? onBytes, CancellationToken cancellationToken)
     {
         Exception? lastError = null;
         var maxAttempts = Math.Max(1, _config.MaxRetryCount);
@@ -225,7 +241,7 @@ public sealed class LauncherEngine : IDisposable
         {
             try
             {
-                await DownloadFileAsync(uri, targetPath, file.Size, cancellationToken);
+                await DownloadFileAsync(uri, targetPath, file.Size, onBytes, cancellationToken);
                 if (!await Hashing.Sha256MatchesAsync(targetPath, file.Sha256, cancellationToken))
                     throw new IOException($"SHA-256 mismatch after download: {file.Path}");
                 return;
@@ -266,7 +282,7 @@ public sealed class LauncherEngine : IDisposable
         return ex is IOException or System.Net.Sockets.SocketException or TaskCanceledException;
     }
 
-    private async Task DownloadFileAsync(Uri uri, string targetPath, long expectedSize, CancellationToken cancellationToken)
+    private async Task DownloadFileAsync(Uri uri, string targetPath, long expectedSize, Action<long>? onBytes, CancellationToken cancellationToken)
     {
         var tempPath = targetPath + ".download";
         var existingLength = File.Exists(tempPath) ? new FileInfo(tempPath).Length : 0;
@@ -285,8 +301,23 @@ public sealed class LauncherEngine : IDisposable
         await using (var source = await response.Content.ReadAsStreamAsync(cancellationToken))
         await using (var target = new FileStream(tempPath, existingLength > 0 ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.None))
         {
-            await source.CopyToAsync(target, cancellationToken);
+            var buffer = new byte[81920];
+            var written = existingLength;
+            var lastReport = Environment.TickCount64;
+            int read;
+            while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
+            {
+                await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                written += read;
+                if (onBytes is not null && Environment.TickCount64 - lastReport >= 200)
+                {
+                    onBytes(written);
+                    lastReport = Environment.TickCount64;
+                }
+            }
+
             await target.FlushAsync(cancellationToken);
+            onBytes?.Invoke(written);
         }
 
         var actualSize = new FileInfo(tempPath).Length;
@@ -406,7 +437,7 @@ public sealed class LauncherEngine : IDisposable
             var archivePath = Path.Combine(packageRoot, package.Id + ".pkg");
             var file = new ManifestFile { Path = package.Id, Url = package.Url, Sha256 = package.Sha256, Size = package.Size };
             Log("Package", $"Downloading package {package.Id}", 84 + index);
-            await DownloadWithRetryAsync(new Uri(package.Url), archivePath, file, cancellationToken);
+            await DownloadWithRetryAsync(new Uri(package.Url), archivePath, file, onBytes: null, cancellationToken);
             var destination = SafePath.ResolveInside(_config.InstallDir, package.ExtractTo);
             await PackageExtractor.ExtractAsync(archivePath, destination, package.Format, message => Log("Package", message), cancellationToken);
         }

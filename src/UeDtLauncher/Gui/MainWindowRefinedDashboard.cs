@@ -32,6 +32,13 @@ public sealed partial class MainWindow : Window
     private TextBlock? _installDetailText;
     private ProgressBar? _progress;
     private StackPanel? _projectList;
+    private readonly List<Button> _actionButtons = new();
+    private FileLogger? _fileLogger;
+
+    // Download speed tracking for the status line.
+    private long _speedLastBytes;
+    private long _speedLastTickMs;
+    private double _speedBytesPerSecond;
 
     private string BaseDir => Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
     private string ConfigPath => ResolvePath(_configPathBox?.Text ?? "launcher.config.json");
@@ -42,6 +49,7 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         LoadConfig();
+        try { _fileLogger = new FileLogger(ResolvePath(_config.LogDir)); } catch { _fileLogger = null; }
         Build();
     }
 
@@ -106,6 +114,7 @@ public sealed partial class MainWindow : Window
 
     private void Build()
     {
+        _actionButtons.Clear(); // controls are recreated below; Track() re-registers them
         Title = IsDeveloper ? "UE-DT Launcher - Developer" : "UE-DT Launcher";
         Width = IsDeveloper ? 1480 : 1280;
         Height = IsDeveloper ? 920 : 830;
@@ -148,7 +157,7 @@ public sealed partial class MainWindow : Window
         var grid = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*,Auto"), RowSpacing = 12 };
         var title = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         title.Children.Add(Txt("배포 선택", 18, true));
-        title.Children.Add(At(SmallButton("↻", async (_, _) => await RefreshCatalog(true)), 1));
+        title.Children.Add(At(Track(SmallButton("↻", async (_, _) => await RefreshCatalog(true))), 1));
         grid.Children.Add(title);
 
         var search = new TextBox { Text = _search, Watermark = "프로젝트 검색", FontSize = 13, Background = B(IsDeveloper ? "#0F172A" : "#F9FAFB"), Foreground = Fg() };
@@ -303,11 +312,64 @@ public sealed partial class MainWindow : Window
 
     private Control GeneralInfo()
     {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*"), ColumnSpacing = 12 };
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*,*"), ColumnSpacing = 12 };
         grid.Children.Add(StatusTile());
-        grid.Children.Add(At(InfoTile("설치 위치", _selectedProject.InstallPath ?? _config.InstallDir, "프로젝트 파일 위치"), 1));
-        grid.Children.Add(At(InfoTile("카탈로그", _catalogState, "실제 사용 가능한 배포 확인"), 2));
+        grid.Children.Add(At(VersionTile(), 1));
+        grid.Children.Add(At(InfoTile("설치 위치", _selectedProject.InstallPath ?? _config.InstallDir, "프로젝트 파일 위치"), 2));
+        grid.Children.Add(At(InfoTile("카탈로그", _catalogState, "실제 사용 가능한 배포 확인"), 3));
         return grid;
+    }
+
+    private Control VersionTile()
+    {
+        var installed = ReadInstalledVersion();
+        var latest = LatestCatalogVersion();
+        var upToDate = installed is not null && latest is not null && string.Equals(installed, latest, StringComparison.OrdinalIgnoreCase);
+        var valueBrush = installed is null ? MutedBrush() : upToDate ? B("#16A34A") : latest is null ? Fg() : B("#F97316");
+        var caption = latest is null
+            ? "최신: 카탈로그 확인 필요"
+            : upToDate ? $"최신: {latest} · 최신 상태입니다"
+            : installed is null ? $"최신: {latest}"
+            : $"최신: {latest} · 업데이트가 있습니다";
+
+        var panel = new StackPanel { Spacing = 6, MinHeight = 92 };
+        panel.Children.Add(Muted("설치 버전", 13));
+        panel.Children.Add(Label(installed ?? "미설치", 17, valueBrush, true));
+        panel.Children.Add(Muted(caption, 12));
+        return Card(panel, 18);
+    }
+
+    private string? ReadInstalledVersion()
+    {
+        try
+        {
+            var statePath = ResolvePath(_config.InstallStatePath);
+            if (File.Exists(statePath))
+            {
+                var state = JsonSerializer.Deserialize<InstallState>(File.ReadAllText(statePath), JsonFiles.Options);
+                if (!string.IsNullOrWhiteSpace(state?.Version)) return state.Version;
+            }
+
+            var manifestPath = ResolvePath(_config.InstalledManifestPath);
+            if (File.Exists(manifestPath))
+            {
+                var manifest = JsonSerializer.Deserialize<LauncherManifest>(File.ReadAllText(manifestPath), JsonFiles.Options);
+                if (!string.IsNullOrWhiteSpace(manifest?.Version)) return manifest.Version;
+            }
+        }
+        catch
+        {
+            // Unreadable local metadata simply shows as "not installed".
+        }
+
+        return null;
+    }
+
+    private string? LatestCatalogVersion()
+    {
+        if (string.Equals(_config.VersionPolicy, "exact", StringComparison.OrdinalIgnoreCase)) return _config.RequestedVersion;
+        var releases = MatchingReleases().ToList();
+        return releases.FirstOrDefault(r => r.IsLatest)?.Version ?? releases.FirstOrDefault()?.Version;
     }
 
     private Control StatusTile()
@@ -324,10 +386,10 @@ public sealed partial class MainWindow : Window
     private Control GeneralActions()
     {
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("2.2*,*"), RowDefinitions = new RowDefinitions("*,*"), ColumnSpacing = 14, RowSpacing = 12, MinHeight = 132 };
-        var run = PrimaryButton("▶ 실행", async (_, _) => await RunAsync(false, true), 132);
+        var run = Track(PrimaryButton("▶ 실행", async (_, _) => await RunAsync(false, true), 132));
         Grid.SetRowSpan(run, 2);
         grid.Children.Add(run);
-        grid.Children.Add(At(SecondaryButton("상태 확인", async (_, _) => await RefreshInstallStatusAsync(), 60), 1));
+        grid.Children.Add(At(Track(SecondaryButton("상태 확인", async (_, _) => await RefreshInstallStatusAsync(), 60)), 1));
         var folder = SecondaryButton("설치 폴더", (_, _) => OpenInstallFolder(), 60);
         Grid.SetColumn(folder, 1); Grid.SetRow(folder, 1); grid.Children.Add(folder);
         return Card(grid, 14);
@@ -337,25 +399,26 @@ public sealed partial class MainWindow : Window
     {
         var panel = new StackPanel { Spacing = 12 };
         var row1 = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*,*,*,*"), ColumnSpacing = 10 };
-        row1.Children.Add(PrimaryButton("▶ 실행", async (_, _) => await RunAsync(false, true), 50));
-        Add(row1, SecondaryButton("업데이트", async (_, _) => await RunAsync(false, false), 50), 1);
-        Add(row1, SecondaryButton("상태 확인", async (_, _) => await RefreshInstallStatusAsync(), 50), 2);
-        Add(row1, SecondaryButton("검증/복구", async (_, _) => await RunAsync(true, false), 50), 3);
+        row1.Children.Add(Track(PrimaryButton("▶ 실행", async (_, _) => await RunAsync(false, true), 50)));
+        Add(row1, Track(SecondaryButton("업데이트", async (_, _) => await RunAsync(false, false), 50)), 1);
+        Add(row1, Track(SecondaryButton("상태 확인", async (_, _) => await RefreshInstallStatusAsync(), 50)), 2);
+        Add(row1, Track(SecondaryButton("검증/복구", async (_, _) => await RunAsync(true, false), 50)), 3);
         Add(row1, SecondaryButton("설치 폴더", (_, _) => OpenInstallFolder(), 50), 4);
-        Add(row1, SecondaryButton("캐시 정리", (_, _) => ClearCache(), 50), 5);
-        var row2 = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*,*,*"), ColumnSpacing = 10 };
+        Add(row1, Track(SecondaryButton("캐시 정리", (_, _) => ClearCache(), 50)), 5);
+        var row2 = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*,*,*,*"), ColumnSpacing = 10 };
         row2.Children.Add(SecondaryButton("로그 ZIP", (_, _) => ExportLogsZip(), 42));
         Add(row2, SecondaryButton("로그 지우기", (_, _) => ClearLog(), 42), 1);
-        Add(row2, SecondaryButton("다시 시도", async (_, _) => await RunAsync(_lastRepair, _lastLaunch), 42), 2);
-        Add(row2, SecondaryButton("백업 정리", (_, _) => CleanupBackups(), 42), 3);
-        Add(row2, SecondaryButton("설정 팝업", (_, _) => DeveloperSettings(), 42), 4);
+        Add(row2, Track(SecondaryButton("다시 시도", async (_, _) => await RunAsync(_lastRepair, _lastLaunch), 42)), 2);
+        Add(row2, Track(SecondaryButton("롤백", async (_, _) => await RollbackLatestAsync(), 42)), 3);
+        Add(row2, Track(SecondaryButton("백업 정리", (_, _) => CleanupBackups(), 42)), 4);
+        Add(row2, SecondaryButton("설정 팝업", (_, _) => DeveloperSettings(), 42), 5);
         panel.Children.Add(row1); panel.Children.Add(row2);
         return Card(panel, 16);
     }
 
     private Control ReleaseInfo()
     {
-        return Card(new StackPanel { Spacing = 8, Children = { Txt("선택된 배포 정보", 18, true), KeyValue("프로젝트", _selectedProject.ProjectId), KeyValue("프로필", _config.ClientProfile), KeyValue("가동/개발", _config.Environment), KeyValue("채널", _config.Channel), KeyValue("버전", _config.VersionPolicy == "exact" ? $"exact / {_config.RequestedVersion ?? "미입력"}" : "latest"), KeyValue("OS", CurrentPlatform), KeyValue("카탈로그", _catalogState), KeyValue("릴리스 노트", _releaseNotes), KeyValue("캐시/백업", StorageSummary()) } }, 18);
+        return Card(new StackPanel { Spacing = 8, Children = { Txt("선택된 배포 정보", 18, true), KeyValue("프로젝트", _selectedProject.ProjectId), KeyValue("프로필", _config.ClientProfile), KeyValue("가동/개발", _config.Environment), KeyValue("채널", _config.Channel), KeyValue("버전 정책", _config.VersionPolicy == "exact" ? $"exact / {_config.RequestedVersion ?? "미입력"}" : "latest"), KeyValue("설치 버전", ReadInstalledVersion() ?? "미설치"), KeyValue("최신 버전", LatestCatalogVersion() ?? "카탈로그 확인 필요"), KeyValue("OS", CurrentPlatform), KeyValue("카탈로그", _catalogState), KeyValue("릴리스 노트", _releaseNotes), KeyValue("캐시/백업", StorageSummary()) } }, 18);
     }
 
     private Control StatusPanel(bool developerLog)
@@ -424,49 +487,99 @@ public sealed partial class MainWindow : Window
     {
         if (_running) return;
         if (IsDeveloper && launch && !await ConfirmDevLaunch()) return;
-        _running = true; _lastRepair = repair; _lastLaunch = launch; Progress(0);
+        _running = true; SetBusy(true); _lastRepair = repair; _lastLaunch = launch; Progress(0); ResetSpeedTracking();
         try
         {
             if (_statusText is not null) _statusText.Text = launch ? "실행 준비 중..." : "업데이트 확인 중...";
             var c = await RunConfig(repair, launch);
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(10, c.HttpTimeoutSeconds)) };
-            await CatalogResolver.ResolveAsync(c, http, UiProgress);
-            using var engine = new LauncherEngine(c, p => Dispatcher.UIThread.Post(() => UiProgress(p.Stage, p.Message, p.Percent)));
-            await engine.RunAsync();
-            Progress(100); if (_statusText is not null) _statusText.Text = launch ? "실행되었습니다." : "최신 상태입니다."; _installState = "최신 상태"; _installDetail = "현재 설치된 파일이 최신 배포 정보와 일치합니다."; UpdateInstallTile();
+            // The whole resolve + update pipeline runs off the UI thread; progress is marshaled back.
+            await Task.Run(async () =>
+            {
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(10, c.HttpTimeoutSeconds)) };
+                await CatalogResolver.ResolveAsync(c, http, (s, m, p) => Dispatcher.UIThread.Post(() => UiProgress(s, m, p)));
+                using var engine = new LauncherEngine(c, p => Dispatcher.UIThread.Post(() => EngineProgress(p)), _fileLogger);
+                await engine.RunAsync();
+            });
+            _installState = "최신 상태"; _installDetail = "현재 설치된 파일이 최신 배포 정보와 일치합니다.";
+            Build(); // refresh the version tile and release info with the new install state
+            Progress(100); if (_statusText is not null) _statusText.Text = launch ? "실행되었습니다." : "최신 상태입니다.";
         }
         catch (Exception ex) { MarkError(ex); }
-        finally { _running = false; }
+        finally { _running = false; SetBusy(false); }
     }
 
     private async Task RefreshInstallStatusAsync()
     {
         if (_running) return;
-        _running = true; Progress(0);
+        _running = true; SetBusy(true); Progress(0);
         try
         {
             if (_statusText is not null) _statusText.Text = "설치 상태 확인 중..."; Progress(5);
             var c = await RunConfig(false, false);
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(10, c.HttpTimeoutSeconds)) };
-            await CatalogResolver.ResolveAsync(c, http, UiProgress);
-            var json = await http.GetStringAsync(c.ManifestUrl);
-            var signatureVerified = await ManifestSignatureVerifier.VerifyIfConfiguredAsync(json, c, http);
-            if (!signatureVerified && c.RequireSignedManifests) throw new InvalidOperationException("requireSignedManifests is enabled, but manifestSignatureUrl or manifestPublicKeyPath is not configured.");
-            var manifest = JsonSerializer.Deserialize<LauncherManifest>(json, JsonFiles.Options) ?? throw new InvalidOperationException("manifest.json을 읽을 수 없습니다.");
-            var missing = 0; var changed = 0;
-            foreach (var file in manifest.Files)
+            var (missing, changed, total, version) = await Task.Run(async () =>
             {
-                var installed = SafePath.ResolveInside(c.InstallDir, file.Path);
-                if (!File.Exists(installed)) { missing++; continue; }
-                if (!await Hashing.Sha256MatchesAsync(installed, file.Sha256)) changed++;
-            }
-            if (missing == manifest.Files.Count) { _installState = "설치 필요"; _installDetail = "아직 설치된 파일을 찾지 못했습니다."; }
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(10, c.HttpTimeoutSeconds)) };
+                await CatalogResolver.ResolveAsync(c, http, (s, m, p) => Dispatcher.UIThread.Post(() => UiProgress(s, m, p)));
+                var json = await http.GetStringAsync(c.ManifestUrl);
+                var signatureVerified = await ManifestSignatureVerifier.VerifyIfConfiguredAsync(json, c, http);
+                if (!signatureVerified && c.RequireSignedManifests) throw new InvalidOperationException("requireSignedManifests is enabled, but manifestSignatureUrl or manifestPublicKeyPath is not configured.");
+                var manifest = JsonSerializer.Deserialize<LauncherManifest>(json, JsonFiles.Options) ?? throw new InvalidOperationException("manifest.json을 읽을 수 없습니다.");
+                var missingCount = 0; var changedCount = 0;
+                foreach (var file in manifest.Files)
+                {
+                    var installed = SafePath.ResolveInside(c.InstallDir, file.Path);
+                    if (!File.Exists(installed)) { missingCount++; continue; }
+                    if (!await Hashing.Sha256MatchesAsync(installed, file.Sha256)) changedCount++;
+                }
+                return (missingCount, changedCount, manifest.Files.Count, manifest.Version);
+            });
+            if (missing == total) { _installState = "설치 필요"; _installDetail = "아직 설치된 파일을 찾지 못했습니다."; }
             else if (missing > 0 || changed > 0) { _installState = "업데이트 가능"; _installDetail = $"누락 {missing}개, 변경 {changed}개 파일이 있습니다."; }
-            else { _installState = "최신 상태"; _installDetail = $"{manifest.Version} 버전이 설치되어 있습니다."; }
+            else { _installState = "최신 상태"; _installDetail = $"{version} 버전이 설치되어 있습니다."; }
             Progress(100); if (_statusText is not null) _statusText.Text = _installState; UpdateInstallTile();
         }
         catch (Exception ex) { MarkError(ex, "상태 확인 실패"); }
-        finally { _running = false; }
+        finally { _running = false; SetBusy(false); }
+    }
+
+    private async Task RollbackLatestAsync()
+    {
+        if (_running) return;
+        var backupDir = ResolvePath(_config.BackupDir);
+        var backups = BackupManager.List(backupDir);
+        if (backups.Count == 0)
+        {
+            AppendLog("롤백할 백업이 없습니다.", true);
+            if (!IsDeveloper) ErrorDialog("롤백 불가", "보관된 백업이 없어 이전 버전으로 되돌릴 수 없습니다.");
+            return;
+        }
+
+        var (backupRoot, info) = backups[0];
+        if (!await ConfirmRollback(Path.GetFileName(backupRoot), info)) return;
+
+        _running = true; SetBusy(true); Progress(0);
+        try
+        {
+            if (_statusText is not null) _statusText.Text = "이전 버전으로 되돌리는 중...";
+            var installDir = ResolvePath(_selectedProject.InstallPath ?? _config.InstallDir);
+            await Task.Run(() => BackupManager.RestoreAsync(backupRoot, installDir, ResolvePath(_config.InstalledManifestPath), ResolvePath(_config.InstallStatePath),
+                m => Dispatcher.UIThread.Post(() => AppendLog("롤백: " + m, true))));
+            _installState = "롤백 완료"; _installDetail = $"{info?.PreviousVersion ?? "이전"} 버전으로 되돌렸습니다. 상태 확인으로 검증하세요.";
+            _fileLogger?.Log("Rollback", $"GUI rollback to backup {Path.GetFileName(backupRoot)} completed.");
+            Build();
+            Progress(100); if (_statusText is not null) _statusText.Text = "롤백이 완료되었습니다.";
+        }
+        catch (Exception ex) { MarkError(ex, "롤백 실패"); }
+        finally { _running = false; SetBusy(false); }
+    }
+
+    private async Task<bool> ConfirmRollback(string backupName, BackupInfo? info)
+    {
+        var dialog = new Window { Title = "이전 버전으로 롤백", Width = 500, Height = 320, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = B(IsDeveloper ? "#0B111A" : "#F5F7FB") };
+        var cancel = SecondaryButton("취소", (_, _) => dialog.Close(false), 42);
+        var ok = PrimaryButton("롤백 실행", (_, _) => dialog.Close(true), 42);
+        dialog.Content = new Border { Padding = new Thickness(22), Child = new StackPanel { Spacing = 12, Children = { Txt("가장 최근 백업으로 되돌릴까요?", 20, true), KeyValue("백업", backupName), KeyValue("되돌릴 버전", info?.PreviousVersion ?? "알 수 없음"), KeyValue("현재(업데이트된) 버전", info?.NewVersion ?? "알 수 없음"), Muted("롤백 후에는 '상태 확인'으로 파일 상태를 검증하는 것을 권장합니다.", 12), new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), ColumnSpacing = 10, Children = { cancel, At(ok, 1) } } } } };
+        return await dialog.ShowDialog<bool>(this);
     }
 
     private async Task<bool> ConfirmDevLaunch()
@@ -475,6 +588,46 @@ public sealed partial class MainWindow : Window
         var cancel = SecondaryButton("취소", (_, _) => dialog.Close(false), 42); var run = PrimaryButton("실행", (_, _) => dialog.Close(true), 42);
         dialog.Content = new Border { Padding = new Thickness(22), Child = new StackPanel { Spacing = 12, Children = { Txt("선택한 개발자 배포를 실행할까요?", 22, true), KeyValue("프로젝트", _selectedProject.ProjectId), KeyValue("가동/개발", _config.Environment), KeyValue("채널", _config.Channel), KeyValue("버전", _config.VersionPolicy == "exact" ? _config.RequestedVersion ?? "미입력" : "latest"), KeyValue("OS", CurrentPlatform), new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), ColumnSpacing = 10, Children = { cancel, At(run, 1) } } } } };
         return await dialog.ShowDialog<bool>(this);
+    }
+
+    private void EngineProgress(LauncherProgress p)
+    {
+        if (p.Stage == "DownloadProgress" && p.TotalBytes is > 0 && p.BytesDownloaded is not null)
+        {
+            UpdateSpeed(p.BytesDownloaded.Value);
+            var overall = Math.Clamp(p.BytesDownloaded.Value / (double)p.TotalBytes.Value * 100, 0, 100);
+            var speedText = _speedBytesPerSecond > 0 ? $"{FormatBytes((long)_speedBytesPerSecond)}/s" : "측정 중";
+            if (_statusText is not null) _statusText.Text = $"다운로드 중 · 파일 {p.FileIndex}/{p.FileCount} · {speedText} · 전체 {overall:0}%";
+            if (p.Percent.HasValue) Progress(p.Percent.Value);
+            return; // byte-level ticks update the status line only, not the log
+        }
+
+        UiProgress(p.Stage, p.Message, p.Percent);
+    }
+
+    private void ResetSpeedTracking() { _speedLastBytes = 0; _speedLastTickMs = 0; _speedBytesPerSecond = 0; }
+
+    private void UpdateSpeed(long bytesDownloaded)
+    {
+        var now = Environment.TickCount64;
+        if (_speedLastTickMs == 0 || bytesDownloaded < _speedLastBytes)
+        {
+            _speedLastTickMs = now; _speedLastBytes = bytesDownloaded;
+            return;
+        }
+
+        var elapsedMs = now - _speedLastTickMs;
+        if (elapsedMs < 400) return; // smooth the reading
+        var instant = (bytesDownloaded - _speedLastBytes) * 1000.0 / elapsedMs;
+        _speedBytesPerSecond = _speedBytesPerSecond <= 0 ? instant : _speedBytesPerSecond * 0.6 + instant * 0.4;
+        _speedLastTickMs = now; _speedLastBytes = bytesDownloaded;
+    }
+
+    private Button Track(Button button) { _actionButtons.Add(button); return button; }
+
+    private void SetBusy(bool busy)
+    {
+        foreach (var button in _actionButtons) button.IsEnabled = !busy;
     }
 
     private void UiProgress(string stage, string message, double? percent)
@@ -502,7 +655,7 @@ public sealed partial class MainWindow : Window
     private void SettingsDialog(bool dev)
     {
         var d = new Window { Title = dev ? "개발자 설정" : "설정", Width = dev ? 640 : 520, Height = dev ? 560 : 460, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = B(dev ? "#0B111A" : "#F5F7FB") };
-        d.Content = new Border { Padding = new Thickness(22), Child = new StackPanel { Spacing = 10, Children = { Txt(dev ? "개발자 설정" : "런처 설정", 24, true), KeyValue("설정 파일", ConfigPath), KeyValue("프로젝트", _selectedProject.ProjectId), KeyValue("가동/개발", _config.Environment), KeyValue("채널", _config.Channel), KeyValue("버전", _config.VersionPolicy == "exact" ? _config.RequestedVersion : _config.VersionPolicy), KeyValue("OS", CurrentPlatform), KeyValue("캐시/백업", StorageSummary()), SecondaryButton("설치 폴더 열기", (_, _) => OpenInstallFolder(), 40), SecondaryButton("로그 ZIP 저장", (_, _) => ExportLogsZip(), 40), SecondaryButton("설정 새로고침", (_, _) => { LoadConfig(); Build(); }, 40), SecondaryButton("닫기", (_, _) => d.Close(), 40) } } };
+        d.Content = new Border { Padding = new Thickness(22), Child = new StackPanel { Spacing = 10, Children = { Txt(dev ? "개발자 설정" : "런처 설정", 24, true), KeyValue("설정 파일", ConfigPath), KeyValue("프로젝트", _selectedProject.ProjectId), KeyValue("가동/개발", _config.Environment), KeyValue("채널", _config.Channel), KeyValue("버전", _config.VersionPolicy == "exact" ? _config.RequestedVersion : _config.VersionPolicy), KeyValue("OS", CurrentPlatform), KeyValue("설치 버전", ReadInstalledVersion() ?? "미설치"), KeyValue("캐시/백업", StorageSummary()), SecondaryButton("설치 폴더 열기", (_, _) => OpenInstallFolder(), 40), SecondaryButton("이전 버전으로 롤백", async (_, _) => { d.Close(); await RollbackLatestAsync(); }, 40), SecondaryButton("로그 ZIP 저장", (_, _) => ExportLogsZip(), 40), SecondaryButton("설정 새로고침", (_, _) => { LoadConfig(); Build(); }, 40), SecondaryButton("닫기", (_, _) => d.Close(), 40) } } };
         d.Show(this);
     }
 
@@ -511,7 +664,7 @@ public sealed partial class MainWindow : Window
     private void CleanupBackups() { try { var p = ResolvePath(_config.BackupDir); BackupManager.Prune(p, _config.MaxBackupCount, m => AppendLog("백업 정리: " + m, true)); AppendLog($"백업을 정리했습니다. 최근 {_config.MaxBackupCount}개는 롤백을 위해 보관합니다.", true); } catch (Exception ex) { AppendLog("백업 정리 실패: " + FriendlyError(ex), true); } }
     private void ClearLog() { if (_logBox is not null) _logBox.Text = string.Empty; }
     private string SaveLogFile() { var dir = Path.Combine(BaseDir, "logs"); Directory.CreateDirectory(dir); var path = Path.Combine(dir, $"launcher-{DateTime.Now:yyyyMMdd-HHmmss}.log"); File.WriteAllText(path, _logBox?.Text ?? string.Empty); return path; }
-    private void ExportLogsZip() { try { SaveLogFile(); var dir = Path.Combine(BaseDir, "logs"); var zip = Path.Combine(dir, $"launcher-logs-{DateTime.Now:yyyyMMdd-HHmmss}.zip"); ZipFile.CreateFromDirectory(dir, zip); AppendLog("로그 ZIP 저장 완료: " + zip, true); } catch (Exception ex) { AppendLog("로그 ZIP 저장 실패: " + FriendlyError(ex), true); } }
+    private void ExportLogsZip() { try { SaveLogFile(); var dir = Path.Combine(BaseDir, "logs"); var zip = Path.Combine(BaseDir, $"launcher-logs-{DateTime.Now:yyyyMMdd-HHmmss}.zip"); ZipFile.CreateFromDirectory(dir, zip); AppendLog("로그 ZIP 저장 완료: " + zip, true); } catch (Exception ex) { AppendLog("로그 ZIP 저장 실패: " + FriendlyError(ex), true); } }
     private string StorageSummary() => $"캐시 {FormatBytes(DirSize(ResolvePath(_config.StagingDir)))} / 백업 {FormatBytes(DirSize(ResolvePath(_config.BackupDir)))}";
     private static long DirSize(string path) { try { return Directory.Exists(path) ? Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories).Sum(f => new FileInfo(f).Length) : 0; } catch { return 0; } }
     private static string FormatBytes(long b) { string[] u = { "B", "KB", "MB", "GB", "TB" }; double v = b; var i = 0; while (v >= 1024 && i < u.Length - 1) { v /= 1024; i++; } return $"{v:0.##} {u[i]}"; }
@@ -534,5 +687,17 @@ public sealed partial class MainWindow : Window
     private static Control At(Control c, int col) { Grid.SetColumn(c, col); return c; }
     private static Control AtRow(Control c, int row) { Grid.SetRow(c, row); return c; }
     private static void Add(Grid g, Control c, int col) { Grid.SetColumn(c, col); g.Children.Add(c); }
-    private void AppendLog(string msg, bool force = false) { if (_logBox is null) return; if (!IsDeveloper && !force && _logBox.Text?.Contains(msg, StringComparison.OrdinalIgnoreCase) == true) return; _logBox.Text += $"{DateTime.Now:HH:mm:ss} {msg}{Environment.NewLine}"; _logBox.CaretIndex = _logBox.Text?.Length ?? 0; }
+    private const int MaxLogLines = 500;
+
+    private void AppendLog(string msg, bool force = false)
+    {
+        _fileLogger?.Log("UI", msg);
+        if (_logBox is null) return;
+        var text = _logBox.Text ?? string.Empty;
+        text += $"{DateTime.Now:HH:mm:ss} {msg}{Environment.NewLine}";
+        var lines = text.Split(Environment.NewLine);
+        if (lines.Length > MaxLogLines) text = string.Join(Environment.NewLine, lines[^MaxLogLines..]);
+        _logBox.Text = text;
+        _logBox.CaretIndex = _logBox.Text?.Length ?? 0;
+    }
 }

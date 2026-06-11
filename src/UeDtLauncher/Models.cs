@@ -191,4 +191,11 @@ public sealed class UpdatePlan
     public bool HasChanges => DownloadOrRepair.Count > 0 || Remove.Count > 0;
 }
 
-public sealed record LauncherProgress(string Stage, string Message, double? Percent = null);
+public sealed record LauncherProgress(
+    string Stage,
+    string Message,
+    double? Percent = null,
+    long? BytesDownloaded = null,
+    long? TotalBytes = null,
+    int? FileIndex = null,
+    int? FileCount = null);
