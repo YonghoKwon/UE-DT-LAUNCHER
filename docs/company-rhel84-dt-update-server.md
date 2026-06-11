@@ -1,5 +1,7 @@
 # Company RHEL 8.4 `/dt` Update Server Runbook
 
+> **참고:** 이 문서의 최신 정본은 [guide-01-linux-server-setup.md](guide-01-linux-server-setup.md)입니다. 내용이 다를 경우 정본을 따르세요.
+
 이 문서는 `feature/launcher-production-hardening` 브랜치의 실제 런처 스키마에 맞춰 회사 RHEL 8.4 가상 서버에 UE-DT Launcher 업데이트 서버를 구축하는 절차입니다.
 
 검증된 런처 흐름:

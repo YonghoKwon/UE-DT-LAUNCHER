@@ -243,16 +243,27 @@ public static class Program
             ManifestUrl = "https://your-update-server.example.com/windows-x64/manifest.json",
             ManifestSignatureUrl = "https://your-update-server.example.com/windows-x64/manifest.json.sig",
             ManifestPublicKeyPath = "manifest-public-key.pem",
+            RequireSignedManifests = false,
             InstallDir = "app",
             StagingDir = ".staging",
             BackupDir = ".backup",
             InstalledManifestPath = "installed-manifest.json",
+            InstallStatePath = "install-state.json",
+            AppPidPath = "app.pid",
+            LogDir = "logs",
+            MaxBackupCount = 3,
             LaunchAfterUpdate = true,
             RepairMode = false,
             RemoveFilesNotInManifest = false,
             MaxRetryCount = 3,
             HttpTimeoutSeconds = 300,
             LaunchArguments = new[] { "-log" },
+            ServiceMode = new ServiceModeConfig
+            {
+                IntervalSeconds = 300,
+                AutoRestartApp = true,
+                ProcessName = null
+            },
             WindowsIntegration = new WindowsIntegrationConfig
             {
                 CreateDesktopShortcut = false,

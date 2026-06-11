@@ -73,11 +73,24 @@ publish/linux-x64/UeDtLauncher
 - repair 모드
 - ZIP 패키지 다운로드/압축 해제
 - 7z 패키지 다운로드/압축 해제. 단, `7z`, `7zz`, `7za` 실행 파일이 PATH에 있어야 함
-- 런처 자기 자신 업데이트 준비 기능
+- 런처 자기 자신 업데이트 (`selfUpdate.autoApply` 활성 시 다음 실행에서 자동 교체)
 - Windows 바탕화면/시작 메뉴 shortcut 생성 옵션
-- manifest 생성 명령
+- manifest 생성 명령 (`--app-id` 지원)
+- catalog 릴리스 등록/제거 명령 (`update-catalog`)
 - catalog/manifest 서명 생성 명령
 - sample config 생성 명령
+- `requireSignedManifests` 서명 강제 옵션 (서명 미설정 시 명시적 경고 로그)
+- 디스크 여유 공간 사전 확인
+- 동일 설치 폴더 다중 실행 잠금
+- 일시 오류만 지수 백오프로 재시도 (404/403 등 4xx는 즉시 실패)
+- ZIP/7z 추출 경로 검증 및 설치 폴더 내 symlink 차단
+- 일별 파일 로그 (`logs/launcher-YYYYMMDD.log`, 14일 보관)
+- 설치 버전 기록 (`install-state.json`) 및 백업 보존 개수 관리 (`maxBackupCount`)
+- 이전 버전 롤백: CLI `rollback` 명령 + GUI 롤백 버튼
+- 무인 서버용 서비스 모드: `service` 명령 (주기 확인 → 앱 정지 → 업데이트 → 재실행)
+- GUI: 설치/최신 버전 나란히 표시, 다운로드 속도·파일 n/m·전체 % 진행률, 작업 중 버튼 비활성화
+- 리눅스 퍼블리싱 도구: `tools/*.sh` + rsync/scp 원격 업로드 (`--remote`)
+- xUnit 테스트 스위트 + CI 테스트 실행
 
 ## GUI 사용법
 
@@ -123,22 +136,23 @@ publish/linux-x64/UeDtLauncher
 
 ## 문서
 
-Red Hat 8.4/Nginx 기반 다중 프로젝트 업데이트 서버 구성은 아래 문서를 보세요.
+처음 도입한다면 아래 **가이드 3부작**을 순서대로 보세요. 서버 구축부터 릴리스 배포, 클라이언트 운영까지 전 과정을 다룹니다.
+
+| 가이드 | 내용 |
+| --- | --- |
+| [docs/guide-01-linux-server-setup.md](docs/guide-01-linux-server-setup.md) | 리눅스(RHEL 8.4) 업데이트 서버 세팅: 디렉터리 구조, nginx, 인증, SELinux, 서명 키, 동작 확인 |
+| [docs/guide-02-publish-package.md](docs/guide-02-publish-package.md) | 패키징 파일 업로드: 리눅스 직접/Windows 원격 퍼블리시, 시나리오별 예시, 서명, 확인 체크리스트 |
+| [docs/guide-03-launcher-usage.md](docs/guide-03-launcher-usage.md) | 런처 사용법: 설정 전체 필드, GUI(일반/개발자), CLI 레퍼런스, 무인 서버 운영, 문제 해결 |
+
+보조 문서:
 
 ```text
-docs/redhat-distribution-server.md
-```
-
-회사 RHEL 8.4 가상 서버의 `/dt` 경로에 nginx 업데이트 서버를 구축하는 실전 절차는 아래 문서를 보세요.
-
-```text
-docs/company-rhel84-dt-update-server.md
-```
-
-런처 UI 커스터마이징은 아래 문서를 보세요.
-
-```text
-docs/launcher-ui-customization.md
+docs/service-mode.md                  # 픽셀 스트리밍 서버/무인 PC용 서비스 모드 상세 (systemd/NSSM)
+docs/launcher-ui-customization.md     # 런처 UI 커스터마이징
+docs/release-publish-scripts.md       # 퍼블리시 스크립트 상세
+docs/redhat-distribution-server.md    # (구) 서버 구성 문서 — guide-01이 정본
+docs/company-rhel84-dt-update-server.md # (구) 회사 /dt 경로 실전 절차 — guide-01이 정본
+docs/offline-linux-update-server-setup.md # (구) 오프라인 서버 구성 — guide-01이 정본
 ```
 
 예시 파일:
@@ -355,6 +369,19 @@ Linux CLI:
 
 ```powershell
 .\publish\win-x64\UeDtLauncher.exe run --config launcher.config.json --no-launch
+```
+
+이전 버전으로 롤백:
+
+```powershell
+.\publish\win-x64\UeDtLauncher.exe rollback --config launcher.config.json --list
+.\publish\win-x64\UeDtLauncher.exe rollback --config launcher.config.json
+```
+
+무인 서버(픽셀 스트리밍) 서비스 모드 — 자세한 내용은 `docs/service-mode.md`:
+
+```bash
+./publish/linux-x64/UeDtLauncher service --config launcher.config.json --interval 300
 ```
 
 ## manifest 생성
