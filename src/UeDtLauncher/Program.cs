@@ -91,7 +91,11 @@ public static class Program
             e.Cancel = true; // shut the loop down cleanly instead of killing the process
             cts.Cancel();
         };
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => cts.Cancel(); // systemd stop sends SIGTERM
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        {
+            // systemd stop sends SIGTERM; the source may already be disposed on normal exit.
+            try { cts.Cancel(); } catch (ObjectDisposedException) { }
+        };
 
         return await ServiceRunner.RunAsync(configPath, interval, once, cts.Token);
     }
