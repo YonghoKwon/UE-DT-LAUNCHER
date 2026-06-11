@@ -29,8 +29,10 @@ public sealed class LauncherConfig
     public string BackupDir { get; set; } = ".backup";
     public string InstalledManifestPath { get; set; } = "installed-manifest.json";
     public string InstallStatePath { get; set; } = "install-state.json";
+    public string AppPidPath { get; set; } = "app.pid";
     public string LogDir { get; set; } = "logs";
     public int MaxBackupCount { get; set; } = 3;
+    public ServiceModeConfig? ServiceMode { get; set; }
     public bool LaunchAfterUpdate { get; set; } = true;
     public bool RepairMode { get; set; }
     public bool RemoveFilesNotInManifest { get; set; }
@@ -149,6 +151,23 @@ public sealed class ManifestFile
     public long Size { get; set; }
     public string? Url { get; set; }
     public bool Executable { get; set; }
+}
+
+/// <summary>Settings for headless service mode (e.g. unattended pixel streaming servers).</summary>
+public sealed class ServiceModeConfig
+{
+    public int IntervalSeconds { get; set; } = 300;
+    public bool AutoRestartApp { get; set; } = true;
+    // Fallback process name used to find a running app when the pid file is missing or stale.
+    public string? ProcessName { get; set; }
+}
+
+/// <summary>Written next to the install state when the launcher starts the app, so service mode can manage it.</summary>
+public sealed class AppPidInfo
+{
+    public int Pid { get; set; }
+    public string EntryPoint { get; set; } = string.Empty;
+    public string StartedAtUtc { get; set; } = DateTimeOffset.UtcNow.ToString("O");
 }
 
 /// <summary>Snapshot of what is currently installed; used by rollback and service mode.</summary>

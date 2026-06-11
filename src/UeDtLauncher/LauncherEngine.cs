@@ -463,7 +463,20 @@ public sealed class LauncherEngine : IDisposable
             UseShellExecute = false
         };
         foreach (var arg in _config.LaunchArguments ?? Array.Empty<string>()) startInfo.ArgumentList.Add(arg);
-        Process.Start(startInfo);
+        var process = Process.Start(startInfo);
+        if (process is not null) WriteAppPidFile(process.Id, entryPoint);
+    }
+
+    private void WriteAppPidFile(int pid, string entryPoint)
+    {
+        try
+        {
+            JsonFiles.WriteAsync(_config.AppPidPath, new AppPidInfo { Pid = pid, EntryPoint = entryPoint }).GetAwaiter().GetResult();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Log("Launch", $"Could not write app pid file ({_config.AppPidPath}): {ex.Message}");
+        }
     }
 
     internal static void ValidateManifest(LauncherManifest manifest)

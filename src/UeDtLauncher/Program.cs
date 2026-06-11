@@ -39,6 +39,7 @@ public static class Program
             return command switch
             {
                 "run" => await RunLauncherAsync(args.Skip(1).ToArray()),
+                "service" => await RunServiceAsync(args.Skip(1).ToArray()),
                 "rollback" => await RollbackAsync(args.Skip(1).ToArray()),
                 "generate-manifest" => await GenerateManifestAsync(args.Skip(1).ToArray()),
                 "update-catalog" => await UpdateCatalogAsync(args.Skip(1).ToArray()),
@@ -70,6 +71,29 @@ public static class Program
         using var engine = new LauncherEngine(config, progress: null, fileLogger);
         await engine.RunAsync();
         return 0;
+    }
+
+    private static async Task<int> RunServiceAsync(string[] args)
+    {
+        var configPath = Get(args, "--config") ?? "launcher.config.json";
+        var once = Has(args, "--once");
+        int? interval = null;
+        var intervalArg = Get(args, "--interval");
+        if (!string.IsNullOrWhiteSpace(intervalArg))
+        {
+            if (!int.TryParse(intervalArg, out var parsed) || parsed <= 0) throw new ArgumentException("--interval must be a positive number of seconds.");
+            interval = parsed;
+        }
+
+        using var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true; // shut the loop down cleanly instead of killing the process
+            cts.Cancel();
+        };
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => cts.Cancel(); // systemd stop sends SIGTERM
+
+        return await ServiceRunner.RunAsync(configPath, interval, once, cts.Token);
     }
 
     private static async Task<int> RollbackAsync(string[] args)
@@ -273,6 +297,7 @@ public static class Program
         Console.WriteLine("  update-catalog --catalog <catalog.json> --project-id <id> --version <version> --environment <prod|dev> --channel <stable|beta|dev> --platform <windows-x64|linux-x64> --manifest-url <url> [--display-name <name>] [--allowed-profiles general,developer] [--notes <text>] [--set-latest] [--remove] [--remove-project-if-empty]");
         Console.WriteLine("  sign-manifest --manifest <manifest.json> --private-key <private.pem> --output <manifest.json.sig>");
         Console.WriteLine("  run --config launcher.config.json [--repair] [--no-launch]");
+        Console.WriteLine("  service --config launcher.config.json [--interval <seconds>] [--once]");
         Console.WriteLine("  rollback --config launcher.config.json [--list] [--backup <timestamp>]");
     }
 }
