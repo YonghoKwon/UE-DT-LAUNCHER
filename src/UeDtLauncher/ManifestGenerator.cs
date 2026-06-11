@@ -2,7 +2,7 @@ namespace UeDtLauncher;
 
 public static class ManifestGenerator
 {
-    public static async Task GenerateAsync(string packageDir, string outputPath, string baseUrl, string entryPoint, string version, string channel, string platform, CancellationToken cancellationToken = default)
+    public static async Task GenerateAsync(string packageDir, string outputPath, string baseUrl, string entryPoint, string version, string channel, string platform, string? appId = null, CancellationToken cancellationToken = default)
     {
         var root = Path.GetFullPath(packageDir);
         if (!Directory.Exists(root))
@@ -12,7 +12,7 @@ public static class ManifestGenerator
 
         var manifest = new LauncherManifest
         {
-            AppId = "ue-dt-app",
+            AppId = string.IsNullOrWhiteSpace(appId) ? "ue-dt-app" : appId,
             Version = version,
             Channel = channel,
             Platform = platform,

@@ -41,6 +41,7 @@ public static class Program
                 "run" => await RunLauncherAsync(args.Skip(1).ToArray()),
                 "rollback" => await RollbackAsync(args.Skip(1).ToArray()),
                 "generate-manifest" => await GenerateManifestAsync(args.Skip(1).ToArray()),
+                "update-catalog" => await UpdateCatalogAsync(args.Skip(1).ToArray()),
                 "sample-config" => await WriteSampleConfigAsync(args.Skip(1).ToArray()),
                 "sign-manifest" => await SignManifestAsync(args.Skip(1).ToArray()),
                 _ => UnknownCommand(command)
@@ -138,8 +139,50 @@ public static class Program
         var version = Get(args, "--version") ?? "1.0.0";
         var channel = Get(args, "--channel") ?? "stable";
         var platform = Get(args, "--platform") ?? (OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64");
+        var appId = Get(args, "--app-id");
 
-        await ManifestGenerator.GenerateAsync(packageDir, output, baseUrl, entryPoint, version, channel, platform);
+        await ManifestGenerator.GenerateAsync(packageDir, output, baseUrl, entryPoint, version, channel, platform, appId);
+        return 0;
+    }
+
+    private static async Task<int> UpdateCatalogAsync(string[] args)
+    {
+        var catalogPath = Required(args, "--catalog");
+        var projectId = Required(args, "--project-id");
+        var version = Required(args, "--version");
+        var environment = Get(args, "--environment") ?? "prod";
+        var channel = Get(args, "--channel") ?? "stable";
+        var platform = Get(args, "--platform") ?? (OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64");
+
+        if (Has(args, "--remove"))
+        {
+            await CatalogUpdater.RemoveReleaseAsync(catalogPath, projectId, version, environment, channel, platform, Has(args, "--remove-project-if-empty"));
+            Console.WriteLine($"Release removed (if present): {projectId} {version} {environment}/{channel}/{platform}");
+            Console.WriteLine($"Catalog updated: {catalogPath}");
+            return 0;
+        }
+
+        var profiles = (Get(args, "--allowed-profiles") ?? "general")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+
+        await CatalogUpdater.UpsertReleaseAsync(catalogPath, new CatalogReleaseUpdate
+        {
+            ProjectId = projectId,
+            DisplayName = Get(args, "--display-name") ?? projectId,
+            Version = version,
+            Environment = environment,
+            Channel = channel,
+            Platform = platform,
+            ManifestUrl = Required(args, "--manifest-url"),
+            ManifestSignatureUrl = Get(args, "--manifest-signature-url"),
+            AllowedClientProfiles = profiles,
+            Notes = Get(args, "--notes"),
+            SetLatest = Has(args, "--set-latest")
+        });
+
+        Console.WriteLine($"Release upserted: {projectId} {version} {environment}/{channel}/{platform} (profiles: {string.Join(",", profiles)})");
+        Console.WriteLine($"Catalog updated: {catalogPath}");
         return 0;
     }
 
@@ -226,7 +269,8 @@ public static class Program
         Console.WriteLine("Commands:");
         Console.WriteLine("  gui");
         Console.WriteLine("  sample-config --output launcher.config.json");
-        Console.WriteLine("  generate-manifest --package-dir <dir> --base-url <url> --entry-point <relative path> --version <version> --output <manifest.json>");
+        Console.WriteLine("  generate-manifest --package-dir <dir> --base-url <url> --entry-point <relative path> --version <version> [--app-id <id>] --output <manifest.json>");
+        Console.WriteLine("  update-catalog --catalog <catalog.json> --project-id <id> --version <version> --environment <prod|dev> --channel <stable|beta|dev> --platform <windows-x64|linux-x64> --manifest-url <url> [--display-name <name>] [--allowed-profiles general,developer] [--notes <text>] [--set-latest] [--remove] [--remove-project-if-empty]");
         Console.WriteLine("  sign-manifest --manifest <manifest.json> --private-key <private.pem> --output <manifest.json.sig>");
         Console.WriteLine("  run --config launcher.config.json [--repair] [--no-launch]");
         Console.WriteLine("  rollback --config launcher.config.json [--list] [--backup <timestamp>]");

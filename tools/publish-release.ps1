@@ -44,7 +44,11 @@ param(
 
     [switch]$CleanFiles,
 
-    [switch]$NoCopy
+    [switch]$NoCopy,
+
+    # Optional remote upload target, e.g. "deploy@updates.example.com:/srv/ue-dt-updates".
+    # Requires rsync or scp+ssh available on this machine (e.g. Git for Windows, OpenSSH).
+    [string]$Remote = $null
 )
 
 Set-StrictMode -Version 2.0
@@ -117,6 +121,44 @@ if ($SetLatest) {
 }
 
 & $updateCatalog @catalogArgs
+
+if (![string]::IsNullOrWhiteSpace($Remote)) {
+    $separatorIndex = $Remote.IndexOf(":")
+    if ($separatorIndex -lt 1) {
+        throw "Remote must look like user@host:/srv/ue-dt-updates"
+    }
+    $remoteHost = $Remote.Substring(0, $separatorIndex)
+    $remoteRoot = $Remote.Substring($separatorIndex + 1)
+
+    $rsync = Get-Command rsync -ErrorAction SilentlyContinue
+    $scp = Get-Command scp -ErrorAction SilentlyContinue
+    $ssh = Get-Command ssh -ErrorAction SilentlyContinue
+    if ($null -eq $ssh -or ($null -eq $rsync -and $null -eq $scp)) {
+        throw "Remote upload requires ssh plus rsync or scp on this machine."
+    }
+
+    Write-Host "Uploading release to $Remote ..."
+    & $ssh.Source $remoteHost "mkdir -p '$remoteRoot/$releaseRelative' '$remoteRoot/catalogs/$CatalogProfile'"
+    if ($LASTEXITCODE -ne 0) { throw "ssh mkdir failed with exit code $LASTEXITCODE" }
+
+    $catalogDir = Split-Path -Parent $catalogPath
+    if ($null -ne $rsync) {
+        # rsync on Windows expects cygwin-style paths from Git Bash; forward slashes work for both.
+        $releaseSrc = ($releaseDir -replace "\\", "/") + "/"
+        $catalogSrc = ($catalogDir -replace "\\", "/") + "/"
+        & $rsync.Source -az --delete $releaseSrc "${remoteHost}:$remoteRoot/$releaseRelative/"
+        if ($LASTEXITCODE -ne 0) { throw "rsync release upload failed with exit code $LASTEXITCODE" }
+        & $rsync.Source -az $catalogSrc "${remoteHost}:$remoteRoot/catalogs/$CatalogProfile/"
+        if ($LASTEXITCODE -ne 0) { throw "rsync catalog upload failed with exit code $LASTEXITCODE" }
+    }
+    else {
+        & $scp.Source -r (Join-Path $releaseDir "*") "${remoteHost}:$remoteRoot/$releaseRelative/"
+        if ($LASTEXITCODE -ne 0) { throw "scp release upload failed with exit code $LASTEXITCODE" }
+        & $scp.Source -r (Join-Path $catalogDir "*") "${remoteHost}:$remoteRoot/catalogs/$CatalogProfile/"
+        if ($LASTEXITCODE -ne 0) { throw "scp catalog upload failed with exit code $LASTEXITCODE" }
+    }
+    Write-Host "Upload completed."
+}
 
 Write-Host "Release published"
 Write-Host "  ServerRoot : $ServerRoot"
