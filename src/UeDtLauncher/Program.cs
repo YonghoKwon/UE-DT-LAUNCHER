@@ -62,6 +62,8 @@ public static class Program
                 "rollback" => await RollbackAsync(args.Skip(1).ToArray()),
                 "generate-manifest" => await GenerateManifestAsync(args.Skip(1).ToArray()),
                 "update-catalog" => await UpdateCatalogAsync(args.Skip(1).ToArray()),
+                "list-releases" => await ListReleasesAsync(args.Skip(1).ToArray()),
+                "generate-nginx-acl" => await GenerateNginxAclAsync(args.Skip(1).ToArray()),
                 "sample-config" => await WriteSampleConfigAsync(args.Skip(1).ToArray()),
                 "sign-manifest" => await SignManifestAsync(args.Skip(1).ToArray()),
                 _ => UnknownCommand(command)
@@ -188,6 +190,13 @@ public static class Program
         var platform = Get(args, "--platform") ?? (OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64");
         var appId = Get(args, "--app-id");
 
+        KnownValues.ValidatePlatform(platform);
+        KnownValues.ValidateChannel(channel);
+        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var baseUri) || (baseUri.Scheme != Uri.UriSchemeHttp && baseUri.Scheme != Uri.UriSchemeHttps))
+        {
+            Console.Error.WriteLine($"WARNING: --base-url should be an absolute http(s) URL the client can reach (got '{baseUrl}'). Manifest file URLs are built from it.");
+        }
+
         await ManifestGenerator.GenerateAsync(packageDir, output, baseUrl, entryPoint, version, channel, platform, appId);
         return 0;
     }
@@ -200,6 +209,8 @@ public static class Program
         var environment = Get(args, "--environment") ?? "prod";
         var channel = Get(args, "--channel") ?? "stable";
         var platform = Get(args, "--platform") ?? (OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64");
+
+        KnownValues.ValidateReleaseTuple(platform, environment, channel);
 
         if (Has(args, "--remove"))
         {
@@ -230,6 +241,56 @@ public static class Program
 
         Console.WriteLine($"Release upserted: {projectId} {version} {environment}/{channel}/{platform} (profiles: {string.Join(",", profiles)})");
         Console.WriteLine($"Catalog updated: {catalogPath}");
+        return 0;
+    }
+
+    private static async Task<int> ListReleasesAsync(string[] args)
+    {
+        var catalogPath = Required(args, "--catalog");
+        var projectFilter = Get(args, "--project");
+        var catalog = await JsonFiles.ReadAsync<DistributionCatalog>(catalogPath);
+
+        var projects = catalog.Projects
+            .Where(p => string.IsNullOrWhiteSpace(projectFilter) || string.Equals(p.ProjectId, projectFilter, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (projects.Count == 0)
+        {
+            Console.WriteLine(string.IsNullOrWhiteSpace(projectFilter) ? "Catalog has no projects." : $"Project not found: {projectFilter}");
+            return 0;
+        }
+
+        foreach (var project in projects)
+        {
+            Console.WriteLine($"{project.ProjectId}  ({project.DisplayName})  — {project.Releases.Count} release(s)");
+            foreach (var r in project.Releases.OrderBy(r => r.Environment).ThenBy(r => r.Channel).ThenBy(r => r.Platform).ThenBy(r => r.Version))
+            {
+                var latest = r.IsLatest ? " [latest]" : string.Empty;
+                Console.WriteLine($"  {r.Version,-14} {r.Environment,-5}/{r.Channel,-7}/{r.Platform,-12} profiles=[{string.Join(",", r.AllowedClientProfiles)}]{latest}");
+            }
+        }
+
+        return 0;
+    }
+
+    private static async Task<int> GenerateNginxAclAsync(string[] args)
+    {
+        var allowlistPath = Required(args, "--allowlist");
+        var output = Get(args, "--output");
+        var allowlist = await JsonFiles.ReadAsync<ProjectIpAllowlist>(allowlistPath);
+        var config = NginxAclGenerator.Generate(allowlist);
+
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            Console.WriteLine(config);
+        }
+        else
+        {
+            await File.WriteAllTextAsync(output, config);
+            Console.WriteLine($"Nginx per-project IP ACL written: {output}");
+            Console.WriteLine("Include it ABOVE the generic /projects/ location blocks, then: sudo nginx -t && sudo systemctl reload nginx");
+        }
+
         return 0;
     }
 
@@ -329,6 +390,8 @@ public static class Program
         Console.WriteLine("  sample-config --output launcher.config.json");
         Console.WriteLine("  generate-manifest --package-dir <dir> --base-url <url> --entry-point <relative path> --version <version> [--app-id <id>] --output <manifest.json>");
         Console.WriteLine("  update-catalog --catalog <catalog.json> --project-id <id> --version <version> --environment <prod|dev> --channel <stable|beta|dev> --platform <windows-x64|linux-x64> --manifest-url <url> [--display-name <name>] [--allowed-profiles general,developer] [--notes <text>] [--set-latest] [--remove] [--remove-project-if-empty]");
+        Console.WriteLine("  list-releases --catalog <catalog.json> [--project <id>]");
+        Console.WriteLine("  generate-nginx-acl --allowlist <project-ip-allowlist.json> [--output <acl.conf>]");
         Console.WriteLine("  sign-manifest --manifest <manifest.json> --private-key <private.pem> --output <manifest.json.sig>");
         Console.WriteLine("  run --config launcher.config.json [--repair] [--no-launch]");
         Console.WriteLine("  service --config launcher.config.json [--interval <seconds>] [--once]");

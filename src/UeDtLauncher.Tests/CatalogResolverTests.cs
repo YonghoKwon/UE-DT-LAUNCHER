@@ -134,6 +134,30 @@ public class CatalogResolverTests
         Assert.Throws<InvalidOperationException>(() => CatalogResolver.SelectRelease(catalog, Config(platform: "linux-x64")));
     }
 
+    [Fact]
+    public void SelectRelease_NoMatch_MessageListsAvailableReleasesAndPlatformHint()
+    {
+        // Mimics the real "windows-64" typo: catalog has windows-64, client wants windows-x64.
+        var catalog = BuildCatalog(Release("0.0.1", platform: "windows-64", isLatest: true));
+        var ex = Assert.Throws<InvalidOperationException>(() => CatalogResolver.SelectRelease(catalog, Config(platform: "windows-x64")));
+
+        Assert.Contains("0.0.1", ex.Message);
+        Assert.Contains("windows-64", ex.Message);   // what the catalog has
+        Assert.Contains("windows-x64", ex.Message);  // what the client requested
+        Assert.Contains("platform", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Hint", ex.Message);
+    }
+
+    [Fact]
+    public void SelectRelease_ExactVersionMissing_MessageListsAvailableVersions()
+    {
+        var catalog = BuildCatalog(Release("1.0.0"), Release("1.1.0"));
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            CatalogResolver.SelectRelease(catalog, Config(versionPolicy: "exact", requestedVersion: "9.9.9")));
+        Assert.Contains("1.0.0", ex.Message);
+        Assert.Contains("1.1.0", ex.Message);
+    }
+
     [Theory]
     [InlineData("linux-x64", "prod", "stable", "latest")]
     [InlineData("windows-x64", "dev", "stable", "latest")]
