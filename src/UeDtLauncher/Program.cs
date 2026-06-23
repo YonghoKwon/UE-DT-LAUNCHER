@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using Avalonia;
 using UeDtLauncher.Gui;
 
@@ -8,15 +10,32 @@ public static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        var isGui = args.Length == 0 || string.Equals(args[0], "gui", StringComparison.OrdinalIgnoreCase);
+
+        // The app is a GUI-subsystem (WinExe) build so double-clicking the launcher shows no console
+        // window. For CLI subcommands launched from a terminal, attach to that terminal so output is visible.
+        if (!isGui && OperatingSystem.IsWindows()) AttachParentConsole();
+
         if (SelfUpdateManager.TryApplyPendingUpdate(args)) return 0;
 
-        if (args.Length == 0 || string.Equals(args[0], "gui", StringComparison.OrdinalIgnoreCase))
+        if (isGui)
         {
             return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args.Length == 0 ? Array.Empty<string>() : args.Skip(1).ToArray());
         }
 
         return MainAsync(args).GetAwaiter().GetResult();
     }
+
+    [SupportedOSPlatform("windows")]
+    private static void AttachParentConsole()
+    {
+        try { AttachConsole(ATTACH_PARENT_PROCESS); } catch { /* no parent console (e.g. double-clicked) — ignore */ }
+    }
+
+    private const int ATTACH_PARENT_PROCESS = -1;
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool AttachConsole(int dwProcessId);
 
     public static AppBuilder BuildAvaloniaApp()
     {
