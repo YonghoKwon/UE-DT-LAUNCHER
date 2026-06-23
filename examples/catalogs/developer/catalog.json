@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-05-05T00:00:00Z",
+  "projects": [
+    {
+      "projectId": "ue-dt-simulator",
+      "displayName": "UE DT Simulator",
+      "releases": [
+        {
+          "version": "1.0.0",
+          "channel": "stable",
+          "environment": "prod",
+          "platform": "windows-x64",
+          "manifestUrl": "https://updates.example.com/projects/ue-dt-simulator/prod/stable/1.0.0/windows-x64/manifest.json",
+          "manifestSignatureUrl": "https://updates.example.com/projects/ue-dt-simulator/prod/stable/1.0.0/windows-x64/manifest.json.sig",
+          "allowedClientProfiles": ["general", "developer"],
+          "isLatest": true
+        },
+        {
+          "version": "1.1.0-dev.3",
+          "channel": "dev",
+          "environment": "dev",
+          "platform": "windows-x64",
+          "manifestUrl": "https://updates.example.com/projects/ue-dt-simulator/dev/dev/1.1.0-dev.3/windows-x64/manifest.json",
+          "manifestSignatureUrl": "https://updates.example.com/projects/ue-dt-simulator/dev/dev/1.1.0-dev.3/windows-x64/manifest.json.sig",
+          "allowedClientProfiles": ["developer"],
+          "isLatest": true
+        },
+        {
+          "version": "1.1.0-dev.3",
+          "channel": "dev",
+          "environment": "dev",
+          "platform": "linux-x64",
+          "manifestUrl": "https://updates.example.com/projects/ue-dt-simulator/dev/dev/1.1.0-dev.3/linux-x64/manifest.json",
+          "manifestSignatureUrl": "https://updates.example.com/projects/ue-dt-simulator/dev/dev/1.1.0-dev.3/linux-x64/manifest.json.sig",
+          "allowedClientProfiles": ["developer"],
+          "isLatest": true
+        }
+      ]
+    }
+  ]
+}

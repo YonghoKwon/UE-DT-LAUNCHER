@@ -1,0 +1,24 @@
+# Build output
+bin/
+obj/
+out/
+publish/
+
+# Local launcher runtime state
+app/
+.staging/
+.backup/
+installed-manifest.json
+launcher.config.json
+*.download
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# OS
+.DS_Store
+Thumbs.db

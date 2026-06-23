@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-05-12T12:45:00Z",
+  "projects": [
+    {
+      "projectId": "m7at10",
+      "displayName": "m7at10 Local",
+      "releases": [
+        {
+          "version": "1.0.3",
+          "channel": "stable",
+          "environment": "dev",
+          "platform": "windows-x64",
+          "manifestUrl": "http://updates.example.internal/updates/projects/m7at10/dev/stable/1.0.3/windows-x64/manifest.json",
+          "manifestSignatureUrl": null,
+          "allowedClientProfiles": ["developer"],
+          "isLatest": true,
+          "notes": "RHEL 8.4 internal test release"
+        }
+      ]
+    }
+  ]
+}
+

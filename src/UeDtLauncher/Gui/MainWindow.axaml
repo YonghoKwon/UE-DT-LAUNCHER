@@ -1,0 +1,9 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="UeDtLauncher.Gui.MainWindow"
+        Title="UE-DT Launcher"
+        Width="1280"
+        Height="820"
+        MinWidth="1080"
+        MinHeight="720">
+</Window>
