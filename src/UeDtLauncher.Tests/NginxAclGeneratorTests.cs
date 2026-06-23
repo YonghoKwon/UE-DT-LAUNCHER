@@ -28,11 +28,38 @@ public class NginxAclGeneratorTests
     }
 
     [Fact]
+    public void Generate_HeaderMentionsFirstLocationPlacement()
+    {
+        var allowlist = new ProjectIpAllowlist
+        {
+            Projects = new Dictionary<string, List<string>> { ["p"] = new() { "10.0.0.0/8" } }
+        };
+
+        var conf = NginxAclGenerator.Generate(allowlist);
+
+        Assert.Contains("FIRST regex location", conf);
+        Assert.Contains(@"\.(json|sig)$", conf);
+    }
+
+    [Fact]
+    public void Generate_AcceptsCidrWithHostBitsSet()
+    {
+        var allowlist = new ProjectIpAllowlist
+        {
+            Projects = new Dictionary<string, List<string>> { ["p"] = new() { "10.0.0.5/24" } }
+        };
+
+        var conf = NginxAclGenerator.Generate(allowlist);
+
+        Assert.Contains("allow 10.0.0.5/24;", conf);
+    }
+
+    [Fact]
     public void Generate_RejectsInvalidCidr()
     {
         var allowlist = new ProjectIpAllowlist
         {
-            Projects = new Dictionary<string, List<string>> { ["p"] = new() { "999.1.1.0/24" } }
+            Projects = new Dictionary<string, List<string>> { ["p"] = new() { "10.0.0.0/33" } }
         };
         Assert.Throws<ArgumentException>(() => NginxAclGenerator.Generate(allowlist));
     }

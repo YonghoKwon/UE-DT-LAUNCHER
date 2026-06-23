@@ -272,31 +272,36 @@ curl -I http://서버IP/projects/ue-dt-simulator/dev/dev/1.1.0-dev.3/windows-x64
 }
 ```
 
-**2) nginx 설정 생성** (서버의 `UeDtLauncher` 바이너리 사용 — 2편 참고)
+> 이 ACL은 **목록에 있는 프로젝트만** 제한하며, 목록에 없는 프로젝트는 기존 공개/인증 규칙을 그대로 따른다(자동 차단 아님). 어떤 프로젝트를 잠그려면 반드시 이 목록에 넣어야 합니다.
+
+**2) nginx 설정 생성** (서버에 둔 런처 바이너리(`UeDtLauncher`, 2편 참고) 사용)
 ```bash
-/dt/tools/UeDtLauncher generate-nginx-acl \
-  --allowlist /dt/tools/project-ip-allowlist.json \
+UeDtLauncher generate-nginx-acl \
+  --allowlist project-ip-allowlist.json \
   --output /etc/nginx/conf.d/ue-dt-acl.conf
 ```
 생성물은 프로젝트별 `location ~ ^/projects/<id>/ { allow …; deny all; }` 블록입니다 — **해당 프로젝트 경로 전체(prod+dev)를 허용 IP로 게이트**합니다.
 
-**3) ⚠️ 배치 순서 중요** — nginx는 **첫 번째로 매칭되는 정규식 location**을 쓰므로, 이 ACL을 **4단계의 일반 `~ ^/projects/[^/]+/...` 블록보다 위에** 두어야 적용됩니다. `ue-dt-updates.conf`의 server 블록 맨 위에서 include 하세요:
+**3) ⚠️ 배치 순서 중요** — nginx는 **소스 순서대로 정규식 location을 평가하고 첫 번째로 매칭되는 것**을 씁니다. 4단계의 `location ~* \.(json|sig)$` 블록이 ACL보다 위에 있으면 `manifest.json`/`catalog.json`/`*.sig` 요청이 그 블록에 먼저 걸려 ACL을 우회합니다. 따라서 이 ACL을 **server 블록의 가장 첫 번째 정규식 location**으로, 즉 **`~* \.(json|sig)$` 블록보다도 위에** (그리고 당연히 일반 `^/projects/` 블록보다도 위에) 두어야 합니다. `ue-dt-updates.conf`의 server 블록 맨 위에서 include 하세요:
 ```nginx
 server {
     listen 80 default_server;
     server_name _;
-    root /dt/ue-dt-updates;
+    root /srv/ue-dt-updates;           # /dt/ue-dt-updates 를 쓰면 여기만 바꾸면 됩니다
 
-    include /etc/nginx/conf.d/ue-dt-acl.conf;   # ← 일반 /projects/ 블록보다 먼저
-    # ... 이하 4단계의 location 들 ...
+    include /etc/nginx/conf.d/ue-dt-acl.conf;   # ← 가장 첫 정규식 location: json/sig 블록보다도 먼저
+    # ... 이하 4단계의 location 들 (~* \.(json|sig)$ 포함) ...
 }
 ```
-> 생성된 `ue-dt-acl.conf`는 `conf.d/`에 있으면 nginx가 자동 include 하는데, 그 경우 순서가 보장되지 않을 수 있습니다. 순서를 확실히 하려면 위처럼 server 블록 안에서 명시적으로 `include` 하고, 자동 include와 중복되지 않게 파일을 `conf.d/` 밖(예: `/etc/nginx/ue-dt-acl.conf`)에 두는 것을 권장합니다.
+> 생성된 `ue-dt-acl.conf`는 `conf.d/`에 있으면 nginx가 자동 include 하는데, 그 경우 순서가 보장되지 않을 수 있습니다. 순서를 확실히 하려면 위처럼 server 블록 안에서 명시적으로 `include` 하고, 자동 include와 중복되지 않게 파일을 `conf.d/` 밖(예: `/etc/nginx/ue-dt-acl.conf`)에 두는 것을 권장합니다. ACL 블록은 자체적으로 `add_header Cache-Control "no-cache" always;` 를 포함하므로, 제한된 프로젝트의 manifest/catalog도 릴리스 즉시 갱신됩니다.
 
 **4) 적용 + 확인**
 ```bash
 sudo nginx -t && sudo systemctl reload nginx
-curl -I http://127.0.0.1/projects/m7at10-dt/prod/stable/1.0.0/windows-x64/manifest.json  # 허용 IP=200, 그 외=403
+# manifest (json) — include가 첫 location이면 차단 IP에서 403이 떨어집니다
+curl -I http://127.0.0.1/projects/m7at10-dt/prod/stable/1.0.0/windows-x64/manifest.json   # 허용 IP=200, 그 외=403
+# 실제 에셋 (…/files/…) 도 같은 ACL로 게이트되는지 확인
+curl -I http://127.0.0.1/projects/m7at10-dt/prod/stable/1.0.0/windows-x64/files/Game.pak  # 허용 IP=200, 그 외=403
 ```
 허용 안 된 IP의 클라이언트는 403을 받고, 런처는 "이 네트워크(IP)에서는 접근이 허용되지 않은 프로젝트입니다" 메시지를 보여줍니다. IP가 바뀌면 JSON만 고쳐 2~4를 다시 하면 됩니다.
 

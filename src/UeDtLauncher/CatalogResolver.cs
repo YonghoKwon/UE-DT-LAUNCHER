@@ -120,7 +120,7 @@ public static class CatalogResolver
         lines.Add($"Available releases for '{project.ProjectId}' ({project.Releases.Count}):");
         foreach (var r in project.Releases)
         {
-            lines.Add($"  - version={r.Version} platform={r.Platform} environment={r.Environment} channel={r.Channel} profiles=[{string.Join(",", r.AllowedClientProfiles)}] isLatest={r.IsLatest}");
+            lines.Add($"  - version={r.Version} platform={r.Platform} environment={r.Environment} channel={r.Channel} profiles=[{string.Join(",", r.AllowedClientProfiles)}] isLatest={(r.IsLatest ? "true" : "false")}");
         }
 
         // If some release differs from the request in exactly one dimension, point right at it —
