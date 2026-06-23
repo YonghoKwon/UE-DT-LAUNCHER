@@ -1,6 +1,6 @@
 # UE-DT Launcher 사용 가이드
 
-이 문서는 UE-DT Launcher를 실제로 빌드하고, 일반 사용자 모드와 개발자 모드로 실행하고, 서버 배포 파일을 업데이트하는 기본 흐름을 설명합니다.
+이 문서는 UE-DT Launcher의 **GUI 화면 사용법**(빌드 → 일반/개발자 모드 실행 → 화면 구성)을 설명합니다. 설정 전체 필드·CLI 명령·문제 해결의 자세한 레퍼런스는 [guide-03 — 런처 사용법](guide-03-launcher-usage.md)을 보세요.
 
 ## 1. 모드 개념
 
@@ -24,12 +24,11 @@
 
 ## 2. 빌드 방법
 
-저장소 루트에서 실행합니다.
+저장소 루트에서 실행합니다(인터넷 되는 Windows, .NET 8 SDK 필요).
 
 ```powershell
-cd C:\Users\ho270\RiderProjects\UE-DT-LAUNCHER
-git checkout feature/launcher-production-hardening
-git pull origin feature/launcher-production-hardening
+git clone <저장소 URL> UE-DT-LAUNCHER
+cd UE-DT-LAUNCHER
 
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\scripts\publish-win-x64.ps1
@@ -259,7 +258,7 @@ publish\win-x64\logs\launcher-yyyyMMdd-HHmmss.log
 Nginx 서버에 여러 프로젝트, 버전, OS, 환경을 함께 올릴 때는 다음 구조를 권장합니다.
 
 ```text
-/var/www/ue-dt-updates/
+/dt/ue-dt-updates/          # 서버 루트 (1편 기준; /srv/ue-dt-updates 등 환경에 맞게)
   catalogs/
     general/
       catalog.json
@@ -321,24 +320,15 @@ Linux 실행: linux-x64
 
 다른 OS의 패키지를 받아야 한다면 해당 OS에서 런처를 실행하거나, 서버/테스트용 config를 별도로 만들어야 합니다.
 
-### 버튼에 마우스를 올렸을 때 글자가 보이지 않는 경우
-
-최신 UI에서는 버튼 content를 `TextBlock`으로 직접 구성해서 글자색을 고정했습니다. 최신 브랜치를 pull하고 다시 publish해야 반영됩니다.
-
-```powershell
-git pull origin feature/launcher-production-hardening
-.\scripts\publish-win-x64.ps1
-```
-
 ### 업데이트 서버 연결 실패
 
 `catalogUrl`, `manifestUrl`이 실제 접근 가능한 URL인지 확인합니다.
 
-로컬 테스트라면 서버를 먼저 켭니다.
+로컬 테스트라면 서버를 먼저 켭니다. **단, `python -m http.server`(단일 스레드)는 런처가 catalog→manifest 두 번째 요청에서 멈출 수 있으니 멀티스레드로 띄우세요**(실서버 nginx는 문제없음):
 
 ```powershell
 cd C:\UpdateServer
-python -m http.server 8080
+python -c "from http.server import ThreadingHTTPServer,SimpleHTTPRequestHandler; ThreadingHTTPServer(('0.0.0.0',8080),SimpleHTTPRequestHandler).serve_forever()"
 ```
 
 그 다음 config의 URL이 아래처럼 맞는지 확인합니다.

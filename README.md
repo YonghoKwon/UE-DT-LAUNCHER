@@ -136,24 +136,17 @@ publish/linux-x64/UeDtLauncher
 
 ## 문서
 
-처음 도입한다면 아래 **가이드 3부작**을 순서대로 보세요. 서버 구축부터 릴리스 배포, 클라이언트 운영까지 전 과정을 다룹니다.
+처음이라면 **[docs/README.md](docs/README.md)**(문서 색인 + 5분 빠른 시작)부터 보세요. 핵심은 아래 **가이드 3부작**입니다 — 서버 구축 → 릴리스 배포 → 클라이언트 운영 순서.
 
 | 가이드 | 내용 |
 | --- | --- |
-| [docs/guide-01-linux-server-setup.md](docs/guide-01-linux-server-setup.md) | 리눅스(RHEL 8.4) 업데이트 서버 세팅: 디렉터리 구조, nginx, 인증, SELinux, 서명 키, 동작 확인 |
-| [docs/guide-02-publish-package.md](docs/guide-02-publish-package.md) | 패키징 파일 업로드: 리눅스 직접/Windows 원격 퍼블리시, 시나리오별 예시, 서명, 확인 체크리스트 |
-| [docs/guide-03-launcher-usage.md](docs/guide-03-launcher-usage.md) | 런처 사용법: 설정 전체 필드, GUI(일반/개발자), CLI 레퍼런스, 무인 서버 운영, 문제 해결 |
+| [docs/guide-01-linux-server-setup.md](docs/guide-01-linux-server-setup.md) | 리눅스(RHEL 8.4) 업데이트 서버 세팅: 디렉터리, nginx, 인증, SELinux, 프로젝트별 IP 제한, 동작 확인 |
+| [docs/guide-02-publish-package.md](docs/guide-02-publish-package.md) | 패키징 파일 업로드(ZIP) → manifest 생성 → catalog 갱신, 시나리오별 예시, 확인 |
+| [docs/guide-03-launcher-usage.md](docs/guide-03-launcher-usage.md) | 런처 사용법: 설정 전체 필드, GUI(일반/개발자), CLI 레퍼런스, 무인 서버, 문제 해결 |
 
-보조 문서:
+루트의 나머지 핵심: `docs/launcher-user-guide.md`(GUI 화면 사용법), `docs/launcher-ui-customization.md`(UI 커스터마이징), `docs/service-mode.md`(무인 서비스 모드).
 
-```text
-docs/service-mode.md                  # 픽셀 스트리밍 서버/무인 PC용 서비스 모드 상세 (systemd/NSSM)
-docs/launcher-ui-customization.md     # 런처 UI 커스터마이징
-docs/release-publish-scripts.md       # 퍼블리시 스크립트 상세
-docs/redhat-distribution-server.md    # (구) 서버 구성 문서 — guide-01이 정본
-docs/company-rhel84-dt-update-server.md # (구) 회사 /dt 경로 실전 절차 — guide-01이 정본
-docs/offline-linux-update-server-setup.md # (구) 오프라인 서버 구성 — guide-01이 정본
-```
+덜 중요한 보조·레거시 문서는 [docs/reference/](docs/reference/)로 분리했습니다(퍼블리시 스크립트 상세, 구 서버 구성 문서들 — 서버 구성 정본은 guide-01).
 
 예시 파일:
 
@@ -194,10 +187,14 @@ UE-DT-LAUNCHER/
         MainWindow.axaml
         MainWindow.axaml.cs
   docs/
+    README.md                       # 색인 + 5분 빠른 시작
+    guide-01-linux-server-setup.md
+    guide-02-publish-package.md
+    guide-03-launcher-usage.md
+    launcher-user-guide.md
     launcher-ui-customization.md
-    netmarble-launcher-analysis.md
-    redhat-distribution-server.md
-    company-rhel84-dt-update-server.md
+    service-mode.md
+    reference/                      # 보조·레거시 문서
 ```
 
 ## release catalog 방식
@@ -311,7 +308,7 @@ projectId + clientProfile + environment + channel + targetPlatform + versionPoli
 /projects/*/dev/          인증 필요
 ```
 
-자세한 Nginx 설정은 `docs/redhat-distribution-server.md`에 있습니다.
+자세한 Nginx 설정(프로젝트별 IP 제한 포함)은 `docs/guide-01-linux-server-setup.md`에 있습니다.
 
 ## 빌드 방법
 

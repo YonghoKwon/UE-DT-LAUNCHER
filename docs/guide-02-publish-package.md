@@ -341,11 +341,19 @@ $L sign-manifest --manifest /srv/ue-dt-updates/catalogs/general/catalog.json \
 
 > 중요: **catalog를 갱신할 때마다 catalog 서명도 다시** 만들어야 합니다. catalog에 릴리스를 등록할 때 `--manifest-signature-url`로 manifest 서명 URL도 함께 등록하세요.
 
+## ⚠️ platform 값은 정확히 (흔한 실수)
+
+`--platform`은 `windows-x64` 또는 `linux-x64`로 **정확히** 써야 합니다. `windows`, `windows-64`, `win-x64` 같은 변형을 쓰면 클라이언트가 릴리스를 못 찾습니다(`environment`/`channel`도 동일). 이제 도구가 잘못된 값을 **즉시 거부**합니다:
+```text
+ERROR: Invalid --platform 'windows-64'. Allowed: windows-x64, linux-x64.
+```
+
 ## 업로드 후 확인 체크리스트
 
 ```bash
-# 1. catalog에 새 버전이 보이는가 (isLatest: true 확인)
-curl -s http://서버IP/catalogs/general/catalog.json | python3 -m json.tool | grep -A2 version
+# 1. 등록된 릴리스를 표로 확인 (가장 확실)
+/dt/tools/UeDtLauncher list-releases --catalog /dt/ue-dt-updates/catalogs/general/catalog.json
+#   → m7at10-dt ... 0.0.1  prod /stable /windows-x64  profiles=[general,developer] [latest]
 
 # 2. manifest가 받아지는가
 curl -I http://서버IP/projects/ue-dt-simulator/prod/stable/1.2.0/windows-x64/manifest.json
@@ -354,4 +362,4 @@ curl -I http://서버IP/projects/ue-dt-simulator/prod/stable/1.2.0/windows-x64/m
 UeDtLauncher.exe run --config launcher.config.json --no-launch
 ```
 
-3번에서 `[Complete] Update completed.`가 나오면 끝입니다. 클라이언트 쪽 명령과 문제 해결은 [3편](guide-03-launcher-usage.md)을 보세요.
+3번에서 `[Complete] Update completed.`가 나오면 끝입니다. 혹시 "No release in catalog matched"가 나오면 메시지에 **카탈로그의 실제 값 vs 요청 값**이 같이 표시되므로(예: `platform (catalog 'windows-64' vs requested 'windows-x64')`) 그대로 보고 고치면 됩니다. 클라이언트 쪽 명령과 문제 해결은 [3편](guide-03-launcher-usage.md)을 보세요.

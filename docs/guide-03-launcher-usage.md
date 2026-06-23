@@ -141,8 +141,12 @@ UeDtLauncher <command> [options]
 | `rollback` | 백업으로 이전 버전 복원 | `--config <file>` `--list`(백업 목록) `--backup <타임스탬프>`(특정 백업 지정, 생략 시 최신) |
 | `generate-manifest` | 패키지 폴더 → manifest.json | `--package-dir` `--base-url` `--entry-point` `--version` `--platform` `--app-id` `--output` |
 | `update-catalog` | catalog.json에 릴리스 등록/제거 | `--catalog` `--project-id` `--version` `--environment` `--channel` `--platform` `--manifest-url` `--allowed-profiles` `--set-latest` `--remove` |
+| `list-releases` | 카탈로그에 등록된 릴리스를 표로 출력(점검용) | `--catalog` `--project`(선택) |
+| `generate-nginx-acl` | 프로젝트별 IP 허용목록 → nginx 설정 생성 | `--allowlist` `--output`(생략 시 stdout) |
 | `sign-manifest` | manifest/catalog ECDSA 서명 생성 | `--manifest` `--private-key` `--output` |
 | `sample-config` | 설정 템플릿 생성 | `--output` |
+
+> Windows에서 런처는 GUI 앱으로 빌드되어 **더블클릭하면 검은 콘솔 창 없이 런처 창만** 뜹니다. CLI 명령을 cmd/PowerShell에서 실행하면 그 터미널에 출력이 보입니다.
 
 예시:
 
@@ -178,7 +182,8 @@ journalctl -u ue-dt-launcher.service -f      # 실시간 로그
 | 증상 / 메시지 | 원인 | 해결 |
 | --- | --- | --- |
 | `Project was not found in catalog` | config의 `projectId`가 catalog에 없음 | catalog.json의 `projects[].projectId`와 일치시키기. 2편으로 릴리스가 올라갔는지 확인 |
-| `No allowed release matched` | 환경/채널/플랫폼/프로필 조합에 맞는 릴리스 없음 | catalog의 릴리스 항목과 config의 environment/channel/targetPlatform/`allowedClientProfiles` 대조 |
+| `No release in catalog matched` | 환경/채널/플랫폼/프로필 조합에 맞는 릴리스 없음 | 메시지에 **카탈로그 실제값 vs 요청값**과 힌트가 같이 표시됨(예: `platform (catalog 'windows-64' vs requested 'windows-x64')`). 그대로 보고 고치거나 `list-releases`로 등록 확인 |
+| `이 네트워크(IP)에서는 접근이 허용되지 않은 프로젝트` / 403 | 서버의 프로젝트별 IP 제한에 막힘 | 허용된 네트워크에서 접속하거나 서버 관리자에게 IP 추가 요청(1편 9단계) |
 | `General users are allowed to use only ...` | 일반 프로필로 dev/beta/exact 요청 | 일반 PC는 prod+stable+latest 고정. 개발 빌드가 필요하면 developer 프로필 + 서버 계정 사용 |
 | `WARNING: ... signature verification skipped` | 서명 미설정 (경고일 뿐 동작은 함) | 운영 PC라면 1편 6단계 키 배포 후 `requireSignedManifests: true` 설정 |
 | `requireSignedManifests is enabled, but ...` | 서명 강제인데 서명 URL/공개키 미설정 | `catalogSignatureUrl`/`manifestSignatureUrl`과 공개키 경로 설정, 서버에 `.sig` 업로드 확인 |

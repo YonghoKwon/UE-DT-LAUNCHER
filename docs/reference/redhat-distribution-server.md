@@ -1,6 +1,6 @@
 # Red Hat Enterprise Linux 8.4 업데이트 서버 구성 가이드
 
-> **참고:** 이 문서의 최신 정본은 [guide-01-linux-server-setup.md](guide-01-linux-server-setup.md)입니다. 내용이 다를 경우 정본을 따르세요.
+> **참고:** 이 문서의 최신 정본은 [guide-01-linux-server-setup.md](../guide-01-linux-server-setup.md)입니다. 내용이 다를 경우 정본을 따르세요.
 
 이 문서는 하나의 Linux 서버에서 여러 프로젝트의 Windows/Linux 패키징 파일을 관리하고, 클라이언트 유형별로 다른 업데이트를 제공하기 위한 권장 구조를 설명합니다.
 

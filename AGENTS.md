@@ -44,9 +44,14 @@ src/UeDtLauncher/
     MainWindow.axaml.cs              실제 GUI 구성 및 동작
 
 docs/
-  launcher-ui-customization.md
-  redhat-distribution-server.md
-  netmarble-launcher-analysis.md
+  README.md                          문서 색인 + 빠른 시작
+  guide-01-linux-server-setup.md     서버 구성 정본
+  guide-02-publish-package.md        릴리스 퍼블리시
+  guide-03-launcher-usage.md         런처 사용/설정 레퍼런스
+  launcher-user-guide.md             GUI 화면 사용법
+  launcher-ui-customization.md       UI 커스터마이징
+  service-mode.md                    무인 서비스 모드
+  reference/                         보조·레거시 문서
 
 examples/
   catalogs/
