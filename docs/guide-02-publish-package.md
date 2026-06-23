@@ -12,7 +12,9 @@ WindowsNoEditor/  →  파일별 SHA-256 목록     →  "이 프로젝트의 1.
   ...                                           catalog.json 갱신
 ```
 
-도구가 이 과정을 자동화합니다. **방법 A(리눅스 서버에서 직접)** 또는 **방법 B(Windows PC에서 원격 업로드)** 중 환경에 맞는 것을 쓰면 되고, 내부 동작을 이해하고 싶으면 방법 C를 읽어보세요.
+도구가 이 과정을 자동화합니다. **로컬에서 패키징 → ZIP으로 압축 → 서버에 업로드 → 서버에서 등록**하는 가장 일반적인 운영 흐름은 **방법 D**(아래)를 보세요. 그 외에 서버에 빌드 폴더를 직접 둔 경우는 방법 A, Windows에서 원격 전송은 방법 B, 내부 동작 이해는 방법 C입니다.
+
+> ⚠️ **ZIP은 "업로드(전송) 편의용"입니다.** 서버에서 압축을 풀어 `files/` 아래 **개별 파일**로 두면, 클라이언트는 manifest(파일별 SHA-256)를 보고 **바뀐 파일만 개별 다운로드**합니다 — ZIP을 통째로 받는 게 아닙니다. (클라이언트가 ZIP을 통째로 받아 푸는 건 별도 `packages` 기능이며 이 문서 범위가 아닙니다.)
 
 ### 사전 준비물
 
@@ -24,6 +26,153 @@ WindowsNoEditor/  →  파일별 SHA-256 목록     →  "이 프로젝트의 1.
 
 > 리눅스에서 도구 스크립트는 런처 바이너리를 `publish/linux-x64/UeDtLauncher` → PATH 순으로 찾습니다.
 > 다른 위치에 있으면 `export UE_DT_LAUNCHER_BIN=/path/to/UeDtLauncher`로 지정하세요.
+
+---
+
+## 방법 D — 로컬 패키징 → ZIP 업로드 → 서버에서 등록 (가장 일반적인 운영 흐름)
+
+> 윈도우에서 UE 패키징 → 결과 폴더를 ZIP으로 압축 → 리눅스 서버에 업로드 → 서버에서 **압축을 풀고** manifest/catalog 생성.
+> 다시 강조: ZIP은 전송용일 뿐, 서버에서 풀어 `files/` 아래 개별 파일로 둡니다. 클라이언트는 그 개별 파일을 차등 다운로드합니다.
+
+### D-0. 변수 정의 (서버에서)
+
+이후 명령에 그대로 쓸 값들을 먼저 잡아두면 편합니다.
+
+```bash
+SERVER_ROOT=/dt/ue-dt-updates       # 회사 서버 기준 (가이드 1편 기본 예시는 /srv/ue-dt-updates)
+SERVER_URL=http://<서버IP>          # 클라이언트가 접속할 주소 (예: http://10.10.20.5)
+PROJ=ue-dt-simulator                # projectId
+VER=1.0.0                           # 버전
+ENV=prod                            # 운영=prod, 개발/테스트=dev
+CH=stable                           # 운영=stable, 개발=dev 또는 beta
+PLAT=windows-x64                    # 또는 linux-x64
+DEST=$SERVER_ROOT/projects/$PROJ/$ENV/$CH/$VER/$PLAT
+```
+
+### D-1. (윈도우) 패키징 결과를 ZIP으로 압축
+
+UE 패키징 결과 폴더를 압축합니다. **압축 최상위에 들어가는 구조가 곧 서버 `files/` 바로 아래 구조**가 되고, 실행 파일이 압축 안에서 갖는 상대경로가 `--entry-point` 값이 됩니다.
+
+```powershell
+# 폴더 "내용물"을 담는 예 → files/ 바로 아래 M7AT10_DT.exe, Engine/ ...
+Compress-Archive -Path "C:\PackageBuilds\ue-dt-simulator\1.0.0\Windows\*" `
+                 -DestinationPath "C:\PackageBuilds\ue-dt-simulator-1.0.0.zip"
+```
+
+- `...\Windows\*`(내용물)을 담으면 → entry-point = `M7AT10_DT.exe`
+- `...\Windows`(폴더째)를 담으면 → `files/Windows/M7AT10_DT.exe` → entry-point = `Windows/M7AT10_DT.exe`
+- 둘 중 무엇이든 OK. **entry-point만 실제 경로에 맞추면** 됩니다 (D-3에서 확인).
+
+### D-2. 서버로 업로드
+
+```bash
+# 내부망 SSH 가능
+scp ue-dt-simulator-1.0.0.zip dt2prod@<서버IP>:/dt/incoming/
+# 완전 폐쇄망이면 USB로 /dt/incoming/ 에 복사
+```
+
+### D-3. (서버) 압축 해제 → `files/`에 배치
+
+```bash
+mkdir -p "$DEST/files"
+unzip -o /dt/incoming/ue-dt-simulator-1.0.0.zip -d "$DEST/files"
+
+# 실제 실행파일 상대경로 확인 → entry-point 값 결정
+cd "$DEST/files" && find . -name "*.exe" | head
+```
+
+> `unzip`이 없으면(폐쇄망) `unzip` RPM을 반입해 설치하거나, 윈도우에서 미리 풀어 폴더째 업로드해도 됩니다.
+
+배치 후 서버 디렉터리 구조 (windows-x64 / 1.0.0 예):
+
+```text
+/dt/ue-dt-updates/
+├── catalogs/
+│   ├── general/catalog.json          # D-5에서 생성·갱신 (일반 사용자)
+│   └── developer/catalog.json        # 개발 빌드용 (인증)
+└── projects/
+    └── ue-dt-simulator/              # PROJ
+        └── prod/                     # ENV
+            └── stable/               # CH
+                └── 1.0.0/            # VER
+                    └── windows-x64/  # PLAT
+                        ├── manifest.json   # D-4에서 생성
+                        └── files/          # ← ZIP 푼 내용 (클라이언트가 받는 실제 파일)
+                            ├── M7AT10_DT.exe
+                            ├── M7AT10_DT/
+                            └── Engine/
+```
+
+### D-4. (서버) manifest 생성
+
+서버에 `UeDtLauncher` 리눅스 바이너리가 있어야 합니다(self-contained, .NET 설치 불필요). 예: `/dt/tools/UeDtLauncher`.
+
+```bash
+export UE_DT_LAUNCHER_BIN=/dt/tools/UeDtLauncher
+/dt/tools/generate-manifest.sh \
+  --package-dir "$DEST/files" \
+  --base-url    "$SERVER_URL/projects/$PROJ/$ENV/$CH/$VER/$PLAT/files" \
+  --entry-point "M7AT10_DT.exe" \
+  --version "$VER" --channel "$CH" --platform "$PLAT" --app-id "$PROJ" \
+  --output "$DEST/manifest.json"
+```
+
+- `--base-url` = **`files`까지 포함한 클라이언트 접속 URL**. manifest 안 각 파일 URL이 이걸 기준으로 만들어집니다.
+- `--entry-point` = D-3에서 확인한 실제 상대경로.
+
+> 서버에 바이너리를 못 두는 경우 → 윈도우에서 `UeDtLauncher.exe generate-manifest ...`로 manifest를 만들어 ZIP과 함께 업로드해도 됩니다(SHA-256은 OS 무관 동일). 단 `--base-url`은 반드시 서버 URL로 지정.
+
+### D-5. (서버) catalog 갱신
+
+```bash
+/dt/tools/update-catalog.sh \
+  --catalog "$SERVER_ROOT/catalogs/general/catalog.json" \
+  --project-id "$PROJ" --display-name "UE-DT Simulator" \
+  --version "$VER" --environment "$ENV" --channel "$CH" --platform "$PLAT" \
+  --manifest-url "$SERVER_URL/projects/$PROJ/$ENV/$CH/$VER/$PLAT/manifest.json" \
+  --allowed-profiles general,developer \
+  --set-latest
+```
+
+- 운영 배포 → `catalogs/general/`. 개발 빌드면 `catalogs/developer/` + `--allowed-profiles developer`.
+
+### D-6. (서버) SELinux 컨텍스트 재적용 + 정리
+
+```bash
+sudo restorecon -Rv "$SERVER_ROOT"               # 새로 푼 파일에 httpd 라벨 적용 (안 하면 403)
+rm -f /dt/incoming/ue-dt-simulator-1.0.0.zip      # 업로드용 zip은 이제 불필요
+```
+
+### D-7. 서버에서 동작 확인
+
+```bash
+curl -s "$SERVER_URL/catalogs/general/catalog.json" | head
+curl -I "$SERVER_URL/projects/$PROJ/$ENV/$CH/$VER/$PLAT/manifest.json"          # 200
+curl -I "$SERVER_URL/projects/$PROJ/$ENV/$CH/$VER/$PLAT/files/M7AT10_DT.exe"    # 200
+```
+
+### D-8. (클라이언트 PC) 다운로드 + 실행
+
+클라이언트 폴더에 `UeDtLauncher.exe` + `launcher.config.json`을 둡니다.
+
+```json
+{
+  "catalogUrl": "http://<서버IP>/catalogs/general/catalog.json",
+  "projectId": "ue-dt-simulator",
+  "clientProfile": "general",
+  "environment": "prod", "channel": "stable", "versionPolicy": "latest",
+  "targetPlatform": "windows-x64",
+  "installDir": "app"
+}
+```
+
+```powershell
+.\UeDtLauncher.exe run --config launcher.config.json --no-launch   # 업데이트만 (검증용)
+.\UeDtLauncher.exe run --config launcher.config.json               # 업데이트 + 실행
+.\UeDtLauncher.exe                                                 # GUI로 실행
+```
+
+→ 클라이언트는 manifest를 보고 **바뀐 파일만** `app/`로 받은 뒤 `entryPoint`(M7AT10_DT.exe)를 실행합니다. 다음 버전(예 1.1.0)을 D-1~D-6으로 올리면, 재실행 시 **달라진 파일만** 받습니다.
 
 ---
 
