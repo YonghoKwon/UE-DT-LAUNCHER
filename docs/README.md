@@ -52,6 +52,18 @@ cd .\publish\win-x64
 ```
 `[Complete] Update completed.`가 나오면 성공입니다. 안 되면 guide-03의 "문제 해결"을 보세요.
 
+> 모드 강제 지정: `--gui`(GUI 강제) / `--cli`(CLI 강제 — 기본 `run`으로 매핑). 둘을 동시에 주면 오류(종료 코드 2). 헤드리스 리눅스 서버에서는 `--cli --config …` 또는 `run`/`service`를 쓰세요(guide-03 4-A절).
+> 대화형 터미널에서 `run`을 돌리면 한 줄짜리 **진행 바**(전체%·파일 n/m·속도·받은/전체 용량)가 보이고, 출력을 파일/서비스로 리다이렉트하면 평문 줄로 바뀝니다(guide-03 3-A절). 파일 로그는 항상 동일.
+
+**서버 운영자용 점검·보안 명령**
+```bash
+# 카탈로그에 등록된 릴리스를 표로 확인 (점검용)
+UeDtLauncher list-releases --catalog catalog.json [--project <id>]
+# 프로젝트별 IP 허용목록(JSON) → nginx allow/deny location 블록 생성 (서버에서 강제)
+UeDtLauncher generate-nginx-acl --allowlist project-ip-allowlist.json [--output acl.conf]
+```
+> 빌드를 메뉴로 안내받으며 올리고 싶으면 서버에서 **대화형 위저드** `tools/publish-wizard.sh` 를 쓰세요(guide-02 방법 E).
+
 > ⚠️ 로컬에서 테스트 서버를 띄울 때 `python -m http.server`(단일 스레드)는 런처가 중간에 멈출 수 있습니다. 멀티스레드로:
 > `python3 -c "from http.server import ThreadingHTTPServer,SimpleHTTPRequestHandler; ThreadingHTTPServer(('0.0.0.0',8080),SimpleHTTPRequestHandler).serve_forever()"`
 > (실서버 nginx는 문제없습니다.)

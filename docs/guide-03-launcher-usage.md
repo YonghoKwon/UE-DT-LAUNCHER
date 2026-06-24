@@ -58,11 +58,15 @@ UeDtLauncher sample-config --output launcher.config.json
 | `logDir` | `logs` | 일별 로그 파일 폴더 (`launcher-YYYYMMDD.log`, 14일 보관) |
 | `maxBackupCount` | `3` | 보관할 백업 개수. 초과분은 오래된 것부터 자동 삭제 |
 | `launchAfterUpdate` | `true` | 업데이트 후 앱 자동 실행 |
+| `repairMode` | `false` | true면 전체 파일 해시를 재검증(복구). `run --repair`와 동일한 효과를 설정으로 고정 |
 | `launchArguments` | - | 앱 실행 인자 배열. 예: `["-log"]` |
 | `removeFilesNotInManifest` | `false` | manifest에 없는 설치 파일 삭제 (깨끗한 동기화를 원하면 true) |
-| `maxRetryCount` / `httpTimeoutSeconds` | `3` / `120` | 다운로드 재시도 횟수 / HTTP 타임아웃. 4xx 오류는 재시도하지 않고, 일시 오류만 지수 백오프로 재시도합니다 |
+| `maxRetryCount` / `httpTimeoutSeconds` | `3` / `120` | 다운로드 재시도 횟수 / HTTP 타임아웃(초). 4xx 오류는 재시도하지 않고, 일시 오류만 지수 백오프로 재시도합니다. (`sample-config` 템플릿은 `httpTimeoutSeconds`를 넉넉하게 `300`으로 적어둡니다) |
 | `serviceMode` | - | 무인 서버용. `{ "intervalSeconds": 300, "autoRestartApp": true, "processName": "m7at10_dt" }` — 자세한 내용은 [service-mode.md](service-mode.md) |
 | `selfUpdate` | - | 런처 자체 업데이트. `autoApply: true`면 다음 실행 시 자동 교체 |
+| `windowsIntegration` | - | Windows 바로가기/앱 등록(선택). `{ "appName", "publisher", "shortcutName", "iconPath", "createDesktopShortcut", "createStartMenuShortcut", "registerAppEntry" }` — 기본은 모두 끔(false) |
+| `packages` | `[]` | (고급) 클라이언트가 ZIP 패키지를 통째로 받아 푸는 별도 기능. 일반 차등 업데이트에는 불필요 |
+| `projectAssetsDir` | `assets/projects` | GUI 프로젝트 카드 이미지 등 로컬 에셋 폴더. [launcher-ui-customization.md](launcher-ui-customization.md) 참고 |
 | `projects` | - | GUI 프로젝트 카드 목록(이름/설명/이미지/정렬/프로필별 표시). [launcher-ui-customization.md](launcher-ui-customization.md) 참고 |
 
 ### 역할별 설정 예시
@@ -161,6 +165,41 @@ UeDtLauncher run --config launcher.config.json --repair --no-launch
 UeDtLauncher rollback --config launcher.config.json --list
 UeDtLauncher rollback --config launcher.config.json --backup 20260611075230
 ```
+
+## 3-A. CLI 실행 화면 (진행 표시)
+
+`run`(= `--cli`) 으로 업데이트를 돌리면 출력이 **터미널인지, 파일/서비스로 리다이렉트되었는지**에 따라 표시 방식이 자동으로 바뀝니다. 어느 경우든 **동작은 같고 화면 표현만 다릅니다.**
+
+### ① 대화형 터미널 — 한 줄짜리 진행 바 (in-place)
+
+cmd/PowerShell/SSH 터미널에서 직접 실행하면, 다운로드 동안 **한 줄을 제자리에서 갱신**하는 진행 바가 표시됩니다. 전체 진행률, 현재 파일 번호(n/m), 전송 속도, 받은 용량/전체 용량이 한눈에 보입니다:
+
+```text
+[Catalog] Selected ue-dt-simulator 1.2.0 / prod / windows-x64 / stable (4%)
+[########------------]  41%  파일 12/87  34.2 MB/s  120.4 MB / 293.6 MB
+```
+
+- 진행 바 줄은 `\r`로 같은 자리를 다시 그리므로 화면이 스크롤로 도배되지 않습니다(초당 약 10회 갱신).
+- 다운로드가 끝나거나(또는 중간에 오류로 끝나도) 진행 바 줄은 줄바꿈으로 닫히고 이후 단계(`[Apply]`, `[Complete]` 등)는 보통의 줄로 출력됩니다.
+
+### ② 출력 리다이렉트(파일/journald/NSSM/서비스) — 평문 줄 출력
+
+출력이 파일이나 로그 시스템으로 넘어가면(예: `> run.log`, systemd journald, NSSM 서비스) 진행 바 대신 **예전과 동일한 평문 줄**을 출력합니다. `\r`(캐리지 리턴)을 쓰지 않으므로 로그 파일이 깨지지 않습니다:
+
+```text
+[Catalog] Downloading release catalog... (2%)
+[Catalog] Selected ue-dt-simulator 1.2.0 / prod / windows-x64 / stable (4%)
+[Plan] Download/repair: 87, Remove: 0 (20%)
+[Download] (12/87) Engine/Binaries/Win64/Game.pak (45%)
+[Apply] Applying update with backup... (70%)
+[Complete] Update completed. (100%)
+```
+
+> 즉 같은 `run` 명령이라도, 사람이 보는 터미널에서는 ①의 진행 바, `... > run.log`처럼 리다이렉트하거나 서비스로 띄우면 ②의 평문 줄이 나옵니다.
+
+### ③ 파일 로그는 항상 동일
+
+표시 방식과 무관하게, 모든 단계는 런처 폴더의 **`logs/launcher-YYYYMMDD.log`** 에 그대로 기록됩니다(일별, 14일 보관 — CLI/GUI/서비스 공통). 진행 바를 쓰든 평문 줄을 쓰든 파일 로그 내용은 동일합니다.
 
 ## 4. 무인 서버(픽셀 스트리밍) 운영
 
