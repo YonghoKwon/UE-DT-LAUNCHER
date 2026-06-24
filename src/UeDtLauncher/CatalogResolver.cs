@@ -146,9 +146,10 @@ public static class CatalogResolver
     {
         if (string.Equals(config.ClientProfile, "general", StringComparison.OrdinalIgnoreCase))
         {
-            if (!string.Equals(config.TargetPlatform, "windows-x64", StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(config.TargetPlatform, "windows-x64", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(config.TargetPlatform, "linux-x64", StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidOperationException("General users are allowed to use only windows-x64 releases.");
+                throw new InvalidOperationException("General users are allowed to use only windows-x64 or linux-x64 releases.");
             }
 
             if (!string.Equals(config.Environment, "prod", StringComparison.OrdinalIgnoreCase))

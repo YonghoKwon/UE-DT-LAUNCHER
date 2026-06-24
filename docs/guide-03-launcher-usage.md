@@ -135,7 +135,7 @@ UeDtLauncher <command> [options]
 
 | 명령 | 용도 | 주요 옵션 |
 | --- | --- | --- |
-| `gui` (또는 인자 없음) | GUI 실행 | |
+| `gui` (또는 인자 없음) | GUI 실행 | `--gui`(GUI 강제 실행) `--cli`(CLI 강제 실행 — 기본적으로 `run`으로 매핑, `--config` 등 인자 추가 가능). `--gui`와 `--cli`를 함께 쓰면 오류(종료 코드 2) |
 | `run` | 업데이트(+실행) 1회 | `--config <file>` `--repair`(전체 재검증) `--no-launch`(업데이트만) |
 | `service` | 무인 감시 루프: 주기 확인→앱 정지→업데이트→재실행 | `--config <file>` `--interval <초>` `--once`(1회 점검) |
 | `rollback` | 백업으로 이전 버전 복원 | `--config <file>` `--list`(백업 목록) `--backup <타임스탬프>`(특정 백업 지정, 생략 시 최신) |
@@ -177,6 +177,61 @@ journalctl -u ue-dt-launcher.service -f      # 실시간 로그
 
 동작 규칙: 설치 버전 ≠ 카탈로그 버전이면 앱을 정상 종료(안 되면 강제 종료)하고 업데이트 후 재실행합니다. 앱이 크래시로 죽어 있으면 다음 주기에 자동 재실행. 카탈로그가 구버전을 가리키면 다운그레이드도 따라갑니다(운영 롤백 배포 지원).
 
+## 4-A. 리눅스 클라이언트/서버 실행
+
+런처는 Windows뿐 아니라 **Linux에서도 1급(first-class)으로 GUI/CLI 모두** 동작합니다.
+
+### GUI / CLI 모드를 명시적으로 고르기
+
+| 실행 | 동작 |
+| --- | --- |
+| `./UeDtLauncher` (인자 없음) 또는 `./UeDtLauncher gui` | GUI 실행 |
+| `./UeDtLauncher --gui` | GUI 강제 실행 (인자 위치 무관) |
+| `./UeDtLauncher --cli --config launcher.config.json` | CLI 강제 실행. 내부적으로 `run`으로 매핑되어 1회 업데이트(+실행) |
+| `./UeDtLauncher --cli service --config launcher.config.json` | `--cli` 뒤에 이미 알려진 서브커맨드(`run`/`service`/…)가 오면 그 명령을 그대로 사용 |
+| `./UeDtLauncher run …` / `./UeDtLauncher service …` | 기존과 동일하게 그대로 동작 |
+
+> `--gui`와 `--cli`를 **동시에** 주면 `--gui and --cli cannot be used together.` 를 출력하고 종료 코드 2로 끝납니다.
+
+### GUI 실행 요건 (데스크톱 + CJK 폰트)
+
+GUI는 **그래픽 데스크톱 환경(X11 또는 Wayland)** 이 있어야 뜹니다.
+
+- 그래픽 디스플레이가 전혀 없는 경우(헤드리스 서버: `DISPLAY`/`WAYLAND_DISPLAY` 미설정), GUI 실행을 시도하면 안내 메시지를 출력하고 **종료 코드 1**로 끝납니다. 이때는 아래 CLI 모드를 쓰세요.
+- 디스플레이는 있는데 GUI 초기화에 실패하면(폰트/디스플레이 서버 문제) 역시 안내 메시지를 출력하고 종료 코드 1로 끝납니다.
+- 한글이 깨지지 않게 **CJK 폰트**를 설치하세요:
+
+```bash
+# Fedora/RHEL/Rocky
+sudo dnf install -y google-noto-sans-cjk-fonts
+
+# Debian/Ubuntu
+sudo apt install -y fonts-noto-cjk
+```
+
+### 헤드리스 서버는 CLI/서비스 모드로
+
+화면이 없는 서버(픽셀 스트리밍 등)에서는 GUI 대신 CLI를 사용합니다:
+
+```bash
+# 1회 업데이트(+실행)
+./UeDtLauncher --cli --config launcher.config.json
+# 또는 동일하게
+./UeDtLauncher run --config launcher.config.json
+
+# 무인 감시 루프
+./UeDtLauncher service --config launcher.config.json
+```
+
+### 일반 프로필도 Linux에서 동작
+
+이제 `clientProfile: "general"` 도 `targetPlatform: "linux-x64"` 를 사용할 수 있습니다(여전히 `prod` + `stable` + `latest` 고정). 단, **서버 catalog에 해당 프로젝트의 `linux-x64` 릴리스가 등록되어 있어야** 합니다(2편으로 linux-x64 패키지를 퍼블리시).
+
+### Linux 바이너리 빌드
+
+- 저장소 루트에서 `scripts/publish-linux-x64.sh` 실행
+- 또는 Windows에서 크로스 컴파일 ([2편](guide-02-publish-package.md) 참고)
+
 ## 5. 문제 해결 (Troubleshooting)
 
 | 증상 / 메시지 | 원인 | 해결 |
@@ -184,7 +239,8 @@ journalctl -u ue-dt-launcher.service -f      # 실시간 로그
 | `Project was not found in catalog` | config의 `projectId`가 catalog에 없음 | catalog.json의 `projects[].projectId`와 일치시키기. 2편으로 릴리스가 올라갔는지 확인 |
 | `No release in catalog matched` | 환경/채널/플랫폼/프로필 조합에 맞는 릴리스 없음 | 메시지에 **카탈로그 실제값 vs 요청값**과 힌트가 같이 표시됨(예: `platform (catalog 'windows-64' vs requested 'windows-x64')`). 그대로 보고 고치거나 `list-releases`로 등록 확인 |
 | `이 네트워크(IP)에서는 접근이 허용되지 않은 프로젝트` / 403 | 서버의 프로젝트별 IP 제한에 막힘 | 허용된 네트워크에서 접속하거나 서버 관리자에게 IP 추가 요청(1편 9단계) |
-| `General users are allowed to use only ...` | 일반 프로필로 dev/beta/exact 요청 | 일반 PC는 prod+stable+latest 고정. 개발 빌드가 필요하면 developer 프로필 + 서버 계정 사용 |
+| `General users are allowed to use only ...` | 일반 프로필로 dev/beta/exact 또는 허용되지 않은 플랫폼 요청 | 일반 PC는 prod+stable+latest 고정(플랫폼은 `windows-x64` 또는 `linux-x64` 허용). 개발 빌드가 필요하면 developer 프로필 + 서버 계정 사용 |
+| `No graphical display detected ...` (종료 코드 1) | 헤드리스 Linux에서 GUI 실행 시도 | `--cli --config …` 또는 `run`/`service` 사용. 데스크톱이 있으면 CJK 폰트 설치(4-A절) |
 | `WARNING: ... signature verification skipped` | 서명 미설정 (경고일 뿐 동작은 함) | 운영 PC라면 1편 6단계 키 배포 후 `requireSignedManifests: true` 설정 |
 | `requireSignedManifests is enabled, but ...` | 서명 강제인데 서명 URL/공개키 미설정 | `catalogSignatureUrl`/`manifestSignatureUrl`과 공개키 경로 설정, 서버에 `.sig` 업로드 확인 |
 | `Manifest signature verification failed` | 서명 불일치(변조 또는 catalog 갱신 후 재서명 누락) | 2편 6장처럼 catalog/manifest 재서명 |

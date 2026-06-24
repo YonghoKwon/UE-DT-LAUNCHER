@@ -70,6 +70,8 @@ OS: 현재 실행 중인 OS
 
 Windows에서 실행하면 `windows-x64`, Linux에서 실행하면 `linux-x64`만 사용합니다.
 
+> **Linux 실행:** 런처는 Linux에서도 GUI/CLI 모두 1급으로 동작합니다. 일반 프로필도 `linux-x64`를 사용할 수 있고(서버에 linux-x64 릴리스 필요), `--gui`/`--cli` 로 모드를 명시할 수 있으며, 헤드리스 서버는 `--cli`/`run`/`service` 를 씁니다. GUI는 데스크톱(X11/Wayland)과 CJK 폰트가 필요합니다. 자세한 내용은 [guide-03 — 4-A. 리눅스 클라이언트/서버 실행](guide-03-launcher-usage.md#4-a-리눅스-클라이언트서버-실행)을 보세요.
+
 ## 4. 개발자 모드 실행
 
 저장소 루트에서 빌드한 뒤 아래 명령을 실행합니다.

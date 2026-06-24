@@ -159,7 +159,6 @@ public class CatalogResolverTests
     }
 
     [Theory]
-    [InlineData("linux-x64", "prod", "stable", "latest")]
     [InlineData("windows-x64", "dev", "stable", "latest")]
     [InlineData("windows-x64", "prod", "dev", "latest")]
     [InlineData("windows-x64", "prod", "stable", "exact")]
@@ -173,6 +172,13 @@ public class CatalogResolverTests
     public void ValidateClientSelection_GeneralProfile_AllowsProdStableLatest()
     {
         var config = Config(profile: "general");
+        CatalogResolver.ValidateClientSelection(config);
+    }
+
+    [Fact]
+    public void ValidateClientSelection_GeneralProfile_AllowsLinuxProdStableLatest()
+    {
+        var config = Config(profile: "general", platform: "linux-x64");
         CatalogResolver.ValidateClientSelection(config);
     }
 
