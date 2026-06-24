@@ -160,9 +160,19 @@ public static class Program
         if (noLaunch) config.LaunchAfterUpdate = false;
 
         var fileLogger = new FileLogger(config.LogDir);
-        await ResolveCatalogForCliAsync(config);
-        using var engine = new LauncherEngine(config, progress: null, fileLogger);
-        await engine.RunAsync();
+        var reporter = new ConsoleProgressReporter();
+        // Route both catalog resolution and the engine through the reporter so the CLI shows a single
+        // in-place progress bar (interactive) or plain lines (redirected/service); engine console echo off.
+        try
+        {
+            await ResolveCatalogForCliAsync(config, (stage, message, percent) => reporter.Report(new LauncherProgress(stage, message, percent)));
+            using var engine = new LauncherEngine(config, reporter.Report, fileLogger, echoToConsole: false);
+            await engine.RunAsync();
+        }
+        finally
+        {
+            reporter.Finish(); // close an open in-place bar line even if the run threw mid-download
+        }
         return 0;
     }
 
@@ -242,13 +252,12 @@ public static class Program
         return 0;
     }
 
-    private static async Task ResolveCatalogForCliAsync(LauncherConfig config)
+    private static async Task ResolveCatalogForCliAsync(LauncherConfig config, Action<string, string, double?>? log = null)
     {
-        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(10, config.HttpTimeoutSeconds)) };
-        await CatalogResolver.ResolveAsync(config, httpClient, (stage, message, percent) =>
-        {
+        log ??= (stage, message, percent) =>
             Console.WriteLine(percent.HasValue ? $"[{stage}] {message} ({percent:0}%)" : $"[{stage}] {message}");
-        });
+        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(10, config.HttpTimeoutSeconds)) };
+        await CatalogResolver.ResolveAsync(config, httpClient, log);
     }
 
     private static async Task<int> GenerateManifestAsync(string[] args)
