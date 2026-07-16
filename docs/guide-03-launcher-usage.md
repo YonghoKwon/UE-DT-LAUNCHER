@@ -58,11 +58,15 @@ UeDtLauncher sample-config --output launcher.config.json
 | `logDir` | `logs` | 일별 로그 파일 폴더 (`launcher-YYYYMMDD.log`, 14일 보관) |
 | `maxBackupCount` | `3` | 보관할 백업 개수. 초과분은 오래된 것부터 자동 삭제 |
 | `launchAfterUpdate` | `true` | 업데이트 후 앱 자동 실행 |
+| `repairMode` | `false` | true면 전체 파일 해시를 재검증(복구). `run --repair`와 동일한 효과를 설정으로 고정 |
 | `launchArguments` | - | 앱 실행 인자 배열. 예: `["-log"]` |
 | `removeFilesNotInManifest` | `false` | manifest에 없는 설치 파일 삭제 (깨끗한 동기화를 원하면 true) |
-| `maxRetryCount` / `httpTimeoutSeconds` | `3` / `120` | 다운로드 재시도 횟수 / HTTP 타임아웃. 4xx 오류는 재시도하지 않고, 일시 오류만 지수 백오프로 재시도합니다 |
+| `maxRetryCount` / `httpTimeoutSeconds` | `3` / `120` | 다운로드 재시도 횟수 / HTTP 타임아웃(초). 4xx 오류는 재시도하지 않고, 일시 오류만 지수 백오프로 재시도합니다. (`sample-config` 템플릿은 `httpTimeoutSeconds`를 넉넉하게 `300`으로 적어둡니다) |
 | `serviceMode` | - | 무인 서버용. `{ "intervalSeconds": 300, "autoRestartApp": true, "processName": "m7at10_dt" }` — 자세한 내용은 [service-mode.md](service-mode.md) |
 | `selfUpdate` | - | 런처 자체 업데이트. `autoApply: true`면 다음 실행 시 자동 교체 |
+| `windowsIntegration` | - | Windows 바로가기/앱 등록(선택). `{ "appName", "publisher", "shortcutName", "iconPath", "createDesktopShortcut", "createStartMenuShortcut", "registerAppEntry" }` — 기본은 모두 끔(false) |
+| `packages` | `[]` | (고급) 클라이언트가 ZIP 패키지를 통째로 받아 푸는 별도 기능. 일반 차등 업데이트에는 불필요 |
+| `projectAssetsDir` | `assets/projects` | GUI 프로젝트 카드 이미지 등 로컬 에셋 폴더. [launcher-ui-customization.md](launcher-ui-customization.md) 참고 |
 | `projects` | - | GUI 프로젝트 카드 목록(이름/설명/이미지/정렬/프로필별 표시). [launcher-ui-customization.md](launcher-ui-customization.md) 참고 |
 
 ### 역할별 설정 예시
@@ -135,14 +139,18 @@ UeDtLauncher <command> [options]
 
 | 명령 | 용도 | 주요 옵션 |
 | --- | --- | --- |
-| `gui` (또는 인자 없음) | GUI 실행 | |
+| `gui` (또는 인자 없음) | GUI 실행 | `--gui`(GUI 강제 실행) `--cli`(CLI 강제 실행 — 기본적으로 `run`으로 매핑, `--config` 등 인자 추가 가능). `--gui`와 `--cli`를 함께 쓰면 오류(종료 코드 2) |
 | `run` | 업데이트(+실행) 1회 | `--config <file>` `--repair`(전체 재검증) `--no-launch`(업데이트만) |
 | `service` | 무인 감시 루프: 주기 확인→앱 정지→업데이트→재실행 | `--config <file>` `--interval <초>` `--once`(1회 점검) |
 | `rollback` | 백업으로 이전 버전 복원 | `--config <file>` `--list`(백업 목록) `--backup <타임스탬프>`(특정 백업 지정, 생략 시 최신) |
 | `generate-manifest` | 패키지 폴더 → manifest.json | `--package-dir` `--base-url` `--entry-point` `--version` `--platform` `--app-id` `--output` |
 | `update-catalog` | catalog.json에 릴리스 등록/제거 | `--catalog` `--project-id` `--version` `--environment` `--channel` `--platform` `--manifest-url` `--allowed-profiles` `--set-latest` `--remove` |
+| `list-releases` | 카탈로그에 등록된 릴리스를 표로 출력(점검용) | `--catalog` `--project`(선택) |
+| `generate-nginx-acl` | 프로젝트별 IP 허용목록 → nginx 설정 생성 | `--allowlist` `--output`(생략 시 stdout) |
 | `sign-manifest` | manifest/catalog ECDSA 서명 생성 | `--manifest` `--private-key` `--output` |
 | `sample-config` | 설정 템플릿 생성 | `--output` |
+
+> Windows에서 런처는 GUI 앱으로 빌드되어 **더블클릭하면 검은 콘솔 창 없이 런처 창만** 뜹니다. CLI 명령을 cmd/PowerShell에서 실행하면 그 터미널에 출력이 보입니다.
 
 예시:
 
@@ -157,6 +165,41 @@ UeDtLauncher run --config launcher.config.json --repair --no-launch
 UeDtLauncher rollback --config launcher.config.json --list
 UeDtLauncher rollback --config launcher.config.json --backup 20260611075230
 ```
+
+## 3-A. CLI 실행 화면 (진행 표시)
+
+`run`(= `--cli`) 으로 업데이트를 돌리면 출력이 **터미널인지, 파일/서비스로 리다이렉트되었는지**에 따라 표시 방식이 자동으로 바뀝니다. 어느 경우든 **동작은 같고 화면 표현만 다릅니다.**
+
+### ① 대화형 터미널 — 한 줄짜리 진행 바 (in-place)
+
+cmd/PowerShell/SSH 터미널에서 직접 실행하면, 다운로드 동안 **한 줄을 제자리에서 갱신**하는 진행 바가 표시됩니다. 전체 진행률, 현재 파일 번호(n/m), 전송 속도, 받은 용량/전체 용량이 한눈에 보입니다:
+
+```text
+[Catalog] Selected ue-dt-simulator 1.2.0 / prod / windows-x64 / stable (4%)
+[########------------]  41%  파일 12/87  34.2 MB/s  120.4 MB / 293.6 MB
+```
+
+- 진행 바 줄은 `\r`로 같은 자리를 다시 그리므로 화면이 스크롤로 도배되지 않습니다(초당 약 10회 갱신).
+- 다운로드가 끝나거나(또는 중간에 오류로 끝나도) 진행 바 줄은 줄바꿈으로 닫히고 이후 단계(`[Apply]`, `[Complete]` 등)는 보통의 줄로 출력됩니다.
+
+### ② 출력 리다이렉트(파일/journald/NSSM/서비스) — 평문 줄 출력
+
+출력이 파일이나 로그 시스템으로 넘어가면(예: `> run.log`, systemd journald, NSSM 서비스) 진행 바 대신 **예전과 동일한 평문 줄**을 출력합니다. `\r`(캐리지 리턴)을 쓰지 않으므로 로그 파일이 깨지지 않습니다:
+
+```text
+[Catalog] Downloading release catalog... (2%)
+[Catalog] Selected ue-dt-simulator 1.2.0 / prod / windows-x64 / stable (4%)
+[Plan] Download/repair: 87, Remove: 0 (20%)
+[Download] (12/87) Engine/Binaries/Win64/Game.pak (45%)
+[Apply] Applying update with backup... (70%)
+[Complete] Update completed. (100%)
+```
+
+> 즉 같은 `run` 명령이라도, 사람이 보는 터미널에서는 ①의 진행 바, `... > run.log`처럼 리다이렉트하거나 서비스로 띄우면 ②의 평문 줄이 나옵니다.
+
+### ③ 파일 로그는 항상 동일
+
+표시 방식과 무관하게, 모든 단계는 런처 폴더의 **`logs/launcher-YYYYMMDD.log`** 에 그대로 기록됩니다(일별, 14일 보관 — CLI/GUI/서비스 공통). 진행 바를 쓰든 평문 줄을 쓰든 파일 로그 내용은 동일합니다.
 
 ## 4. 무인 서버(픽셀 스트리밍) 운영
 
@@ -173,13 +216,70 @@ journalctl -u ue-dt-launcher.service -f      # 실시간 로그
 
 동작 규칙: 설치 버전 ≠ 카탈로그 버전이면 앱을 정상 종료(안 되면 강제 종료)하고 업데이트 후 재실행합니다. 앱이 크래시로 죽어 있으면 다음 주기에 자동 재실행. 카탈로그가 구버전을 가리키면 다운그레이드도 따라갑니다(운영 롤백 배포 지원).
 
+## 4-A. 리눅스 클라이언트/서버 실행
+
+런처는 Windows뿐 아니라 **Linux에서도 1급(first-class)으로 GUI/CLI 모두** 동작합니다.
+
+### GUI / CLI 모드를 명시적으로 고르기
+
+| 실행 | 동작 |
+| --- | --- |
+| `./UeDtLauncher` (인자 없음) 또는 `./UeDtLauncher gui` | GUI 실행 |
+| `./UeDtLauncher --gui` | GUI 강제 실행 (인자 위치 무관) |
+| `./UeDtLauncher --cli --config launcher.config.json` | CLI 강제 실행. 내부적으로 `run`으로 매핑되어 1회 업데이트(+실행) |
+| `./UeDtLauncher --cli service --config launcher.config.json` | `--cli` 뒤에 이미 알려진 서브커맨드(`run`/`service`/…)가 오면 그 명령을 그대로 사용 |
+| `./UeDtLauncher run …` / `./UeDtLauncher service …` | 기존과 동일하게 그대로 동작 |
+
+> `--gui`와 `--cli`를 **동시에** 주면 `--gui and --cli cannot be used together.` 를 출력하고 종료 코드 2로 끝납니다.
+
+### GUI 실행 요건 (데스크톱 + CJK 폰트)
+
+GUI는 **그래픽 데스크톱 환경(X11 또는 Wayland)** 이 있어야 뜹니다.
+
+- 그래픽 디스플레이가 전혀 없는 경우(헤드리스 서버: `DISPLAY`/`WAYLAND_DISPLAY` 미설정), GUI 실행을 시도하면 안내 메시지를 출력하고 **종료 코드 1**로 끝납니다. 이때는 아래 CLI 모드를 쓰세요.
+- 디스플레이는 있는데 GUI 초기화에 실패하면(폰트/디스플레이 서버 문제) 역시 안내 메시지를 출력하고 종료 코드 1로 끝납니다.
+- 한글이 깨지지 않게 **CJK 폰트**를 설치하세요:
+
+```bash
+# Fedora/RHEL/Rocky
+sudo dnf install -y google-noto-sans-cjk-fonts
+
+# Debian/Ubuntu
+sudo apt install -y fonts-noto-cjk
+```
+
+### 헤드리스 서버는 CLI/서비스 모드로
+
+화면이 없는 서버(픽셀 스트리밍 등)에서는 GUI 대신 CLI를 사용합니다:
+
+```bash
+# 1회 업데이트(+실행)
+./UeDtLauncher --cli --config launcher.config.json
+# 또는 동일하게
+./UeDtLauncher run --config launcher.config.json
+
+# 무인 감시 루프
+./UeDtLauncher service --config launcher.config.json
+```
+
+### 일반 프로필도 Linux에서 동작
+
+이제 `clientProfile: "general"` 도 `targetPlatform: "linux-x64"` 를 사용할 수 있습니다(여전히 `prod` + `stable` + `latest` 고정). 단, **서버 catalog에 해당 프로젝트의 `linux-x64` 릴리스가 등록되어 있어야** 합니다(2편으로 linux-x64 패키지를 퍼블리시).
+
+### Linux 바이너리 빌드
+
+- 저장소 루트에서 `scripts/publish-linux-x64.sh` 실행
+- 또는 Windows에서 크로스 컴파일 ([2편](guide-02-publish-package.md) 참고)
+
 ## 5. 문제 해결 (Troubleshooting)
 
 | 증상 / 메시지 | 원인 | 해결 |
 | --- | --- | --- |
 | `Project was not found in catalog` | config의 `projectId`가 catalog에 없음 | catalog.json의 `projects[].projectId`와 일치시키기. 2편으로 릴리스가 올라갔는지 확인 |
-| `No allowed release matched` | 환경/채널/플랫폼/프로필 조합에 맞는 릴리스 없음 | catalog의 릴리스 항목과 config의 environment/channel/targetPlatform/`allowedClientProfiles` 대조 |
-| `General users are allowed to use only ...` | 일반 프로필로 dev/beta/exact 요청 | 일반 PC는 prod+stable+latest 고정. 개발 빌드가 필요하면 developer 프로필 + 서버 계정 사용 |
+| `No release in catalog matched` | 환경/채널/플랫폼/프로필 조합에 맞는 릴리스 없음 | 메시지에 **카탈로그 실제값 vs 요청값**과 힌트가 같이 표시됨(예: `platform (catalog 'windows-64' vs requested 'windows-x64')`). 그대로 보고 고치거나 `list-releases`로 등록 확인 |
+| `이 네트워크(IP)에서는 접근이 허용되지 않은 프로젝트` / 403 | 서버의 프로젝트별 IP 제한에 막힘 | 허용된 네트워크에서 접속하거나 서버 관리자에게 IP 추가 요청(1편 9단계) |
+| `General users are allowed to use only ...` | 일반 프로필로 dev/beta/exact 또는 허용되지 않은 플랫폼 요청 | 일반 PC는 prod+stable+latest 고정(플랫폼은 `windows-x64` 또는 `linux-x64` 허용). 개발 빌드가 필요하면 developer 프로필 + 서버 계정 사용 |
+| `No graphical display detected ...` (종료 코드 1) | 헤드리스 Linux에서 GUI 실행 시도 | `--cli --config …` 또는 `run`/`service` 사용. 데스크톱이 있으면 CJK 폰트 설치(4-A절) |
 | `WARNING: ... signature verification skipped` | 서명 미설정 (경고일 뿐 동작은 함) | 운영 PC라면 1편 6단계 키 배포 후 `requireSignedManifests: true` 설정 |
 | `requireSignedManifests is enabled, but ...` | 서명 강제인데 서명 URL/공개키 미설정 | `catalogSignatureUrl`/`manifestSignatureUrl`과 공개키 경로 설정, 서버에 `.sig` 업로드 확인 |
 | `Manifest signature verification failed` | 서명 불일치(변조 또는 catalog 갱신 후 재서명 누락) | 2편 6장처럼 catalog/manifest 재서명 |

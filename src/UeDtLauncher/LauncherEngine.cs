@@ -12,12 +12,14 @@ public sealed class LauncherEngine : IDisposable
     private readonly HttpClient _httpClient;
     private readonly Action<LauncherProgress>? _progress;
     private readonly FileLogger? _fileLogger;
+    private readonly bool _echoToConsole;
 
-    public LauncherEngine(LauncherConfig config, Action<LauncherProgress>? progress = null, FileLogger? fileLogger = null)
+    public LauncherEngine(LauncherConfig config, Action<LauncherProgress>? progress = null, FileLogger? fileLogger = null, bool echoToConsole = true)
     {
         _config = config;
         _progress = progress;
         _fileLogger = fileLogger;
+        _echoToConsole = echoToConsole;
         _httpClient = new HttpClient
         {
             Timeout = TimeSpan.FromSeconds(Math.Max(10, config.HttpTimeoutSeconds))
@@ -103,7 +105,10 @@ public sealed class LauncherEngine : IDisposable
 
     private void Log(string stage, string message, double? percent = null)
     {
-        Console.WriteLine(percent.HasValue ? $"[{stage}] {message} ({percent:0}%)" : $"[{stage}] {message}");
+        if (_echoToConsole)
+        {
+            Console.WriteLine(percent.HasValue ? $"[{stage}] {message} ({percent:0}%)" : $"[{stage}] {message}");
+        }
         _fileLogger?.Log(stage, message);
         _progress?.Invoke(new LauncherProgress(stage, message, percent));
     }

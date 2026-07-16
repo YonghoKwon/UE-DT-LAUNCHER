@@ -12,7 +12,7 @@ WindowsNoEditor/  →  파일별 SHA-256 목록     →  "이 프로젝트의 1.
   ...                                           catalog.json 갱신
 ```
 
-도구가 이 과정을 자동화합니다. **로컬에서 패키징 → ZIP으로 압축 → 서버에 업로드 → 서버에서 등록**하는 가장 일반적인 운영 흐름은 **방법 D**(아래)를 보세요. 그 외에 서버에 빌드 폴더를 직접 둔 경우는 방법 A, Windows에서 원격 전송은 방법 B, 내부 동작 이해는 방법 C입니다.
+도구가 이 과정을 자동화합니다. **로컬에서 패키징 → ZIP으로 압축 → 서버에 업로드 → 서버에서 등록**하는 가장 일반적인 운영 흐름은 **방법 D**(아래)를 보세요. 같은 흐름을 **메뉴로 안내**받고 싶으면 **방법 E(대화형 위저드)**가 가장 편합니다. 그 외에 서버에 빌드 폴더를 직접 둔 경우는 방법 A, Windows에서 원격 전송은 방법 B, 내부 동작 이해는 방법 C입니다.
 
 > ⚠️ **ZIP은 "업로드(전송) 편의용"입니다.** 서버에서 압축을 풀어 `files/` 아래 **개별 파일**로 두면, 클라이언트는 manifest(파일별 SHA-256)를 보고 **바뀐 파일만 개별 다운로드**합니다 — ZIP을 통째로 받는 게 아닙니다. (클라이언트가 ZIP을 통째로 받아 푸는 건 별도 `packages` 기능이며 이 문서 범위가 아닙니다.)
 
@@ -173,6 +173,101 @@ curl -I "$SERVER_URL/projects/$PROJ/$ENV/$CH/$VER/$PLAT/files/M7AT10_DT.exe"    
 ```
 
 → 클라이언트는 manifest를 보고 **바뀐 파일만** `app/`로 받은 뒤 `entryPoint`(M7AT10_DT.exe)를 실행합니다. 다음 버전(예 1.1.0)을 D-1~D-6으로 올리면, 재실행 시 **달라진 파일만** 받습니다.
+
+---
+
+## 방법 E — 대화형 위저드 (`publish-wizard.sh`)
+
+> 방법 D를 **메뉴로 안내**합니다. 운영자가 서버에 SSH로 접속해 zip 하나만 올려두면, 위저드가 **기존 디렉터리 구조를 스캔**해 프로젝트/환경/채널/버전/플랫폼을 **번호 선택**으로 고르게 합니다. `windows-64` 같은 오타가 원천 차단되고, 압축 해제 → manifest 생성 → catalog 갱신까지 한 번에 끝납니다(내부적으로 `publish-release.sh --no-copy`에 위임).
+
+### E-0. 사전 준비물
+
+| 항목 | 설명 |
+| --- | --- |
+| 업로드된 zip | 패키징 결과를 압축해 `INCOMING_DIR`(기본 `$SERVER_ROOT/incoming`)에 업로드 |
+| 런처 바이너리 | 서버에 `UeDtLauncher` 리눅스 바이너리. `publish/linux-x64/UeDtLauncher` → PATH 순으로 탐색, 또는 `export UE_DT_LAUNCHER_BIN=/dt/tools/UeDtLauncher` |
+| `unzip` | 서버에 설치되어 있어야 함(없으면 명확한 오류로 중단) |
+
+설정값(`SERVER_ROOT`/`BASE_URL_ROOT`/`INCOMING_DIR`)은 **환경변수 → `tools/publish.env` → 기본값을 보여주는 프롬프트** 순으로 해결됩니다. 처음 실행 시 입력한 값을 `tools/publish.env`에 저장해 다음부터 묻지 않게 할 수 있습니다(템플릿: `tools/publish.env.example`).
+
+### E-1. 실행
+
+```bash
+# zip 경로를 직접 넘기거나(권장), 생략하면 INCOMING_DIR/현재 폴더의 zip 목록에서 선택
+./tools/publish-wizard.sh /dt/incoming/m7at10-dt-1.0.0.zip
+```
+
+### E-2. 예시 세션
+
+```text
+$ ./tools/publish-wizard.sh /dt/incoming/m7at10-dt-1.0.0.zip
+업로드(incoming) 디렉터리(INCOMING_DIR) [/srv/ue-dt-updates/incoming]:
+이 설정을 .../tools/publish.env 에 저장할까요? [Y/n]: n
+ZIP: /dt/incoming/m7at10-dt-1.0.0.zip
+프로젝트를 선택하세요:
+  1) ue-dt-simulator
+  2) [새 프로젝트 입력]
+선택 (1-2): 2
+새 projectId (소문자/숫자/하이픈, 공백·슬래시 금지): m7at10-dt
+표시 이름(displayName) [m7at10-dt]:
+환경(environment)을 선택하세요 (✓ = 이미 존재):
+  1) prod
+  2) dev
+선택 (1-2): 1
+채널(channel)을 선택하세요 (✓ = 이미 존재):
+  1) stable
+  2) beta
+  3) dev
+선택 (1-3): 1
+기존 버전 없음 (m7at10-dt/prod/stable)
+새 버전(version): 1.0.0
+플랫폼(platform)을 선택하세요 (✓ = 이미 존재):
+  1) windows-x64
+  2) linux-x64
+선택 (1-2): 2
+압축 해제: /dt/incoming/m7at10-dt-1.0.0.zip -> .../1.0.0/linux-x64/files
+실행 진입점(entry-point)을 선택하세요 (files/ 기준 상대경로):
+  1) Linux/m7at10_dt.sh
+  2) [직접 입력]
+선택 (1-2): 1
+카탈로그 프로필(catalog-profile)을 선택하세요:
+  1) general
+  2) developer
+선택 (1-2): 1
+받을 수 있는 클라이언트 프로필(allowed-profiles, 쉼표 구분) [general]: general,developer
+이 버전을 같은 트랙의 '최신(latest)'으로 표시할까요? [Y/n]:
+릴리스 노트(notes, 비워도 됨):
+
+================ 요약 ================
+  ZIP             : /dt/incoming/m7at10-dt-1.0.0.zip
+  projectId       : m7at10-dt
+  displayName     : m7at10-dt
+  environment     : prod
+  channel         : stable
+  version         : 1.0.0
+  platform        : linux-x64
+  entry-point     : Linux/m7at10_dt.sh
+  catalog-profile : general
+  allowed-profiles: general,developer
+  set-latest      : yes
+  notes           : (없음)
+  server-root     : /srv/ue-dt-updates
+  base-url-root   : http://10.10.20.5
+  dest            : .../1.0.0/linux-x64/files
+======================================
+위 내용으로 퍼블리시할까요? [y/N]: y
+Manifest generated: .../1.0.0/linux-x64/manifest.json
+Catalog updated: .../catalogs/general/catalog.json
+Release published ...
+
+등록된 릴리스 (m7at10-dt):
+m7at10-dt  (m7at10-dt)  — 1 release(s)
+  1.0.0          prod /stable /linux-x64    profiles=[general,developer] [latest]
+```
+
+- 이미 존재하는 환경/채널/플랫폼은 메뉴에 ` ✓`로 표시됩니다. 같은 `version/platform`이 이미 있으면 `덮어쓸까요? [y/N]`로 확인합니다.
+- 마지막에 `restorecon`이 있으면 `sudo restorecon -Rv "$SERVER_ROOT"`를 시도합니다(실패해도 경고만, 중단 안 함). SELinux를 쓰는 서버라면 403 방지를 위해 권장됩니다.
+- 모든 프롬프트는 stdin에서 읽으므로, 답을 파이프로 넣어 자동화/테스트할 수 있습니다.
 
 ---
 
@@ -341,11 +436,19 @@ $L sign-manifest --manifest /srv/ue-dt-updates/catalogs/general/catalog.json \
 
 > 중요: **catalog를 갱신할 때마다 catalog 서명도 다시** 만들어야 합니다. catalog에 릴리스를 등록할 때 `--manifest-signature-url`로 manifest 서명 URL도 함께 등록하세요.
 
+## ⚠️ platform 값은 정확히 (흔한 실수)
+
+`--platform`은 `windows-x64` 또는 `linux-x64`로 **정확히** 써야 합니다. `windows`, `windows-64`, `win-x64` 같은 변형을 쓰면 클라이언트가 릴리스를 못 찾습니다(`environment`/`channel`도 동일). 이제 도구가 잘못된 값을 **즉시 거부**합니다:
+```text
+ERROR: Invalid --platform 'windows-64'. Allowed: windows-x64, linux-x64.
+```
+
 ## 업로드 후 확인 체크리스트
 
 ```bash
-# 1. catalog에 새 버전이 보이는가 (isLatest: true 확인)
-curl -s http://서버IP/catalogs/general/catalog.json | python3 -m json.tool | grep -A2 version
+# 1. 등록된 릴리스를 표로 확인 (가장 확실)
+/dt/tools/UeDtLauncher list-releases --catalog /dt/ue-dt-updates/catalogs/general/catalog.json
+#   → m7at10-dt ... 0.0.1  prod /stable /windows-x64  profiles=[general,developer] [latest]
 
 # 2. manifest가 받아지는가
 curl -I http://서버IP/projects/ue-dt-simulator/prod/stable/1.2.0/windows-x64/manifest.json
@@ -354,4 +457,4 @@ curl -I http://서버IP/projects/ue-dt-simulator/prod/stable/1.2.0/windows-x64/m
 UeDtLauncher.exe run --config launcher.config.json --no-launch
 ```
 
-3번에서 `[Complete] Update completed.`가 나오면 끝입니다. 클라이언트 쪽 명령과 문제 해결은 [3편](guide-03-launcher-usage.md)을 보세요.
+3번에서 `[Complete] Update completed.`가 나오면 끝입니다. 혹시 "No release in catalog matched"가 나오면 메시지에 **카탈로그의 실제 값 vs 요청 값**이 같이 표시되므로(예: `platform (catalog 'windows-64' vs requested 'windows-x64')`) 그대로 보고 고치면 됩니다. 클라이언트 쪽 명령과 문제 해결은 [3편](guide-03-launcher-usage.md)을 보세요.

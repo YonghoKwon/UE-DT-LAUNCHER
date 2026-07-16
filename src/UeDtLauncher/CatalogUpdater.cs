@@ -27,6 +27,7 @@ public static class CatalogUpdater
         if (string.IsNullOrWhiteSpace(update.Version)) throw new ArgumentException("version is required.");
         if (string.IsNullOrWhiteSpace(update.ManifestUrl)) throw new ArgumentException("manifestUrl is required.");
         if (update.AllowedClientProfiles.Count == 0) throw new ArgumentException("At least one allowed client profile is required.");
+        KnownValues.ValidateReleaseTuple(update.Platform, update.Environment, update.Channel);
 
         var catalog = await LoadOrCreateAsync(catalogPath, cancellationToken);
         var project = FindProject(catalog, update.ProjectId);

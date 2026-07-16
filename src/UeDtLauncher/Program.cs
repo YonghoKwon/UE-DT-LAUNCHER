@@ -7,10 +7,27 @@ namespace UeDtLauncher;
 
 public static class Program
 {
+    private static readonly string[] KnownSubcommands =
+    {
+        "run", "service", "rollback", "generate-manifest", "update-catalog",
+        "list-releases", "generate-nginx-acl", "sign-manifest", "sample-config"
+    };
+
     [STAThread]
     public static int Main(string[] args)
     {
-        var isGui = args.Length == 0 || string.Equals(args[0], "gui", StringComparison.OrdinalIgnoreCase);
+        var wantsGui = Has(args, "--gui");
+        var wantsCli = Has(args, "--cli");
+
+        if (wantsGui && wantsCli)
+        {
+            Console.Error.WriteLine("--gui and --cli cannot be used together.");
+            return 2;
+        }
+
+        // GUI when: --gui present, OR (no --cli AND (args empty OR args[0]=="gui")).
+        var isGui = wantsGui
+            || (!wantsCli && (args.Length == 0 || string.Equals(args[0], "gui", StringComparison.OrdinalIgnoreCase)));
 
         // The app is a GUI-subsystem (WinExe) build so double-clicking the launcher shows no console
         // window. For CLI subcommands launched from a terminal, attach to that terminal so output is visible.
@@ -20,10 +37,65 @@ public static class Program
 
         if (isGui)
         {
-            return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args.Length == 0 ? Array.Empty<string>() : args.Skip(1).ToArray());
+            // Headless guard: no graphical display available on Linux.
+            if (GuiUnavailable(OperatingSystem.IsLinux(), Environment.GetEnvironmentVariable("DISPLAY"), Environment.GetEnvironmentVariable("WAYLAND_DISPLAY")))
+            {
+                Console.Error.WriteLine("No graphical display detected (DISPLAY/WAYLAND_DISPLAY are not set).");
+                Console.Error.WriteLine("The GUI requires an X11 or Wayland desktop. On a headless server, run the launcher in CLI mode instead:");
+                Console.Error.WriteLine("  UeDtLauncher --cli --config launcher.config.json");
+                Console.Error.WriteLine("  UeDtLauncher run --config launcher.config.json");
+                Console.Error.WriteLine("  UeDtLauncher service --config launcher.config.json");
+                return 1;
+            }
+
+            try
+            {
+                return BuildAvaloniaApp().StartWithClassicDesktopLifetime(GuiArgs(args));
+            }
+            catch (Exception ex) when (OperatingSystem.IsLinux())
+            {
+                Console.Error.WriteLine("Failed to start the graphical interface: " + ex.Message);
+                Console.Error.WriteLine("A display was detected but GUI initialization failed (likely no usable display server or missing fonts).");
+                Console.Error.WriteLine("Install CJK fonts (e.g. 'sudo dnf install -y google-noto-sans-cjk-fonts' or 'sudo apt install fonts-noto-cjk'), or run in CLI mode:");
+                Console.Error.WriteLine("  UeDtLauncher --cli --config launcher.config.json");
+                Console.Error.WriteLine("  UeDtLauncher run --config launcher.config.json");
+                Console.Error.WriteLine("  UeDtLauncher service --config launcher.config.json");
+                return 1;
+            }
         }
 
-        return MainAsync(args).GetAwaiter().GetResult();
+        return MainAsync(CliArgs(args, wantsCli)).GetAwaiter().GetResult();
+    }
+
+    // Returns true when running on Linux with neither X11 (DISPLAY) nor Wayland (WAYLAND_DISPLAY) available.
+    internal static bool GuiUnavailable(bool isLinux, string? display, string? wayland)
+        => isLinux && string.IsNullOrWhiteSpace(display) && string.IsNullOrWhiteSpace(wayland);
+
+    // Strip a leading "gui" token and any "--gui" token before handing args to Avalonia.
+    internal static string[] GuiArgs(string[] args)
+    {
+        IEnumerable<string> rest = args;
+        if (args.Length > 0 && string.Equals(args[0], "gui", StringComparison.OrdinalIgnoreCase))
+        {
+            rest = args.Skip(1);
+        }
+
+        return rest.Where(arg => !string.Equals(arg, "--gui", StringComparison.OrdinalIgnoreCase)).ToArray();
+    }
+
+    // Map CLI invocation to a subcommand. When --cli is used, default to the "run" client update
+    // unless the remaining args already start with a known subcommand.
+    internal static string[] CliArgs(string[] args, bool wantsCli)
+    {
+        if (!wantsCli) return args;
+
+        var rest = args.Where(arg => !string.Equals(arg, "--cli", StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (rest.Length > 0 && KnownSubcommands.Contains(rest[0], StringComparer.OrdinalIgnoreCase))
+        {
+            return rest;
+        }
+
+        return new[] { "run" }.Concat(rest).ToArray();
     }
 
     [SupportedOSPlatform("windows")]
@@ -62,6 +134,8 @@ public static class Program
                 "rollback" => await RollbackAsync(args.Skip(1).ToArray()),
                 "generate-manifest" => await GenerateManifestAsync(args.Skip(1).ToArray()),
                 "update-catalog" => await UpdateCatalogAsync(args.Skip(1).ToArray()),
+                "list-releases" => await ListReleasesAsync(args.Skip(1).ToArray()),
+                "generate-nginx-acl" => await GenerateNginxAclAsync(args.Skip(1).ToArray()),
                 "sample-config" => await WriteSampleConfigAsync(args.Skip(1).ToArray()),
                 "sign-manifest" => await SignManifestAsync(args.Skip(1).ToArray()),
                 _ => UnknownCommand(command)
@@ -86,9 +160,19 @@ public static class Program
         if (noLaunch) config.LaunchAfterUpdate = false;
 
         var fileLogger = new FileLogger(config.LogDir);
-        await ResolveCatalogForCliAsync(config);
-        using var engine = new LauncherEngine(config, progress: null, fileLogger);
-        await engine.RunAsync();
+        var reporter = new ConsoleProgressReporter();
+        // Route both catalog resolution and the engine through the reporter so the CLI shows a single
+        // in-place progress bar (interactive) or plain lines (redirected/service); engine console echo off.
+        try
+        {
+            await ResolveCatalogForCliAsync(config, (stage, message, percent) => reporter.Report(new LauncherProgress(stage, message, percent)));
+            using var engine = new LauncherEngine(config, reporter.Report, fileLogger, echoToConsole: false);
+            await engine.RunAsync();
+        }
+        finally
+        {
+            reporter.Finish(); // close an open in-place bar line even if the run threw mid-download
+        }
         return 0;
     }
 
@@ -168,13 +252,12 @@ public static class Program
         return 0;
     }
 
-    private static async Task ResolveCatalogForCliAsync(LauncherConfig config)
+    private static async Task ResolveCatalogForCliAsync(LauncherConfig config, Action<string, string, double?>? log = null)
     {
-        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(10, config.HttpTimeoutSeconds)) };
-        await CatalogResolver.ResolveAsync(config, httpClient, (stage, message, percent) =>
-        {
+        log ??= (stage, message, percent) =>
             Console.WriteLine(percent.HasValue ? $"[{stage}] {message} ({percent:0}%)" : $"[{stage}] {message}");
-        });
+        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(10, config.HttpTimeoutSeconds)) };
+        await CatalogResolver.ResolveAsync(config, httpClient, log);
     }
 
     private static async Task<int> GenerateManifestAsync(string[] args)
@@ -188,6 +271,13 @@ public static class Program
         var platform = Get(args, "--platform") ?? (OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64");
         var appId = Get(args, "--app-id");
 
+        KnownValues.ValidatePlatform(platform);
+        KnownValues.ValidateChannel(channel);
+        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var baseUri) || (baseUri.Scheme != Uri.UriSchemeHttp && baseUri.Scheme != Uri.UriSchemeHttps))
+        {
+            Console.Error.WriteLine($"WARNING: --base-url should be an absolute http(s) URL the client can reach (got '{baseUrl}'). Manifest file URLs are built from it.");
+        }
+
         await ManifestGenerator.GenerateAsync(packageDir, output, baseUrl, entryPoint, version, channel, platform, appId);
         return 0;
     }
@@ -200,6 +290,8 @@ public static class Program
         var environment = Get(args, "--environment") ?? "prod";
         var channel = Get(args, "--channel") ?? "stable";
         var platform = Get(args, "--platform") ?? (OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64");
+
+        KnownValues.ValidateReleaseTuple(platform, environment, channel);
 
         if (Has(args, "--remove"))
         {
@@ -230,6 +322,56 @@ public static class Program
 
         Console.WriteLine($"Release upserted: {projectId} {version} {environment}/{channel}/{platform} (profiles: {string.Join(",", profiles)})");
         Console.WriteLine($"Catalog updated: {catalogPath}");
+        return 0;
+    }
+
+    private static async Task<int> ListReleasesAsync(string[] args)
+    {
+        var catalogPath = Required(args, "--catalog");
+        var projectFilter = Get(args, "--project");
+        var catalog = await JsonFiles.ReadAsync<DistributionCatalog>(catalogPath);
+
+        var projects = catalog.Projects
+            .Where(p => string.IsNullOrWhiteSpace(projectFilter) || string.Equals(p.ProjectId, projectFilter, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (projects.Count == 0)
+        {
+            Console.WriteLine(string.IsNullOrWhiteSpace(projectFilter) ? "Catalog has no projects." : $"Project not found: {projectFilter}");
+            return 0;
+        }
+
+        foreach (var project in projects)
+        {
+            Console.WriteLine($"{project.ProjectId}  ({project.DisplayName})  — {project.Releases.Count} release(s)");
+            foreach (var r in project.Releases.OrderBy(r => r.Environment).ThenBy(r => r.Channel).ThenBy(r => r.Platform).ThenBy(r => r.Version))
+            {
+                var latest = r.IsLatest ? " [latest]" : string.Empty;
+                Console.WriteLine($"  {r.Version,-14} {r.Environment,-5}/{r.Channel,-7}/{r.Platform,-12} profiles=[{string.Join(",", r.AllowedClientProfiles)}]{latest}");
+            }
+        }
+
+        return 0;
+    }
+
+    private static async Task<int> GenerateNginxAclAsync(string[] args)
+    {
+        var allowlistPath = Required(args, "--allowlist");
+        var output = Get(args, "--output");
+        var allowlist = await JsonFiles.ReadAsync<ProjectIpAllowlist>(allowlistPath);
+        var config = NginxAclGenerator.Generate(allowlist);
+
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            Console.WriteLine(config);
+        }
+        else
+        {
+            await File.WriteAllTextAsync(output, config);
+            Console.WriteLine($"Nginx per-project IP ACL written: {output}");
+            Console.WriteLine("Include it ABOVE the generic /projects/ location blocks, then: sudo nginx -t && sudo systemctl reload nginx");
+        }
+
         return 0;
     }
 
@@ -325,10 +467,12 @@ public static class Program
         Console.WriteLine("UE-DT-LAUNCHER");
         Console.WriteLine();
         Console.WriteLine("Commands:");
-        Console.WriteLine("  gui");
+        Console.WriteLine("  gui                 (also: --gui forces GUI; --cli forces CLI -> defaults to 'run')");
         Console.WriteLine("  sample-config --output launcher.config.json");
         Console.WriteLine("  generate-manifest --package-dir <dir> --base-url <url> --entry-point <relative path> --version <version> [--app-id <id>] --output <manifest.json>");
         Console.WriteLine("  update-catalog --catalog <catalog.json> --project-id <id> --version <version> --environment <prod|dev> --channel <stable|beta|dev> --platform <windows-x64|linux-x64> --manifest-url <url> [--display-name <name>] [--allowed-profiles general,developer] [--notes <text>] [--set-latest] [--remove] [--remove-project-if-empty]");
+        Console.WriteLine("  list-releases --catalog <catalog.json> [--project <id>]");
+        Console.WriteLine("  generate-nginx-acl --allowlist <project-ip-allowlist.json> [--output <acl.conf>]");
         Console.WriteLine("  sign-manifest --manifest <manifest.json> --private-key <private.pem> --output <manifest.json.sig>");
         Console.WriteLine("  run --config launcher.config.json [--repair] [--no-launch]");
         Console.WriteLine("  service --config launcher.config.json [--interval <seconds>] [--once]");

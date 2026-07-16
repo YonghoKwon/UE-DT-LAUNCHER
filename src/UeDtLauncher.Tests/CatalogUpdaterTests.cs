@@ -113,6 +113,14 @@ public class CatalogUpdaterTests : IDisposable
         await Assert.ThrowsAsync<ArgumentException>(() => CatalogUpdater.UpsertReleaseAsync(_catalogPath, update));
     }
 
+    [Fact]
+    public async Task UpsertRelease_RejectsInvalidPlatform()
+    {
+        var update = Update("1.0.0", platform: "windows-64"); // typo
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => CatalogUpdater.UpsertReleaseAsync(_catalogPath, update));
+        Assert.Contains("windows-x64", ex.Message);
+    }
+
     private static string FindExamplesDir()
     {
         var dir = AppContext.BaseDirectory;
