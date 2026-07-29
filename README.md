@@ -69,6 +69,7 @@ publish/linux-x64/UeDtLauncher
 - `.state/{projectId}/{platform}` 기반 프로젝트별 캐시·백업·설치 상태·PID 격리
 - `.backup` 백업 후 실제 설치 폴더 반영
 - 적용 실패 시 rollback
+- 중단된 적용 transaction을 다음 실행에서 자동 감지·롤백
 - HTTP Range 기반 이어받기 시도
 - 다운로드 retry
 - repair 모드

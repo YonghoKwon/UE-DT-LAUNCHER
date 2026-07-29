@@ -35,6 +35,10 @@ public sealed class LauncherEngine : IDisposable
         Directory.CreateDirectory(_config.InstallDir);
         Directory.CreateDirectory(_config.StagingDir);
         Directory.CreateDirectory(_config.BackupDir);
+        await UpdateTransactionManager.RecoverIfNeededAsync(
+            _config,
+            message => Log("Recovery", message),
+            cancellationToken);
 
         Log("Manifest", "Downloading remote manifest...", 5);
         var (remoteManifest, manifestJson) = await DownloadManifestAsync(cancellationToken);
@@ -65,11 +69,20 @@ public sealed class LauncherEngine : IDisposable
             await PrepareStagingAsync(plan, remoteManifest, cancellationToken);
 
             Log("Apply", "Applying update with backup...", 70);
-            var backupRoot = await ApplyUpdateAsync(plan, localManifest, remoteManifest, cancellationToken);
-
-            Log("Manifest", "Writing installed manifest...", 80);
-            await JsonFiles.WriteAsync(_config.InstalledManifestPath, remoteManifest, cancellationToken);
-            await WriteInstallStateAsync(remoteManifest, manifestJson, backupRoot, cancellationToken);
+            var transaction = await ApplyUpdateAsync(plan, localManifest, remoteManifest, cancellationToken);
+            try
+            {
+                Log("Manifest", "Writing installed manifest...", 80);
+                await JsonFiles.WriteAsync(_config.InstalledManifestPath, remoteManifest, cancellationToken);
+                await WriteInstallStateAsync(remoteManifest, manifestJson, transaction.BackupRoot, cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                Log("Rollback", "State commit failed. Rolling back the update...");
+                await transaction.RollbackAsync(message => Log("Rollback", message), CancellationToken.None);
+                throw;
+            }
             BackupManager.Prune(_config.BackupDir, _config.MaxBackupCount, message => Log("Backup", message));
         }
 
@@ -376,30 +389,54 @@ public sealed class LauncherEngine : IDisposable
         throw new IOException($"Failed to delete file '{path}'.", lastError);
     }
 
-    private async Task<string> ApplyUpdateAsync(UpdatePlan plan, LauncherManifest? localManifest, LauncherManifest remoteManifest, CancellationToken cancellationToken)
+    private async Task<UpdateTransactionContext> ApplyUpdateAsync(UpdatePlan plan, LauncherManifest? localManifest, LauncherManifest remoteManifest, CancellationToken cancellationToken)
     {
         var backupRoot = BackupManager.CreateBackupRoot(_config.BackupDir);
-        var addedPaths = new List<string>();
-
-        // Capture pre-update metadata first: the installed manifest/state files still describe
-        // the previous version at this point.
-        await BackupManager.WriteBackupMetadataAsync(backupRoot, new BackupInfo
-        {
-            PreviousVersion = localManifest?.Version,
-            NewVersion = remoteManifest.Version
-        }, _config.InstalledManifestPath, _config.InstallStatePath, cancellationToken);
+        var addedPaths = plan.DownloadOrRepair
+            .Where(file => !File.Exists(SafePath.ResolveInsideChecked(_config.InstallDir, file.Path)))
+            .Select(file => file.Path)
+            .ToList();
+        var transaction = await UpdateTransactionManager.BeginAsync(
+            _config,
+            backupRoot,
+            localManifest?.Version,
+            remoteManifest.Version,
+            addedPaths,
+            cancellationToken);
 
         try
         {
+            // Capture all pre-update data before marking the transaction as Applying.
+            // If backup preparation is interrupted, recovery can discard it without touching live files.
+            await BackupManager.WriteBackupMetadataAsync(backupRoot, new BackupInfo
+            {
+                PreviousVersion = localManifest?.Version,
+                NewVersion = remoteManifest.Version,
+                AddedPaths = addedPaths
+            }, _config.InstalledManifestPath, _config.InstallStatePath, cancellationToken);
+
             foreach (var relativePath in plan.Remove)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var installedPath = SafePath.ResolveInsideChecked(_config.InstallDir, relativePath);
-                if (File.Exists(installedPath))
-                {
-                    BackupFile(installedPath, SafePath.ResolveInside(backupRoot, relativePath));
-                    File.Delete(installedPath);
-                }
+                if (File.Exists(installedPath)) BackupFile(installedPath, SafePath.ResolveInside(backupRoot, relativePath));
+            }
+
+            foreach (var file in plan.DownloadOrRepair)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var installedPath = SafePath.ResolveInsideChecked(_config.InstallDir, file.Path);
+                var backupPath = SafePath.ResolveInside(backupRoot, file.Path);
+                if (File.Exists(installedPath)) BackupFile(installedPath, backupPath);
+            }
+
+            await transaction.MarkApplyingAsync(cancellationToken);
+
+            foreach (var relativePath in plan.Remove)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var installedPath = SafePath.ResolveInsideChecked(_config.InstallDir, relativePath);
+                if (File.Exists(installedPath)) File.Delete(installedPath);
             }
 
             foreach (var file in plan.DownloadOrRepair)
@@ -407,9 +444,6 @@ public sealed class LauncherEngine : IDisposable
                 cancellationToken.ThrowIfCancellationRequested();
                 var stagingPath = SafePath.ResolveInside(_config.StagingDir, file.Path);
                 var installedPath = SafePath.ResolveInsideChecked(_config.InstallDir, file.Path);
-                var backupPath = SafePath.ResolveInside(backupRoot, file.Path);
-                if (File.Exists(installedPath)) BackupFile(installedPath, backupPath);
-                else addedPaths.Add(file.Path);
                 Directory.CreateDirectory(Path.GetDirectoryName(installedPath)!);
                 File.Move(stagingPath, installedPath, overwrite: true);
                 TryMarkExecutable(installedPath, file.Executable);
@@ -417,19 +451,12 @@ public sealed class LauncherEngine : IDisposable
         }
         catch
         {
-            Log("Rollback", "Apply failed. Rolling back from backup...");
-            RestoreBackup(backupRoot, _config.InstallDir);
+            Log("Rollback", "Apply failed. Rolling back the transaction...");
+            await transaction.RollbackAsync(message => Log("Rollback", message), CancellationToken.None);
             throw;
         }
 
-        await BackupManager.WriteBackupMetadataAsync(backupRoot, new BackupInfo
-        {
-            PreviousVersion = localManifest?.Version,
-            NewVersion = remoteManifest.Version,
-            AddedPaths = addedPaths
-        }, _config.InstalledManifestPath, _config.InstallStatePath, cancellationToken);
-
-        return backupRoot;
+        return transaction;
     }
 
     private async Task ProcessPackagesAsync(CancellationToken cancellationToken)
@@ -454,18 +481,6 @@ public sealed class LauncherEngine : IDisposable
     {
         Directory.CreateDirectory(Path.GetDirectoryName(backupPath)!);
         File.Copy(source, backupPath, overwrite: true);
-    }
-
-    private static void RestoreBackup(string backupRoot, string installDir)
-    {
-        if (!Directory.Exists(backupRoot)) return;
-        foreach (var backupFile in Directory.EnumerateFiles(backupRoot, "*", SearchOption.AllDirectories))
-        {
-            var relative = Path.GetRelativePath(backupRoot, backupFile);
-            var target = SafePath.ResolveInside(installDir, relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.Copy(backupFile, target, overwrite: true);
-        }
     }
 
     private static void TryMarkExecutable(string path, bool executable)

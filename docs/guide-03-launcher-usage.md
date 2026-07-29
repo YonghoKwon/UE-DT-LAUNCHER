@@ -59,6 +59,8 @@ UeDtLauncher sample-config --output launcher.config.json
 | `logDir` | `logs` | 일별 로그 파일 폴더 (`launcher-YYYYMMDD.log`, 14일 보관) |
 | `maxBackupCount` | `3` | 보관할 백업 개수. 초과분은 오래된 것부터 자동 삭제 |
 | `launchAfterUpdate` | `true` | 업데이트 후 앱 자동 실행 |
+
+파일 적용과 `installed-manifest.json`/`install-state.json` 기록은 하나의 transaction으로 처리됩니다. 적용 도중 프로세스가 중단되면 프로젝트 상태 루트의 `transaction.json`을 다음 실행에서 감지하여 이전 백업으로 자동 복구합니다.
 | `repairMode` | `false` | true면 전체 파일 해시를 재검증(복구). `run --repair`와 동일한 효과를 설정으로 고정 |
 | `launchArguments` | - | 앱 실행 인자 배열. 예: `["-log"]` |
 | `removeFilesNotInManifest` | `false` | manifest에 없는 설치 파일 삭제 (깨끗한 동기화를 원하면 true) |
