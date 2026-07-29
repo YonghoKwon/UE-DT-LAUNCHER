@@ -184,6 +184,8 @@ public sealed class InstallState
     public string? ManifestSha256 { get; set; }
     public string InstalledAtUtc { get; set; } = DateTimeOffset.UtcNow.ToString("O");
     public string? LastBackupRoot { get; set; }
+    public Dictionary<string, string> AppliedPackageHashes { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public List<string> SkippedOptionalPackages { get; set; } = new();
 }
 
 public sealed class UpdatePlan

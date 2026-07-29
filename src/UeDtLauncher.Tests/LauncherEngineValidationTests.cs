@@ -34,6 +34,13 @@ public class LauncherEngineValidationTests
     }
 
     [Fact]
+    public void ValidateManifest_RejectsCanonicalDuplicatePaths()
+    {
+        var manifest = Manifest(FileEntry("game.exe"), FileEntry("data/../game.exe"));
+        Assert.Throws<InvalidOperationException>(() => LauncherEngine.ValidateManifest(manifest));
+    }
+
+    [Fact]
     public void ValidateManifest_RejectsEntryPointMissingFromFiles()
     {
         var manifest = Manifest(FileEntry("other.exe"));

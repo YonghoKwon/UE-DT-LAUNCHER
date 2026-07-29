@@ -75,6 +75,7 @@ publish/linux-x64/UeDtLauncher
 - repair 모드
 - ZIP 패키지 다운로드/압축 해제
 - 7z 패키지 다운로드/압축 해제. 단, `7z`, `7zz`, `7za` 실행 파일이 PATH에 있어야 함
+- ZIP/7z 패키지를 staging에서 검증·해제한 뒤 본 업데이트와 같은 transaction으로 적용
 - 런처 자기 자신 업데이트 (`selfUpdate.autoApply` 활성 시 다음 실행에서 자동 교체)
 - Windows 바탕화면/시작 메뉴 shortcut 생성 옵션
 - manifest 생성 명령 (`--app-id` 지원)

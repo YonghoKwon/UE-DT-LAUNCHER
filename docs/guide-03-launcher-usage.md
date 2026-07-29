@@ -68,7 +68,7 @@ UeDtLauncher sample-config --output launcher.config.json
 | `serviceMode` | - | 무인 서버용. `{ "intervalSeconds": 300, "autoRestartApp": true, "processName": "m7at10_dt" }` — 자세한 내용은 [service-mode.md](service-mode.md) |
 | `selfUpdate` | - | 런처 자체 업데이트. `autoApply: true`면 다음 실행 시 자동 교체 |
 | `windowsIntegration` | - | Windows 바로가기/앱 등록(선택). `{ "appName", "publisher", "shortcutName", "iconPath", "createDesktopShortcut", "createStartMenuShortcut", "registerAppEntry" }` — 기본은 모두 끔(false) |
-| `packages` | `[]` | (고급) 클라이언트가 ZIP 패키지를 통째로 받아 푸는 별도 기능. 일반 차등 업데이트에는 불필요 |
+| `packages` | `[]` | (고급) ZIP/7z를 staging에서 검증·해제한 뒤 본 업데이트와 같은 transaction으로 적용. `required=false` 패키지는 실패 시 건너뜀 |
 | `projectAssetsDir` | `assets/projects` | GUI 프로젝트 카드 이미지 등 로컬 에셋 폴더. [launcher-ui-customization.md](launcher-ui-customization.md) 참고 |
 | `projects` | - | GUI 프로젝트 카드 목록(이름/설명/이미지/정렬/프로필별 표시). [launcher-ui-customization.md](launcher-ui-customization.md) 참고 |
 
