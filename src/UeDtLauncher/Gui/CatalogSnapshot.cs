@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace UeDtLauncher.Gui;
 
 public sealed class CatalogSnapshot
@@ -37,9 +35,7 @@ public static class CatalogSnapshotService
         }
 
         using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(10, config.HttpTimeoutSeconds)) };
-        var catalogJson = await httpClient.GetStringAsync(config.CatalogUrl, cancellationToken);
-        var catalog = JsonSerializer.Deserialize<DistributionCatalog>(catalogJson, JsonFiles.Options)
-                      ?? throw new InvalidOperationException("카탈로그 JSON을 읽을 수 없습니다.");
+        var catalog = await CatalogResolver.DownloadCatalogAsync(config, httpClient, cancellationToken: cancellationToken);
 
         var allowedProjects = new List<CatalogProjectOption>();
         var allowedReleases = new List<CatalogReleaseOption>();

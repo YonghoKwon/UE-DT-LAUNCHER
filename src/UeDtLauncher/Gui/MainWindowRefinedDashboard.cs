@@ -522,10 +522,8 @@ public sealed partial class MainWindow : Window
             {
                 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(10, c.HttpTimeoutSeconds)) };
                 await CatalogResolver.ResolveAsync(c, http, (s, m, p) => Dispatcher.UIThread.Post(() => UiProgress(s, m, p)));
-                var json = await http.GetStringAsync(c.ManifestUrl);
-                var signatureVerified = await ManifestSignatureVerifier.VerifyIfConfiguredAsync(json, c, http);
-                if (!signatureVerified && c.RequireSignedManifests) throw new InvalidOperationException("requireSignedManifests is enabled, but manifestSignatureUrl or manifestPublicKeyPath is not configured.");
-                var manifest = JsonSerializer.Deserialize<LauncherManifest>(json, JsonFiles.Options) ?? throw new InvalidOperationException("manifest.json을 읽을 수 없습니다.");
+                var manifestDocument = await ManifestDownloader.DownloadAsync(c, http);
+                var manifest = manifestDocument.Manifest;
                 var missingCount = 0; var changedCount = 0;
                 foreach (var file in manifest.Files)
                 {

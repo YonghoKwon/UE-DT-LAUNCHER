@@ -62,7 +62,11 @@ public static class SelfUpdateManager
 
     internal static string BuildWindowsSwapScript(string launcherDir, string stagedDir, string launcherExe, int pid, string pendingPath, string[] args)
     {
-        var restartArgs = string.Join(" ", args.Select(arg => "\"" + arg + "\""));
+        var safeLauncherDir = WindowsBatchPath(launcherDir);
+        var safeStagedDir = WindowsBatchPath(stagedDir);
+        var safeLauncherExe = WindowsBatchPath(launcherExe);
+        var safePendingPath = WindowsBatchPath(pendingPath);
+        var restartArgs = string.Join(" ", args.Select(WindowsBatchArgument));
         return string.Join("\r\n",
             "@echo off",
             ":wait",
@@ -71,26 +75,59 @@ public static class SelfUpdateManager
             "  timeout /T 1 /NOBREAK >NUL",
             "  goto wait",
             ")",
-            $"xcopy /E /Y /I \"{stagedDir}\\*\" \"{launcherDir}\\\" >NUL",
-            $"del /F /Q \"{pendingPath}\"",
-            $"start \"\" \"{launcherExe}\" {restartArgs}",
+            $"xcopy /E /Y /I \"{safeStagedDir}\\*\" \"{safeLauncherDir}\\\" >NUL",
+            "if errorlevel 1 goto copy_failed",
+            $"del /F /Q \"{safePendingPath}\"",
+            $"start \"\" \"{safeLauncherExe}\" {restartArgs}",
+            "goto cleanup",
+            ":copy_failed",
+            "echo Launcher self-update copy failed. 1>&2",
+            $"del /F /Q \"{safePendingPath}\"",
+            $"start \"\" \"{safeLauncherExe}\" {restartArgs}",
+            ":cleanup",
             "del \"%~f0\"",
             "");
     }
 
     internal static string BuildUnixSwapScript(string launcherDir, string stagedDir, string launcherExe, int pid, string pendingPath, string[] args)
     {
-        var restartArgs = string.Join(" ", args.Select(arg => "'" + arg.Replace("'", "'\\''") + "'"));
+        var restartArgs = string.Join(" ", args.Select(ShellQuote));
         return string.Join("\n",
             "#!/bin/sh",
             $"while kill -0 {pid} 2>/dev/null; do sleep 0.5; done",
-            $"cp -rf \"{stagedDir}/.\" \"{launcherDir}/\"",
-            $"chmod +x \"{launcherExe}\"",
-            $"rm -f \"{pendingPath}\"",
-            $"\"{launcherExe}\" {restartArgs} >/dev/null 2>&1 &",
-            $"rm -f \"$0\"",
+            $"if cp -rf {ShellQuote(stagedDir + "/.")} {ShellQuote(launcherDir + "/")} && chmod +x {ShellQuote(launcherExe)}; then",
+            $"  rm -f {ShellQuote(pendingPath)}",
+            "else",
+            "  echo 'Launcher self-update copy failed.' >&2",
+            $"  rm -f {ShellQuote(pendingPath)}",
+            "fi",
+            $"{ShellQuote(launcherExe)} {restartArgs} >/dev/null 2>&1 &",
+            "rm -f \"$0\"",
             "");
     }
+
+    private static string ShellQuote(string value) => "'" + value.Replace("'", "'\\''") + "'";
+
+    private static string WindowsBatchPath(string value)
+    {
+        if (value.IndexOfAny(['"', '\r', '\n', '%', '!']) >= 0)
+        {
+            throw new InvalidOperationException("Self-update paths contain characters that are unsafe in a Windows batch file.");
+        }
+
+        return value;
+    }
+
+    private static string WindowsBatchArgument(string value)
+    {
+        if (value.IndexOfAny(['"', '\r', '\n', '%', '!']) >= 0)
+        {
+            throw new InvalidOperationException("Launcher arguments contain characters that are unsafe in a Windows batch file.");
+        }
+
+        return "\"" + value + "\"";
+    }
+
     public static async Task PrepareAsync(SelfUpdateConfig selfUpdate, LauncherConfig parentConfig, Action<string, string, double?>? log = null, CancellationToken cancellationToken = default)
     {
         if (!selfUpdate.Enabled || string.IsNullOrWhiteSpace(selfUpdate.ManifestUrl))
@@ -98,21 +135,7 @@ public static class SelfUpdateManager
             return;
         }
 
-        var updateConfig = new LauncherConfig
-        {
-            ManifestUrl = selfUpdate.ManifestUrl,
-            ManifestSignatureUrl = selfUpdate.ManifestSignatureUrl,
-            ManifestPublicKeyPath = selfUpdate.ManifestPublicKeyPath,
-            InstallDir = selfUpdate.InstallDir,
-            StagingDir = Path.Combine(parentConfig.StagingDir, "self-update"),
-            BackupDir = Path.Combine(parentConfig.BackupDir, "self-update"),
-            InstalledManifestPath = Path.Combine(selfUpdate.InstallDir, "installed-manifest.json"),
-            LaunchAfterUpdate = false,
-            RepairMode = false,
-            RemoveFilesNotInManifest = false,
-            MaxRetryCount = parentConfig.MaxRetryCount,
-            HttpTimeoutSeconds = parentConfig.HttpTimeoutSeconds
-        };
+        var updateConfig = BuildUpdateConfig(selfUpdate, parentConfig);
 
         log?.Invoke("SelfUpdate", "Checking launcher self update manifest.", null);
         using (var updateEngine = new LauncherEngine(updateConfig, progress => log?.Invoke(progress.Stage, progress.Message, progress.Percent)))
@@ -149,4 +172,28 @@ public static class SelfUpdateManager
             log?.Invoke("SelfUpdate", "Self update manifest processed, but configured entry point was not found: " + newEntry, null);
         }
     }
+
+    internal static LauncherConfig BuildUpdateConfig(
+        SelfUpdateConfig selfUpdate,
+        LauncherConfig parentConfig) =>
+        new()
+        {
+            ManifestUrl = selfUpdate.ManifestUrl,
+            ManifestSignatureUrl = selfUpdate.ManifestSignatureUrl,
+            ManifestPublicKeyPath = selfUpdate.ManifestPublicKeyPath,
+            RequireSignedManifests = parentConfig.RequireSignedManifests,
+            ProjectId = "launcher-self-update",
+            TargetPlatform = parentConfig.TargetPlatform,
+            InstallDir = selfUpdate.InstallDir,
+            StagingDir = Path.Combine(parentConfig.StagingDir, "self-update"),
+            BackupDir = Path.Combine(parentConfig.BackupDir, "self-update"),
+            InstalledManifestPath = Path.Combine(selfUpdate.InstallDir, "installed-manifest.json"),
+            InstallStatePath = Path.Combine(selfUpdate.InstallDir, "install-state.json"),
+            AppPidPath = Path.Combine(selfUpdate.InstallDir, "app.pid"),
+            LaunchAfterUpdate = false,
+            RepairMode = false,
+            RemoveFilesNotInManifest = false,
+            MaxRetryCount = parentConfig.MaxRetryCount,
+            HttpTimeoutSeconds = parentConfig.HttpTimeoutSeconds
+        };
 }

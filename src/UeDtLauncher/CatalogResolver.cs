@@ -14,6 +14,28 @@ public static class CatalogResolver
         ValidateClientSelection(config);
 
         log?.Invoke("Catalog", "Downloading release catalog...", 2);
+        var catalog = await DownloadCatalogAsync(config, httpClient, log, cancellationToken);
+        var release = SelectRelease(catalog, config);
+        config.ManifestUrl = release.ManifestUrl;
+        config.ManifestSignatureUrl = release.ManifestSignatureUrl;
+        config.Channel = release.Channel;
+        config.Environment = release.Environment;
+        config.TargetPlatform = release.Platform;
+
+        log?.Invoke("Catalog", $"Selected {config.ProjectId} {release.Version} / {release.Environment} / {release.Platform} / {release.Channel}", 4);
+    }
+
+    internal static async Task<DistributionCatalog> DownloadCatalogAsync(
+        LauncherConfig config,
+        HttpClient httpClient,
+        Action<string, string, double?>? log = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(config.CatalogUrl))
+        {
+            throw new InvalidOperationException("catalogUrl is required.");
+        }
+
         using var response = await httpClient.GetAsync(config.CatalogUrl, cancellationToken);
         response.EnsureSuccessStatusCode();
         var catalogJson = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -31,15 +53,7 @@ public static class CatalogResolver
 
         var catalog = JsonSerializer.Deserialize<DistributionCatalog>(catalogJson, JsonFiles.Options)
             ?? throw new InvalidOperationException("Release catalog JSON was empty or invalid.");
-
-        var release = SelectRelease(catalog, config);
-        config.ManifestUrl = release.ManifestUrl;
-        config.ManifestSignatureUrl = release.ManifestSignatureUrl;
-        config.Channel = release.Channel;
-        config.Environment = release.Environment;
-        config.TargetPlatform = release.Platform;
-
-        log?.Invoke("Catalog", $"Selected {config.ProjectId} {release.Version} / {release.Environment} / {release.Platform} / {release.Channel}", 4);
+        return catalog;
     }
 
     private static async Task<bool> VerifyCatalogIfConfiguredAsync(string catalogJson, LauncherConfig config, HttpClient httpClient, CancellationToken cancellationToken)

@@ -10,9 +10,10 @@ public class SelfUpdateScriptTests
         var script = SelfUpdateManager.BuildUnixSwapScript("/opt/launcher", "/opt/launcher-update", "/opt/launcher/UeDtLauncher", 1234, "/opt/launcher/self-update-pending.json", new[] { "run", "--config", "my config.json" });
 
         Assert.Contains("while kill -0 1234", script);
-        Assert.Contains("cp -rf \"/opt/launcher-update/.\" \"/opt/launcher/\"", script);
-        Assert.Contains("chmod +x \"/opt/launcher/UeDtLauncher\"", script);
-        Assert.Contains("rm -f \"/opt/launcher/self-update-pending.json\"", script);
+        Assert.Contains("if cp -rf '/opt/launcher-update/.' '/opt/launcher/'", script);
+        Assert.Contains("chmod +x '/opt/launcher/UeDtLauncher'", script);
+        Assert.Contains("rm -f '/opt/launcher/self-update-pending.json'", script);
+        Assert.Contains("Launcher self-update copy failed.", script);
         Assert.Contains("'run' '--config' 'my config.json'", script);
     }
 
@@ -23,6 +24,7 @@ public class SelfUpdateScriptTests
 
         Assert.Contains("PID eq 1234", script);
         Assert.Contains(@"xcopy /E /Y /I ""C:\Launcher\launcher-update\*"" ""C:\Launcher\""", script);
+        Assert.Contains("if errorlevel 1 goto copy_failed", script);
         Assert.Contains(@"del /F /Q ""C:\Launcher\self-update-pending.json""", script);
         Assert.Contains(@"start """" ""C:\Launcher\UeDtLauncher.exe"" ""gui""", script);
     }
@@ -31,5 +33,29 @@ public class SelfUpdateScriptTests
     public void TryApplyPendingUpdate_NoPendingFile_ReturnsFalse()
     {
         Assert.False(SelfUpdateManager.TryApplyPendingUpdate(new[] { "gui" }));
+    }
+
+    [Fact]
+    public void BuildUpdateConfig_InheritsRequiredSignaturePolicyAndIsolatesState()
+    {
+        var selfUpdate = new SelfUpdateConfig
+        {
+            ManifestUrl = "https://updates.example.com/launcher/manifest.json",
+            InstallDir = "/opt/launcher-update"
+        };
+        var parent = new LauncherConfig
+        {
+            RequireSignedManifests = true,
+            TargetPlatform = "linux-x64",
+            StagingDir = "/var/lib/uedt/staging",
+            BackupDir = "/var/lib/uedt/backups"
+        };
+
+        var config = SelfUpdateManager.BuildUpdateConfig(selfUpdate, parent);
+
+        Assert.True(config.RequireSignedManifests);
+        Assert.Equal("launcher-self-update", config.ProjectId);
+        Assert.Equal(Path.Combine(selfUpdate.InstallDir, "install-state.json"), config.InstallStatePath);
+        Assert.Equal(Path.Combine(parent.StagingDir, "self-update"), config.StagingDir);
     }
 }

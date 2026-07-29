@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Runtime.Versioning;
-using System.Text.Json;
 
 namespace UeDtLauncher;
 
@@ -62,8 +61,13 @@ public sealed class LauncherEngine : IDisposable
                 cancellationToken);
 
             Log("Manifest", "Downloading remote manifest...", 5);
-            var (remoteManifest, manifestJson) = await DownloadManifestAsync(cancellationToken);
-            ValidateManifest(remoteManifest);
+            var manifestDocument = await ManifestDownloader.DownloadAsync(
+                _config,
+                _httpClient,
+                (stage, message, percent) => Log(stage, message, percent),
+                cancellationToken);
+            var remoteManifest = manifestDocument.Manifest;
+            var manifestJson = manifestDocument.Json;
 
             Log("Manifest", $"App: {remoteManifest.AppId} / Version: {remoteManifest.Version} / Platform: {remoteManifest.Platform}", 10);
             var localManifest = await TryLoadLocalManifestAsync(cancellationToken);
@@ -226,26 +230,6 @@ public sealed class LauncherEngine : IDisposable
             SkippedOptionalPackages = skippedOptionalPackages.ToList()
         };
         await JsonFiles.WriteAsync(_config.InstallStatePath, state, cancellationToken);
-    }
-
-    private async Task<(LauncherManifest Manifest, string Json)> DownloadManifestAsync(CancellationToken cancellationToken)
-    {
-        using var response = await _httpClient.GetAsync(_config.ManifestUrl, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        var json = await response.Content.ReadAsStringAsync(cancellationToken);
-        var signatureVerified = await ManifestSignatureVerifier.VerifyIfConfiguredAsync(json, _config, _httpClient, cancellationToken);
-        if (!signatureVerified)
-        {
-            if (_config.RequireSignedManifests)
-            {
-                throw new InvalidOperationException("requireSignedManifests is enabled, but manifestSignatureUrl or manifestPublicKeyPath is not configured.");
-            }
-
-            Log("Security", "WARNING: manifest signature verification skipped (no signature URL or public key configured).");
-        }
-
-        var manifest = JsonSerializer.Deserialize<LauncherManifest>(json, JsonFiles.Options) ?? throw new InvalidOperationException("Remote manifest JSON was empty or invalid.");
-        return (manifest, json);
     }
 
     private async Task<LauncherManifest?> TryLoadLocalManifestAsync(CancellationToken cancellationToken)

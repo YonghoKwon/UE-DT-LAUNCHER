@@ -59,18 +59,18 @@ UeDtLauncher sample-config --output launcher.config.json
 | `logDir` | `logs` | 일별 로그 파일 폴더 (`launcher-YYYYMMDD.log`, 14일 보관) |
 | `maxBackupCount` | `3` | 보관할 백업 개수. 초과분은 오래된 것부터 자동 삭제 |
 | `launchAfterUpdate` | `true` | 업데이트 후 앱 자동 실행 |
-
-파일 적용과 `installed-manifest.json`/`install-state.json` 기록은 하나의 transaction으로 처리됩니다. 적용 도중 프로세스가 중단되면 프로젝트 상태 루트의 `transaction.json`을 다음 실행에서 감지하여 이전 백업으로 자동 복구합니다.
 | `repairMode` | `false` | true면 전체 파일 해시를 재검증(복구). `run --repair`와 동일한 효과를 설정으로 고정 |
 | `launchArguments` | - | 앱 실행 인자 배열. 예: `["-log"]` |
 | `removeFilesNotInManifest` | `false` | manifest에 없는 설치 파일 삭제 (깨끗한 동기화를 원하면 true) |
 | `maxRetryCount` / `httpTimeoutSeconds` | `3` / `120` | 다운로드 재시도 횟수 / HTTP 타임아웃(초). 4xx 오류는 재시도하지 않고, 일시 오류만 지수 백오프로 재시도합니다. (`sample-config` 템플릿은 `httpTimeoutSeconds`를 넉넉하게 `300`으로 적어둡니다) |
 | `serviceMode` | - | 무인 서버용. 다운로드·검증 후 앱을 중지하며 시작 실패 시 자동 롤백 가능. 자세한 내용은 [service-mode.md](service-mode.md) |
-| `selfUpdate` | - | 런처 자체 업데이트. `autoApply: true`면 다음 실행 시 자동 교체 |
+| `selfUpdate` | - | 런처 자체 업데이트. `autoApply: true`면 다음 실행 시 자동 교체. `requireSignedManifests: true`일 때는 자체 업데이트 manifest도 서명 설정이 필수 |
 | `windowsIntegration` | - | Windows 바로가기/앱 등록(선택). `{ "appName", "publisher", "shortcutName", "iconPath", "createDesktopShortcut", "createStartMenuShortcut", "registerAppEntry" }` — 기본은 모두 끔(false) |
 | `packages` | `[]` | (고급) ZIP/7z를 staging에서 검증·해제한 뒤 본 업데이트와 같은 transaction으로 적용. `required=false` 패키지는 실패 시 건너뜀 |
 | `projectAssetsDir` | `assets/projects` | GUI 프로젝트 카드 이미지 등 로컬 에셋 폴더. [launcher-ui-customization.md](launcher-ui-customization.md) 참고 |
 | `projects` | - | GUI 프로젝트 카드 목록(이름/설명/이미지/정렬/프로필별 표시). [launcher-ui-customization.md](launcher-ui-customization.md) 참고 |
+
+파일 적용과 `installed-manifest.json`/`install-state.json` 기록은 하나의 transaction으로 처리됩니다. 적용 도중 프로세스가 중단되면 프로젝트 상태 루트의 `transaction.json`을 다음 실행에서 감지하여 이전 백업으로 자동 복구합니다.
 
 ### 역할별 설정 예시
 
