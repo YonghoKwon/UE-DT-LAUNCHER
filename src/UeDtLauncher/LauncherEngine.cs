@@ -13,117 +13,165 @@ public sealed class LauncherEngine : IDisposable
     private readonly Action<LauncherProgress>? _progress;
     private readonly FileLogger? _fileLogger;
     private readonly bool _echoToConsole;
+    private readonly bool _ownsHttpClient;
 
     public LauncherEngine(LauncherConfig config, Action<LauncherProgress>? progress = null, FileLogger? fileLogger = null, bool echoToConsole = true)
+        : this(config, progress, fileLogger, echoToConsole, httpClient: null)
+    {
+    }
+
+    internal LauncherEngine(
+        LauncherConfig config,
+        Action<LauncherProgress>? progress,
+        FileLogger? fileLogger,
+        bool echoToConsole,
+        HttpClient? httpClient)
     {
         _config = config;
         _progress = progress;
         _fileLogger = fileLogger;
         _echoToConsole = echoToConsole;
-        _httpClient = new HttpClient
-        {
-            Timeout = TimeSpan.FromSeconds(Math.Max(10, config.HttpTimeoutSeconds))
-        };
+        _ownsHttpClient = httpClient is null;
+        _httpClient = httpClient ?? new HttpClient();
+        _httpClient.Timeout = TimeSpan.FromSeconds(Math.Max(10, config.HttpTimeoutSeconds));
     }
 
-    public void Dispose() => _httpClient.Dispose();
+    public void Dispose()
+    {
+        if (_ownsHttpClient) _httpClient.Dispose();
+    }
 
     public async Task RunAsync(CancellationToken cancellationToken = default)
     {
-        using var instanceLock = SingleInstanceLock.Acquire(LauncherPaths.UpdateLockPath(_config));
+        using var prepared = await PrepareAsync(cancellationToken);
+        _ = await CommitPreparedAsync(prepared, cancellationToken);
+        await CompleteRunAsync(prepared.RemoteManifest, cancellationToken);
+    }
 
-        Directory.CreateDirectory(_config.InstallDir);
-        Directory.CreateDirectory(_config.StagingDir);
-        Directory.CreateDirectory(_config.BackupDir);
-        await UpdateTransactionManager.RecoverIfNeededAsync(
-            _config,
-            message => Log("Recovery", message),
+    internal async Task<PreparedLauncherUpdate> PrepareAsync(CancellationToken cancellationToken = default)
+    {
+        var instanceLock = SingleInstanceLock.Acquire(LauncherPaths.UpdateLockPath(_config));
+        try
+        {
+            Directory.CreateDirectory(_config.InstallDir);
+            Directory.CreateDirectory(_config.StagingDir);
+            Directory.CreateDirectory(_config.BackupDir);
+            await UpdateTransactionManager.RecoverIfNeededAsync(
+                _config,
+                message => Log("Recovery", message),
+                cancellationToken);
+
+            Log("Manifest", "Downloading remote manifest...", 5);
+            var (remoteManifest, manifestJson) = await DownloadManifestAsync(cancellationToken);
+            ValidateManifest(remoteManifest);
+
+            Log("Manifest", $"App: {remoteManifest.AppId} / Version: {remoteManifest.Version} / Platform: {remoteManifest.Platform}", 10);
+            var localManifest = await TryLoadLocalManifestAsync(cancellationToken);
+            var localState = await TryLoadInstallStateAsync(cancellationToken);
+
+            Log("Plan", "Building update plan...", 15);
+            var plan = await BuildPlanAsync(remoteManifest, localManifest, cancellationToken);
+            var packagesToPrepare = _config.Packages
+                .Where(package => ShouldPreparePackage(package, localState, _config.RepairMode))
+                .ToList();
+            Log("Plan", $"Download/repair: {plan.DownloadOrRepair.Count}, Remove: {plan.Remove.Count}, Packages: {packagesToPrepare.Count}", 20);
+
+            var preparedPackages = new PreparedPackages();
+            if (plan.HasChanges || packagesToPrepare.Count > 0)
+            {
+                var requiredBytes = plan.DownloadOrRepair.Sum(file => Math.Max(0, file.Size))
+                                    + packagesToPrepare.Sum(package => Math.Max(0, package.Size));
+                DiskSpace.EnsureAvailable(_config.StagingDir, requiredBytes, (stage, message) => Log(stage, message));
+                DiskSpace.EnsureAvailable(_config.InstallDir, requiredBytes, (stage, message) => Log(stage, message));
+
+                Log("Download", "Downloading changed files to staging...", 35);
+                await PrepareStagingAsync(plan, remoteManifest, cancellationToken);
+                preparedPackages = await PreparePackagesAsync(packagesToPrepare, remoteManifest, cancellationToken);
+            }
+
+            return new PreparedLauncherUpdate(
+                remoteManifest,
+                manifestJson,
+                localManifest,
+                localState,
+                plan,
+                preparedPackages,
+                MergePackageHashes(localState, preparedPackages),
+                packagesToPrepare.Count > 0,
+                instanceLock);
+        }
+        catch
+        {
+            instanceLock.Dispose();
+            throw;
+        }
+    }
+
+    internal async Task<string?> CommitPreparedAsync(
+        PreparedLauncherUpdate prepared,
+        CancellationToken cancellationToken = default)
+    {
+        prepared.ThrowIfDisposed();
+        if (!prepared.HasLiveChanges)
+        {
+            Log("Plan", "Already up to date.", 70);
+            if (!File.Exists(_config.InstallStatePath) || prepared.PackagePreparationRequested)
+            {
+                await WriteInstallStateAsync(
+                    prepared.RemoteManifest,
+                    prepared.ManifestJson,
+                    prepared.LocalState?.LastBackupRoot,
+                    prepared.PackageHashes,
+                    prepared.Packages.SkippedOptionalPackages,
+                    cancellationToken);
+            }
+            return null;
+        }
+
+        Log("Apply", "Applying update with backup...", 70);
+        var transaction = await ApplyUpdateAsync(
+            prepared.Plan,
+            prepared.Packages.Files,
+            prepared.LocalManifest,
+            prepared.RemoteManifest,
             cancellationToken);
-
-        Log("Manifest", "Downloading remote manifest...", 5);
-        var (remoteManifest, manifestJson) = await DownloadManifestAsync(cancellationToken);
-        ValidateManifest(remoteManifest);
-
-        Log("Manifest", $"App: {remoteManifest.AppId} / Version: {remoteManifest.Version} / Platform: {remoteManifest.Platform}", 10);
-        var localManifest = await TryLoadLocalManifestAsync(cancellationToken);
-        var localState = await TryLoadInstallStateAsync(cancellationToken);
-
-        Log("Plan", "Building update plan...", 15);
-        var plan = await BuildPlanAsync(remoteManifest, localManifest, cancellationToken);
-        var packagesToPrepare = _config.Packages
-            .Where(package => ShouldPreparePackage(package, localState, _config.RepairMode))
-            .ToList();
-        Log("Plan", $"Download/repair: {plan.DownloadOrRepair.Count}, Remove: {plan.Remove.Count}, Packages: {packagesToPrepare.Count}", 20);
-
-        if (!plan.HasChanges && packagesToPrepare.Count == 0)
+        try
         {
-            Log("Plan", "Already up to date.", 35);
-            if (!File.Exists(_config.InstallStatePath))
-            {
-                await WriteInstallStateAsync(
-                    remoteManifest,
-                    manifestJson,
-                    backupRoot: null,
-                    new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-                    Array.Empty<string>(),
-                    cancellationToken);
-            }
+            Log("Manifest", "Writing installed manifest...", 80);
+            await JsonFiles.WriteAsync(_config.InstalledManifestPath, prepared.RemoteManifest, cancellationToken);
+            await WriteInstallStateAsync(
+                prepared.RemoteManifest,
+                prepared.ManifestJson,
+                transaction.BackupRoot,
+                prepared.PackageHashes,
+                prepared.Packages.SkippedOptionalPackages,
+                cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
-        else
+        catch
         {
-            var requiredBytes = plan.DownloadOrRepair.Sum(file => Math.Max(0, file.Size))
-                                + packagesToPrepare.Sum(package => Math.Max(0, package.Size));
-            DiskSpace.EnsureAvailable(_config.StagingDir, requiredBytes, (stage, message) => Log(stage, message));
-            DiskSpace.EnsureAvailable(_config.InstallDir, requiredBytes, (stage, message) => Log(stage, message));
-
-            Log("Download", "Downloading changed files to staging...", 35);
-            await PrepareStagingAsync(plan, remoteManifest, cancellationToken);
-            var preparedPackages = await PreparePackagesAsync(packagesToPrepare, remoteManifest, cancellationToken);
-            var packageHashes = MergePackageHashes(localState, preparedPackages);
-
-            if (plan.HasChanges || preparedPackages.Files.Count > 0)
-            {
-                Log("Apply", "Applying update with backup...", 70);
-                var transaction = await ApplyUpdateAsync(
-                    plan,
-                    preparedPackages.Files,
-                    localManifest,
-                    remoteManifest,
-                    cancellationToken);
-                try
-                {
-                    Log("Manifest", "Writing installed manifest...", 80);
-                    await JsonFiles.WriteAsync(_config.InstalledManifestPath, remoteManifest, cancellationToken);
-                    await WriteInstallStateAsync(
-                        remoteManifest,
-                        manifestJson,
-                        transaction.BackupRoot,
-                        packageHashes,
-                        preparedPackages.SkippedOptionalPackages,
-                        cancellationToken);
-                    await transaction.CommitAsync(cancellationToken);
-                }
-                catch
-                {
-                    Log("Rollback", "State commit failed. Rolling back the update...");
-                    await transaction.RollbackAsync(message => Log("Rollback", message), CancellationToken.None);
-                    throw;
-                }
-                BackupManager.Prune(_config.BackupDir, _config.MaxBackupCount, message => Log("Backup", message));
-            }
-            else
-            {
-                // An empty package or a skipped optional package changes only package state.
-                await WriteInstallStateAsync(
-                    remoteManifest,
-                    manifestJson,
-                    localState?.LastBackupRoot,
-                    packageHashes,
-                    preparedPackages.SkippedOptionalPackages,
-                    cancellationToken);
-            }
+            Log("Rollback", "State commit failed. Rolling back the update...");
+            await transaction.RollbackAsync(message => Log("Rollback", message), CancellationToken.None);
+            throw;
         }
+        BackupManager.Prune(_config.BackupDir, _config.MaxBackupCount, message => Log("Backup", message));
+        return transaction.BackupRoot;
+    }
 
+    internal void LaunchPrepared(PreparedLauncherUpdate prepared)
+    {
+        prepared.ThrowIfDisposed();
+        Launch(prepared.RemoteManifest);
+    }
+
+    internal void LaunchPrevious(PreparedLauncherUpdate prepared)
+    {
+        prepared.ThrowIfDisposed();
+        Launch(prepared.LocalManifest ?? prepared.RemoteManifest);
+    }
+
+    private async Task CompleteRunAsync(LauncherManifest remoteManifest, CancellationToken cancellationToken)
+    {
         if (_config.WindowsIntegration.CreateDesktopShortcut || _config.WindowsIntegration.CreateStartMenuShortcut || _config.WindowsIntegration.RegisterAppEntry)
         {
             Log("Integration", "Applying Windows integration settings...", 90);
@@ -696,7 +744,10 @@ public sealed class LauncherEngine : IDisposable
     private static void TryMarkExecutable(string path, bool executable)
     {
         if (!executable || OperatingSystem.IsWindows()) return;
-        TrySetUnixExecutable(path);
+        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+        {
+            TrySetUnixExecutable(path);
+        }
     }
 
     [SupportedOSPlatform("linux")]

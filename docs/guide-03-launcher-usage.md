@@ -65,7 +65,7 @@ UeDtLauncher sample-config --output launcher.config.json
 | `launchArguments` | - | 앱 실행 인자 배열. 예: `["-log"]` |
 | `removeFilesNotInManifest` | `false` | manifest에 없는 설치 파일 삭제 (깨끗한 동기화를 원하면 true) |
 | `maxRetryCount` / `httpTimeoutSeconds` | `3` / `120` | 다운로드 재시도 횟수 / HTTP 타임아웃(초). 4xx 오류는 재시도하지 않고, 일시 오류만 지수 백오프로 재시도합니다. (`sample-config` 템플릿은 `httpTimeoutSeconds`를 넉넉하게 `300`으로 적어둡니다) |
-| `serviceMode` | - | 무인 서버용. `{ "intervalSeconds": 300, "autoRestartApp": true, "processName": "m7at10_dt" }` — 자세한 내용은 [service-mode.md](service-mode.md) |
+| `serviceMode` | - | 무인 서버용. 다운로드·검증 후 앱을 중지하며 시작 실패 시 자동 롤백 가능. 자세한 내용은 [service-mode.md](service-mode.md) |
 | `selfUpdate` | - | 런처 자체 업데이트. `autoApply: true`면 다음 실행 시 자동 교체 |
 | `windowsIntegration` | - | Windows 바로가기/앱 등록(선택). `{ "appName", "publisher", "shortcutName", "iconPath", "createDesktopShortcut", "createStartMenuShortcut", "registerAppEntry" }` — 기본은 모두 끔(false) |
 | `packages` | `[]` | (고급) ZIP/7z를 staging에서 검증·해제한 뒤 본 업데이트와 같은 transaction으로 적용. `required=false` 패키지는 실패 시 건너뜀 |
@@ -111,7 +111,15 @@ UeDtLauncher sample-config --output launcher.config.json
   "environment": "prod", "channel": "stable", "versionPolicy": "latest",
   "targetPlatform": "windows-x64",
   "launchArguments": ["-RenderOffscreen", "-PixelStreamingURL=ws://localhost:8888"],
-  "serviceMode": { "intervalSeconds": 300, "autoRestartApp": true, "processName": "m7at10_dt" }
+  "serviceMode": {
+    "intervalSeconds": 300,
+    "autoRestartApp": true,
+    "startupGraceSeconds": 10,
+    "healthCheckUrl": "http://127.0.0.1:8080/health",
+    "healthCheckTimeoutSeconds": 60,
+    "rollbackOnHealthCheckFailure": true,
+    "processName": "m7at10_dt"
+  }
 }
 ```
 

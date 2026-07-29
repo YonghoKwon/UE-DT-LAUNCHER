@@ -162,6 +162,10 @@ public sealed class ServiceModeConfig
 {
     public int IntervalSeconds { get; set; } = 300;
     public bool AutoRestartApp { get; set; } = true;
+    public int StartupGraceSeconds { get; set; } = 5;
+    public string? HealthCheckUrl { get; set; }
+    public int HealthCheckTimeoutSeconds { get; set; } = 60;
+    public bool RollbackOnHealthCheckFailure { get; set; } = true;
     // Fallback process name used to find a running app when the pid file is missing or stale.
     public string? ProcessName { get; set; }
 }
