@@ -29,7 +29,7 @@ public class LauncherEngineValidationTests
     [Fact]
     public void ValidateManifest_RejectsDuplicatePaths()
     {
-        var manifest = Manifest(FileEntry("game.exe"), FileEntry("GAME.EXE"));
+        var manifest = Manifest(FileEntry("game.exe"), FileEntry("game.exe"));
         Assert.Throws<InvalidOperationException>(() => LauncherEngine.ValidateManifest(manifest));
     }
 
@@ -38,6 +38,40 @@ public class LauncherEngineValidationTests
     {
         var manifest = Manifest(FileEntry("game.exe"), FileEntry("data/../game.exe"));
         Assert.Throws<InvalidOperationException>(() => LauncherEngine.ValidateManifest(manifest));
+    }
+
+    [Fact]
+    public void ValidateManifest_CaseDistinctPathsFollowFileSystemSemantics()
+    {
+        var manifest = Manifest(FileEntry("game.exe"), FileEntry("GAME.EXE"));
+
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Throws<InvalidOperationException>(() => LauncherEngine.ValidateManifest(manifest));
+        }
+        else
+        {
+            LauncherEngine.ValidateManifest(manifest);
+        }
+    }
+
+    [Fact]
+    public void ValidateManifest_EntryPointCaseFollowsFileSystemSemantics()
+    {
+        var manifest = new LauncherManifest
+        {
+            EntryPoint = "GAME.EXE",
+            Files = { FileEntry("game.exe") }
+        };
+
+        if (OperatingSystem.IsWindows())
+        {
+            LauncherEngine.ValidateManifest(manifest);
+        }
+        else
+        {
+            Assert.Throws<InvalidOperationException>(() => LauncherEngine.ValidateManifest(manifest));
+        }
     }
 
     [Fact]

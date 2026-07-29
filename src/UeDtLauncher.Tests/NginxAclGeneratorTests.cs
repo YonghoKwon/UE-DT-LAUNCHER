@@ -81,7 +81,7 @@ public class NginxAclGeneratorTests
     }
 
     [Fact]
-    public void ExampleAllowlistFile_GeneratesValidConfig()
+    public async Task ExampleAllowlistFile_GeneratesValidConfig()
     {
         var dir = AppContext.BaseDirectory;
         while (dir is not null && !File.Exists(Path.Combine(dir, "examples", "project-ip-allowlist.json")))
@@ -90,7 +90,8 @@ public class NginxAclGeneratorTests
         }
         Assert.NotNull(dir);
 
-        var allowlist = JsonFiles.ReadAsync<ProjectIpAllowlist>(Path.Combine(dir!, "examples", "project-ip-allowlist.json")).GetAwaiter().GetResult();
+        var allowlist = await JsonFiles.ReadAsync<ProjectIpAllowlist>(
+            Path.Combine(dir!, "examples", "project-ip-allowlist.json"));
         var conf = NginxAclGenerator.Generate(allowlist);
         Assert.Contains("location ~ ^/projects/m7at10-dt/ {", conf);
     }

@@ -178,6 +178,5 @@ internal static class UpdateTransactionManager
         if (File.Exists(journalPath)) File.Delete(journalPath);
     }
 
-    private static StringComparer PathComparer =>
-        OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+    private static StringComparer PathComparer => SafePath.FileSystemComparer;
 }

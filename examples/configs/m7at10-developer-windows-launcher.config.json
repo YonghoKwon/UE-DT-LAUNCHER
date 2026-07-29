@@ -12,6 +12,7 @@
   "manifestUrl": "http://updates.example.internal/updates/projects/m7at10/dev/stable/1.0.3/windows-x64/manifest.json",
   "manifestSignatureUrl": null,
   "manifestPublicKeyPath": null,
+  "requireSignedManifests": false,
   "installDir": "app",
   "stateRootDir": ".state",
   "stagingDir": ".staging",

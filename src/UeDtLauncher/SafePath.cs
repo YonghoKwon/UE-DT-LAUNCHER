@@ -2,8 +2,11 @@ namespace UeDtLauncher;
 
 public static class SafePath
 {
-    private static StringComparison FileSystemComparison =>
+    internal static StringComparison FileSystemComparison =>
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
+    internal static StringComparer FileSystemComparer =>
+        OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
     public static string ResolveInside(string root, string relativePath)
     {

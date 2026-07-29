@@ -404,7 +404,7 @@ public static class Program
             ManifestUrl = "https://your-update-server.example.com/windows-x64/manifest.json",
             ManifestSignatureUrl = "https://your-update-server.example.com/windows-x64/manifest.json.sig",
             ManifestPublicKeyPath = "manifest-public-key.pem",
-            RequireSignedManifests = false,
+            RequireSignedManifests = true,
             InstallDir = "app",
             StateRootDir = ".state",
             StagingDir = ".staging",
@@ -424,6 +424,10 @@ public static class Program
             {
                 IntervalSeconds = 300,
                 AutoRestartApp = true,
+                StartupGraceSeconds = 5,
+                HealthCheckUrl = null,
+                HealthCheckTimeoutSeconds = 60,
+                RollbackOnHealthCheckFailure = true,
                 ProcessName = null
             },
             WindowsIntegration = new WindowsIntegrationConfig

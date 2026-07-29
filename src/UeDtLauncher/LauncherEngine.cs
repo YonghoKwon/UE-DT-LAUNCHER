@@ -289,7 +289,8 @@ public sealed class LauncherEngine : IDisposable
     private async Task<UpdatePlan> BuildPlanAsync(LauncherManifest remote, LauncherManifest? local, CancellationToken cancellationToken)
     {
         var plan = new UpdatePlan();
-        var localByPath = local?.Files.ToDictionary(file => file.Path, StringComparer.OrdinalIgnoreCase) ?? new Dictionary<string, ManifestFile>(StringComparer.OrdinalIgnoreCase);
+        var localByPath = local?.Files.ToDictionary(file => file.Path, SafePath.FileSystemComparer)
+                          ?? new Dictionary<string, ManifestFile>(SafePath.FileSystemComparer);
 
         foreach (var remoteFile in remote.Files)
         {
@@ -312,7 +313,7 @@ public sealed class LauncherEngine : IDisposable
 
         if (_config.RemoveFilesNotInManifest && local is not null)
         {
-            var remotePaths = remote.Files.Select(file => file.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var remotePaths = remote.Files.Select(file => file.Path).ToHashSet(SafePath.FileSystemComparer);
             foreach (var localFile in local.Files)
             {
                 if (!remotePaths.Contains(localFile.Path)) plan.Remove.Add(localFile.Path);
@@ -608,9 +609,7 @@ public sealed class LauncherEngine : IDisposable
         Directory.CreateDirectory(packageRoot);
         Directory.CreateDirectory(expandedRoot);
 
-        var pathComparer = OperatingSystem.IsWindows()
-            ? StringComparer.OrdinalIgnoreCase
-            : StringComparer.Ordinal;
+        var pathComparer = SafePath.FileSystemComparer;
         var manifestPaths = remoteManifest.Files
             .Select(file => CanonicalRelativePath(file.Path))
             .ToHashSet(pathComparer);
@@ -780,7 +779,7 @@ public sealed class LauncherEngine : IDisposable
         if (string.IsNullOrWhiteSpace(manifest.EntryPoint)) throw new InvalidOperationException("Manifest entryPoint is required.");
         if (manifest.Files.Count == 0) throw new InvalidOperationException("Manifest files list is empty.");
 
-        var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenPaths = new HashSet<string>(SafePath.FileSystemComparer);
         foreach (var file in manifest.Files)
         {
             var canonicalPath = CanonicalRelativePath(file.Path);
@@ -790,7 +789,7 @@ public sealed class LauncherEngine : IDisposable
             if (file.Sha256.Length != 64 || !file.Sha256.All(Uri.IsHexDigit)) throw new InvalidOperationException($"Invalid sha256 format for {file.Path}");
         }
 
-        if (!manifest.Files.Any(file => string.Equals(file.Path, manifest.EntryPoint, StringComparison.OrdinalIgnoreCase)))
+        if (!manifest.Files.Any(file => string.Equals(file.Path, manifest.EntryPoint, SafePath.FileSystemComparison)))
         {
             throw new InvalidOperationException($"Manifest entryPoint is not listed in files: {manifest.EntryPoint}");
         }

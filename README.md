@@ -90,7 +90,7 @@ publish/linux-x64/UeDtLauncher
 - 일별 파일 로그 (`logs/launcher-YYYYMMDD.log`, 14일 보관)
 - 설치 버전 기록 (`install-state.json`) 및 백업 보존 개수 관리 (`maxBackupCount`)
 - 이전 버전 롤백: CLI `rollback` 명령 + GUI 롤백 버튼
-- 무인 서버용 서비스 모드: `service` 명령 (주기 확인 → 앱 정지 → 업데이트 → 재실행)
+- 무인 서버용 서비스 모드: `service` 명령 (실행 중 사전 다운로드·검증 → 짧은 중단 적용 → 상태 확인 → 실패 시 자동 롤백)
 - GUI: 설치/최신 버전 나란히 표시, 다운로드 속도·파일 n/m·전체 % 진행률, 작업 중 버튼 비활성화
 - 리눅스 퍼블리싱 도구: `tools/*.sh` + rsync/scp 원격 업로드 (`--remote`)
 - xUnit 테스트 스위트 + CI 테스트 실행
