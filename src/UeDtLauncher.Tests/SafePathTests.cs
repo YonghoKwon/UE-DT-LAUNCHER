@@ -4,6 +4,13 @@ namespace UeDtLauncher.Tests;
 
 public class SafePathTests
 {
+    [Fact]
+    public void IsInside_UsesCaseSensitiveBoundaryForLinuxStylePaths()
+    {
+        Assert.False(SafePath.IsInside(@"C:\opt\App", @"C:\opt\app\game", StringComparison.Ordinal));
+        Assert.True(SafePath.IsInside(@"C:\opt\App", @"C:\opt\app\game", StringComparison.OrdinalIgnoreCase));
+    }
+
     [Theory]
     [InlineData("file.txt")]
     [InlineData("sub/dir/file.txt")]

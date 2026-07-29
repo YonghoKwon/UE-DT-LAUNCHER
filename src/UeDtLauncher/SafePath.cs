@@ -2,6 +2,9 @@ namespace UeDtLauncher;
 
 public static class SafePath
 {
+    private static StringComparison FileSystemComparison =>
+        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
     public static string ResolveInside(string root, string relativePath)
     {
         if (string.IsNullOrWhiteSpace(relativePath))
@@ -17,9 +20,8 @@ public static class SafePath
 
         var fullRoot = Path.GetFullPath(root);
         var fullPath = Path.GetFullPath(Path.Combine(fullRoot, normalizedRelative));
-        var rootWithSeparator = fullRoot.EndsWith(Path.DirectorySeparatorChar) ? fullRoot : fullRoot + Path.DirectorySeparatorChar;
 
-        if (!fullPath.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase) && !string.Equals(fullPath, fullRoot, StringComparison.OrdinalIgnoreCase))
+        if (!IsInside(fullRoot, fullPath, FileSystemComparison))
         {
             throw new InvalidOperationException($"Manifest path escapes install directory: {relativePath}");
         }
@@ -43,9 +45,10 @@ public static class SafePath
     {
         // The root itself may legitimately be a symlink (e.g. a relocated install dir);
         // only components strictly below the root are rejected.
+        var comparison = FileSystemComparison;
         var current = fullPath;
         while (!string.IsNullOrEmpty(current)
-               && !string.Equals(current, fullRoot, StringComparison.OrdinalIgnoreCase)
+               && !string.Equals(current, fullRoot, comparison)
                && current.Length > fullRoot.Length)
         {
             if (File.Exists(current) || Directory.Exists(current))
@@ -59,5 +62,14 @@ public static class SafePath
 
             current = Path.GetDirectoryName(current);
         }
+    }
+
+    internal static bool IsInside(string fullRoot, string fullPath, StringComparison comparison)
+    {
+        var rootWithSeparator = fullRoot.EndsWith(Path.DirectorySeparatorChar)
+            ? fullRoot
+            : fullRoot + Path.DirectorySeparatorChar;
+        return fullPath.StartsWith(rootWithSeparator, comparison)
+               || string.Equals(fullPath, fullRoot, comparison);
     }
 }
