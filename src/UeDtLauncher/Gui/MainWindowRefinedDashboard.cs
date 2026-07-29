@@ -44,12 +44,14 @@ public sealed partial class MainWindow : Window
     private string ConfigPath => ResolvePath(_configPathBox?.Text ?? "launcher.config.json");
     private bool IsDeveloper => string.Equals(_config.ClientProfile, "developer", StringComparison.OrdinalIgnoreCase);
     private string CurrentPlatform => OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64";
+    private ProjectStatePaths SelectedStatePaths =>
+        LauncherPaths.For(_config, ConfigPath, _selectedProject.ProjectId, CurrentPlatform);
 
     public MainWindow()
     {
         InitializeComponent();
         LoadConfig();
-        try { _fileLogger = new FileLogger(ResolvePath(_config.LogDir)); } catch { _fileLogger = null; }
+        try { _fileLogger = new FileLogger(LauncherPaths.ResolveConfigRelative(ConfigPath, _config.LogDir)); } catch { _fileLogger = null; }
         Build();
     }
 
@@ -343,14 +345,14 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            var statePath = ResolvePath(_config.InstallStatePath);
+            var statePath = SelectedStatePaths.InstallStatePath;
             if (File.Exists(statePath))
             {
                 var state = JsonSerializer.Deserialize<InstallState>(File.ReadAllText(statePath), JsonFiles.Options);
                 if (!string.IsNullOrWhiteSpace(state?.Version)) return state.Version;
             }
 
-            var manifestPath = ResolvePath(_config.InstalledManifestPath);
+            var manifestPath = SelectedStatePaths.InstalledManifestPath;
             if (File.Exists(manifestPath))
             {
                 var manifest = JsonSerializer.Deserialize<LauncherManifest>(File.ReadAllText(manifestPath), JsonFiles.Options);
@@ -477,9 +479,9 @@ public sealed partial class MainWindow : Window
 
     private async Task<LauncherConfig> RunConfig(bool repair, bool launch)
     {
-        var c = await JsonFiles.ReadAsync<LauncherConfig>(ConfigPath);
+        var c = await LauncherPaths.LoadResolvedAsync(ConfigPath);
         c.ProjectId = _selectedProject.ProjectId; c.Environment = _config.Environment; c.Channel = _config.Channel; c.TargetPlatform = CurrentPlatform; c.VersionPolicy = _config.VersionPolicy; c.RequestedVersion = _config.RequestedVersion; c.RepairMode = repair; c.LaunchAfterUpdate = launch;
-        if (!string.IsNullOrWhiteSpace(_selectedProject.InstallPath)) c.InstallDir = _selectedProject.InstallPath;
+        LauncherPaths.ResolveInPlace(c, ConfigPath, _selectedProject.InstallPath);
         return c;
     }
 
@@ -545,8 +547,8 @@ public sealed partial class MainWindow : Window
     private async Task RollbackLatestAsync()
     {
         if (_running) return;
-        var backupDir = ResolvePath(_config.BackupDir);
-        var backups = BackupManager.List(backupDir);
+        var config = await RunConfig(false, false);
+        var backups = BackupManager.List(config.BackupDir);
         if (backups.Count == 0)
         {
             AppendLog("롤백할 백업이 없습니다.", true);
@@ -561,8 +563,7 @@ public sealed partial class MainWindow : Window
         try
         {
             if (_statusText is not null) _statusText.Text = "이전 버전으로 되돌리는 중...";
-            var installDir = ResolvePath(_selectedProject.InstallPath ?? _config.InstallDir);
-            await Task.Run(() => BackupManager.RestoreAsync(backupRoot, installDir, ResolvePath(_config.InstalledManifestPath), ResolvePath(_config.InstallStatePath),
+            await Task.Run(() => BackupManager.RestoreAsync(backupRoot, config.InstallDir, config.InstalledManifestPath, config.InstallStatePath,
                 m => Dispatcher.UIThread.Post(() => AppendLog("롤백: " + m, true))));
             _installState = "롤백 완료"; _installDetail = $"{info?.PreviousVersion ?? "이전"} 버전으로 되돌렸습니다. 상태 확인으로 검증하세요.";
             _fileLogger?.Log("Rollback", $"GUI rollback to backup {Path.GetFileName(backupRoot)} completed.");
@@ -659,13 +660,13 @@ public sealed partial class MainWindow : Window
         d.Show(this);
     }
 
-    private void OpenInstallFolder() { var path = ResolvePath(_selectedProject.InstallPath ?? _config.InstallDir); Directory.CreateDirectory(path); try { Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true }); } catch (Exception ex) { AppendLog("폴더를 열 수 없습니다: " + FriendlyError(ex), true); } }
-    private void ClearCache() { try { var p = ResolvePath(_config.StagingDir); if (Directory.Exists(p)) Directory.Delete(p, true); Directory.CreateDirectory(p); AppendLog("캐시를 정리했습니다.", true); } catch (Exception ex) { AppendLog("캐시 정리 실패: " + FriendlyError(ex), true); } }
-    private void CleanupBackups() { try { var p = ResolvePath(_config.BackupDir); BackupManager.Prune(p, _config.MaxBackupCount, m => AppendLog("백업 정리: " + m, true)); AppendLog($"백업을 정리했습니다. 최근 {_config.MaxBackupCount}개는 롤백을 위해 보관합니다.", true); } catch (Exception ex) { AppendLog("백업 정리 실패: " + FriendlyError(ex), true); } }
+    private void OpenInstallFolder() { var path = LauncherPaths.ResolveConfigRelative(ConfigPath, _selectedProject.InstallPath ?? _config.InstallDir); Directory.CreateDirectory(path); try { Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true }); } catch (Exception ex) { AppendLog("폴더를 열 수 없습니다: " + FriendlyError(ex), true); } }
+    private void ClearCache() { try { var p = SelectedStatePaths.StagingDir; if (Directory.Exists(p)) Directory.Delete(p, true); Directory.CreateDirectory(p); AppendLog("캐시를 정리했습니다.", true); } catch (Exception ex) { AppendLog("캐시 정리 실패: " + FriendlyError(ex), true); } }
+    private void CleanupBackups() { try { var p = SelectedStatePaths.BackupDir; BackupManager.Prune(p, _config.MaxBackupCount, m => AppendLog("백업 정리: " + m, true)); AppendLog($"백업을 정리했습니다. 최근 {_config.MaxBackupCount}개는 롤백을 위해 보관합니다.", true); } catch (Exception ex) { AppendLog("백업 정리 실패: " + FriendlyError(ex), true); } }
     private void ClearLog() { if (_logBox is not null) _logBox.Text = string.Empty; }
     private string SaveLogFile() { var dir = Path.Combine(BaseDir, "logs"); Directory.CreateDirectory(dir); var path = Path.Combine(dir, $"launcher-{DateTime.Now:yyyyMMdd-HHmmss}.log"); File.WriteAllText(path, _logBox?.Text ?? string.Empty); return path; }
     private void ExportLogsZip() { try { SaveLogFile(); var dir = Path.Combine(BaseDir, "logs"); var zip = Path.Combine(BaseDir, $"launcher-logs-{DateTime.Now:yyyyMMdd-HHmmss}.zip"); ZipFile.CreateFromDirectory(dir, zip); AppendLog("로그 ZIP 저장 완료: " + zip, true); } catch (Exception ex) { AppendLog("로그 ZIP 저장 실패: " + FriendlyError(ex), true); } }
-    private string StorageSummary() => $"캐시 {FormatBytes(DirSize(ResolvePath(_config.StagingDir)))} / 백업 {FormatBytes(DirSize(ResolvePath(_config.BackupDir)))}";
+    private string StorageSummary() => $"캐시 {FormatBytes(DirSize(SelectedStatePaths.StagingDir))} / 백업 {FormatBytes(DirSize(SelectedStatePaths.BackupDir))}";
     private static long DirSize(string path) { try { return Directory.Exists(path) ? Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories).Sum(f => new FileInfo(f).Length) : 0; } catch { return 0; } }
     private static string FormatBytes(long b) { string[] u = { "B", "KB", "MB", "GB", "TB" }; double v = b; var i = 0; while (v >= 1024 && i < u.Length - 1) { v /= 1024; i++; } return $"{v:0.##} {u[i]}"; }
     private string ResolvePath(string path) => Path.IsPathRooted(path) ? path : Path.Combine(BaseDir, path);

@@ -12,6 +12,7 @@
   "manifestSignatureUrl": "https://updates.example.com/projects/ue-dt-simulator/prod/stable/1.0.0/windows-x64/manifest.json.sig",
   "manifestPublicKeyPath": "manifest-public-key.pem",
   "installDir": "app",
+  "stateRootDir": ".state",
   "stagingDir": ".staging",
   "backupDir": ".backup",
   "installedManifestPath": "installed-manifest.json",

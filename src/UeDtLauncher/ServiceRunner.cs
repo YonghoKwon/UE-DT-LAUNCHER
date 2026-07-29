@@ -12,7 +12,7 @@ public static class ServiceRunner
 {
     public static async Task<int> RunAsync(string configPath, int? intervalSecondsOverride, bool once, CancellationToken cancellationToken)
     {
-        var bootstrap = await JsonFiles.ReadAsync<LauncherConfig>(configPath, cancellationToken);
+        var bootstrap = await LauncherPaths.LoadResolvedAsync(configPath, cancellationToken);
         var logger = new FileLogger(bootstrap.LogDir);
         var intervalSeconds = Math.Max(15, intervalSecondsOverride ?? bootstrap.ServiceMode?.IntervalSeconds ?? 300);
         var interval = TimeSpan.FromSeconds(intervalSeconds);
@@ -55,7 +55,7 @@ public static class ServiceRunner
     private static async Task TickAsync(string configPath, FileLogger logger, CancellationToken cancellationToken)
     {
         // Re-read the config each tick so server-side changes (channel, version policy) apply without restart.
-        var config = await JsonFiles.ReadAsync<LauncherConfig>(configPath, cancellationToken);
+        var config = await LauncherPaths.LoadResolvedAsync(configPath, cancellationToken);
         var service = config.ServiceMode ?? new ServiceModeConfig();
         config.RepairMode = false;
 

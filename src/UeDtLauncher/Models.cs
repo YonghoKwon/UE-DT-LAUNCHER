@@ -25,6 +25,10 @@ public sealed class LauncherConfig
     public string TargetPlatform { get; set; } = OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64";
 
     public string InstallDir { get; set; } = "app";
+    // Runtime state is isolated per project/platform below this directory.
+    // The legacy path fields remain part of the config schema so a single-project
+    // installation can be migrated safely on first use.
+    public string StateRootDir { get; set; } = ".state";
     public string StagingDir { get; set; } = ".staging";
     public string BackupDir { get; set; } = ".backup";
     public string InstalledManifestPath { get; set; } = "installed-manifest.json";

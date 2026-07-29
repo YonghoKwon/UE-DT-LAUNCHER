@@ -30,7 +30,7 @@ public sealed class LauncherEngine : IDisposable
 
     public async Task RunAsync(CancellationToken cancellationToken = default)
     {
-        using var instanceLock = SingleInstanceLock.Acquire(SingleInstanceLock.LockPathFor(_config.InstallDir));
+        using var instanceLock = SingleInstanceLock.Acquire(LauncherPaths.UpdateLockPath(_config));
 
         Directory.CreateDirectory(_config.InstallDir);
         Directory.CreateDirectory(_config.StagingDir);

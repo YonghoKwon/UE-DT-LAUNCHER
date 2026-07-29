@@ -13,6 +13,7 @@
   "manifestSignatureUrl": null,
   "manifestPublicKeyPath": null,
   "installDir": "app",
+  "stateRootDir": ".state",
   "stagingDir": ".staging",
   "backupDir": ".backup",
   "installedManifestPath": "installed-manifest.json",

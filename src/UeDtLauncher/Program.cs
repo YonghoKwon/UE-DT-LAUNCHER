@@ -155,7 +155,7 @@ public static class Program
         var repair = Has(args, "--repair");
         var noLaunch = Has(args, "--no-launch");
 
-        var config = await JsonFiles.ReadAsync<LauncherConfig>(configPath);
+        var config = await LauncherPaths.LoadResolvedAsync(configPath);
         if (repair) config.RepairMode = true;
         if (noLaunch) config.LaunchAfterUpdate = false;
 
@@ -206,7 +206,7 @@ public static class Program
     private static async Task<int> RollbackAsync(string[] args)
     {
         var configPath = Get(args, "--config") ?? "launcher.config.json";
-        var config = await JsonFiles.ReadAsync<LauncherConfig>(configPath);
+        var config = await LauncherPaths.LoadResolvedAsync(configPath);
         var backups = BackupManager.List(config.BackupDir);
 
         if (Has(args, "--list"))
@@ -241,7 +241,7 @@ public static class Program
         }
 
         var fileLogger = new FileLogger(config.LogDir);
-        using var instanceLock = SingleInstanceLock.Acquire(SingleInstanceLock.LockPathFor(config.InstallDir));
+        using var instanceLock = SingleInstanceLock.Acquire(LauncherPaths.UpdateLockPath(config));
         Console.WriteLine($"Rolling back using backup {Path.GetFileName(selected.BackupRoot)}...");
         await BackupManager.RestoreAsync(selected.BackupRoot, config.InstallDir, config.InstalledManifestPath, config.InstallStatePath, message =>
         {
@@ -406,6 +406,7 @@ public static class Program
             ManifestPublicKeyPath = "manifest-public-key.pem",
             RequireSignedManifests = false,
             InstallDir = "app",
+            StateRootDir = ".state",
             StagingDir = ".staging",
             BackupDir = ".backup",
             InstalledManifestPath = "installed-manifest.json",

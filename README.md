@@ -66,6 +66,7 @@ publish/linux-x64/UeDtLauncher
 - 파일별 SHA-256 비교
 - 변경/누락 파일만 다운로드
 - `.staging` 다운로드 후 검증
+- `.state/{projectId}/{platform}` 기반 프로젝트별 캐시·백업·설치 상태·PID 격리
 - `.backup` 백업 후 실제 설치 폴더 반영
 - 적용 실패 시 rollback
 - HTTP Range 기반 이어받기 시도

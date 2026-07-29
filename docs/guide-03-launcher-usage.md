@@ -14,7 +14,7 @@ C:\ue-dt\  (또는 /opt/ue-dt/)
 └── manifest-public-key.pem   # 서명 검증을 켠 경우만
 ```
 
-런처가 실행되면서 만들어지는 것들: `app/`(설치된 프로젝트), `.staging/`(다운로드 임시), `.backup/`(롤백용 백업), `logs/`(로그), `installed-manifest.json`, `install-state.json`, `app.pid`.
+런처가 실행되면서 만들어지는 것들: `app/`(설치된 프로젝트), `.state/{projectId}/{platform}/`(프로젝트별 다운로드 임시·백업·설치 상태·PID·잠금), `logs/`(로그).
 
 설정 템플릿 생성:
 
@@ -51,10 +51,11 @@ UeDtLauncher sample-config --output launcher.config.json
 | 필드 | 기본값 | 설명 |
 | --- | --- | --- |
 | `installDir` | `app` | 프로젝트 설치 폴더 |
-| `stagingDir` / `backupDir` | `.staging` / `.backup` | 다운로드 임시 / 백업 폴더 |
-| `installedManifestPath` | `installed-manifest.json` | 설치된 파일 목록 기록 |
-| `installStatePath` | `install-state.json` | 설치 버전/시각 기록 (롤백·서비스 모드가 사용) |
-| `appPidPath` | `app.pid` | 런처가 실행한 앱 프로세스 기록 (서비스 모드가 사용) |
+| `stateRootDir` | `.state` | 프로젝트/플랫폼별 상태 루트. 실제 경로는 `.state/{projectId}/{platform}/` |
+| `stagingDir` / `backupDir` | `.staging` / `.backup` | 기존 단일 프로젝트 상태 migration 입력. 실행 중에는 프로젝트별 상태 경로를 사용 |
+| `installedManifestPath` | `installed-manifest.json` | 기존 단일 프로젝트 상태 migration 입력. 새 설치 상태는 프로젝트별 상태 루트에 기록 |
+| `installStatePath` | `install-state.json` | 기존 단일 프로젝트 상태 migration 입력. 롤백·서비스 모드는 프로젝트별 상태를 사용 |
+| `appPidPath` | `app.pid` | 기존 설정 호환 필드. 런처가 실행한 앱 PID는 프로젝트별 상태 루트에 기록 |
 | `logDir` | `logs` | 일별 로그 파일 폴더 (`launcher-YYYYMMDD.log`, 14일 보관) |
 | `maxBackupCount` | `3` | 보관할 백업 개수. 초과분은 오래된 것부터 자동 삭제 |
 | `launchAfterUpdate` | `true` | 업데이트 후 앱 자동 실행 |
