@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using System.Text.Json;
 using Avalonia;
 using UeDtLauncher.Gui;
 
@@ -10,7 +11,7 @@ public static class Program
     private static readonly string[] KnownSubcommands =
     {
         "run", "service", "rollback", "generate-manifest", "update-catalog",
-        "list-releases", "generate-nginx-acl", "sign-manifest", "sample-config", "agent", "credential"
+        "list-releases", "generate-nginx-acl", "sign-manifest", "generate-signing-key", "sample-config", "publish-release", "agent", "credential"
     };
 
     [STAThread]
@@ -140,6 +141,8 @@ public static class Program
                 "sign-manifest" => await SignManifestAsync(args.Skip(1).ToArray()),
                 "agent" => await RunAgentClientAsync(args.Skip(1).ToArray()),
                 "credential" => RunCredentialCommand(args.Skip(1).ToArray()),
+                "publish-release" => await PublishReleaseAsync(args.Skip(1).ToArray()),
+                "generate-signing-key" => await GenerateSigningKeyAsync(args.Skip(1).ToArray()),
                 _ => UnknownCommand(command)
             };
         }
@@ -212,6 +215,53 @@ public static class Program
         if (string.IsNullOrWhiteSpace(token)) token = ReadSecretFromConsole("Bearer token: ");
         CredentialStore.Save(name, token);
         Console.WriteLine($"Credential '{name}' was stored. The token value will not be displayed.");
+        return 0;
+    }
+
+    private static async Task<int> PublishReleaseAsync(string[] args)
+    {
+        var options = new AtomicReleasePublishOptions
+        {
+            PackageDir = Required(args, "--package-dir"),
+            ServerRoot = Required(args, "--server-root"),
+            BaseUrlRoot = Required(args, "--base-url-root"),
+            ProjectId = Required(args, "--project-id"),
+            DisplayName = Get(args, "--display-name") ?? Required(args, "--project-id"),
+            Version = Required(args, "--version"),
+            Environment = Get(args, "--environment") ?? "prod",
+            Channel = Get(args, "--channel") ?? "stable",
+            Platform = Required(args, "--platform"),
+            EntryPoint = Required(args, "--entry-point"),
+            CatalogProfile = Get(args, "--catalog-profile") ?? "general",
+            AllowedClientProfiles = (Get(args, "--allowed-profiles") ?? string.Empty)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToList(),
+            Notes = Get(args, "--notes"),
+            SetLatest = Has(args, "--set-latest"),
+            DryRun = Has(args, "--dry-run"),
+            ReplaceExisting = Has(args, "--replace"),
+            AllowUnsigned = Has(args, "--allow-unsigned"),
+            PrivateKeyPath = Get(args, "--private-key"),
+            SigningKeyId = Get(args, "--key-id")
+        };
+        var report = await AtomicReleasePublisher.PublishAsync(options);
+        Console.WriteLine(JsonSerializer.Serialize(report, JsonFiles.Options));
+        return 0;
+    }
+
+    private static async Task<int> GenerateSigningKeyAsync(string[] args)
+    {
+        var privateKeyPath = Required(args, "--private-key");
+        var publicKeyPath = Required(args, "--public-key");
+        if (File.Exists(privateKeyPath) || File.Exists(publicKeyPath))
+            throw new IOException("Signing key output already exists; refusing to overwrite it.");
+        using var key = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(privateKeyPath))!);
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(publicKeyPath))!);
+        await File.WriteAllTextAsync(privateKeyPath, key.ExportECPrivateKeyPem());
+        await File.WriteAllTextAsync(publicKeyPath, key.ExportSubjectPublicKeyInfoPem());
+        Console.WriteLine($"Signing key pair generated. Keep private key offline: {privateKeyPath}");
+        Console.WriteLine($"Public key: {publicKeyPath}");
         return 0;
     }
 
@@ -561,5 +611,7 @@ public static class Program
         Console.WriteLine("  rollback --config launcher.config.json [--list] [--backup <timestamp>]");
         Console.WriteLine("  agent [status] [--endpoint <pipe-or-socket>] [--project <id>]");
         Console.WriteLine("  credential <set|status|delete> --name <credential-name>");
+        Console.WriteLine("  publish-release --package-dir <dir> --server-root <dir> --base-url-root <url> --project-id <id> --version <version> --platform <platform> --entry-point <path> --private-key <pem> --key-id <id> [--dry-run] [--replace] [--set-latest]");
+        Console.WriteLine("  generate-signing-key --private-key <private.pem> --public-key <public.pem>");
     }
 }

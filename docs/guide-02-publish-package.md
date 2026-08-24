@@ -273,6 +273,15 @@ m7at10-dt  (m7at10-dt)  — 1 release(s)
 
 ## 방법 A — 리눅스 서버에서 직접 (권장: 서버에 빌드를 복사해 둔 경우)
 
+운영 publish 전에 개인키와 key ID를 세션 환경변수로 지정합니다. 개인키는 저장소나 클라이언트에 복사하지 않습니다.
+
+```bash
+export UE_DT_SIGNING_PRIVATE_KEY=/secure/manifest-private-key.pem
+export UE_DT_SIGNING_KEY_ID=prod-2026
+```
+
+`publish-release`는 release 임시 구성·manifest 서명·hash 재검증·immutable release 전환·catalog 서명·catalog 최종 교체를 하나의 transaction으로 수행합니다. 기존 version을 바꾸려면 명시적으로 `--replace`가 필요하며 운영에서는 unsigned publish가 거부됩니다.
+
 서버에 패키징 폴더를 옮겨 놨다면(scp, USB 등) 명령 한 번이면 끝납니다.
 
 ### A-1. 운영(가동) 정식 릴리스
@@ -309,6 +318,8 @@ m7at10-dt  (m7at10-dt)  — 1 release(s)
 | `--set-latest` | 이 버전을 같은 트랙(환경/채널/플랫폼)의 "최신"으로 표시. 기존 최신 표시는 자동 해제됩니다 |
 
 실행하면: 파일 복사 → `manifest.json` 생성 → `catalog.json` 갱신까지 자동으로 끝납니다.
+
+실제 변경 없이 검증만 하려면 동일 명령 끝에 `--dry-run`을 추가합니다.
 
 ### A-2. 개발/테스트 빌드
 

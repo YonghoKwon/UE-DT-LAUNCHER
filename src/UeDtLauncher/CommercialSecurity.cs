@@ -38,6 +38,16 @@ public sealed class DetachedSignatureEnvelope
     public string KeyId { get; set; } = string.Empty;
     public string Algorithm { get; set; } = "ECDSA-P256-SHA256";
     public string Signature { get; set; } = string.Empty;
+    public string? PayloadSha256 { get; set; }
+    public List<DetachedSignatureEntry> AcceptedSignatures { get; set; } = new();
+}
+
+public sealed class DetachedSignatureEntry
+{
+    public string KeyId { get; set; } = string.Empty;
+    public string Algorithm { get; set; } = "ECDSA-P256-SHA256";
+    public string Signature { get; set; } = string.Empty;
+    public string PayloadSha256 { get; set; } = string.Empty;
 }
 
 public sealed class CatalogTrustState
@@ -240,11 +250,26 @@ public static class DetachedSignatureVerifier
 
         var envelope = JsonSerializer.Deserialize<DetachedSignatureEnvelope>(signatureDocument, JsonFiles.Options)
                        ?? throw new InvalidDataException("Detached signature envelope was invalid.");
-        if (envelope.SchemaVersion != 2 || !envelope.Algorithm.Equals("ECDSA-P256-SHA256", StringComparison.Ordinal))
-            throw new CryptographicException("Detached signature algorithm or schema is not supported.");
-        var trusted = config.Security.TrustedSigningKeys.SingleOrDefault(key => key.KeyId.Equals(envelope.KeyId, StringComparison.Ordinal))
-                      ?? throw new CryptographicException($"Detached signature keyId is not trusted: {envelope.KeyId}.");
-        ManifestSignatureVerifier.Verify(payload, envelope.Signature, await File.ReadAllTextAsync(trusted.PublicKeyPath, cancellationToken));
+        if (envelope.SchemaVersion != 2) throw new CryptographicException("Detached signature schema is not supported.");
+        var payloadHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
+        var candidates = new List<DetachedSignatureEntry>
+        {
+            new()
+            {
+                KeyId = envelope.KeyId,
+                Algorithm = envelope.Algorithm,
+                Signature = envelope.Signature,
+                PayloadSha256 = envelope.PayloadSha256 ?? payloadHash
+            }
+        };
+        candidates.AddRange(envelope.AcceptedSignatures);
+        var candidate = candidates.FirstOrDefault(value => value.PayloadSha256.Equals(payloadHash, StringComparison.OrdinalIgnoreCase))
+                        ?? throw new CryptographicException("Detached signature set does not contain this payload hash.");
+        if (!candidate.Algorithm.Equals("ECDSA-P256-SHA256", StringComparison.Ordinal))
+            throw new CryptographicException("Detached signature algorithm is not supported.");
+        var trusted = config.Security.TrustedSigningKeys.SingleOrDefault(key => key.KeyId.Equals(candidate.KeyId, StringComparison.Ordinal))
+                      ?? throw new CryptographicException($"Detached signature keyId is not trusted: {candidate.KeyId}.");
+        ManifestSignatureVerifier.Verify(payload, candidate.Signature, await File.ReadAllTextAsync(trusted.PublicKeyPath, cancellationToken));
         return true;
     }
 }

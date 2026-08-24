@@ -24,6 +24,8 @@ tools/publish-release.ps1
 
 운영에서는 보통 `publish-release.ps1`만 사용하면 됩니다.
 
+현재 publish는 원자적 transaction이며 운영 배포에는 `UE_DT_SIGNING_PRIVATE_KEY`와 `UE_DT_SIGNING_KEY_ID`가 필요합니다. 서명키가 없으면 production publish는 실패하고, `--dry-run`은 release/catalog를 변경하지 않습니다.
+
 ## 2. 권장 서버 구조
 
 로컬 테스트:

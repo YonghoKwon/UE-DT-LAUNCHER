@@ -24,6 +24,7 @@
   -->
   <ItemGroup>
     <Compile Include="..\UeDtLauncher\BackupManager.cs" Link="Runtime\BackupManager.cs" />
+    <Compile Include="..\UeDtLauncher\AtomicReleasePublisher.cs" Link="Runtime\AtomicReleasePublisher.cs" />
     <Compile Include="..\UeDtLauncher\CatalogResolver.cs" Link="Runtime\CatalogResolver.cs" />
     <Compile Include="..\UeDtLauncher\CatalogUpdater.cs" Link="Runtime\CatalogUpdater.cs" />
     <Compile Include="..\UeDtLauncher\CommercialSecurity.cs" Link="Runtime\CommercialSecurity.cs" />
