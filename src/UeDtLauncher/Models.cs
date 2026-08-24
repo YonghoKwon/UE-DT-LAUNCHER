@@ -4,6 +4,7 @@ namespace UeDtLauncher;
 
 public sealed class LauncherConfig
 {
+    public int SchemaVersion { get; set; } = 1;
     // Direct manifest mode. Used when CatalogUrl is empty.
     public string ManifestUrl { get; set; } = "http://localhost:8080/manifest.json";
     public string? ManifestSignatureUrl { get; set; }
@@ -16,6 +17,7 @@ public sealed class LauncherConfig
 
     // When true, catalog/manifest downloads fail unless signature verification actually runs.
     public bool RequireSignedManifests { get; set; }
+    public LauncherSecurityConfig Security { get; set; } = new();
     public string? ProjectId { get; set; }
     public string ClientProfile { get; set; } = "general"; // general, developer
     public string Environment { get; set; } = "prod"; // prod, dev
@@ -50,6 +52,8 @@ public sealed class LauncherConfig
     // UI metadata. Images are optional and loaded from local files.
     public string ProjectAssetsDir { get; set; } = "assets/projects";
     public List<ProjectUiConfig> Projects { get; set; } = new();
+
+    [JsonIgnore] public string? ResolvedReleaseVersion { get; set; }
 }
 
 public sealed class ProjectUiConfig
@@ -72,6 +76,10 @@ public sealed class DistributionCatalog
 {
     public int SchemaVersion { get; set; } = 1;
     public string GeneratedAt { get; set; } = DateTimeOffset.UtcNow.ToString("O");
+    public long Sequence { get; set; }
+    public string? IssuedAtUtc { get; set; }
+    public string? ExpiresAtUtc { get; set; }
+    public string? MinimumLauncherVersion { get; set; }
     public List<DistributionProject> Projects { get; set; } = new();
 }
 

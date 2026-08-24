@@ -12,9 +12,12 @@ internal static class ManifestDownloader
         Action<string, string, double?>? log = null,
         CancellationToken cancellationToken = default)
     {
-        using var response = await httpClient.GetAsync(config.ManifestUrl, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        var json = await response.Content.ReadAsStringAsync(cancellationToken);
+        LauncherConfigValidator.ValidateUrl(config, new Uri(config.ManifestUrl, UriKind.Absolute), "manifest");
+        var json = await SecureHttpClientFactory.GetBoundedStringAsync(
+            httpClient,
+            config.ManifestUrl,
+            config.Security.MaxManifestBytes,
+            cancellationToken);
         var signatureVerified = await ManifestSignatureVerifier.VerifyIfConfiguredAsync(
             json,
             config,
@@ -36,7 +39,7 @@ internal static class ManifestDownloader
 
         var manifest = JsonSerializer.Deserialize<LauncherManifest>(json, JsonFiles.Options)
                        ?? throw new InvalidOperationException("Remote manifest JSON was empty or invalid.");
-        LauncherEngine.ValidateManifest(manifest);
+        LauncherEngine.ValidateManifest(manifest, config);
         return new ManifestDocument(manifest, json);
     }
 }

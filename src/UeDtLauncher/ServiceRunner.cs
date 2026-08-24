@@ -61,7 +61,7 @@ public static class ServiceRunner
         ValidateServiceConfig(service);
         config.RepairMode = false;
 
-        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(10, config.HttpTimeoutSeconds)) };
+        using var http = SecureHttpClientFactory.Create(config);
         await CatalogResolver.ResolveAsync(config, http, (stage, message, _) => logger.Log(stage, message), cancellationToken);
 
         using var engine = new LauncherEngine(config, progress: null, logger);

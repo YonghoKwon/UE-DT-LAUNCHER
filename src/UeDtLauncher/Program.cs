@@ -10,7 +10,7 @@ public static class Program
     private static readonly string[] KnownSubcommands =
     {
         "run", "service", "rollback", "generate-manifest", "update-catalog",
-        "list-releases", "generate-nginx-acl", "sign-manifest", "sample-config", "agent"
+        "list-releases", "generate-nginx-acl", "sign-manifest", "sample-config", "agent", "credential"
     };
 
     [STAThread]
@@ -139,6 +139,7 @@ public static class Program
                 "sample-config" => await WriteSampleConfigAsync(args.Skip(1).ToArray()),
                 "sign-manifest" => await SignManifestAsync(args.Skip(1).ToArray()),
                 "agent" => await RunAgentClientAsync(args.Skip(1).ToArray()),
+                "credential" => RunCredentialCommand(args.Skip(1).ToArray()),
                 _ => UnknownCommand(command)
             };
         }
@@ -187,6 +188,50 @@ public static class Program
         Console.WriteLine($"Version: {response.AgentVersion}");
         if (!string.IsNullOrWhiteSpace(response.ClientIdentity)) Console.WriteLine($"Client: {response.ClientIdentity}");
         return response.Success ? 0 : 1;
+    }
+
+    private static int RunCredentialCommand(string[] args)
+    {
+        var action = args.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal)) ?? "status";
+        var name = Get(args, "--name") ?? throw new ArgumentException("credential requires --name <credential-name>.");
+        if (action.Equals("status", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine(CredentialStore.Exists(name) ? $"Credential '{name}' is configured." : $"Credential '{name}' is not configured.");
+            return CredentialStore.Exists(name) ? 0 : 1;
+        }
+        if (action.Equals("delete", StringComparison.OrdinalIgnoreCase))
+        {
+            CredentialStore.Delete(name);
+            Console.WriteLine($"Credential '{name}' was deleted.");
+            return 0;
+        }
+        if (!action.Equals("set", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException($"Unknown credential action: {action}.");
+
+        var token = Environment.GetEnvironmentVariable("UE_DT_CREDENTIAL_TOKEN");
+        if (string.IsNullOrWhiteSpace(token)) token = ReadSecretFromConsole("Bearer token: ");
+        CredentialStore.Save(name, token);
+        Console.WriteLine($"Credential '{name}' was stored. The token value will not be displayed.");
+        return 0;
+    }
+
+    private static string ReadSecretFromConsole(string prompt)
+    {
+        Console.Write(prompt);
+        var builder = new System.Text.StringBuilder();
+        while (true)
+        {
+            var key = Console.ReadKey(intercept: true);
+            if (key.Key == ConsoleKey.Enter) break;
+            if (key.Key == ConsoleKey.Backspace)
+            {
+                if (builder.Length > 0) builder.Length--;
+                continue;
+            }
+            if (!char.IsControl(key.KeyChar)) builder.Append(key.KeyChar);
+        }
+        Console.WriteLine();
+        return builder.ToString();
     }
 
     private static async Task<int> RunServiceAsync(string[] args)
@@ -269,7 +314,7 @@ public static class Program
     {
         log ??= (stage, message, percent) =>
             Console.WriteLine(percent.HasValue ? $"[{stage}] {message} ({percent:0}%)" : $"[{stage}] {message}");
-        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(10, config.HttpTimeoutSeconds)) };
+        using var httpClient = SecureHttpClientFactory.Create(config);
         await CatalogResolver.ResolveAsync(config, httpClient, log);
     }
 
@@ -392,10 +437,19 @@ public static class Program
     {
         var manifestPath = Required(args, "--manifest");
         var privateKeyPath = Required(args, "--private-key");
+        var keyId = Get(args, "--key-id");
         var output = Get(args, "--output") ?? manifestPath + ".sig";
         var payload = await File.ReadAllTextAsync(manifestPath);
         var privateKey = await File.ReadAllTextAsync(privateKeyPath);
-        await File.WriteAllTextAsync(output, ManifestSignatureVerifier.Sign(payload, privateKey));
+        var signature = ManifestSignatureVerifier.Sign(payload, privateKey);
+        if (string.IsNullOrWhiteSpace(keyId))
+        {
+            await File.WriteAllTextAsync(output, signature);
+        }
+        else
+        {
+            await JsonFiles.WriteAsync(output, new DetachedSignatureEnvelope { KeyId = keyId, Signature = signature });
+        }
         Console.WriteLine($"Manifest signature written: {output}");
         return 0;
     }
@@ -405,6 +459,7 @@ public static class Program
         var output = Get(args, "--output") ?? "launcher.config.json";
         var config = new LauncherConfig
         {
+            SchemaVersion = 2,
             CatalogUrl = "https://updates.example.com/catalogs/general/catalog.json",
             CatalogSignatureUrl = "https://updates.example.com/catalogs/general/catalog.json.sig",
             CatalogPublicKeyPath = "manifest-public-key.pem",
@@ -418,6 +473,15 @@ public static class Program
             ManifestSignatureUrl = "https://your-update-server.example.com/windows-x64/manifest.json.sig",
             ManifestPublicKeyPath = "manifest-public-key.pem",
             RequireSignedManifests = true,
+            Security = new LauncherSecurityConfig
+            {
+                CredentialName = "ue-dt-prod",
+                AllowedDownloadHosts = { "updates.example.com", "your-update-server.example.com" },
+                TrustedSigningKeys =
+                {
+                    new TrustedSigningKey { KeyId = "prod-2026", PublicKeyPath = "manifest-public-key.pem" }
+                }
+            },
             InstallDir = "app",
             StateRootDir = ".state",
             StagingDir = ".staging",
@@ -491,10 +555,11 @@ public static class Program
         Console.WriteLine("  update-catalog --catalog <catalog.json> --project-id <id> --version <version> --environment <prod|dev> --channel <stable|beta|dev> --platform <windows-x64|linux-x64> --manifest-url <url> [--display-name <name>] [--allowed-profiles general,developer] [--notes <text>] [--set-latest] [--remove] [--remove-project-if-empty]");
         Console.WriteLine("  list-releases --catalog <catalog.json> [--project <id>]");
         Console.WriteLine("  generate-nginx-acl --allowlist <project-ip-allowlist.json> [--output <acl.conf>]");
-        Console.WriteLine("  sign-manifest --manifest <manifest.json> --private-key <private.pem> --output <manifest.json.sig>");
+        Console.WriteLine("  sign-manifest --manifest <manifest.json> --private-key <private.pem> [--key-id <id>] --output <manifest.json.sig>");
         Console.WriteLine("  run --config launcher.config.json [--repair] [--no-launch]");
         Console.WriteLine("  service --config launcher.config.json [--interval <seconds>] [--once]");
         Console.WriteLine("  rollback --config launcher.config.json [--list] [--backup <timestamp>]");
         Console.WriteLine("  agent [status] [--endpoint <pipe-or-socket>] [--project <id>]");
+        Console.WriteLine("  credential <set|status|delete> --name <credential-name>");
     }
 }

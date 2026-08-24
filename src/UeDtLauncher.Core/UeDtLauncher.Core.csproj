@@ -13,6 +13,10 @@
     <InternalsVisibleTo Include="UeDtLauncher.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+  </ItemGroup>
+
   <!--
     Keep the first refactor mechanically safe: the runtime sources stay in their
     established paths while ownership moves to this assembly. A later physical
@@ -22,6 +26,7 @@
     <Compile Include="..\UeDtLauncher\BackupManager.cs" Link="Runtime\BackupManager.cs" />
     <Compile Include="..\UeDtLauncher\CatalogResolver.cs" Link="Runtime\CatalogResolver.cs" />
     <Compile Include="..\UeDtLauncher\CatalogUpdater.cs" Link="Runtime\CatalogUpdater.cs" />
+    <Compile Include="..\UeDtLauncher\CommercialSecurity.cs" Link="Runtime\CommercialSecurity.cs" />
     <Compile Include="..\UeDtLauncher\DiskSpace.cs" Link="Runtime\DiskSpace.cs" />
     <Compile Include="..\UeDtLauncher\FileLogger.cs" Link="Runtime\FileLogger.cs" />
     <Compile Include="..\UeDtLauncher\Hashing.cs" Link="Runtime\Hashing.cs" />

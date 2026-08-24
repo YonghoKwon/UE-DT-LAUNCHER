@@ -45,6 +45,13 @@ UeDtLauncher sample-config --output launcher.config.json
 | `catalogSignatureUrl` / `catalogPublicKeyPath` | - | catalog 서명 검증 (`.sig` URL + 공개키 파일 경로) |
 | `manifestSignatureUrl` / `manifestPublicKeyPath` | - | manifest 서명 검증. 카탈로그 모드에서는 catalog의 릴리스 항목에서 자동 설정됨 |
 | `requireSignedManifests` | `false` | **true면 서명 검증이 실제로 수행되지 않는 한 업데이트를 거부.** 운영 배포에서 켜는 것을 권장. false면 서명 미설정 시 경고 로그만 남깁니다 |
+| `schemaVersion` | `1` | 운영용 신규 설정은 `2`. v2는 HTTPS·서명·credential reference와 metadata 제한을 강제합니다 |
+| `security.credentialName` | - | `credential set --name <이름>`으로 별도 저장한 Bearer token 이름. token 자체는 JSON에 기록하지 않습니다 |
+| `security.allowedDownloadHosts` | `[]` | catalog·manifest·파일 다운로드를 허용할 host 목록. v2 운영 설정에서 사용하는 모든 host를 명시합니다 |
+| `security.trustedSigningKeys` | `[]` | `{ "keyId", "publicKeyPath" }` 목록. signature v2 key rotation에 사용합니다 |
+| `security.customCaCertificatePath` | - | 사내 CA가 필요한 경우에만 지정. TLS 검증을 끄지 않고 이 CA를 추가 신뢰합니다 |
+
+운영 설정에서는 URL에 `user:password@host`를 넣지 않습니다. 관리자 권한 터미널에서 `UeDtLauncher credential set --name ue-dt-prod`로 token을 저장하고 설정에는 `credentialName`만 둡니다.
 
 **동작/경로**
 

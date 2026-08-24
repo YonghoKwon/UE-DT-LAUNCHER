@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UeDtLauncher.Core", "src\Ue
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UeDtLauncher.Agent", "src\UeDtLauncher.Agent\UeDtLauncher.Agent.csproj", "{8A52CA44-9392-47A7-B991-8CB89F5D920A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UeDtLauncher.TestServer", "tools\UeDtLauncher.TestServer\UeDtLauncher.TestServer.csproj", "{B85DF071-8841-4DC7-A6D8-99D822A09BC3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -38,6 +40,10 @@ Global
 		{8A52CA44-9392-47A7-B991-8CB89F5D920A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{8A52CA44-9392-47A7-B991-8CB89F5D920A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{8A52CA44-9392-47A7-B991-8CB89F5D920A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B85DF071-8841-4DC7-A6D8-99D822A09BC3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B85DF071-8841-4DC7-A6D8-99D822A09BC3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B85DF071-8841-4DC7-A6D8-99D822A09BC3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B85DF071-8841-4DC7-A6D8-99D822A09BC3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{F9A24B15-BBDF-4B6B-B8D0-BE3EC6647E3C} = {C9A14734-4513-420D-8BA6-8864986F588D}

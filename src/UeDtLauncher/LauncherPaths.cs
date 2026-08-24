@@ -22,6 +22,7 @@ public static partial class LauncherPaths
         var legacy = LegacyStatePaths.From(config, fullConfigPath);
 
         ResolveInPlace(config, fullConfigPath);
+        LauncherConfigValidator.Validate(config);
         MigrateLegacySingleProjectState(config, legacy);
         return config;
     }
@@ -36,6 +37,13 @@ public static partial class LauncherPaths
         config.LogDir = ResolveConfigRelative(fullConfigPath, config.LogDir);
         config.ManifestPublicKeyPath = ResolveOptionalConfigRelative(fullConfigPath, config.ManifestPublicKeyPath);
         config.CatalogPublicKeyPath = ResolveOptionalConfigRelative(fullConfigPath, config.CatalogPublicKeyPath);
+        foreach (var key in config.Security.TrustedSigningKeys)
+        {
+            key.PublicKeyPath = ResolveConfigRelative(fullConfigPath, key.PublicKeyPath);
+        }
+        config.Security.CustomCaCertificatePath = ResolveOptionalConfigRelative(
+            fullConfigPath,
+            config.Security.CustomCaCertificatePath);
 
         if (config.WindowsIntegration.IconPath is not null)
         {

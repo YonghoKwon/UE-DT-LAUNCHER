@@ -34,7 +34,7 @@ public static class CatalogSnapshotService
             return new CatalogSnapshot { Status = "직접 manifest 모드" };
         }
 
-        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(10, config.HttpTimeoutSeconds)) };
+        using var httpClient = SecureHttpClientFactory.Create(config);
         var catalog = await CatalogResolver.DownloadCatalogAsync(config, httpClient, cancellationToken: cancellationToken);
 
         var allowedProjects = new List<CatalogProjectOption>();

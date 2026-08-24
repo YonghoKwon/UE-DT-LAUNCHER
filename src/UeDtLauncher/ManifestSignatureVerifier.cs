@@ -8,19 +8,13 @@ public static class ManifestSignatureVerifier
     /// <summary>Returns true when the signature was actually verified, false when verification was skipped.</summary>
     public static async Task<bool> VerifyIfConfiguredAsync(string manifestJson, LauncherConfig config, HttpClient httpClient, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(config.ManifestSignatureUrl) || string.IsNullOrWhiteSpace(config.ManifestPublicKeyPath))
-        {
-            return false;
-        }
-
-        if (!File.Exists(config.ManifestPublicKeyPath))
-        {
-            throw new FileNotFoundException("Manifest public key file was not found.", config.ManifestPublicKeyPath);
-        }
-
-        var signatureBase64 = await httpClient.GetStringAsync(config.ManifestSignatureUrl, cancellationToken);
-        Verify(manifestJson, signatureBase64.Trim(), await File.ReadAllTextAsync(config.ManifestPublicKeyPath, cancellationToken));
-        return true;
+        return await DetachedSignatureVerifier.VerifyIfConfiguredAsync(
+            manifestJson,
+            config.ManifestSignatureUrl,
+            config.ManifestPublicKeyPath,
+            config,
+            httpClient,
+            cancellationToken);
     }
 
     public static void Verify(string payload, string signatureBase64, string publicKeyPem)

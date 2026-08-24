@@ -31,7 +31,7 @@ public sealed class LauncherEngine : IDisposable
         _fileLogger = fileLogger;
         _echoToConsole = echoToConsole;
         _ownsHttpClient = httpClient is null;
-        _httpClient = httpClient ?? new HttpClient();
+        _httpClient = httpClient ?? SecureHttpClientFactory.Create(config);
         _httpClient.Timeout = TimeSpan.FromSeconds(Math.Max(10, config.HttpTimeoutSeconds));
     }
 
@@ -359,9 +359,15 @@ public sealed class LauncherEngine : IDisposable
 
     private Uri ResolveDownloadUri(LauncherManifest manifest, ManifestFile file)
     {
-        if (Uri.TryCreate(file.Url, UriKind.Absolute, out var absolute)) return absolute;
+        if (Uri.TryCreate(file.Url, UriKind.Absolute, out var absolute))
+        {
+            LauncherConfigValidator.ValidateUrl(_config, absolute, "file download");
+            return absolute;
+        }
         var baseUrl = manifest.BaseUrl ?? throw new InvalidOperationException($"File URL is relative but manifest.baseUrl is missing: {file.Path}");
-        return new Uri(baseUrl.TrimEnd('/') + "/" + (file.Url ?? file.Path).TrimStart('/'));
+        var resolved = new Uri(baseUrl.TrimEnd('/') + "/" + (file.Url ?? file.Path).TrimStart('/'));
+        LauncherConfigValidator.ValidateUrl(_config, resolved, "file download");
+        return resolved;
     }
 
     private async Task DownloadWithRetryAsync(Uri uri, string targetPath, ManifestFile file, Action<long>? onBytes, CancellationToken cancellationToken)
@@ -428,6 +434,15 @@ public sealed class LauncherEngine : IDisposable
             await DeleteFileWithRetryAsync(tempPath, cancellationToken);
         }
         response.EnsureSuccessStatusCode();
+        if (existingLength > 0)
+        {
+            var range = response.Content.Headers.ContentRange;
+            if (range?.From != existingLength || (expectedSize > 0 && range.Length != expectedSize))
+            {
+                await DeleteFileWithRetryAsync(tempPath, cancellationToken);
+                throw new IOException("HTTP Content-Range did not match the requested resume offset or expected size.");
+            }
+        }
 
         await using (var source = await response.Content.ReadAsStreamAsync(cancellationToken))
         await using (var target = new FileStream(tempPath, existingLength > 0 ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.None))
@@ -792,6 +807,29 @@ public sealed class LauncherEngine : IDisposable
         if (!manifest.Files.Any(file => string.Equals(file.Path, manifest.EntryPoint, SafePath.FileSystemComparison)))
         {
             throw new InvalidOperationException($"Manifest entryPoint is not listed in files: {manifest.EntryPoint}");
+        }
+    }
+
+    internal static void ValidateManifest(LauncherManifest manifest, LauncherConfig config)
+    {
+        ValidateManifest(manifest);
+        if (config.SchemaVersion < 2) return;
+        if (!string.IsNullOrWhiteSpace(config.ProjectId) && !manifest.AppId.Equals(config.ProjectId, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"Manifest appId '{manifest.AppId}' does not match selected project '{config.ProjectId}'.");
+        if (!manifest.Platform.Equals(config.TargetPlatform, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"Manifest platform '{manifest.Platform}' does not match selected platform '{config.TargetPlatform}'.");
+        if (!string.IsNullOrWhiteSpace(config.ResolvedReleaseVersion) && !manifest.Version.Equals(config.ResolvedReleaseVersion, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"Manifest version '{manifest.Version}' does not match catalog release '{config.ResolvedReleaseVersion}'.");
+        if (!manifest.Channel.Equals(config.Channel, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"Manifest channel '{manifest.Channel}' does not match selected channel '{config.Channel}'.");
+        if (manifest.Files.Count > config.Security.MaxManifestFiles)
+            throw new InvalidDataException("Manifest file count exceeds the configured limit.");
+        long total = 0;
+        foreach (var file in manifest.Files)
+        {
+            if (file.Size > config.Security.MaxSingleFileBytes) throw new InvalidDataException($"Manifest file exceeds the configured size limit: {file.Path}");
+            total = checked(total + file.Size);
+            if (total > config.Security.MaxTotalDownloadBytes) throw new InvalidDataException("Manifest total download size exceeds the configured limit.");
         }
     }
 }

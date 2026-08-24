@@ -527,7 +527,7 @@ public sealed partial class MainWindow : Window
             // The whole resolve + update pipeline runs off the UI thread; progress is marshaled back.
             await Task.Run(async () =>
             {
-                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(10, c.HttpTimeoutSeconds)) };
+                using var http = SecureHttpClientFactory.Create(c);
                 await CatalogResolver.ResolveAsync(c, http, (s, m, p) => Dispatcher.UIThread.Post(() => UiProgress(s, m, p)));
                 using var engine = new LauncherEngine(c, p => Dispatcher.UIThread.Post(() => EngineProgress(p)), _fileLogger);
                 await engine.RunAsync();
@@ -550,7 +550,7 @@ public sealed partial class MainWindow : Window
             var c = await RunConfig(false, false);
             var (missing, changed, total, version) = await Task.Run(async () =>
             {
-                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(10, c.HttpTimeoutSeconds)) };
+                using var http = SecureHttpClientFactory.Create(c);
                 await CatalogResolver.ResolveAsync(c, http, (s, m, p) => Dispatcher.UIThread.Post(() => UiProgress(s, m, p)));
                 var manifestDocument = await ManifestDownloader.DownloadAsync(c, http);
                 var manifest = manifestDocument.Manifest;
