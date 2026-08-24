@@ -12,6 +12,8 @@ Restart=on-failure
 RestartSec=10
 NoNewPrivileges=true
 PrivateTmp=true
+RuntimeDirectory=ue-dt-launcher
+RuntimeDirectoryMode=0770
 ProtectSystem=strict
 ReadWritePaths=/var/lib/ue-dt-launcher /var/log/ue-dt-launcher /run/ue-dt-launcher
 

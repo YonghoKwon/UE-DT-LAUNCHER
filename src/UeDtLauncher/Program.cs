@@ -175,6 +175,15 @@ public static class Program
         if (repair) config.RepairMode = true;
         if (noLaunch) config.LaunchAfterUpdate = false;
 
+        if (config.IsManagedDeployment)
+        {
+            var managedResponse = await new ManagedAgentClient().SendAsync(repair ? "repair" : "update", config.ProjectId);
+            PrintAgentResponse(managedResponse);
+            if (!managedResponse.Success) return 1;
+            if (!noLaunch) _ = await ManagedAppLauncher.LaunchAsync(config);
+            return 0;
+        }
+
         var fileLogger = new FileLogger(config.LogDir);
         var reporter = new ConsoleProgressReporter();
         // Route both catalog resolution and the engine through the reporter so the CLI shows a single
@@ -198,10 +207,17 @@ public static class Program
         var endpoint = Get(args, "--endpoint");
         var projectId = Get(args, "--project");
         var response = await new ManagedAgentClient(endpoint).SendAsync(command, projectId);
-        Console.WriteLine($"Agent {response.Status}: {response.Message}");
-        Console.WriteLine($"Version: {response.AgentVersion}");
+        PrintAgentResponse(response);
         if (!string.IsNullOrWhiteSpace(response.ClientIdentity)) Console.WriteLine($"Client: {response.ClientIdentity}");
         return response.Success ? 0 : 1;
+    }
+
+    private static void PrintAgentResponse(ManagedAgentResponse response)
+    {
+        foreach (var progress in response.Progress)
+            Console.WriteLine(progress.Percent.HasValue ? $"[{progress.Stage}] {progress.Message} ({progress.Percent:0}%)" : $"[{progress.Stage}] {progress.Message}");
+        Console.WriteLine($"Agent {response.Status}: {response.Message}");
+        Console.WriteLine($"Version: {response.AgentVersion}");
     }
 
     private static int RunCredentialCommand(string[] args)
@@ -318,6 +334,14 @@ public static class Program
     {
         var configPath = Get(args, "--config") ?? "launcher.config.json";
         var once = Has(args, "--once");
+        var managedConfig = await LauncherPaths.LoadResolvedAsync(configPath);
+        if (managedConfig.IsManagedDeployment)
+        {
+            if (!once) throw new InvalidOperationException("Managed deployment service loop is owned by UeDtLauncher.Agent. Use service --once for a manual cycle.");
+            var managedResponse = await new ManagedAgentClient().SendAsync("service-run", managedConfig.ProjectId);
+            PrintAgentResponse(managedResponse);
+            return managedResponse.Success ? 0 : 1;
+        }
         int? interval = null;
         var intervalArg = Get(args, "--interval");
         if (!string.IsNullOrWhiteSpace(intervalArg))
@@ -345,6 +369,12 @@ public static class Program
     {
         var configPath = Get(args, "--config") ?? "launcher.config.json";
         var config = await LauncherPaths.LoadResolvedAsync(configPath);
+        if (config.IsManagedDeployment)
+        {
+            var managedResponse = await new ManagedAgentClient().SendAsync("rollback", config.ProjectId);
+            PrintAgentResponse(managedResponse);
+            return managedResponse.Success ? 0 : 1;
+        }
         var backups = BackupManager.List(config.BackupDir);
 
         if (Has(args, "--list"))
@@ -540,6 +570,7 @@ public static class Program
         var config = new LauncherConfig
         {
             SchemaVersion = 2,
+            DeploymentMode = "managed-agent",
             CatalogUrl = "https://updates.example.com/catalogs/general/catalog.json",
             CatalogSignatureUrl = "https://updates.example.com/catalogs/general/catalog.json.sig",
             CatalogPublicKeyPath = "manifest-public-key.pem",

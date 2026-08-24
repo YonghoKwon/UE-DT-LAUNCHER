@@ -436,11 +436,11 @@ public sealed class LauncherEngine : IDisposable
         response.EnsureSuccessStatusCode();
         if (existingLength > 0)
         {
-            var range = response.Content.Headers.ContentRange;
-            if (range?.From != existingLength || (expectedSize > 0 && range.Length != expectedSize))
+            var rangeError = ValidateResumeResponse(response, existingLength, expectedSize);
+            if (rangeError is not null)
             {
                 await DeleteFileWithRetryAsync(tempPath, cancellationToken);
-                throw new IOException("HTTP Content-Range did not match the requested resume offset or expected size.");
+                throw new IOException(rangeError);
             }
         }
 
@@ -469,6 +469,16 @@ public sealed class LauncherEngine : IDisposable
         var actualSize = new FileInfo(tempPath).Length;
         if (expectedSize > 0 && actualSize != expectedSize) throw new IOException($"Size mismatch. Expected {expectedSize}, actual {actualSize}.");
         await MoveFileWithRetryAsync(tempPath, targetPath, cancellationToken);
+    }
+
+    internal static string? ValidateResumeResponse(HttpResponseMessage response, long existingLength, long expectedSize)
+    {
+        if (existingLength <= 0) return null;
+        if (response.StatusCode != HttpStatusCode.PartialContent) return "HTTP server did not honor the resume Range request.";
+        var range = response.Content.Headers.ContentRange;
+        if (range?.From != existingLength) return "HTTP Content-Range start did not match the requested resume offset.";
+        if (expectedSize > 0 && range.Length != expectedSize) return "HTTP Content-Range total did not match the manifest size.";
+        return null;
     }
 
     private static async Task MoveFileWithRetryAsync(string sourcePath, string targetPath, CancellationToken cancellationToken)

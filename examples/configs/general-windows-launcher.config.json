@@ -1,5 +1,6 @@
 {
   "schemaVersion": 2,
+  "deploymentMode": "managed-agent",
   "catalogUrl": "https://updates.example.com/catalogs/general/catalog.json",
   "catalogSignatureUrl": "https://updates.example.com/catalogs/general/catalog.json.sig",
   "catalogPublicKeyPath": "manifest-public-key.pem",

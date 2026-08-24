@@ -98,6 +98,20 @@ public class ManagedAgentTests
         Assert.True(Path.IsPathRooted(migrated.InstallDir));
     }
 
+    [Fact]
+    public async Task ManagedLaunch_RequiresInstalledManifestBeforeStartingAnything()
+    {
+        using var temp = new TempDirectory();
+        var config = new LauncherConfig
+        {
+            DeploymentMode = "managed-agent",
+            InstallDir = Path.Combine(temp.Path, "app"),
+            InstalledManifestPath = Path.Combine(temp.Path, "state", "installed-manifest.json")
+        };
+        Assert.True(config.IsManagedDeployment);
+        await Assert.ThrowsAsync<FileNotFoundException>(() => ManagedAppLauncher.LaunchAsync(config));
+    }
+
     private sealed class TempDirectory : IDisposable
     {
         public TempDirectory()

@@ -33,7 +33,7 @@
         <Directory Id="ConfigDataFolder" Name="config">
           <Component Id="ConfigFolderComponent" Guid="B862B0D0-319A-4D18-B38B-F0911DD8F2A1">
             <CreateFolder>
-              <util:PermissionEx User="LOCAL SERVICE" GenericAll="yes" />
+              <util:PermissionEx User="LOCAL SERVICE" GenericRead="yes" GenericExecute="yes" />
               <util:PermissionEx User="Users" GenericRead="yes" GenericExecute="yes" />
             </CreateFolder>
           </Component>
@@ -48,7 +48,7 @@
           <Component Id="LogsFolderComponent" Guid="71D108AE-A9B4-44EE-94CD-5505802772C5"><CreateFolder><util:PermissionEx User="LOCAL SERVICE" GenericAll="yes" /><util:PermissionEx User="Users" GenericRead="yes" GenericExecute="yes" /></CreateFolder></Component>
         </Directory>
         <Directory Id="CredentialsDataFolder" Name="credentials">
-          <Component Id="CredentialsFolderComponent" Guid="EF9391D1-F86B-4A0A-BEF5-4DF39524F390"><CreateFolder><util:PermissionEx User="LOCAL SERVICE" GenericAll="yes" /></CreateFolder></Component>
+          <Component Id="CredentialsFolderComponent" Guid="EF9391D1-F86B-4A0A-BEF5-4DF39524F390"><CreateFolder><util:PermissionEx User="LOCAL SERVICE" GenericRead="yes" GenericExecute="yes" /></CreateFolder></Component>
         </Directory>
       </Directory>
     </StandardDirectory>

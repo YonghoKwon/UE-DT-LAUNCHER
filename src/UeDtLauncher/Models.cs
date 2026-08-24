@@ -5,6 +5,7 @@ namespace UeDtLauncher;
 public sealed class LauncherConfig
 {
     public int SchemaVersion { get; set; } = 1;
+    public string DeploymentMode { get; set; } = "portable";
     // Direct manifest mode. Used when CatalogUrl is empty.
     public string ManifestUrl { get; set; } = "http://localhost:8080/manifest.json";
     public string? ManifestSignatureUrl { get; set; }
@@ -54,6 +55,7 @@ public sealed class LauncherConfig
     public List<ProjectUiConfig> Projects { get; set; } = new();
 
     [JsonIgnore] public string? ResolvedReleaseVersion { get; set; }
+    [JsonIgnore] public bool IsManagedDeployment => DeploymentMode.Equals("managed-agent", StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed class ProjectUiConfig

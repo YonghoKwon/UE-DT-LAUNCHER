@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.IO.Pipes;
 using System.Net.Sockets;
 using System.Text.Json;
@@ -51,7 +52,10 @@ public sealed class ManagedAgentResponse
     public string AgentVersion { get; set; } = string.Empty;
     public string? ClientIdentity { get; set; }
     public bool IsFinal { get; set; } = true;
+    public List<ManagedAgentProgress> Progress { get; set; } = new();
 }
+
+public sealed record ManagedAgentProgress(string Stage, string Message, double? Percent);
 
 public sealed record ManagedLauncherPathLayout(
     string InstallRoot,
@@ -242,5 +246,28 @@ public sealed class ManagedAgentClient(string? endpoint = null)
             socket.Dispose();
             throw;
         }
+    }
+}
+
+public static class ManagedAppLauncher
+{
+    public static async Task<Process> LaunchAsync(LauncherConfig config, CancellationToken cancellationToken = default)
+    {
+        if (!File.Exists(config.InstalledManifestPath))
+            throw new FileNotFoundException("Installed manifest was not found.", config.InstalledManifestPath);
+        var manifest = await JsonFiles.ReadAsync<LauncherManifest>(config.InstalledManifestPath, cancellationToken);
+        LauncherEngine.ValidateManifest(manifest, config);
+        var entryPoint = SafePath.ResolveInsideChecked(config.InstallDir, manifest.EntryPoint);
+        if (!File.Exists(entryPoint)) throw new FileNotFoundException("Managed application entry point was not found.", entryPoint);
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = entryPoint,
+            WorkingDirectory = Path.GetDirectoryName(entryPoint) ?? config.InstallDir,
+            UseShellExecute = false
+        };
+        foreach (var argument in config.LaunchArguments ?? Array.Empty<string>()) startInfo.ArgumentList.Add(argument);
+        var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Managed application process did not start.");
+        await JsonFiles.WriteAsync(config.AppPidPath, new AppPidInfo { Pid = process.Id, EntryPoint = entryPoint }, cancellationToken);
+        return process;
     }
 }

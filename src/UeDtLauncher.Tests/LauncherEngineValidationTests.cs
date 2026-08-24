@@ -134,4 +134,29 @@ public class LauncherEngineValidationTests
         Assert.False(LauncherEngine.IsTransientDownloadError(new InvalidOperationException("bad manifest")));
         Assert.False(LauncherEngine.IsTransientDownloadError(new UnauthorizedAccessException()));
     }
+
+    [Fact]
+    public void ValidateResumeResponse_RequiresExactRangeStartAndTotal()
+    {
+        using var valid = new HttpResponseMessage(HttpStatusCode.PartialContent)
+        {
+            Content = new ByteArrayContent([1, 2, 3])
+        };
+        valid.Content.Headers.ContentRange = new System.Net.Http.Headers.ContentRangeHeaderValue(5, 9, 10);
+        Assert.Null(LauncherEngine.ValidateResumeResponse(valid, existingLength: 5, expectedSize: 10));
+
+        using var wrongStart = new HttpResponseMessage(HttpStatusCode.PartialContent)
+        {
+            Content = new ByteArrayContent([1, 2, 3])
+        };
+        wrongStart.Content.Headers.ContentRange = new System.Net.Http.Headers.ContentRangeHeaderValue(4, 9, 10);
+        Assert.NotNull(LauncherEngine.ValidateResumeResponse(wrongStart, 5, 10));
+
+        using var wrongTotal = new HttpResponseMessage(HttpStatusCode.PartialContent)
+        {
+            Content = new ByteArrayContent([1, 2, 3])
+        };
+        wrongTotal.Content.Headers.ContentRange = new System.Net.Http.Headers.ContentRangeHeaderValue(5, 10, 11);
+        Assert.NotNull(LauncherEngine.ValidateResumeResponse(wrongTotal, 5, 10));
+    }
 }

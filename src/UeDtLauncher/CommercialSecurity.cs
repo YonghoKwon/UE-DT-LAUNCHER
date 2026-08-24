@@ -61,6 +61,8 @@ public static class LauncherConfigValidator
     {
         if (config.SchemaVersion is < 1 or > 2)
             throw new InvalidOperationException($"Unsupported launcher config schemaVersion: {config.SchemaVersion}.");
+        if (config.DeploymentMode is not ("portable" or "managed-agent"))
+            throw new InvalidOperationException("deploymentMode must be portable or managed-agent.");
         if (config.SchemaVersion < 2) return;
 
         var production = string.Equals(config.Environment, "prod", StringComparison.OrdinalIgnoreCase);

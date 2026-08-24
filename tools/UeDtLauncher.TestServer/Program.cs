@@ -98,6 +98,7 @@ var configPath = Path.Combine(root, "launcher.config.json");
 await JsonFiles.WriteAsync(configPath, new LauncherConfig
 {
     SchemaVersion = 2,
+    DeploymentMode = "managed-agent",
     CatalogUrl = baseUrl + "/catalog.json",
     CatalogSignatureUrl = baseUrl + "/catalog.json.sig",
     ProjectId = "commercial-e2e",

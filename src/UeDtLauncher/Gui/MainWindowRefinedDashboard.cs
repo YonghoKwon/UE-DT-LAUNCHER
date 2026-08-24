@@ -168,7 +168,8 @@ public sealed partial class MainWindow : Window
         try
         {
             var response = await new ManagedAgentClient().SendAsync("status", timeout: TimeSpan.FromSeconds(2));
-            nextState = response.Success ? $"연결됨 {response.AgentVersion}" : "Agent 오류";
+            var displayVersion = response.AgentVersion.Split('+')[0];
+            nextState = response.Success ? $"연결됨 {displayVersion}" : "Agent 오류";
         }
         catch
         {
@@ -528,14 +529,24 @@ public sealed partial class MainWindow : Window
         {
             if (_statusText is not null) _statusText.Text = launch ? "실행 준비 중..." : "업데이트 확인 중...";
             var c = await RunConfig(repair, launch);
-            // The whole resolve + update pipeline runs off the UI thread; progress is marshaled back.
-            await Task.Run(async () =>
+            if (c.IsManagedDeployment)
             {
-                using var http = SecureHttpClientFactory.Create(c);
-                await CatalogResolver.ResolveAsync(c, http, (s, m, p) => Dispatcher.UIThread.Post(() => UiProgress(s, m, p)));
-                using var engine = new LauncherEngine(c, p => Dispatcher.UIThread.Post(() => EngineProgress(p)), _fileLogger);
-                await engine.RunAsync();
-            });
+                var response = await new ManagedAgentClient().SendAsync(repair ? "repair" : "update", c.ProjectId);
+                foreach (var progress in response.Progress) UiProgress(progress.Stage, progress.Message, progress.Percent);
+                if (!response.Success) throw new InvalidOperationException(response.Message);
+                if (launch) _ = await ManagedAppLauncher.LaunchAsync(c);
+            }
+            else
+            {
+                // The whole resolve + update pipeline runs off the UI thread; progress is marshaled back.
+                await Task.Run(async () =>
+                {
+                    using var http = SecureHttpClientFactory.Create(c);
+                    await CatalogResolver.ResolveAsync(c, http, (s, m, p) => Dispatcher.UIThread.Post(() => UiProgress(s, m, p)));
+                    using var engine = new LauncherEngine(c, p => Dispatcher.UIThread.Post(() => EngineProgress(p)), _fileLogger);
+                    await engine.RunAsync();
+                });
+            }
             _installState = "최신 상태"; _installDetail = "현재 설치된 파일이 최신 배포 정보와 일치합니다.";
             Build(); // refresh the version tile and release info with the new install state
             Progress(100); if (_statusText is not null) _statusText.Text = launch ? "실행되었습니다." : "최신 상태입니다.";
@@ -552,6 +563,18 @@ public sealed partial class MainWindow : Window
         {
             if (_statusText is not null) _statusText.Text = "설치 상태 확인 중..."; Progress(5);
             var c = await RunConfig(false, false);
+            if (c.IsManagedDeployment)
+            {
+                var response = await new ManagedAgentClient().SendAsync("check", c.ProjectId);
+                foreach (var progress in response.Progress) UiProgress(progress.Stage, progress.Message, progress.Percent);
+                if (!response.Success) throw new InvalidOperationException(response.Message);
+                _installState = ReadInstalledVersion() is null ? "설치 필요" : "확인 완료";
+                _installDetail = IsDeveloper ? response.Message : "업데이트 서버의 배포 정보와 서명을 확인했습니다.";
+                Progress(100);
+                if (_statusText is not null) _statusText.Text = _installState;
+                UpdateInstallTile();
+                return;
+            }
             var (missing, changed, total, version) = await Task.Run(async () =>
             {
                 using var http = SecureHttpClientFactory.Create(c);
@@ -580,6 +603,24 @@ public sealed partial class MainWindow : Window
     {
         if (_running) return;
         var config = await RunConfig(false, false);
+        if (config.IsManagedDeployment)
+        {
+            if (!await ConfirmRollback("Agent 최신 백업", null)) return;
+            _running = true; SetBusy(true); Progress(0);
+            try
+            {
+                var response = await new ManagedAgentClient().SendAsync("rollback", config.ProjectId);
+                foreach (var progress in response.Progress) UiProgress(progress.Stage, progress.Message, progress.Percent);
+                if (!response.Success) throw new InvalidOperationException(response.Message);
+                _installState = "롤백 완료";
+                _installDetail = "관리 Agent가 가장 최근 백업을 복원했습니다.";
+                Build();
+                Progress(100);
+            }
+            catch (Exception ex) { MarkError(ex, "롤백 실패"); }
+            finally { _running = false; SetBusy(false); }
+            return;
+        }
         var backups = BackupManager.List(config.BackupDir);
         if (backups.Count == 0)
         {

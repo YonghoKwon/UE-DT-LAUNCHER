@@ -149,7 +149,7 @@ publish/linux-x64/UeDtLauncher
 | [docs/guide-02-publish-package.md](docs/guide-02-publish-package.md) | 패키징 파일 업로드(ZIP) → manifest 생성 → catalog 갱신, 시나리오별 예시, 확인 |
 | [docs/guide-03-launcher-usage.md](docs/guide-03-launcher-usage.md) | 런처 사용법: 설정 전체 필드, GUI(일반/개발자), CLI 레퍼런스, 무인 서버, 문제 해결 |
 
-루트의 나머지 핵심: `docs/launcher-user-guide.md`(GUI 화면 사용법), `docs/launcher-ui-customization.md`(UI 커스터마이징), `docs/service-mode.md`(무인 서비스 모드).
+루트의 나머지 핵심: `docs/launcher-user-guide.md`(GUI 화면 사용법), `docs/launcher-ui-customization.md`(UI 커스터마이징), `docs/service-mode.md`(무인 서비스 모드), `docs/commercial-deployment.md`(사내 상용 설치·운영).
 
 덜 중요한 보조·레거시 문서는 [docs/reference/](docs/reference/)로 분리했습니다(퍼블리시 스크립트 상세, 구 서버 구성 문서들 — 서버 구성 정본은 guide-01).
 
