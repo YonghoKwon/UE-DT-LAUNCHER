@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>UeDtLauncher.Core</AssemblyName>
+    <RootNamespace>UeDtLauncher</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="UeDtLauncher" />
+    <InternalsVisibleTo Include="UeDtLauncher.Agent" />
+    <InternalsVisibleTo Include="UeDtLauncher.Tests" />
+  </ItemGroup>
+
+  <!--
+    Keep the first refactor mechanically safe: the runtime sources stay in their
+    established paths while ownership moves to this assembly. A later physical
+    folder move can then be reviewed independently from behavioral changes.
+  -->
+  <ItemGroup>
+    <Compile Include="..\UeDtLauncher\BackupManager.cs" Link="Runtime\BackupManager.cs" />
+    <Compile Include="..\UeDtLauncher\CatalogResolver.cs" Link="Runtime\CatalogResolver.cs" />
+    <Compile Include="..\UeDtLauncher\CatalogUpdater.cs" Link="Runtime\CatalogUpdater.cs" />
+    <Compile Include="..\UeDtLauncher\DiskSpace.cs" Link="Runtime\DiskSpace.cs" />
+    <Compile Include="..\UeDtLauncher\FileLogger.cs" Link="Runtime\FileLogger.cs" />
+    <Compile Include="..\UeDtLauncher\Hashing.cs" Link="Runtime\Hashing.cs" />
+    <Compile Include="..\UeDtLauncher\JsonFiles.cs" Link="Runtime\JsonFiles.cs" />
+    <Compile Include="..\UeDtLauncher\KnownValues.cs" Link="Runtime\KnownValues.cs" />
+    <Compile Include="..\UeDtLauncher\LauncherEngine.cs" Link="Runtime\LauncherEngine.cs" />
+    <Compile Include="..\UeDtLauncher\LauncherPaths.cs" Link="Runtime\LauncherPaths.cs" />
+    <Compile Include="..\UeDtLauncher\ManifestDownloader.cs" Link="Runtime\ManifestDownloader.cs" />
+    <Compile Include="..\UeDtLauncher\ManifestGenerator.cs" Link="Runtime\ManifestGenerator.cs" />
+    <Compile Include="..\UeDtLauncher\ManifestSignatureVerifier.cs" Link="Runtime\ManifestSignatureVerifier.cs" />
+    <Compile Include="..\UeDtLauncher\Models.cs" Link="Runtime\Models.cs" />
+    <Compile Include="..\UeDtLauncher\NginxAclGenerator.cs" Link="Runtime\NginxAclGenerator.cs" />
+    <Compile Include="..\UeDtLauncher\PackageExtractor.cs" Link="Runtime\PackageExtractor.cs" />
+    <Compile Include="..\UeDtLauncher\PreparedLauncherUpdate.cs" Link="Runtime\PreparedLauncherUpdate.cs" />
+    <Compile Include="..\UeDtLauncher\PreparedPackages.cs" Link="Runtime\PreparedPackages.cs" />
+    <Compile Include="..\UeDtLauncher\SafePath.cs" Link="Runtime\SafePath.cs" />
+    <Compile Include="..\UeDtLauncher\SelfUpdateManager.cs" Link="Runtime\SelfUpdateManager.cs" />
+    <Compile Include="..\UeDtLauncher\ServiceRunner.cs" Link="Runtime\ServiceRunner.cs" />
+    <Compile Include="..\UeDtLauncher\SingleInstanceLock.cs" Link="Runtime\SingleInstanceLock.cs" />
+    <Compile Include="..\UeDtLauncher\UpdateTransaction.cs" Link="Runtime\UpdateTransaction.cs" />
+    <Compile Include="..\UeDtLauncher\WindowsIntegration.cs" Link="Runtime\WindowsIntegration.cs" />
+  </ItemGroup>
+</Project>
