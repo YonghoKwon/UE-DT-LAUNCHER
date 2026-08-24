@@ -10,7 +10,7 @@ public static class Program
     private static readonly string[] KnownSubcommands =
     {
         "run", "service", "rollback", "generate-manifest", "update-catalog",
-        "list-releases", "generate-nginx-acl", "sign-manifest", "sample-config"
+        "list-releases", "generate-nginx-acl", "sign-manifest", "sample-config", "agent"
     };
 
     [STAThread]
@@ -138,6 +138,7 @@ public static class Program
                 "generate-nginx-acl" => await GenerateNginxAclAsync(args.Skip(1).ToArray()),
                 "sample-config" => await WriteSampleConfigAsync(args.Skip(1).ToArray()),
                 "sign-manifest" => await SignManifestAsync(args.Skip(1).ToArray()),
+                "agent" => await RunAgentClientAsync(args.Skip(1).ToArray()),
                 _ => UnknownCommand(command)
             };
         }
@@ -174,6 +175,18 @@ public static class Program
             reporter.Finish(); // close an open in-place bar line even if the run threw mid-download
         }
         return 0;
+    }
+
+    private static async Task<int> RunAgentClientAsync(string[] args)
+    {
+        var command = args.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal)) ?? "status";
+        var endpoint = Get(args, "--endpoint");
+        var projectId = Get(args, "--project");
+        var response = await new ManagedAgentClient(endpoint).SendAsync(command, projectId);
+        Console.WriteLine($"Agent {response.Status}: {response.Message}");
+        Console.WriteLine($"Version: {response.AgentVersion}");
+        if (!string.IsNullOrWhiteSpace(response.ClientIdentity)) Console.WriteLine($"Client: {response.ClientIdentity}");
+        return response.Success ? 0 : 1;
     }
 
     private static async Task<int> RunServiceAsync(string[] args)
@@ -482,5 +495,6 @@ public static class Program
         Console.WriteLine("  run --config launcher.config.json [--repair] [--no-launch]");
         Console.WriteLine("  service --config launcher.config.json [--interval <seconds>] [--once]");
         Console.WriteLine("  rollback --config launcher.config.json [--list] [--backup <timestamp>]");
+        Console.WriteLine("  agent [status] [--endpoint <pipe-or-socket>] [--project <id>]");
     }
 }

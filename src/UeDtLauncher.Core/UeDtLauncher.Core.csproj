@@ -29,6 +29,7 @@
     <Compile Include="..\UeDtLauncher\KnownValues.cs" Link="Runtime\KnownValues.cs" />
     <Compile Include="..\UeDtLauncher\LauncherEngine.cs" Link="Runtime\LauncherEngine.cs" />
     <Compile Include="..\UeDtLauncher\LauncherPaths.cs" Link="Runtime\LauncherPaths.cs" />
+    <Compile Include="..\UeDtLauncher\ManagedAgent.cs" Link="Runtime\ManagedAgent.cs" />
     <Compile Include="..\UeDtLauncher\ManifestDownloader.cs" Link="Runtime\ManifestDownloader.cs" />
     <Compile Include="..\UeDtLauncher\ManifestGenerator.cs" Link="Runtime\ManifestGenerator.cs" />
     <Compile Include="..\UeDtLauncher\ManifestSignatureVerifier.cs" Link="Runtime\ManifestSignatureVerifier.cs" />

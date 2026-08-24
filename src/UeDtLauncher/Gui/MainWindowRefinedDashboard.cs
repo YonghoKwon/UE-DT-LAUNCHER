@@ -23,6 +23,9 @@ public sealed partial class MainWindow : Window
     private bool _running;
     private bool _lastRepair;
     private bool _lastLaunch = true;
+    private string _agentState = "Agent 확인 중";
+    private bool _agentStatusRefreshing;
+    private readonly DispatcherTimer _agentStatusTimer = new() { Interval = TimeSpan.FromSeconds(3) };
 
     private TextBox? _configPathBox;
     private TextBox? _logBox;
@@ -53,6 +56,10 @@ public sealed partial class MainWindow : Window
         LoadConfig();
         try { _fileLogger = new FileLogger(LauncherPaths.ResolveConfigRelative(ConfigPath, _config.LogDir)); } catch { _fileLogger = null; }
         Build();
+        _agentStatusTimer.Tick += async (_, _) => await RefreshAgentStatusAsync();
+        _agentStatusTimer.Start();
+        Closed += (_, _) => _agentStatusTimer.Stop();
+        _ = RefreshAgentStatusAsync();
     }
 
     private void LoadConfig()
@@ -149,9 +156,32 @@ public sealed partial class MainWindow : Window
         var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
         right.Children.Add(Pill(IsDeveloper ? "개발자" : "일반 사용자", IsDeveloper ? "#1D4ED8" : "#DBEAFE", IsDeveloper ? "#FFFFFF" : "#2563EB"));
         right.Children.Add(Pill(CurrentPlatform, IsDeveloper ? "#1E293B" : "#E0F2FE", IsDeveloper ? "#BFDBFE" : "#0369A1"));
+        right.Children.Add(Pill(_agentState, _agentState.StartsWith("연결", StringComparison.Ordinal) ? "#DCFCE7" : "#FEE2E2", _agentState.StartsWith("연결", StringComparison.Ordinal) ? "#166534" : "#991B1B"));
         Grid.SetColumn(right, 2);
         header.Children.Add(right);
         return header;
+    }
+
+    private async Task RefreshAgentStatusAsync()
+    {
+        if (_agentStatusRefreshing) return;
+        _agentStatusRefreshing = true;
+        var nextState = "Agent 미연결";
+        try
+        {
+            var response = await new ManagedAgentClient().SendAsync("status", timeout: TimeSpan.FromSeconds(2));
+            nextState = response.Success ? $"연결됨 {response.AgentVersion}" : "Agent 오류";
+        }
+        catch
+        {
+        }
+        finally
+        {
+            _agentStatusRefreshing = false;
+        }
+        if (string.Equals(_agentState, nextState, StringComparison.Ordinal)) return;
+        _agentState = nextState;
+        await Dispatcher.UIThread.InvokeAsync(Build);
     }
 
     private Control Sidebar()

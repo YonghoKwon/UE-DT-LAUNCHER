@@ -15,7 +15,26 @@ public static class Program
             return 0;
         }
 
+        if (args.Length > 0 && args[0].Equals("migrate", StringComparison.OrdinalIgnoreCase))
+        {
+            var configPath = GetArgument(args, "--config")
+                             ?? throw new ArgumentException("migrate requires --config <legacy launcher.config.json>.");
+            var plan = await PortableMigrationService.PlanAsync(configPath, ManagedLauncherPathLayout.Current());
+            if (args.Contains("--apply", StringComparer.OrdinalIgnoreCase))
+            {
+                await PortableMigrationService.ApplyAsync(plan);
+                Console.WriteLine(JsonSerializer.Serialize(plan with { Applied = true }));
+            }
+            else
+            {
+                Console.WriteLine(JsonSerializer.Serialize(plan));
+            }
+            return 0;
+        }
+
         var builder = Host.CreateApplicationBuilder(args);
+        builder.Services.AddWindowsService(options => options.ServiceName = "UE-DT Launcher Agent");
+        builder.Services.AddSystemd();
         builder.Logging.ClearProviders();
         builder.Logging.AddSimpleConsole(options =>
         {
@@ -23,9 +42,19 @@ public static class Program
             options.TimestampFormat = "yyyy-MM-dd HH:mm:ss.fff zzz ";
         });
         builder.Services.AddHostedService<AgentWorker>();
+        builder.Services.AddHostedService<AgentIpcHostedService>();
 
         await builder.Build().RunAsync();
         return 0;
+    }
+
+    private static string? GetArgument(string[] args, string name)
+    {
+        for (var index = 0; index + 1 < args.Length; ++index)
+        {
+            if (args[index].Equals(name, StringComparison.OrdinalIgnoreCase)) return args[index + 1];
+        }
+        return null;
     }
 }
 
