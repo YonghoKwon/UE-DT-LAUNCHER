@@ -2,7 +2,9 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Text.Json;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -12,18 +14,19 @@ namespace UeDtLauncher.Gui;
 
 public sealed partial class MainWindow : Window
 {
-    private LauncherConfig _config = new();
-    private ProjectUiConfig _selectedProject = new();
-    private CatalogSnapshot _catalog = new();
-    private string _search = string.Empty;
-    private string _catalogState = "카탈로그 미확인";
-    private string _installState = "확인 필요";
-    private string _installDetail = "상태 확인을 눌러 설치 상태를 확인하세요.";
-    private string _releaseNotes = "릴리스 노트가 없습니다.";
-    private bool _running;
+    private readonly LauncherDashboardViewModel _viewModel = new();
+    private LauncherConfig _config { get => _viewModel.Config; set => _viewModel.Config = value; }
+    private ProjectUiConfig _selectedProject { get => _viewModel.SelectedProject; set => _viewModel.SelectedProject = value; }
+    private CatalogSnapshot _catalog { get => _viewModel.Catalog; set => _viewModel.Catalog = value; }
+    private string _search { get => _viewModel.Search; set => _viewModel.Search = value; }
+    private string _catalogState { get => _viewModel.CatalogState; set => _viewModel.CatalogState = value; }
+    private string _installState { get => _viewModel.InstallState; set => _viewModel.InstallState = value; }
+    private string _installDetail { get => _viewModel.InstallDetail; set => _viewModel.InstallDetail = value; }
+    private string _releaseNotes { get => _viewModel.ReleaseNotes; set => _viewModel.ReleaseNotes = value; }
+    private bool _running { get => _viewModel.Running; set => _viewModel.Running = value; }
     private bool _lastRepair;
     private bool _lastLaunch = true;
-    private string _agentState = "Agent 확인 중";
+    private string _agentState { get => _viewModel.AgentState; set => _viewModel.AgentState = value; }
     private bool _agentStatusRefreshing;
     private readonly DispatcherTimer _agentStatusTimer = new() { Interval = TimeSpan.FromSeconds(3) };
 
@@ -45,7 +48,7 @@ public sealed partial class MainWindow : Window
 
     private string BaseDir => Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
     private string ConfigPath => ResolvePath(_configPathBox?.Text ?? "launcher.config.json");
-    private bool IsDeveloper => string.Equals(_config.ClientProfile, "developer", StringComparison.OrdinalIgnoreCase);
+    private bool IsDeveloper => _viewModel.IsDeveloper;
     private string CurrentPlatform => OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64";
     private ProjectStatePaths SelectedStatePaths =>
         LauncherPaths.For(_config, ConfigPath, _selectedProject.ProjectId, CurrentPlatform);
@@ -113,12 +116,7 @@ public sealed partial class MainWindow : Window
 
     private IEnumerable<ProjectUiConfig> VisibleProjects()
     {
-        return _config.Projects
-            .Where(p => p.VisibleToProfiles.Count == 0 || p.VisibleToProfiles.Any(profile => string.Equals(profile, _config.ClientProfile, StringComparison.OrdinalIgnoreCase)))
-            .Where(p => string.IsNullOrWhiteSpace(_search) || p.ProjectId.Contains(_search, StringComparison.OrdinalIgnoreCase) || p.DisplayName.Contains(_search, StringComparison.CurrentCultureIgnoreCase))
-            .OrderByDescending(p => p.IsPinned)
-            .ThenBy(p => p.SortOrder)
-            .ThenBy(p => p.DisplayName, StringComparer.CurrentCultureIgnoreCase);
+        return _viewModel.VisibleProjects();
     }
 
     private void Build()
@@ -193,6 +191,7 @@ public sealed partial class MainWindow : Window
         grid.Children.Add(title);
 
         var search = new TextBox { Text = _search, Watermark = "프로젝트 검색", FontSize = 13, Background = B(IsDeveloper ? "#0F172A" : "#F9FAFB"), Foreground = Fg() };
+        AutomationProperties.SetName(search, "프로젝트 검색");
         search.TextChanged += (_, _) => { _search = search.Text ?? string.Empty; RenderProjects(); };
         grid.Children.Add(AtRow(search, 1));
         grid.Children.Add(AtRow(Filters(), 2));
@@ -419,9 +418,12 @@ public sealed partial class MainWindow : Window
     {
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("2.2*,*"), RowDefinitions = new RowDefinitions("*,*"), ColumnSpacing = 14, RowSpacing = 12, MinHeight = 132 };
         var run = Track(PrimaryButton("▶ 실행", async (_, _) => await RunAsync(false, true), 132));
+        run.HotKey = new KeyGesture(Key.F5);
         Grid.SetRowSpan(run, 2);
         grid.Children.Add(run);
-        grid.Children.Add(At(Track(SecondaryButton("상태 확인", async (_, _) => await RefreshInstallStatusAsync(), 60)), 1));
+        var status = Track(SecondaryButton("상태 확인", async (_, _) => await RefreshInstallStatusAsync(), 60));
+        status.HotKey = new KeyGesture(Key.F6);
+        grid.Children.Add(At(status, 1));
         var folder = SecondaryButton("설치 폴더", (_, _) => OpenInstallFolder(), 60);
         Grid.SetColumn(folder, 1); Grid.SetRow(folder, 1); grid.Children.Add(folder);
         return Card(grid, 14);
@@ -431,7 +433,9 @@ public sealed partial class MainWindow : Window
     {
         var panel = new StackPanel { Spacing = 12 };
         var row1 = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*,*,*,*"), ColumnSpacing = 10 };
-        row1.Children.Add(Track(PrimaryButton("▶ 실행", async (_, _) => await RunAsync(false, true), 50)));
+        var run = Track(PrimaryButton("▶ 실행", async (_, _) => await RunAsync(false, true), 50));
+        run.HotKey = new KeyGesture(Key.F5);
+        row1.Children.Add(run);
         Add(row1, Track(SecondaryButton("업데이트", async (_, _) => await RunAsync(false, false), 50)), 1);
         Add(row1, Track(SecondaryButton("상태 확인", async (_, _) => await RefreshInstallStatusAsync(), 50)), 2);
         Add(row1, Track(SecondaryButton("검증/복구", async (_, _) => await RunAsync(true, false), 50)), 3);
@@ -669,7 +673,7 @@ public sealed partial class MainWindow : Window
     private void Progress(double v) { var c = Math.Clamp(v, 0, 100); if (_progress is not null) _progress.Value = c; if (_percentText is not null) _percentText.Text = $"{c:0}%"; }
     private string FriendlyProgress(string stage, string message) => stage switch { "Catalog" => "배포 정보를 확인하고 있습니다...", "Manifest" => "업데이트 정보를 확인하고 있습니다...", "Plan" => "필요한 파일을 확인하고 있습니다...", "Download" => "필요한 파일을 다운로드하고 있습니다...", "Apply" => "업데이트를 적용하고 있습니다...", "Package" => "패키지를 처리하고 있습니다...", "Launch" => "프로젝트를 실행하고 있습니다...", _ => message };
     private void MarkError(Exception ex, string status = "작업 실패") { if (_statusText is not null) _statusText.Text = status; _installState = "오류"; _installDetail = FriendlyError(ex); UpdateInstallTile(); AppendLog("오류: " + FriendlyError(ex), true); if (IsDeveloper) AppendLog(ex.ToString(), true); else ErrorDialog(status, FriendlyError(ex)); }
-    private string FriendlyError(Exception ex) { var m = ex.GetBaseException().Message; if (m.Contains("requestedVersion is required", StringComparison.OrdinalIgnoreCase)) return "exact 버전을 사용하려면 요청 버전을 입력해야 합니다."; if (m.Contains("403 (Forbidden)", StringComparison.OrdinalIgnoreCase) || m.Contains("Forbidden", StringComparison.OrdinalIgnoreCase)) return "이 네트워크(IP)에서는 이 프로젝트에 접근이 허용되지 않았습니다. 관리자에게 문의하세요."; if (m.Contains("No release in catalog matched", StringComparison.OrdinalIgnoreCase) || m.Contains("No allowed release", StringComparison.OrdinalIgnoreCase) || m.Contains("No release with version", StringComparison.OrdinalIgnoreCase)) return "현재 선택(프로젝트/환경/채널/플랫폼)으로 받을 수 있는 배포 버전이 없습니다."; if (m.Contains("No such host", StringComparison.OrdinalIgnoreCase) || m.Contains("actively refused", StringComparison.OrdinalIgnoreCase)) return "업데이트 서버에 연결할 수 없습니다. 네트워크와 서버 주소를 확인하세요."; return IsDeveloper ? m : "작업 중 문제가 발생했습니다. 잠시 후 다시 시도하거나 관리자에게 문의하세요."; }
+    private string FriendlyError(Exception ex) => _viewModel.FriendlyError(ex);
     private void UpdateInstallTile() { if (_installStateText is not null) { _installStateText.Text = _installState; _installStateText.Foreground = StatusBrush(_installState); } if (_installDetailText is not null) _installDetailText.Text = _installDetail; }
 
     private void ErrorDialog(string title, string message)
@@ -710,7 +714,7 @@ public sealed partial class MainWindow : Window
     private Button PrimaryButton(string text, EventHandler<RoutedEventArgs> handler, double height) { var b = BaseButton(text, handler, height, Brushes.White); b.Background = B("#2563EB"); b.BorderBrush = B("#2563EB"); b.BorderThickness = new Thickness(1); return b; }
     private Button SecondaryButton(string text, EventHandler<RoutedEventArgs> handler, double height) { var b = BaseButton(text, handler, height, IsDeveloper ? B("#F8FAFC") : B("#111827")); b.Background = B(IsDeveloper ? "#1F2937" : "#FFFFFF"); b.BorderBrush = B(IsDeveloper ? "#475569" : "#D1D5DB"); b.BorderThickness = new Thickness(1); return b; }
     private Button SmallButton(string text, EventHandler<RoutedEventArgs> handler) => SecondaryButton(text, handler, 34);
-    private Button BaseButton(string text, EventHandler<RoutedEventArgs> handler, double height, IBrush color) { var b = new Button { Content = new TextBlock { Text = text, Foreground = color, FontSize = height >= 100 ? 22 : 14, FontWeight = height >= 100 ? FontWeight.SemiBold : FontWeight.Medium, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center }, Height = height, MinWidth = 110, Padding = new Thickness(14, 0), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center }; b.Click += handler; return b; }
+    private Button BaseButton(string text, EventHandler<RoutedEventArgs> handler, double height, IBrush color) { var b = new Button { Content = new TextBlock { Text = text, Foreground = color, FontSize = height >= 100 ? 22 : 14, FontWeight = height >= 100 ? FontWeight.SemiBold : FontWeight.Medium, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center }, Height = height, MinWidth = 110, Padding = new Thickness(14, 0), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center }; AutomationProperties.SetName(b, text.TrimStart('▶', '↻', ' ')); b.Click += handler; return b; }
     private static IBrush B(string hex) => new SolidColorBrush(Color.Parse(hex));
     private static Border Pill(string text, string bg, string fg) => new() { Padding = new Thickness(14, 7), CornerRadius = new CornerRadius(14), Background = B(bg), Child = new TextBlock { Text = text, FontWeight = FontWeight.SemiBold, Foreground = B(fg), FontSize = 13, TextAlignment = TextAlignment.Center } };
     private static Control At(Control c, int col) { Grid.SetColumn(c, col); return c; }
