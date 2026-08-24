@@ -67,7 +67,9 @@ public sealed record AgentRuntimeInfo(
 {
     public static AgentRuntimeInfo Current() => new(
         "UE-DT Launcher Agent",
-        typeof(AgentRuntimeInfo).Assembly.GetName().Version?.ToString() ?? "0.0.0.0",
+        typeof(AgentRuntimeInfo).Assembly.GetCustomAttributes(false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
+            .FirstOrDefault()?.InformationalVersion ?? typeof(AgentRuntimeInfo).Assembly.GetName().Version?.ToString() ?? "0.0.0.0",
         OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsLinux() ? "linux" : "unknown",
         Environment.ProcessId);
 }

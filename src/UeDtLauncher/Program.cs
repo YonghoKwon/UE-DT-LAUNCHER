@@ -18,6 +18,13 @@ public static class Program
     public static int Main(string[] args)
     {
         CrashReporter.Install(Path.Combine(AppContext.BaseDirectory, "logs"));
+        if (args.Any(arg => arg.Equals("--version", StringComparison.OrdinalIgnoreCase)))
+        {
+            Console.WriteLine(typeof(Program).Assembly.GetCustomAttributes(false)
+                .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
+                .FirstOrDefault()?.InformationalVersion ?? typeof(Program).Assembly.GetName().Version?.ToString());
+            return 0;
+        }
         var wantsGui = Has(args, "--gui");
         var wantsCli = Has(args, "--cli");
 

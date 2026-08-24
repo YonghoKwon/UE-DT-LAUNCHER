@@ -3,6 +3,7 @@ bin/
 obj/
 out/
 publish/
+artifacts/
 
 # Local launcher runtime state
 app/
