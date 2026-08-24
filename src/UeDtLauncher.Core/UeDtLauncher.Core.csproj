@@ -29,6 +29,7 @@
     <Compile Include="..\UeDtLauncher\CatalogUpdater.cs" Link="Runtime\CatalogUpdater.cs" />
     <Compile Include="..\UeDtLauncher\CommercialSecurity.cs" Link="Runtime\CommercialSecurity.cs" />
     <Compile Include="..\UeDtLauncher\DiskSpace.cs" Link="Runtime\DiskSpace.cs" />
+    <Compile Include="..\UeDtLauncher\Diagnostics.cs" Link="Runtime\Diagnostics.cs" />
     <Compile Include="..\UeDtLauncher\FileLogger.cs" Link="Runtime\FileLogger.cs" />
     <Compile Include="..\UeDtLauncher\Hashing.cs" Link="Runtime\Hashing.cs" />
     <Compile Include="..\UeDtLauncher\JsonFiles.cs" Link="Runtime\JsonFiles.cs" />

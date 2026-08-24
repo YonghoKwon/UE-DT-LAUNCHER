@@ -11,12 +11,13 @@ public static class Program
     private static readonly string[] KnownSubcommands =
     {
         "run", "service", "rollback", "generate-manifest", "update-catalog",
-        "list-releases", "generate-nginx-acl", "sign-manifest", "generate-signing-key", "sample-config", "publish-release", "agent", "credential"
+        "list-releases", "generate-nginx-acl", "sign-manifest", "generate-signing-key", "sample-config", "publish-release", "doctor", "diagnostics", "agent", "credential"
     };
 
     [STAThread]
     public static int Main(string[] args)
     {
+        CrashReporter.Install(Path.Combine(AppContext.BaseDirectory, "logs"));
         var wantsGui = Has(args, "--gui");
         var wantsCli = Has(args, "--cli");
 
@@ -143,11 +144,14 @@ public static class Program
                 "credential" => RunCredentialCommand(args.Skip(1).ToArray()),
                 "publish-release" => await PublishReleaseAsync(args.Skip(1).ToArray()),
                 "generate-signing-key" => await GenerateSigningKeyAsync(args.Skip(1).ToArray()),
+                "doctor" => await RunDoctorAsync(args.Skip(1).ToArray()),
+                "diagnostics" => await RunDiagnosticsAsync(args.Skip(1).ToArray()),
                 _ => UnknownCommand(command)
             };
         }
         catch (Exception ex)
         {
+            CrashReporter.Report(ex, "cli-command");
             Console.Error.WriteLine("ERROR: " + ex.Message);
             Console.Error.WriteLine(ex.ToString());
             return 1;
@@ -262,6 +266,25 @@ public static class Program
         await File.WriteAllTextAsync(publicKeyPath, key.ExportSubjectPublicKeyInfoPem());
         Console.WriteLine($"Signing key pair generated. Keep private key offline: {privateKeyPath}");
         Console.WriteLine($"Public key: {publicKeyPath}");
+        return 0;
+    }
+
+    private static async Task<int> RunDoctorAsync(string[] args)
+    {
+        var configPath = Get(args, "--config") ?? "launcher.config.json";
+        var report = await LauncherDoctor.RunAsync(configPath, Has(args, "--online"));
+        Console.WriteLine(JsonSerializer.Serialize(report, JsonFiles.Options));
+        return report.Healthy ? 0 : 1;
+    }
+
+    private static async Task<int> RunDiagnosticsAsync(string[] args)
+    {
+        var action = args.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal)) ?? "export";
+        if (!action.Equals("export", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("diagnostics supports only the export action.");
+        var configPath = Get(args, "--config") ?? "launcher.config.json";
+        var output = Get(args, "--output") ?? $"launcher-diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.zip";
+        Console.WriteLine("Diagnostics written: " + await DiagnosticsExporter.ExportAsync(configPath, output));
         return 0;
     }
 
@@ -613,5 +636,7 @@ public static class Program
         Console.WriteLine("  credential <set|status|delete> --name <credential-name>");
         Console.WriteLine("  publish-release --package-dir <dir> --server-root <dir> --base-url-root <url> --project-id <id> --version <version> --platform <platform> --entry-point <path> --private-key <pem> --key-id <id> [--dry-run] [--replace] [--set-latest]");
         Console.WriteLine("  generate-signing-key --private-key <private.pem> --public-key <public.pem>");
+        Console.WriteLine("  doctor --config launcher.config.json [--online]");
+        Console.WriteLine("  diagnostics export --config launcher.config.json [--output <diagnostics.zip>]");
     }
 }

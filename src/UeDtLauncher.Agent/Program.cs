@@ -9,6 +9,7 @@ public static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        CrashReporter.Install(ManagedLauncherPathLayout.Current().LogRoot);
         if (args.Contains("--probe", StringComparer.OrdinalIgnoreCase))
         {
             Console.WriteLine(JsonSerializer.Serialize(AgentRuntimeInfo.Current()));

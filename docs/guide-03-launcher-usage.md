@@ -167,6 +167,9 @@ UeDtLauncher <command> [options]
 | `generate-nginx-acl` | 프로젝트별 IP 허용목록 → nginx 설정 생성 | `--allowlist` `--output`(생략 시 stdout) |
 | `sign-manifest` | manifest/catalog ECDSA 서명 생성 | `--manifest` `--private-key` `--output` |
 | `sample-config` | 설정 템플릿 생성 | `--output` |
+| `doctor` | 설정·credential·서명키·디스크·Agent·선택적 catalog 연결 점검 | `--config` `--online` |
+| `diagnostics export` | 민감정보를 제거한 지원용 ZIP 생성 | `--config` `--output` |
+| `credential` | Bearer token을 설정 파일과 분리해 저장·확인·삭제 | `set/status/delete` `--name` |
 
 > Windows에서 런처는 GUI 앱으로 빌드되어 **더블클릭하면 검은 콘솔 창 없이 런처 창만** 뜹니다. CLI 명령을 cmd/PowerShell에서 실행하면 그 터미널에 출력이 보입니다.
 
@@ -217,7 +220,9 @@ cmd/PowerShell/SSH 터미널에서 직접 실행하면, 다운로드 동안 **�
 
 ### ③ 파일 로그는 항상 동일
 
-표시 방식과 무관하게, 모든 단계는 런처 폴더의 **`logs/launcher-YYYYMMDD.log`** 에 그대로 기록됩니다(일별, 14일 보관 — CLI/GUI/서비스 공통). 진행 바를 쓰든 평문 줄을 쓰든 파일 로그 내용은 동일합니다.
+표시 방식과 무관하게, 모든 단계는 런처 폴더의 **`logs/launcher-YYYYMMDD.log`** 에 그대로 기록됩니다(일별, 30일 보관 — CLI/GUI/서비스 공통). 진행 바를 쓰든 평문 줄을 쓰든 파일 로그 내용은 동일합니다.
+
+상용 모드에서는 같은 위치에 `launcher-YYYYMMDD.jsonl` 구조화 로그도 생성됩니다. 파일당 10MB, 30일, 전체 200MB로 제한되며 Authorization, Bearer token, URL 자격정보와 사용자 홈 경로는 기록 전에 제거됩니다. 문제 전달 시 원본 폴더 대신 `diagnostics export`로 만든 ZIP을 사용하십시오.
 
 ## 4. 무인 서버(픽셀 스트리밍) 운영
 
