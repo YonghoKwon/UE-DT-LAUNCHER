@@ -30,6 +30,9 @@ public sealed partial class MainWindow : Window
     private string _agentState { get => _viewModel.AgentState; set => _viewModel.AgentState = value; }
     private bool _agentStatusRefreshing;
     private bool _startupInitialized;
+    private bool _windowMetricsInitialized;
+    private int _layoutBucket = -1;
+    private int _nextTabIndex;
     private readonly DispatcherTimer _agentStatusTimer = new() { Interval = TimeSpan.FromSeconds(3) };
 
     private TextBox? _configPathBox;
@@ -70,6 +73,15 @@ public sealed partial class MainWindow : Window
         _agentStatusTimer.Start();
         Closed += (_, _) => _agentStatusTimer.Stop();
         Opened += async (_, _) => await InitializeStartupAsync();
+        SizeChanged += (_, args) =>
+        {
+            var nextBucket = GeneralLayoutBucket(args.NewSize.Width);
+            if (!IsDeveloper && _windowMetricsInitialized && nextBucket != _layoutBucket)
+            {
+                _layoutBucket = nextBucket;
+                Build();
+            }
+        };
     }
 
     private async Task InitializeStartupAsync()
@@ -157,19 +169,36 @@ public sealed partial class MainWindow : Window
     private void Build()
     {
         _actionButtons.Clear(); // controls are recreated below; Track() re-registers them
+        _nextTabIndex = 0;
         Title = IsDeveloper ? "UE-DT Launcher - Developer" : "UE-DT Launcher";
-        Width = IsDeveloper ? 1480 : 1280;
-        Height = IsDeveloper ? 920 : 830;
-        MinWidth = 1160;
-        MinHeight = 760;
+        if (!_windowMetricsInitialized)
+        {
+            Width = IsDeveloper ? 1480 : 1280;
+            Height = IsDeveloper ? 920 : 760;
+            _windowMetricsInitialized = true;
+        }
+        var layout = CurrentLayout();
+        MinWidth = layout.MinWidth;
+        MinHeight = layout.MinHeight;
+        _layoutBucket = GeneralLayoutBucket(CurrentLayoutWidth());
         Background = B(IsDeveloper ? "#0B111A" : "#F5F7FB");
 
-        var root = new Grid { RowDefinitions = new RowDefinitions("Auto,*"), ColumnDefinitions = new ColumnDefinitions("360,*"), Background = Background };
+        var root = new Grid
+        {
+            RowDefinitions = new RowDefinitions("Auto,*"),
+            ColumnDefinitions = new ColumnDefinitions(layout.ShowSidebar ? "340,*" : "*"),
+            Background = Background
+        };
         root.Children.Add(Header());
-        root.Children.Add(Sidebar());
-        root.Children.Add(MainArea());
+        if (layout.ShowSidebar) root.Children.Add(Sidebar());
+        root.Children.Add(MainArea(layout.ShowSidebar ? 1 : 0));
         Content = root;
     }
+
+    private double CurrentLayoutWidth() => ClientSize.Width > 0 ? ClientSize.Width : Width;
+    private int VisibleProjectCount() => _viewModel.ProjectsForProfile().Take(2).Count();
+    private LauncherLayoutPolicy CurrentLayout() => LauncherLayoutPolicy.For(CurrentLayoutWidth(), VisibleProjectCount(), IsDeveloper);
+    private static int GeneralLayoutBucket(double width) => width < 760 ? 0 : width < 980 ? 1 : width < 1100 ? 2 : 3;
 
     private Control Header()
     {
@@ -193,6 +222,8 @@ public sealed partial class MainWindow : Window
         var servicePill = Pill(_agentState, serviceHealthy ? "#DCFCE7" : "#FEE2E2", serviceHealthy ? "#166534" : "#991B1B");
         ToolTip.SetTip(servicePill, IsDeveloper ? "관리 Agent 연결 상태" : "PC에서 업데이트를 안전하게 처리하는 서비스 상태");
         right.Children.Add(servicePill);
+        if (!IsDeveloper && !CurrentLayout().ShowSidebar)
+            right.Children.Add(SmallButton("설정", (_, _) => GeneralSettings()));
         Grid.SetColumn(right, 2);
         header.Children.Add(right);
         return header;
@@ -234,7 +265,7 @@ public sealed partial class MainWindow : Window
         title.Children.Add(At(Track(SmallButton("↻", async (_, _) => await RefreshCatalog(true))), 1));
         grid.Children.Add(title);
 
-        var search = new TextBox { Text = _search, Watermark = "프로젝트 검색", FontSize = 13, Background = B(IsDeveloper ? "#0F172A" : "#F9FAFB"), Foreground = Fg() };
+        var search = new TextBox { Text = _search, Watermark = "프로젝트 검색", FontSize = 13, Background = B(IsDeveloper ? "#0F172A" : "#F9FAFB"), Foreground = Fg(), TabIndex = _nextTabIndex++ };
         AutomationProperties.SetName(search, "프로젝트 검색");
         search.TextChanged += (_, _) => { _search = search.Text ?? string.Empty; RenderProjects(); };
         grid.Children.Add(AtRow(search, 1));
@@ -276,11 +307,11 @@ public sealed partial class MainWindow : Window
         }
         else
         {
-            panel.Children.Add(ReadOnlyLine("가동/개발", "prod"));
-            panel.Children.Add(ReadOnlyLine("채널", "stable"));
-            panel.Children.Add(ReadOnlyLine("버전", "latest"));
+            var stable = Pill("운영 안정화 버전", "#EFF6FF", "#1D4ED8");
+            AutomationProperties.SetName(stable, "운영 안정화 버전");
+            panel.Children.Add(stable);
         }
-        panel.Children.Add(ReadOnlyLine("OS", CurrentPlatform));
+        if (IsDeveloper) panel.Children.Add(ReadOnlyLine("OS", CurrentPlatform));
         return Card(panel, 12);
     }
 
@@ -356,17 +387,50 @@ public sealed partial class MainWindow : Window
 
     private Control MiniBadge(string text) => new Border { Margin = new Thickness(0, 0, 6, 4), Padding = new Thickness(7, 3), CornerRadius = new CornerRadius(9), Background = B(IsDeveloper ? "#0F172A" : "#DBEAFE"), Child = Label(text, 11, IsDeveloper ? B("#BFDBFE") : B("#1D4ED8"), true) };
 
-    private Control MainArea()
+    private Control MainArea(int column)
     {
         var scroll = new ScrollViewer { Margin = new Thickness(8, 8, 14, 14), Content = IsDeveloper ? DeveloperBody() : GeneralBody() };
         Grid.SetRow(scroll, 1);
-        Grid.SetColumn(scroll, 1);
+        Grid.SetColumn(scroll, column);
         return scroll;
     }
 
     private Control GeneralBody()
     {
-        return new StackPanel { Spacing = 18, Children = { Hero(320), GeneralInfo(), GeneralActions(), StatusPanel(false) } };
+        var layout = CurrentLayout();
+        var body = new StackPanel { Spacing = 16 };
+        if (layout.ShowTopProjectSelector) body.Children.Add(CompactProjectSelector());
+        body.Children.Add(Hero(layout.HeroHeight));
+        body.Children.Add(GeneralInfo());
+        body.Children.Add(GeneralActions());
+        body.Children.Add(StatusPanel(false));
+        return body;
+    }
+
+    private Control CompactProjectSelector()
+    {
+        var projects = _viewModel.ProjectsForProfile().ToList();
+        var names = projects.Select(project => project.DisplayName).ToList();
+        var combo = new ComboBox
+        {
+            ItemsSource = names,
+            SelectedIndex = Math.Max(0, projects.FindIndex(project => project.ProjectId.Equals(_selectedProject.ProjectId, StringComparison.OrdinalIgnoreCase))),
+            MinHeight = 40,
+            TabIndex = _nextTabIndex++
+        };
+        AutomationProperties.SetName(combo, "프로젝트 선택");
+        combo.SelectionChanged += (_, _) =>
+        {
+            if (combo.SelectedIndex < 0 || combo.SelectedIndex >= projects.Count) return;
+            _selectedProject = projects[combo.SelectedIndex];
+            _config.ProjectId = _selectedProject.ProjectId;
+            SelectionChanged();
+            Build();
+        };
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnSpacing = 12 };
+        grid.Children.Add(Muted("프로젝트", 13));
+        grid.Children.Add(At(combo, 1));
+        return Card(grid, 12);
     }
 
     private Control DeveloperBody()
@@ -387,11 +451,28 @@ public sealed partial class MainWindow : Window
 
     private Control GeneralInfo()
     {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*,*"), ColumnSpacing = 12 };
-        grid.Children.Add(StatusTile());
-        grid.Children.Add(At(VersionTile(), 1));
-        grid.Children.Add(At(InfoTile("설치 위치", _selectedProject.InstallPath ?? _config.InstallDir, "프로젝트 파일 위치"), 2));
-        grid.Children.Add(At(InfoTile("카탈로그", _catalogState, "실제 사용 가능한 배포 확인"), 3));
+        var columns = CurrentLayout().InfoColumns;
+        var rows = (int)Math.Ceiling(4d / columns);
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions(string.Join(',', Enumerable.Repeat("*", columns))),
+            RowDefinitions = new RowDefinitions(string.Join(',', Enumerable.Repeat("Auto", rows))),
+            ColumnSpacing = 12,
+            RowSpacing = 12
+        };
+        var tiles = new Control[]
+        {
+            StatusTile(),
+            VersionTile(),
+            InfoTile("설치 위치", _selectedProject.InstallPath ?? _config.InstallDir, "프로젝트 파일 위치"),
+            InfoTile("카탈로그", _catalogState, "실제 사용 가능한 배포 확인")
+        };
+        for (var index = 0; index < tiles.Length; index++)
+        {
+            Grid.SetColumn(tiles[index], index % columns);
+            Grid.SetRow(tiles[index], index / columns);
+            grid.Children.Add(tiles[index]);
+        }
         return grid;
     }
 
@@ -961,7 +1042,7 @@ public sealed partial class MainWindow : Window
     private Button PrimaryButton(string text, EventHandler<RoutedEventArgs> handler, double height) { var b = BaseButton(text, handler, height, Brushes.White); b.Background = B("#2563EB"); b.BorderBrush = B("#2563EB"); b.BorderThickness = new Thickness(1); return b; }
     private Button SecondaryButton(string text, EventHandler<RoutedEventArgs> handler, double height) { var b = BaseButton(text, handler, height, IsDeveloper ? B("#F8FAFC") : B("#111827")); b.Background = B(IsDeveloper ? "#1F2937" : "#FFFFFF"); b.BorderBrush = B(IsDeveloper ? "#475569" : "#D1D5DB"); b.BorderThickness = new Thickness(1); return b; }
     private Button SmallButton(string text, EventHandler<RoutedEventArgs> handler) => SecondaryButton(text, handler, 34);
-    private Button BaseButton(string text, EventHandler<RoutedEventArgs> handler, double height, IBrush color) { var b = new Button { Content = new TextBlock { Text = text, Foreground = color, FontSize = height >= 100 ? 22 : 14, FontWeight = height >= 100 ? FontWeight.SemiBold : FontWeight.Medium, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center }, Height = height, MinWidth = 110, Padding = new Thickness(14, 0), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center }; AutomationProperties.SetName(b, text.TrimStart('▶', '↻', ' ')); b.Click += handler; return b; }
+    private Button BaseButton(string text, EventHandler<RoutedEventArgs> handler, double height, IBrush color) { var b = new Button { Content = new TextBlock { Text = text, Foreground = color, FontSize = height >= 100 ? 22 : 14, FontWeight = height >= 100 ? FontWeight.SemiBold : FontWeight.Medium, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center }, Height = height, MinWidth = 110, Padding = new Thickness(14, 0), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, IsTabStop = true, TabIndex = _nextTabIndex++ }; AutomationProperties.SetName(b, text.TrimStart('▶', '↻', ' ')); b.Click += handler; return b; }
     private static IBrush B(string hex) => new SolidColorBrush(Color.Parse(hex));
     private static Border Pill(string text, string bg, string fg) => new() { Padding = new Thickness(14, 7), CornerRadius = new CornerRadius(14), Background = B(bg), Child = new TextBlock { Text = text, FontWeight = FontWeight.SemiBold, Foreground = B(fg), FontSize = 13, TextAlignment = TextAlignment.Center } };
     private static Control At(Control c, int col) { Grid.SetColumn(c, col); return c; }

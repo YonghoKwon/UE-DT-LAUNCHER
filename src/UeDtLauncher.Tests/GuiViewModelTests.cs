@@ -118,6 +118,37 @@ public class GuiViewModelTests
         Assert.Equal(GeneralLauncherState.Ready, model.GeneralState);
     }
 
+    [Theory]
+    [InlineData(1280, 1, 4, false, false)]
+    [InlineData(1280, 2, 4, true, false)]
+    [InlineData(960, 2, 2, false, true)]
+    [InlineData(720, 2, 1, false, true)]
+    public void LayoutPolicy_AdaptsGeneralDashboard(
+        double width,
+        int projectCount,
+        int expectedColumns,
+        bool expectedSidebar,
+        bool expectedTopSelector)
+    {
+        var layout = LauncherLayoutPolicy.For(width, projectCount, developer: false);
+
+        Assert.Equal(expectedColumns, layout.InfoColumns);
+        Assert.Equal(expectedSidebar, layout.ShowSidebar);
+        Assert.Equal(expectedTopSelector, layout.ShowTopProjectSelector);
+        Assert.Equal(720, layout.MinWidth);
+        Assert.Equal(500, layout.MinHeight);
+    }
+
+    [Fact]
+    public void LayoutPolicy_PreservesDeveloperDashboard()
+    {
+        var layout = LauncherLayoutPolicy.For(720, 1, developer: true);
+
+        Assert.True(layout.ShowSidebar);
+        Assert.False(layout.ShowTopProjectSelector);
+        Assert.Equal(1160, layout.MinWidth);
+    }
+
     [Fact]
     public void DeveloperProfile_ExposesCapabilitiesAndSanitizedTechnicalError()
     {

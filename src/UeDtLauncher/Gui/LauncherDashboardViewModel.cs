@@ -43,6 +43,29 @@ public enum LauncherWorkflowStage
     Complete
 }
 
+public sealed record LauncherLayoutPolicy(
+    int InfoColumns,
+    bool ShowSidebar,
+    bool ShowTopProjectSelector,
+    double HeroHeight,
+    double MinWidth,
+    double MinHeight)
+{
+    public static LauncherLayoutPolicy For(double width, int visibleProjectCount, bool developer)
+    {
+        if (developer) return new LauncherLayoutPolicy(4, true, false, 250, 1160, 760);
+        var infoColumns = width < 760 ? 1 : width < 1100 ? 2 : 4;
+        var topSelector = visibleProjectCount > 1 && width < 980;
+        return new LauncherLayoutPolicy(
+            infoColumns,
+            visibleProjectCount > 1 && !topSelector,
+            topSelector,
+            width < 1100 ? 210 : 240,
+            720,
+            500);
+    }
+}
+
 public sealed record LauncherUiCapabilities(
     bool CanChangeReleaseTrack,
     bool CanRepair,
@@ -146,12 +169,17 @@ public sealed class LauncherDashboardViewModel : INotifyPropertyChanged
 
     public IEnumerable<ProjectUiConfig> VisibleProjects()
     {
+        return ProjectsForProfile()
+            .Where(project => string.IsNullOrWhiteSpace(Search) ||
+                              project.ProjectId.Contains(Search, StringComparison.OrdinalIgnoreCase) ||
+                              project.DisplayName.Contains(Search, StringComparison.CurrentCultureIgnoreCase));
+    }
+
+    public IEnumerable<ProjectUiConfig> ProjectsForProfile()
+    {
         return Config.Projects
             .Where(project => project.VisibleToProfiles.Count == 0 ||
                               project.VisibleToProfiles.Any(profile => profile.Equals(Config.ClientProfile, StringComparison.OrdinalIgnoreCase)))
-            .Where(project => string.IsNullOrWhiteSpace(Search) ||
-                              project.ProjectId.Contains(Search, StringComparison.OrdinalIgnoreCase) ||
-                              project.DisplayName.Contains(Search, StringComparison.CurrentCultureIgnoreCase))
             .OrderByDescending(project => project.IsPinned)
             .ThenBy(project => project.SortOrder)
             .ThenBy(project => project.DisplayName, StringComparer.CurrentCultureIgnoreCase);
