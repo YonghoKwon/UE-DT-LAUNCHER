@@ -655,7 +655,8 @@ public sealed partial class MainWindow : Window
         {
             _catalogState = "카탈로그 확인 중...";
             if (rebuild) Build();
-            _catalog = await CatalogSnapshotService.LoadAsync(_config, CurrentPlatform);
+            var catalogConfig = await RunConfig(false, false);
+            _catalog = await CatalogSnapshotService.LoadAsync(catalogConfig, CurrentPlatform);
             _catalogState = _catalog.Status;
             MergeCatalogProjects();
             UpdateReleaseNotes();
@@ -709,7 +710,7 @@ public sealed partial class MainWindow : Window
                 var response = await new ManagedAgentClient().SendStreamingAsync(
                     repair ? "repair" : "update",
                     c.ProjectId,
-                    progress => Dispatcher.UIThread.Post(() => UiProgress(progress.Stage, progress.Message, progress.Percent)));
+                    ReportManagedProgress);
                 if (!response.Success) throw new InvalidOperationException(response.Message);
                 if (launch) _ = await ManagedAppLauncher.LaunchAsync(c);
             }
@@ -747,7 +748,7 @@ public sealed partial class MainWindow : Window
                 var response = await new ManagedAgentClient().SendStreamingAsync(
                     "check",
                     c.ProjectId,
-                    progress => Dispatcher.UIThread.Post(() => UiProgress(progress.Stage, progress.Message, progress.Percent)),
+                    ReportManagedProgress,
                     timeout: TimeSpan.FromMinutes(5));
                 if (!response.Success) throw new InvalidOperationException(response.Message);
                 if (response.ProjectStatus is not null) _viewModel.ApplyProjectStatus(response.ProjectStatus);
@@ -811,7 +812,7 @@ public sealed partial class MainWindow : Window
             var check = await client.SendStreamingAsync(
                 "check",
                 config.ProjectId,
-                progress => Dispatcher.UIThread.Post(() => UiProgress(progress.Stage, progress.Message, progress.Percent)),
+                ReportManagedProgress,
                 timeout: TimeSpan.FromMinutes(5));
             if (!check.Success) throw new InvalidOperationException(check.Message);
             if (check.ProjectStatus is not null) _viewModel.ApplyProjectStatus(check.ProjectStatus);
@@ -821,12 +822,12 @@ public sealed partial class MainWindow : Window
                 var repair = await client.SendStreamingAsync(
                     "repair",
                     config.ProjectId,
-                    progress => Dispatcher.UIThread.Post(() => UiProgress(progress.Stage, progress.Message, progress.Percent)));
+                    ReportManagedProgress);
                 if (!repair.Success) throw new InvalidOperationException(repair.Message);
                 var verified = await client.SendStreamingAsync(
                     "check",
                     config.ProjectId,
-                    progress => Dispatcher.UIThread.Post(() => UiProgress(progress.Stage, progress.Message, progress.Percent)),
+                    ReportManagedProgress,
                     timeout: TimeSpan.FromMinutes(5));
                 if (!verified.Success || verified.ProjectStatus is { UpdateRequired: true })
                     throw new InvalidOperationException(verified.Message);
@@ -851,7 +852,7 @@ public sealed partial class MainWindow : Window
                     var response = await new ManagedAgentClient().SendStreamingAsync(
                         "rollback",
                         config.ProjectId,
-                        progress => Dispatcher.UIThread.Post(() => UiProgress(progress.Stage, progress.Message, progress.Percent)),
+                        ReportManagedProgress,
                         timeout: TimeSpan.FromMinutes(10));
                     if (!response.Success) throw new InvalidOperationException(response.Message);
                     _viewModel.GeneralState = GeneralLauncherState.Ready;
@@ -987,6 +988,19 @@ public sealed partial class MainWindow : Window
         AppendLog(IsDeveloper ? $"[{stage}] {message}" : FriendlyProgress(stage, message));
     }
 
+    private void ReportManagedProgress(ManagedAgentProgress progress)
+    {
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            UiProgress(progress.Stage, progress.Message, progress.Percent);
+            return;
+        }
+
+        Dispatcher.UIThread.InvokeAsync(() => UiProgress(progress.Stage, progress.Message, progress.Percent))
+            .GetAwaiter()
+            .GetResult();
+    }
+
     private void Progress(double v) { var c = Math.Clamp(v, 0, 100); if (_progress is not null) _progress.Value = c; if (_percentText is not null) _percentText.Text = $"{c:0}%"; }
     private string FriendlyProgress(string stage, string message) => stage switch { "Catalog" => "배포 정보를 확인하고 있습니다...", "Manifest" => "업데이트 정보를 확인하고 있습니다...", "Plan" => "필요한 파일을 확인하고 있습니다...", "Download" => "필요한 파일을 다운로드하고 있습니다...", "Apply" => "업데이트를 적용하고 있습니다...", "Package" => "패키지를 처리하고 있습니다...", "Launch" => "프로젝트를 실행하고 있습니다...", _ => message };
     private void MarkError(Exception ex, string status = "작업 실패", bool showDialog = true)
@@ -1016,7 +1030,30 @@ public sealed partial class MainWindow : Window
     private void SettingsDialog(bool dev)
     {
         var d = new Window { Title = dev ? "개발자 설정" : "설정", Width = dev ? 640 : 520, Height = dev ? 560 : 460, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = B(dev ? "#0B111A" : "#F5F7FB") };
-        d.Content = new Border { Padding = new Thickness(22), Child = new StackPanel { Spacing = 10, Children = { Txt(dev ? "개발자 설정" : "런처 설정", 24, true), KeyValue("설정 파일", ConfigPath), KeyValue("프로젝트", _selectedProject.ProjectId), KeyValue("가동/개발", _config.Environment), KeyValue("채널", _config.Channel), KeyValue("버전", _config.VersionPolicy == "exact" ? _config.RequestedVersion : _config.VersionPolicy), KeyValue("OS", CurrentPlatform), KeyValue("설치 버전", ReadInstalledVersion() ?? "미설치"), KeyValue("캐시/백업", StorageSummary()), SecondaryButton("설치 폴더 열기", (_, _) => OpenInstallFolder(), 40), SecondaryButton("이전 버전으로 롤백", async (_, _) => { d.Close(); await RollbackLatestAsync(); }, 40), SecondaryButton("로그 ZIP 저장", (_, _) => ExportLogsZip(), 40), SecondaryButton("설정 새로고침", (_, _) => { LoadConfig(); Build(); }, 40), SecondaryButton("닫기", (_, _) => d.Close(), 40) } } };
+        var content = new StackPanel { Spacing = 10 };
+        content.Children.Add(Txt(dev ? "개발자 설정" : "런처 설정", 24, true));
+        if (dev)
+        {
+            content.Children.Add(KeyValue("설정 파일", ConfigPath));
+            content.Children.Add(KeyValue("프로젝트", _selectedProject.ProjectId));
+            content.Children.Add(KeyValue("가동/개발", _config.Environment));
+            content.Children.Add(KeyValue("채널", _config.Channel));
+            content.Children.Add(KeyValue("버전", _config.VersionPolicy == "exact" ? _config.RequestedVersion : _config.VersionPolicy));
+        }
+        else
+        {
+            content.Children.Add(KeyValue("프로젝트", _selectedProject.DisplayName));
+            content.Children.Add(KeyValue("배포", "운영 안정화 버전"));
+        }
+        content.Children.Add(KeyValue("OS", CurrentPlatform));
+        content.Children.Add(KeyValue("설치 버전", ReadInstalledVersion() ?? "미설치"));
+        content.Children.Add(KeyValue("캐시/백업", StorageSummary()));
+        content.Children.Add(SecondaryButton("설치 폴더 열기", (_, _) => OpenInstallFolder(), 40));
+        if (dev) content.Children.Add(SecondaryButton("이전 버전으로 롤백", async (_, _) => { d.Close(); await RollbackLatestAsync(); }, 40));
+        content.Children.Add(SecondaryButton("로그 ZIP 저장", (_, _) => ExportLogsZip(), 40));
+        content.Children.Add(SecondaryButton("설정 새로고침", (_, _) => { LoadConfig(); Build(); }, 40));
+        content.Children.Add(SecondaryButton("닫기", (_, _) => d.Close(), 40));
+        d.Content = new Border { Padding = new Thickness(22), Child = content };
         d.Show(this);
     }
 
@@ -1039,7 +1076,7 @@ public sealed partial class MainWindow : Window
     private IBrush StatusBrush(string? s) { var v = s ?? string.Empty; if (v.Contains("오류")) return B("#DC2626"); if (v.Contains("업데이트")) return B("#F97316"); if (v.Contains("설치 필요")) return B("#7C3AED"); if (v.Contains("최신") || v.Contains("설치")) return B("#16A34A"); return B(IsDeveloper ? "#60A5FA" : "#2563EB"); }
     private string ModeStatus() => IsDeveloper ? "개발자 빌드" : "안정 버전";
     private Border Card(Control child, double padding) => new() { Padding = new Thickness(padding), CornerRadius = new CornerRadius(18), Background = B(IsDeveloper ? "#111827" : "#FFFFFF"), BorderBrush = B(IsDeveloper ? "#243244" : "#E5E7EB"), BorderThickness = new Thickness(1), Child = child };
-    private Button PrimaryButton(string text, EventHandler<RoutedEventArgs> handler, double height) { var b = BaseButton(text, handler, height, Brushes.White); b.Background = B("#2563EB"); b.BorderBrush = B("#2563EB"); b.BorderThickness = new Thickness(1); return b; }
+    private Button PrimaryButton(string text, EventHandler<RoutedEventArgs> handler, double height) { var b = BaseButton(text, handler, height, Brushes.White); b.Classes.Add("accent"); b.Background = B("#2563EB"); b.BorderBrush = B("#2563EB"); b.BorderThickness = new Thickness(1); return b; }
     private Button SecondaryButton(string text, EventHandler<RoutedEventArgs> handler, double height) { var b = BaseButton(text, handler, height, IsDeveloper ? B("#F8FAFC") : B("#111827")); b.Background = B(IsDeveloper ? "#1F2937" : "#FFFFFF"); b.BorderBrush = B(IsDeveloper ? "#475569" : "#D1D5DB"); b.BorderThickness = new Thickness(1); return b; }
     private Button SmallButton(string text, EventHandler<RoutedEventArgs> handler) => SecondaryButton(text, handler, 34);
     private Button BaseButton(string text, EventHandler<RoutedEventArgs> handler, double height, IBrush color) { var b = new Button { Content = new TextBlock { Text = text, Foreground = color, FontSize = height >= 100 ? 22 : 14, FontWeight = height >= 100 ? FontWeight.SemiBold : FontWeight.Medium, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center }, Height = height, MinWidth = 110, Padding = new Thickness(14, 0), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, IsTabStop = true, TabIndex = _nextTabIndex++ }; AutomationProperties.SetName(b, text.TrimStart('▶', '↻', ' ')); b.Click += handler; return b; }
