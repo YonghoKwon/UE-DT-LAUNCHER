@@ -4,6 +4,8 @@ namespace UeDtLauncher;
 
 public sealed class LauncherConfig
 {
+    public int SchemaVersion { get; set; } = 1;
+    public string DeploymentMode { get; set; } = "portable";
     // Direct manifest mode. Used when CatalogUrl is empty.
     public string ManifestUrl { get; set; } = "http://localhost:8080/manifest.json";
     public string? ManifestSignatureUrl { get; set; }
@@ -16,6 +18,7 @@ public sealed class LauncherConfig
 
     // When true, catalog/manifest downloads fail unless signature verification actually runs.
     public bool RequireSignedManifests { get; set; }
+    public LauncherSecurityConfig Security { get; set; } = new();
     public string? ProjectId { get; set; }
     public string ClientProfile { get; set; } = "general"; // general, developer
     public string Environment { get; set; } = "prod"; // prod, dev
@@ -25,6 +28,10 @@ public sealed class LauncherConfig
     public string TargetPlatform { get; set; } = OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64";
 
     public string InstallDir { get; set; } = "app";
+    // Runtime state is isolated per project/platform below this directory.
+    // The legacy path fields remain part of the config schema so a single-project
+    // installation can be migrated safely on first use.
+    public string StateRootDir { get; set; } = ".state";
     public string StagingDir { get; set; } = ".staging";
     public string BackupDir { get; set; } = ".backup";
     public string InstalledManifestPath { get; set; } = "installed-manifest.json";
@@ -46,6 +53,9 @@ public sealed class LauncherConfig
     // UI metadata. Images are optional and loaded from local files.
     public string ProjectAssetsDir { get; set; } = "assets/projects";
     public List<ProjectUiConfig> Projects { get; set; } = new();
+
+    [JsonIgnore] public string? ResolvedReleaseVersion { get; set; }
+    [JsonIgnore] public bool IsManagedDeployment => DeploymentMode.Equals("managed-agent", StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed class ProjectUiConfig
@@ -68,6 +78,10 @@ public sealed class DistributionCatalog
 {
     public int SchemaVersion { get; set; } = 1;
     public string GeneratedAt { get; set; } = DateTimeOffset.UtcNow.ToString("O");
+    public long Sequence { get; set; }
+    public string? IssuedAtUtc { get; set; }
+    public string? ExpiresAtUtc { get; set; }
+    public string? MinimumLauncherVersion { get; set; }
     public List<DistributionProject> Projects { get; set; } = new();
 }
 
@@ -158,6 +172,10 @@ public sealed class ServiceModeConfig
 {
     public int IntervalSeconds { get; set; } = 300;
     public bool AutoRestartApp { get; set; } = true;
+    public int StartupGraceSeconds { get; set; } = 5;
+    public string? HealthCheckUrl { get; set; }
+    public int HealthCheckTimeoutSeconds { get; set; } = 60;
+    public bool RollbackOnHealthCheckFailure { get; set; } = true;
     // Fallback process name used to find a running app when the pid file is missing or stale.
     public string? ProcessName { get; set; }
 }
@@ -180,6 +198,8 @@ public sealed class InstallState
     public string? ManifestSha256 { get; set; }
     public string InstalledAtUtc { get; set; } = DateTimeOffset.UtcNow.ToString("O");
     public string? LastBackupRoot { get; set; }
+    public Dictionary<string, string> AppliedPackageHashes { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public List<string> SkippedOptionalPackages { get; set; } = new();
 }
 
 public sealed class UpdatePlan

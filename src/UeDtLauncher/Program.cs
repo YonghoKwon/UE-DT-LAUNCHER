@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using System.Text.Json;
 using Avalonia;
 using UeDtLauncher.Gui;
 
@@ -10,12 +11,20 @@ public static class Program
     private static readonly string[] KnownSubcommands =
     {
         "run", "service", "rollback", "generate-manifest", "update-catalog",
-        "list-releases", "generate-nginx-acl", "sign-manifest", "sample-config"
+        "list-releases", "generate-nginx-acl", "sign-manifest", "generate-signing-key", "sample-config", "publish-release", "doctor", "diagnostics", "agent", "credential"
     };
 
     [STAThread]
     public static int Main(string[] args)
     {
+        CrashReporter.Install(Path.Combine(AppContext.BaseDirectory, "logs"));
+        if (args.Any(arg => arg.Equals("--version", StringComparison.OrdinalIgnoreCase)))
+        {
+            Console.WriteLine(typeof(Program).Assembly.GetCustomAttributes(false)
+                .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
+                .FirstOrDefault()?.InformationalVersion ?? typeof(Program).Assembly.GetName().Version?.ToString());
+            return 0;
+        }
         var wantsGui = Has(args, "--gui");
         var wantsCli = Has(args, "--cli");
 
@@ -138,11 +147,18 @@ public static class Program
                 "generate-nginx-acl" => await GenerateNginxAclAsync(args.Skip(1).ToArray()),
                 "sample-config" => await WriteSampleConfigAsync(args.Skip(1).ToArray()),
                 "sign-manifest" => await SignManifestAsync(args.Skip(1).ToArray()),
+                "agent" => await RunAgentClientAsync(args.Skip(1).ToArray()),
+                "credential" => RunCredentialCommand(args.Skip(1).ToArray()),
+                "publish-release" => await PublishReleaseAsync(args.Skip(1).ToArray()),
+                "generate-signing-key" => await GenerateSigningKeyAsync(args.Skip(1).ToArray()),
+                "doctor" => await RunDoctorAsync(args.Skip(1).ToArray()),
+                "diagnostics" => await RunDiagnosticsAsync(args.Skip(1).ToArray()),
                 _ => UnknownCommand(command)
             };
         }
         catch (Exception ex)
         {
+            CrashReporter.Report(ex, "cli-command");
             Console.Error.WriteLine("ERROR: " + ex.Message);
             Console.Error.WriteLine(ex.ToString());
             return 1;
@@ -155,9 +171,18 @@ public static class Program
         var repair = Has(args, "--repair");
         var noLaunch = Has(args, "--no-launch");
 
-        var config = await JsonFiles.ReadAsync<LauncherConfig>(configPath);
+        var config = await LauncherPaths.LoadResolvedAsync(configPath);
         if (repair) config.RepairMode = true;
         if (noLaunch) config.LaunchAfterUpdate = false;
+
+        if (config.IsManagedDeployment)
+        {
+            var managedResponse = await new ManagedAgentClient().SendAsync(repair ? "repair" : "update", config.ProjectId);
+            PrintAgentResponse(managedResponse);
+            if (!managedResponse.Success) return 1;
+            if (!noLaunch) _ = await ManagedAppLauncher.LaunchAsync(config);
+            return 0;
+        }
 
         var fileLogger = new FileLogger(config.LogDir);
         var reporter = new ConsoleProgressReporter();
@@ -176,10 +201,147 @@ public static class Program
         return 0;
     }
 
+    private static async Task<int> RunAgentClientAsync(string[] args)
+    {
+        var command = args.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal)) ?? "status";
+        var endpoint = Get(args, "--endpoint");
+        var projectId = Get(args, "--project");
+        var response = await new ManagedAgentClient(endpoint).SendAsync(command, projectId);
+        PrintAgentResponse(response);
+        if (!string.IsNullOrWhiteSpace(response.ClientIdentity)) Console.WriteLine($"Client: {response.ClientIdentity}");
+        return response.Success ? 0 : 1;
+    }
+
+    private static void PrintAgentResponse(ManagedAgentResponse response)
+    {
+        foreach (var progress in response.Progress)
+            Console.WriteLine(progress.Percent.HasValue ? $"[{progress.Stage}] {progress.Message} ({progress.Percent:0}%)" : $"[{progress.Stage}] {progress.Message}");
+        Console.WriteLine($"Agent {response.Status}: {response.Message}");
+        Console.WriteLine($"Version: {response.AgentVersion}");
+    }
+
+    private static int RunCredentialCommand(string[] args)
+    {
+        var action = args.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal)) ?? "status";
+        var name = Get(args, "--name") ?? throw new ArgumentException("credential requires --name <credential-name>.");
+        if (action.Equals("status", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine(CredentialStore.Exists(name) ? $"Credential '{name}' is configured." : $"Credential '{name}' is not configured.");
+            return CredentialStore.Exists(name) ? 0 : 1;
+        }
+        if (action.Equals("delete", StringComparison.OrdinalIgnoreCase))
+        {
+            CredentialStore.Delete(name);
+            Console.WriteLine($"Credential '{name}' was deleted.");
+            return 0;
+        }
+        if (!action.Equals("set", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException($"Unknown credential action: {action}.");
+
+        var token = Environment.GetEnvironmentVariable("UE_DT_CREDENTIAL_TOKEN");
+        if (string.IsNullOrWhiteSpace(token)) token = ReadSecretFromConsole("Bearer token: ");
+        CredentialStore.Save(name, token);
+        Console.WriteLine($"Credential '{name}' was stored. The token value will not be displayed.");
+        return 0;
+    }
+
+    private static async Task<int> PublishReleaseAsync(string[] args)
+    {
+        var options = new AtomicReleasePublishOptions
+        {
+            PackageDir = Required(args, "--package-dir"),
+            ServerRoot = Required(args, "--server-root"),
+            BaseUrlRoot = Required(args, "--base-url-root"),
+            ProjectId = Required(args, "--project-id"),
+            DisplayName = Get(args, "--display-name") ?? Required(args, "--project-id"),
+            Version = Required(args, "--version"),
+            Environment = Get(args, "--environment") ?? "prod",
+            Channel = Get(args, "--channel") ?? "stable",
+            Platform = Required(args, "--platform"),
+            EntryPoint = Required(args, "--entry-point"),
+            CatalogProfile = Get(args, "--catalog-profile") ?? "general",
+            AllowedClientProfiles = (Get(args, "--allowed-profiles") ?? string.Empty)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToList(),
+            Notes = Get(args, "--notes"),
+            SetLatest = Has(args, "--set-latest"),
+            DryRun = Has(args, "--dry-run"),
+            ReplaceExisting = Has(args, "--replace"),
+            AllowUnsigned = Has(args, "--allow-unsigned"),
+            PrivateKeyPath = Get(args, "--private-key"),
+            SigningKeyId = Get(args, "--key-id")
+        };
+        var report = await AtomicReleasePublisher.PublishAsync(options);
+        Console.WriteLine(JsonSerializer.Serialize(report, JsonFiles.Options));
+        return 0;
+    }
+
+    private static async Task<int> GenerateSigningKeyAsync(string[] args)
+    {
+        var privateKeyPath = Required(args, "--private-key");
+        var publicKeyPath = Required(args, "--public-key");
+        if (File.Exists(privateKeyPath) || File.Exists(publicKeyPath))
+            throw new IOException("Signing key output already exists; refusing to overwrite it.");
+        using var key = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(privateKeyPath))!);
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(publicKeyPath))!);
+        await File.WriteAllTextAsync(privateKeyPath, key.ExportECPrivateKeyPem());
+        await File.WriteAllTextAsync(publicKeyPath, key.ExportSubjectPublicKeyInfoPem());
+        Console.WriteLine($"Signing key pair generated. Keep private key offline: {privateKeyPath}");
+        Console.WriteLine($"Public key: {publicKeyPath}");
+        return 0;
+    }
+
+    private static async Task<int> RunDoctorAsync(string[] args)
+    {
+        var configPath = Get(args, "--config") ?? "launcher.config.json";
+        var report = await LauncherDoctor.RunAsync(configPath, Has(args, "--online"));
+        Console.WriteLine(JsonSerializer.Serialize(report, JsonFiles.Options));
+        return report.Healthy ? 0 : 1;
+    }
+
+    private static async Task<int> RunDiagnosticsAsync(string[] args)
+    {
+        var action = args.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal)) ?? "export";
+        if (!action.Equals("export", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("diagnostics supports only the export action.");
+        var configPath = Get(args, "--config") ?? "launcher.config.json";
+        var output = Get(args, "--output") ?? $"launcher-diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.zip";
+        Console.WriteLine("Diagnostics written: " + await DiagnosticsExporter.ExportAsync(configPath, output));
+        return 0;
+    }
+
+    private static string ReadSecretFromConsole(string prompt)
+    {
+        Console.Write(prompt);
+        var builder = new System.Text.StringBuilder();
+        while (true)
+        {
+            var key = Console.ReadKey(intercept: true);
+            if (key.Key == ConsoleKey.Enter) break;
+            if (key.Key == ConsoleKey.Backspace)
+            {
+                if (builder.Length > 0) builder.Length--;
+                continue;
+            }
+            if (!char.IsControl(key.KeyChar)) builder.Append(key.KeyChar);
+        }
+        Console.WriteLine();
+        return builder.ToString();
+    }
+
     private static async Task<int> RunServiceAsync(string[] args)
     {
         var configPath = Get(args, "--config") ?? "launcher.config.json";
         var once = Has(args, "--once");
+        var managedConfig = await LauncherPaths.LoadResolvedAsync(configPath);
+        if (managedConfig.IsManagedDeployment)
+        {
+            if (!once) throw new InvalidOperationException("Managed deployment service loop is owned by UeDtLauncher.Agent. Use service --once for a manual cycle.");
+            var managedResponse = await new ManagedAgentClient().SendAsync("service-run", managedConfig.ProjectId);
+            PrintAgentResponse(managedResponse);
+            return managedResponse.Success ? 0 : 1;
+        }
         int? interval = null;
         var intervalArg = Get(args, "--interval");
         if (!string.IsNullOrWhiteSpace(intervalArg))
@@ -206,7 +368,13 @@ public static class Program
     private static async Task<int> RollbackAsync(string[] args)
     {
         var configPath = Get(args, "--config") ?? "launcher.config.json";
-        var config = await JsonFiles.ReadAsync<LauncherConfig>(configPath);
+        var config = await LauncherPaths.LoadResolvedAsync(configPath);
+        if (config.IsManagedDeployment)
+        {
+            var managedResponse = await new ManagedAgentClient().SendAsync("rollback", config.ProjectId);
+            PrintAgentResponse(managedResponse);
+            return managedResponse.Success ? 0 : 1;
+        }
         var backups = BackupManager.List(config.BackupDir);
 
         if (Has(args, "--list"))
@@ -241,7 +409,7 @@ public static class Program
         }
 
         var fileLogger = new FileLogger(config.LogDir);
-        using var instanceLock = SingleInstanceLock.Acquire(SingleInstanceLock.LockPathFor(config.InstallDir));
+        using var instanceLock = SingleInstanceLock.Acquire(LauncherPaths.UpdateLockPath(config));
         Console.WriteLine($"Rolling back using backup {Path.GetFileName(selected.BackupRoot)}...");
         await BackupManager.RestoreAsync(selected.BackupRoot, config.InstallDir, config.InstalledManifestPath, config.InstallStatePath, message =>
         {
@@ -256,7 +424,7 @@ public static class Program
     {
         log ??= (stage, message, percent) =>
             Console.WriteLine(percent.HasValue ? $"[{stage}] {message} ({percent:0}%)" : $"[{stage}] {message}");
-        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(10, config.HttpTimeoutSeconds)) };
+        using var httpClient = SecureHttpClientFactory.Create(config);
         await CatalogResolver.ResolveAsync(config, httpClient, log);
     }
 
@@ -379,10 +547,19 @@ public static class Program
     {
         var manifestPath = Required(args, "--manifest");
         var privateKeyPath = Required(args, "--private-key");
+        var keyId = Get(args, "--key-id");
         var output = Get(args, "--output") ?? manifestPath + ".sig";
         var payload = await File.ReadAllTextAsync(manifestPath);
         var privateKey = await File.ReadAllTextAsync(privateKeyPath);
-        await File.WriteAllTextAsync(output, ManifestSignatureVerifier.Sign(payload, privateKey));
+        var signature = ManifestSignatureVerifier.Sign(payload, privateKey);
+        if (string.IsNullOrWhiteSpace(keyId))
+        {
+            await File.WriteAllTextAsync(output, signature);
+        }
+        else
+        {
+            await JsonFiles.WriteAsync(output, new DetachedSignatureEnvelope { KeyId = keyId, Signature = signature });
+        }
         Console.WriteLine($"Manifest signature written: {output}");
         return 0;
     }
@@ -392,6 +569,8 @@ public static class Program
         var output = Get(args, "--output") ?? "launcher.config.json";
         var config = new LauncherConfig
         {
+            SchemaVersion = 2,
+            DeploymentMode = "managed-agent",
             CatalogUrl = "https://updates.example.com/catalogs/general/catalog.json",
             CatalogSignatureUrl = "https://updates.example.com/catalogs/general/catalog.json.sig",
             CatalogPublicKeyPath = "manifest-public-key.pem",
@@ -404,8 +583,18 @@ public static class Program
             ManifestUrl = "https://your-update-server.example.com/windows-x64/manifest.json",
             ManifestSignatureUrl = "https://your-update-server.example.com/windows-x64/manifest.json.sig",
             ManifestPublicKeyPath = "manifest-public-key.pem",
-            RequireSignedManifests = false,
+            RequireSignedManifests = true,
+            Security = new LauncherSecurityConfig
+            {
+                CredentialName = "ue-dt-prod",
+                AllowedDownloadHosts = { "updates.example.com", "your-update-server.example.com" },
+                TrustedSigningKeys =
+                {
+                    new TrustedSigningKey { KeyId = "prod-2026", PublicKeyPath = "manifest-public-key.pem" }
+                }
+            },
             InstallDir = "app",
+            StateRootDir = ".state",
             StagingDir = ".staging",
             BackupDir = ".backup",
             InstalledManifestPath = "installed-manifest.json",
@@ -423,6 +612,10 @@ public static class Program
             {
                 IntervalSeconds = 300,
                 AutoRestartApp = true,
+                StartupGraceSeconds = 5,
+                HealthCheckUrl = null,
+                HealthCheckTimeoutSeconds = 60,
+                RollbackOnHealthCheckFailure = true,
                 ProcessName = null
             },
             WindowsIntegration = new WindowsIntegrationConfig
@@ -473,9 +666,15 @@ public static class Program
         Console.WriteLine("  update-catalog --catalog <catalog.json> --project-id <id> --version <version> --environment <prod|dev> --channel <stable|beta|dev> --platform <windows-x64|linux-x64> --manifest-url <url> [--display-name <name>] [--allowed-profiles general,developer] [--notes <text>] [--set-latest] [--remove] [--remove-project-if-empty]");
         Console.WriteLine("  list-releases --catalog <catalog.json> [--project <id>]");
         Console.WriteLine("  generate-nginx-acl --allowlist <project-ip-allowlist.json> [--output <acl.conf>]");
-        Console.WriteLine("  sign-manifest --manifest <manifest.json> --private-key <private.pem> --output <manifest.json.sig>");
+        Console.WriteLine("  sign-manifest --manifest <manifest.json> --private-key <private.pem> [--key-id <id>] --output <manifest.json.sig>");
         Console.WriteLine("  run --config launcher.config.json [--repair] [--no-launch]");
         Console.WriteLine("  service --config launcher.config.json [--interval <seconds>] [--once]");
         Console.WriteLine("  rollback --config launcher.config.json [--list] [--backup <timestamp>]");
+        Console.WriteLine("  agent [status] [--endpoint <pipe-or-socket>] [--project <id>]");
+        Console.WriteLine("  credential <set|status|delete> --name <credential-name>");
+        Console.WriteLine("  publish-release --package-dir <dir> --server-root <dir> --base-url-root <url> --project-id <id> --version <version> --platform <platform> --entry-point <path> --private-key <pem> --key-id <id> [--dry-run] [--replace] [--set-latest]");
+        Console.WriteLine("  generate-signing-key --private-key <private.pem> --public-key <public.pem>");
+        Console.WriteLine("  doctor --config launcher.config.json [--online]");
+        Console.WriteLine("  diagnostics export --config launcher.config.json [--output <diagnostics.zip>]");
     }
 }

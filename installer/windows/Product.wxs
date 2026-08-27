@@ -1,0 +1,67 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package Name="UE-DT Launcher" Manufacturer="UE-DT" Version="$(var.ProductVersion)"
+           UpgradeCode="D9A2E48C-ED09-477B-971C-91C6FA118B20" Scope="perMachine" Compressed="yes">
+    <MajorUpgrade DowngradeErrorMessage="A newer UE-DT Launcher is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+    <Property Id="ARPCOMMENTS" Value="$(var.BuildLabel) package" />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="UE-DT Launcher">
+        <Component Id="LauncherGuiComponent" Guid="*">
+          <File Id="LauncherGuiExe" Source="$(var.PublishRoot)\gui\UeDtLauncher.exe" KeyPath="yes" />
+        </Component>
+        <Component Id="LauncherAgentComponent" Guid="*">
+          <File Id="LauncherAgentExe" Source="$(var.PublishRoot)\agent\UeDtLauncher.Agent.exe" KeyPath="yes" />
+          <ServiceInstall Id="AgentServiceInstall" Name="UeDtLauncherAgent" DisplayName="UE-DT Launcher Agent"
+                          Description="Machine-wide UE-DT application update and recovery agent"
+                          Type="ownProcess" Start="auto" ErrorControl="normal"
+                          Account="NT AUTHORITY\LocalService" Vital="yes" />
+          <ServiceControl Id="AgentServiceControl" Name="UeDtLauncherAgent" Start="install"
+                          Stop="both" Remove="uninstall" Wait="yes" />
+          <util:ServiceConfig ServiceName="UeDtLauncherAgent" FirstFailureActionType="restart" SecondFailureActionType="restart"
+                              ThirdFailureActionType="restart" RestartServiceDelayInSeconds="60"
+                              ResetPeriodInDays="1" />
+        </Component>
+        <Component Id="BuildInfoComponent" Guid="*">
+          <File Id="BuildInfo" Source="$(var.PublishRoot)\BUILD-INFO.txt" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="CompanyDataFolder" Name="UE-DT Launcher">
+        <Directory Id="ConfigDataFolder" Name="config">
+          <Component Id="ConfigFolderComponent" Guid="B862B0D0-319A-4D18-B38B-F0911DD8F2A1">
+            <CreateFolder>
+              <util:PermissionEx User="LOCAL SERVICE" GenericRead="yes" GenericExecute="yes" />
+              <util:PermissionEx User="Users" GenericRead="yes" GenericExecute="yes" />
+            </CreateFolder>
+          </Component>
+        </Directory>
+        <Directory Id="StateDataFolder" Name="state">
+          <Component Id="StateFolderComponent" Guid="E132B78D-8D54-45D6-A773-42D450763B53"><CreateFolder><util:PermissionEx User="LOCAL SERVICE" GenericAll="yes" /></CreateFolder></Component>
+        </Directory>
+        <Directory Id="AppsDataFolder" Name="apps">
+          <Component Id="AppsFolderComponent" Guid="BBDBE544-E2BB-49B1-894D-66DDE5EFB7C7"><CreateFolder><util:PermissionEx User="LOCAL SERVICE" GenericAll="yes" /><util:PermissionEx User="Users" GenericRead="yes" GenericExecute="yes" /></CreateFolder></Component>
+        </Directory>
+        <Directory Id="LogsDataFolder" Name="logs">
+          <Component Id="LogsFolderComponent" Guid="71D108AE-A9B4-44EE-94CD-5505802772C5"><CreateFolder><util:PermissionEx User="LOCAL SERVICE" GenericAll="yes" /><util:PermissionEx User="Users" GenericRead="yes" GenericExecute="yes" /></CreateFolder></Component>
+        </Directory>
+        <Directory Id="CredentialsDataFolder" Name="credentials">
+          <Component Id="CredentialsFolderComponent" Guid="EF9391D1-F86B-4A0A-BEF5-4DF39524F390"><CreateFolder><util:PermissionEx User="LOCAL SERVICE" GenericRead="yes" GenericExecute="yes" /></CreateFolder></Component>
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Complete" Title="UE-DT Launcher" Level="1">
+      <ComponentRef Id="LauncherGuiComponent" />
+      <ComponentRef Id="LauncherAgentComponent" />
+      <ComponentRef Id="BuildInfoComponent" />
+      <ComponentRef Id="ConfigFolderComponent" />
+      <ComponentRef Id="StateFolderComponent" />
+      <ComponentRef Id="AppsFolderComponent" />
+      <ComponentRef Id="LogsFolderComponent" />
+      <ComponentRef Id="CredentialsFolderComponent" />
+    </Feature>
+  </Package>
+</Wix>

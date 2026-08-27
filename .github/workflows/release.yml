@@ -1,0 +1,100 @@
+name: signed-release
+
+on:
+  push:
+    tags: ['launcher-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  verify-signing-gate:
+    runs-on: windows-latest
+    steps:
+      - name: Require production code-signing credentials
+        shell: pwsh
+        env:
+          SIGNING_PFX: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+          RPM_GPG_PRIVATE_KEY: ${{ secrets.RPM_GPG_PRIVATE_KEY }}
+          RPM_GPG_KEY_ID: ${{ secrets.RPM_GPG_KEY_ID }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SIGNING_PFX) -or [string]::IsNullOrWhiteSpace($env:SIGNING_PASSWORD)) {
+            throw 'Stable release is blocked: Windows Authenticode credentials are not configured.'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:RPM_GPG_PRIVATE_KEY) -or [string]::IsNullOrWhiteSpace($env:RPM_GPG_KEY_ID)) {
+            throw 'Stable release is blocked: RPM signing credentials are not configured.'
+          }
+
+  windows-package:
+    needs: verify-signing-gate
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - name: Resolve version
+        shell: pwsh
+        run: '"VERSION=$($env:GITHUB_REF_NAME -replace ''^launcher-v'','''')" | Out-File $env:GITHUB_ENV -Append'
+      - name: Import signing certificate
+        shell: pwsh
+        env:
+          SIGNING_PFX: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+        run: |
+          $path = Join-Path $env:RUNNER_TEMP signing.pfx
+          [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:SIGNING_PFX))
+          $cert = Import-PfxCertificate -FilePath $path -CertStoreLocation Cert:\CurrentUser\My -Password (ConvertTo-SecureString $env:SIGNING_PASSWORD -AsPlainText -Force)
+          "UE_DT_SIGNING_CERT_THUMBPRINT=$($cert.Thumbprint)" | Out-File $env:GITHUB_ENV -Append
+      - name: Build MSI payload
+        shell: pwsh
+        run: ./scripts/build-windows-installer.ps1 -Version $env:VERSION -OfficialBuild
+      - name: Sign executables and MSI
+        shell: pwsh
+        run: |
+          $files = @(
+            'artifacts/windows-installer/payload/gui/UeDtLauncher.exe',
+            'artifacts/windows-installer/payload/agent/UeDtLauncher.Agent.exe'
+          ) + @(Get-ChildItem artifacts/windows-installer -Filter *.msi | ForEach-Object FullName)
+          ./scripts/sign-windows.ps1 -Files $files -RequireSignature
+      - name: Generate SBOM
+        shell: pwsh
+        run: |
+          dotnet tool install --tool-path .tools Microsoft.Sbom.DotNetTool --version 4.1.5
+          ./.tools/sbom-tool generate -b artifacts/windows-installer -bc . -pn UeDtLauncher -pv $env:VERSION -ps UE-DT -nsb https://ue-dt.local/sbom
+      - name: Checksums
+        shell: pwsh
+        run: Get-ChildItem artifacts/windows-installer -Recurse -File | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $($_.Path)" } | Set-Content artifacts/windows-installer/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ue-dt-launcher-windows-${{ env.VERSION }}
+          path: artifacts/windows-installer
+
+  linux-package:
+    needs: verify-signing-gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - name: Resolve version
+        run: echo "VERSION=${GITHUB_REF_NAME#launcher-v}" >> "$GITHUB_ENV"
+      - name: Install RPM tooling
+        run: sudo apt-get update && sudo apt-get install -y rpm
+      - name: Build RPM
+        run: chmod +x scripts/build-rpm.sh && ./scripts/build-rpm.sh "$VERSION"
+      - name: Sign and verify RPM
+        env:
+          RPM_GPG_PRIVATE_KEY: ${{ secrets.RPM_GPG_PRIVATE_KEY }}
+          RPM_GPG_KEY_ID: ${{ secrets.RPM_GPG_KEY_ID }}
+        run: |
+          printf '%s' "$RPM_GPG_PRIVATE_KEY" | gpg --batch --import
+          printf '%%_signature gpg\n%%_gpg_name %s\n%%__gpg /usr/bin/gpg\n' "$RPM_GPG_KEY_ID" > ~/.rpmmacros
+          find artifacts/linux-rpm/rpmbuild/RPMS -type f -name '*.rpm' -exec rpmsign --addsign {} \;
+          find artifacts/linux-rpm/rpmbuild/RPMS -type f -name '*.rpm' -exec rpm --checksig {} \;
+      - name: Generate checksum
+        run: find artifacts/linux-rpm/rpmbuild/RPMS -type f -name '*.rpm' -print0 | xargs -0 sha256sum > artifacts/linux-rpm/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ue-dt-launcher-linux-${{ env.VERSION }}
+          path: artifacts/linux-rpm

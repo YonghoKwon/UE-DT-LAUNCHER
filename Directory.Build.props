@@ -1,0 +1,14 @@
+<Project>
+  <PropertyGroup>
+    <LauncherVersion Condition="'$(LauncherVersion)' == ''">1.0.0</LauncherVersion>
+    <LauncherOfficialBuild Condition="'$(LauncherOfficialBuild)' == ''">false</LauncherOfficialBuild>
+    <Version>$(LauncherVersion)</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>$(LauncherVersion).0</FileVersion>
+    <InformationalVersion Condition="'$(LauncherOfficialBuild)' == 'true'">$(LauncherVersion)</InformationalVersion>
+    <InformationalVersion Condition="'$(LauncherOfficialBuild)' != 'true'">$(LauncherVersion)-unsigned-dev</InformationalVersion>
+    <Company>UE-DT</Company>
+    <Product>UE-DT Launcher</Product>
+    <Copyright>Copyright © UE-DT 2026</Copyright>
+  </PropertyGroup>
+</Project>

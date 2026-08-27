@@ -15,5 +15,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\UeDtLauncher\UeDtLauncher.csproj" />
+    <ProjectReference Include="..\UeDtLauncher.Core\UeDtLauncher.Core.csproj" />
   </ItemGroup>
 </Project>

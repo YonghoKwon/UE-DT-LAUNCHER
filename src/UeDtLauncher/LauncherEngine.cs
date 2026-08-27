@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Runtime.Versioning;
-using System.Text.Json;
 
 namespace UeDtLauncher;
 
@@ -13,72 +12,170 @@ public sealed class LauncherEngine : IDisposable
     private readonly Action<LauncherProgress>? _progress;
     private readonly FileLogger? _fileLogger;
     private readonly bool _echoToConsole;
+    private readonly bool _ownsHttpClient;
 
     public LauncherEngine(LauncherConfig config, Action<LauncherProgress>? progress = null, FileLogger? fileLogger = null, bool echoToConsole = true)
+        : this(config, progress, fileLogger, echoToConsole, httpClient: null)
+    {
+    }
+
+    internal LauncherEngine(
+        LauncherConfig config,
+        Action<LauncherProgress>? progress,
+        FileLogger? fileLogger,
+        bool echoToConsole,
+        HttpClient? httpClient)
     {
         _config = config;
         _progress = progress;
         _fileLogger = fileLogger;
         _echoToConsole = echoToConsole;
-        _httpClient = new HttpClient
-        {
-            Timeout = TimeSpan.FromSeconds(Math.Max(10, config.HttpTimeoutSeconds))
-        };
+        _ownsHttpClient = httpClient is null;
+        _httpClient = httpClient ?? SecureHttpClientFactory.Create(config);
+        _httpClient.Timeout = TimeSpan.FromSeconds(Math.Max(10, config.HttpTimeoutSeconds));
     }
 
-    public void Dispose() => _httpClient.Dispose();
+    public void Dispose()
+    {
+        if (_ownsHttpClient) _httpClient.Dispose();
+    }
 
     public async Task RunAsync(CancellationToken cancellationToken = default)
     {
-        using var instanceLock = SingleInstanceLock.Acquire(SingleInstanceLock.LockPathFor(_config.InstallDir));
+        using var prepared = await PrepareAsync(cancellationToken);
+        _ = await CommitPreparedAsync(prepared, cancellationToken);
+        await CompleteRunAsync(prepared.RemoteManifest, cancellationToken);
+    }
 
-        Directory.CreateDirectory(_config.InstallDir);
-        Directory.CreateDirectory(_config.StagingDir);
-        Directory.CreateDirectory(_config.BackupDir);
-
-        Log("Manifest", "Downloading remote manifest...", 5);
-        var (remoteManifest, manifestJson) = await DownloadManifestAsync(cancellationToken);
-        ValidateManifest(remoteManifest);
-
-        Log("Manifest", $"App: {remoteManifest.AppId} / Version: {remoteManifest.Version} / Platform: {remoteManifest.Platform}", 10);
-        var localManifest = await TryLoadLocalManifestAsync(cancellationToken);
-
-        Log("Plan", "Building update plan...", 15);
-        var plan = await BuildPlanAsync(remoteManifest, localManifest, cancellationToken);
-        Log("Plan", $"Download/repair: {plan.DownloadOrRepair.Count}, Remove: {plan.Remove.Count}", 20);
-
-        if (!plan.HasChanges)
+    internal async Task<PreparedLauncherUpdate> PrepareAsync(CancellationToken cancellationToken = default)
+    {
+        var instanceLock = SingleInstanceLock.Acquire(LauncherPaths.UpdateLockPath(_config));
+        try
         {
-            Log("Plan", "Already up to date.", 35);
-            if (!File.Exists(_config.InstallStatePath))
+            Directory.CreateDirectory(_config.InstallDir);
+            Directory.CreateDirectory(_config.StagingDir);
+            Directory.CreateDirectory(_config.BackupDir);
+            await UpdateTransactionManager.RecoverIfNeededAsync(
+                _config,
+                message => Log("Recovery", message),
+                cancellationToken);
+
+            Log("Manifest", "Downloading remote manifest...", 5);
+            var manifestDocument = await ManifestDownloader.DownloadAsync(
+                _config,
+                _httpClient,
+                (stage, message, percent) => Log(stage, message, percent),
+                cancellationToken);
+            var remoteManifest = manifestDocument.Manifest;
+            var manifestJson = manifestDocument.Json;
+
+            Log("Manifest", $"App: {remoteManifest.AppId} / Version: {remoteManifest.Version} / Platform: {remoteManifest.Platform}", 10);
+            var localManifest = await TryLoadLocalManifestAsync(cancellationToken);
+            var localState = await TryLoadInstallStateAsync(cancellationToken);
+
+            Log("Plan", "Building update plan...", 15);
+            var plan = await BuildPlanAsync(remoteManifest, localManifest, cancellationToken);
+            var packagesToPrepare = _config.Packages
+                .Where(package => ShouldPreparePackage(package, localState, _config.RepairMode))
+                .ToList();
+            Log("Plan", $"Download/repair: {plan.DownloadOrRepair.Count}, Remove: {plan.Remove.Count}, Packages: {packagesToPrepare.Count}", 20);
+
+            var preparedPackages = new PreparedPackages();
+            if (plan.HasChanges || packagesToPrepare.Count > 0)
             {
-                await WriteInstallStateAsync(remoteManifest, manifestJson, backupRoot: null, cancellationToken);
+                var requiredBytes = plan.DownloadOrRepair.Sum(file => Math.Max(0, file.Size))
+                                    + packagesToPrepare.Sum(package => Math.Max(0, package.Size));
+                DiskSpace.EnsureAvailable(_config.StagingDir, requiredBytes, (stage, message) => Log(stage, message));
+                DiskSpace.EnsureAvailable(_config.InstallDir, requiredBytes, (stage, message) => Log(stage, message));
+
+                Log("Download", "Downloading changed files to staging...", 35);
+                await PrepareStagingAsync(plan, remoteManifest, cancellationToken);
+                preparedPackages = await PreparePackagesAsync(packagesToPrepare, remoteManifest, cancellationToken);
             }
+
+            return new PreparedLauncherUpdate(
+                remoteManifest,
+                manifestJson,
+                localManifest,
+                localState,
+                plan,
+                preparedPackages,
+                MergePackageHashes(localState, preparedPackages),
+                packagesToPrepare.Count > 0,
+                instanceLock);
         }
-        else
+        catch
         {
-            var requiredBytes = plan.DownloadOrRepair.Sum(file => Math.Max(0, file.Size));
-            DiskSpace.EnsureAvailable(_config.StagingDir, requiredBytes, (stage, message) => Log(stage, message));
-            DiskSpace.EnsureAvailable(_config.InstallDir, requiredBytes, (stage, message) => Log(stage, message));
+            instanceLock.Dispose();
+            throw;
+        }
+    }
 
-            Log("Download", "Downloading changed files to staging...", 35);
-            await PrepareStagingAsync(plan, remoteManifest, cancellationToken);
+    internal async Task<string?> CommitPreparedAsync(
+        PreparedLauncherUpdate prepared,
+        CancellationToken cancellationToken = default)
+    {
+        prepared.ThrowIfDisposed();
+        if (!prepared.HasLiveChanges)
+        {
+            Log("Plan", "Already up to date.", 70);
+            if (!File.Exists(_config.InstallStatePath) || prepared.PackagePreparationRequested)
+            {
+                await WriteInstallStateAsync(
+                    prepared.RemoteManifest,
+                    prepared.ManifestJson,
+                    prepared.LocalState?.LastBackupRoot,
+                    prepared.PackageHashes,
+                    prepared.Packages.SkippedOptionalPackages,
+                    cancellationToken);
+            }
+            return null;
+        }
 
-            Log("Apply", "Applying update with backup...", 70);
-            var backupRoot = await ApplyUpdateAsync(plan, localManifest, remoteManifest, cancellationToken);
-
+        Log("Apply", "Applying update with backup...", 70);
+        var transaction = await ApplyUpdateAsync(
+            prepared.Plan,
+            prepared.Packages.Files,
+            prepared.LocalManifest,
+            prepared.RemoteManifest,
+            cancellationToken);
+        try
+        {
             Log("Manifest", "Writing installed manifest...", 80);
-            await JsonFiles.WriteAsync(_config.InstalledManifestPath, remoteManifest, cancellationToken);
-            await WriteInstallStateAsync(remoteManifest, manifestJson, backupRoot, cancellationToken);
-            BackupManager.Prune(_config.BackupDir, _config.MaxBackupCount, message => Log("Backup", message));
+            await JsonFiles.WriteAsync(_config.InstalledManifestPath, prepared.RemoteManifest, cancellationToken);
+            await WriteInstallStateAsync(
+                prepared.RemoteManifest,
+                prepared.ManifestJson,
+                transaction.BackupRoot,
+                prepared.PackageHashes,
+                prepared.Packages.SkippedOptionalPackages,
+                cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
-
-        if (_config.Packages.Count > 0)
+        catch
         {
-            Log("Package", "Processing package updates...", 84);
-            await ProcessPackagesAsync(cancellationToken);
+            Log("Rollback", "State commit failed. Rolling back the update...");
+            await transaction.RollbackAsync(message => Log("Rollback", message), CancellationToken.None);
+            throw;
         }
+        BackupManager.Prune(_config.BackupDir, _config.MaxBackupCount, message => Log("Backup", message));
+        return transaction.BackupRoot;
+    }
 
+    internal void LaunchPrepared(PreparedLauncherUpdate prepared)
+    {
+        prepared.ThrowIfDisposed();
+        Launch(prepared.RemoteManifest);
+    }
+
+    internal void LaunchPrevious(PreparedLauncherUpdate prepared)
+    {
+        prepared.ThrowIfDisposed();
+        Launch(prepared.LocalManifest ?? prepared.RemoteManifest);
+    }
+
+    private async Task CompleteRunAsync(LauncherManifest remoteManifest, CancellationToken cancellationToken)
+    {
         if (_config.WindowsIntegration.CreateDesktopShortcut || _config.WindowsIntegration.CreateStartMenuShortcut || _config.WindowsIntegration.RegisterAppEntry)
         {
             Log("Integration", "Applying Windows integration settings...", 90);
@@ -113,7 +210,13 @@ public sealed class LauncherEngine : IDisposable
         _progress?.Invoke(new LauncherProgress(stage, message, percent));
     }
 
-    private async Task WriteInstallStateAsync(LauncherManifest manifest, string manifestJson, string? backupRoot, CancellationToken cancellationToken)
+    private async Task WriteInstallStateAsync(
+        LauncherManifest manifest,
+        string manifestJson,
+        string? backupRoot,
+        IReadOnlyDictionary<string, string> appliedPackageHashes,
+        IReadOnlyCollection<string> skippedOptionalPackages,
+        CancellationToken cancellationToken)
     {
         var state = new InstallState
         {
@@ -122,29 +225,11 @@ public sealed class LauncherEngine : IDisposable
             Environment = _config.Environment,
             Platform = manifest.Platform,
             ManifestSha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(manifestJson))).ToLowerInvariant(),
-            LastBackupRoot = backupRoot
+            LastBackupRoot = backupRoot,
+            AppliedPackageHashes = new Dictionary<string, string>(appliedPackageHashes, StringComparer.OrdinalIgnoreCase),
+            SkippedOptionalPackages = skippedOptionalPackages.ToList()
         };
         await JsonFiles.WriteAsync(_config.InstallStatePath, state, cancellationToken);
-    }
-
-    private async Task<(LauncherManifest Manifest, string Json)> DownloadManifestAsync(CancellationToken cancellationToken)
-    {
-        using var response = await _httpClient.GetAsync(_config.ManifestUrl, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        var json = await response.Content.ReadAsStringAsync(cancellationToken);
-        var signatureVerified = await ManifestSignatureVerifier.VerifyIfConfiguredAsync(json, _config, _httpClient, cancellationToken);
-        if (!signatureVerified)
-        {
-            if (_config.RequireSignedManifests)
-            {
-                throw new InvalidOperationException("requireSignedManifests is enabled, but manifestSignatureUrl or manifestPublicKeyPath is not configured.");
-            }
-
-            Log("Security", "WARNING: manifest signature verification skipped (no signature URL or public key configured).");
-        }
-
-        var manifest = JsonSerializer.Deserialize<LauncherManifest>(json, JsonFiles.Options) ?? throw new InvalidOperationException("Remote manifest JSON was empty or invalid.");
-        return (manifest, json);
     }
 
     private async Task<LauncherManifest?> TryLoadLocalManifestAsync(CancellationToken cancellationToken)
@@ -161,10 +246,51 @@ public sealed class LauncherEngine : IDisposable
         }
     }
 
+    private async Task<InstallState?> TryLoadInstallStateAsync(CancellationToken cancellationToken)
+    {
+        if (!File.Exists(_config.InstallStatePath)) return null;
+        try
+        {
+            return await JsonFiles.ReadAsync<InstallState>(_config.InstallStatePath, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            Log("Repair", $"Install state is unreadable and will be rebuilt. Reason: {ex.Message}");
+            return null;
+        }
+    }
+
+    internal static bool ShouldPreparePackage(
+        LauncherPackage package,
+        InstallState? state,
+        bool repairMode)
+    {
+        if (repairMode) return true;
+        return state is null
+               || !state.AppliedPackageHashes.TryGetValue(package.Id, out var installedHash)
+               || !string.Equals(installedHash, package.Sha256, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static Dictionary<string, string> MergePackageHashes(
+        InstallState? localState,
+        PreparedPackages preparedPackages)
+    {
+        var result = localState is null
+            ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, string>(localState.AppliedPackageHashes, StringComparer.OrdinalIgnoreCase);
+        foreach (var (packageId, hash) in preparedPackages.AppliedPackageHashes)
+        {
+            result[packageId] = hash;
+        }
+
+        return result;
+    }
+
     private async Task<UpdatePlan> BuildPlanAsync(LauncherManifest remote, LauncherManifest? local, CancellationToken cancellationToken)
     {
         var plan = new UpdatePlan();
-        var localByPath = local?.Files.ToDictionary(file => file.Path, StringComparer.OrdinalIgnoreCase) ?? new Dictionary<string, ManifestFile>(StringComparer.OrdinalIgnoreCase);
+        var localByPath = local?.Files.ToDictionary(file => file.Path, SafePath.FileSystemComparer)
+                          ?? new Dictionary<string, ManifestFile>(SafePath.FileSystemComparer);
 
         foreach (var remoteFile in remote.Files)
         {
@@ -187,7 +313,7 @@ public sealed class LauncherEngine : IDisposable
 
         if (_config.RemoveFilesNotInManifest && local is not null)
         {
-            var remotePaths = remote.Files.Select(file => file.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var remotePaths = remote.Files.Select(file => file.Path).ToHashSet(SafePath.FileSystemComparer);
             foreach (var localFile in local.Files)
             {
                 if (!remotePaths.Contains(localFile.Path)) plan.Remove.Add(localFile.Path);
@@ -233,9 +359,15 @@ public sealed class LauncherEngine : IDisposable
 
     private Uri ResolveDownloadUri(LauncherManifest manifest, ManifestFile file)
     {
-        if (Uri.TryCreate(file.Url, UriKind.Absolute, out var absolute)) return absolute;
+        if (Uri.TryCreate(file.Url, UriKind.Absolute, out var absolute))
+        {
+            LauncherConfigValidator.ValidateUrl(_config, absolute, "file download");
+            return absolute;
+        }
         var baseUrl = manifest.BaseUrl ?? throw new InvalidOperationException($"File URL is relative but manifest.baseUrl is missing: {file.Path}");
-        return new Uri(baseUrl.TrimEnd('/') + "/" + (file.Url ?? file.Path).TrimStart('/'));
+        var resolved = new Uri(baseUrl.TrimEnd('/') + "/" + (file.Url ?? file.Path).TrimStart('/'));
+        LauncherConfigValidator.ValidateUrl(_config, resolved, "file download");
+        return resolved;
     }
 
     private async Task DownloadWithRetryAsync(Uri uri, string targetPath, ManifestFile file, Action<long>? onBytes, CancellationToken cancellationToken)
@@ -302,6 +434,15 @@ public sealed class LauncherEngine : IDisposable
             await DeleteFileWithRetryAsync(tempPath, cancellationToken);
         }
         response.EnsureSuccessStatusCode();
+        if (existingLength > 0)
+        {
+            var rangeError = ValidateResumeResponse(response, existingLength, expectedSize);
+            if (rangeError is not null)
+            {
+                await DeleteFileWithRetryAsync(tempPath, cancellationToken);
+                throw new IOException(rangeError);
+            }
+        }
 
         await using (var source = await response.Content.ReadAsStreamAsync(cancellationToken))
         await using (var target = new FileStream(tempPath, existingLength > 0 ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.None))
@@ -328,6 +469,16 @@ public sealed class LauncherEngine : IDisposable
         var actualSize = new FileInfo(tempPath).Length;
         if (expectedSize > 0 && actualSize != expectedSize) throw new IOException($"Size mismatch. Expected {expectedSize}, actual {actualSize}.");
         await MoveFileWithRetryAsync(tempPath, targetPath, cancellationToken);
+    }
+
+    internal static string? ValidateResumeResponse(HttpResponseMessage response, long existingLength, long expectedSize)
+    {
+        if (existingLength <= 0) return null;
+        if (response.StatusCode != HttpStatusCode.PartialContent) return "HTTP server did not honor the resume Range request.";
+        var range = response.Content.Headers.ContentRange;
+        if (range?.From != existingLength) return "HTTP Content-Range start did not match the requested resume offset.";
+        if (expectedSize > 0 && range.Length != expectedSize) return "HTTP Content-Range total did not match the manifest size.";
+        return null;
     }
 
     private static async Task MoveFileWithRetryAsync(string sourcePath, string targetPath, CancellationToken cancellationToken)
@@ -376,30 +527,70 @@ public sealed class LauncherEngine : IDisposable
         throw new IOException($"Failed to delete file '{path}'.", lastError);
     }
 
-    private async Task<string> ApplyUpdateAsync(UpdatePlan plan, LauncherManifest? localManifest, LauncherManifest remoteManifest, CancellationToken cancellationToken)
+    private async Task<UpdateTransactionContext> ApplyUpdateAsync(
+        UpdatePlan plan,
+        IReadOnlyCollection<PreparedPackageFile> packageFiles,
+        LauncherManifest? localManifest,
+        LauncherManifest remoteManifest,
+        CancellationToken cancellationToken)
     {
         var backupRoot = BackupManager.CreateBackupRoot(_config.BackupDir);
-        var addedPaths = new List<string>();
-
-        // Capture pre-update metadata first: the installed manifest/state files still describe
-        // the previous version at this point.
-        await BackupManager.WriteBackupMetadataAsync(backupRoot, new BackupInfo
-        {
-            PreviousVersion = localManifest?.Version,
-            NewVersion = remoteManifest.Version
-        }, _config.InstalledManifestPath, _config.InstallStatePath, cancellationToken);
+        var addedPaths = plan.DownloadOrRepair
+            .Where(file => !File.Exists(SafePath.ResolveInsideChecked(_config.InstallDir, file.Path)))
+            .Select(file => file.Path)
+            .Concat(packageFiles
+                .Where(file => !File.Exists(SafePath.ResolveInsideChecked(_config.InstallDir, file.RelativeInstallPath)))
+                .Select(file => file.RelativeInstallPath))
+            .ToList();
+        var transaction = await UpdateTransactionManager.BeginAsync(
+            _config,
+            backupRoot,
+            localManifest?.Version,
+            remoteManifest.Version,
+            addedPaths,
+            cancellationToken);
 
         try
         {
+            // Capture all pre-update data before marking the transaction as Applying.
+            // If backup preparation is interrupted, recovery can discard it without touching live files.
+            await BackupManager.WriteBackupMetadataAsync(backupRoot, new BackupInfo
+            {
+                PreviousVersion = localManifest?.Version,
+                NewVersion = remoteManifest.Version,
+                AddedPaths = addedPaths
+            }, _config.InstalledManifestPath, _config.InstallStatePath, cancellationToken);
+
             foreach (var relativePath in plan.Remove)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var installedPath = SafePath.ResolveInsideChecked(_config.InstallDir, relativePath);
-                if (File.Exists(installedPath))
-                {
-                    BackupFile(installedPath, SafePath.ResolveInside(backupRoot, relativePath));
-                    File.Delete(installedPath);
-                }
+                if (File.Exists(installedPath)) BackupFile(installedPath, SafePath.ResolveInside(backupRoot, relativePath));
+            }
+
+            foreach (var file in plan.DownloadOrRepair)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var installedPath = SafePath.ResolveInsideChecked(_config.InstallDir, file.Path);
+                var backupPath = SafePath.ResolveInside(backupRoot, file.Path);
+                if (File.Exists(installedPath)) BackupFile(installedPath, backupPath);
+            }
+
+            foreach (var file in packageFiles)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var installedPath = SafePath.ResolveInsideChecked(_config.InstallDir, file.RelativeInstallPath);
+                var backupPath = SafePath.ResolveInside(backupRoot, file.RelativeInstallPath);
+                if (File.Exists(installedPath)) BackupFile(installedPath, backupPath);
+            }
+
+            await transaction.MarkApplyingAsync(cancellationToken);
+
+            foreach (var relativePath in plan.Remove)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var installedPath = SafePath.ResolveInsideChecked(_config.InstallDir, relativePath);
+                if (File.Exists(installedPath)) File.Delete(installedPath);
             }
 
             foreach (var file in plan.DownloadOrRepair)
@@ -407,45 +598,147 @@ public sealed class LauncherEngine : IDisposable
                 cancellationToken.ThrowIfCancellationRequested();
                 var stagingPath = SafePath.ResolveInside(_config.StagingDir, file.Path);
                 var installedPath = SafePath.ResolveInsideChecked(_config.InstallDir, file.Path);
-                var backupPath = SafePath.ResolveInside(backupRoot, file.Path);
-                if (File.Exists(installedPath)) BackupFile(installedPath, backupPath);
-                else addedPaths.Add(file.Path);
                 Directory.CreateDirectory(Path.GetDirectoryName(installedPath)!);
                 File.Move(stagingPath, installedPath, overwrite: true);
                 TryMarkExecutable(installedPath, file.Executable);
             }
+
+            foreach (var file in packageFiles)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var installedPath = SafePath.ResolveInsideChecked(_config.InstallDir, file.RelativeInstallPath);
+                Directory.CreateDirectory(Path.GetDirectoryName(installedPath)!);
+                File.Move(file.SourcePath, installedPath, overwrite: true);
+            }
         }
         catch
         {
-            Log("Rollback", "Apply failed. Rolling back from backup...");
-            RestoreBackup(backupRoot, _config.InstallDir);
+            Log("Rollback", "Apply failed. Rolling back the transaction...");
+            await transaction.RollbackAsync(message => Log("Rollback", message), CancellationToken.None);
             throw;
         }
 
-        await BackupManager.WriteBackupMetadataAsync(backupRoot, new BackupInfo
-        {
-            PreviousVersion = localManifest?.Version,
-            NewVersion = remoteManifest.Version,
-            AddedPaths = addedPaths
-        }, _config.InstalledManifestPath, _config.InstallStatePath, cancellationToken);
-
-        return backupRoot;
+        return transaction;
     }
 
-    private async Task ProcessPackagesAsync(CancellationToken cancellationToken)
+    private async Task<PreparedPackages> PreparePackagesAsync(
+        IReadOnlyList<LauncherPackage> packages,
+        LauncherManifest remoteManifest,
+        CancellationToken cancellationToken)
     {
+        var prepared = new PreparedPackages();
+        if (packages.Count == 0) return prepared;
+
         var packageRoot = Path.Combine(_config.StagingDir, "packages");
+        var expandedRoot = Path.Combine(_config.StagingDir, "package-expanded");
         Directory.CreateDirectory(packageRoot);
-        for (var index = 0; index < _config.Packages.Count; index++)
+        Directory.CreateDirectory(expandedRoot);
+
+        var pathComparer = SafePath.FileSystemComparer;
+        var manifestPaths = remoteManifest.Files
+            .Select(file => CanonicalRelativePath(file.Path))
+            .ToHashSet(pathComparer);
+        var packagePaths = new HashSet<string>(pathComparer);
+        var packageIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        for (var index = 0; index < packages.Count; index++)
         {
-            var package = _config.Packages[index];
-            var archivePath = Path.Combine(packageRoot, package.Id + ".pkg");
-            var file = new ManifestFile { Path = package.Id, Url = package.Url, Sha256 = package.Sha256, Size = package.Size };
-            Log("Package", $"Downloading package {package.Id}", 84 + index);
-            await DownloadWithRetryAsync(new Uri(package.Url), archivePath, file, onBytes: null, cancellationToken);
-            var destination = SafePath.ResolveInside(_config.InstallDir, package.ExtractTo);
-            await PackageExtractor.ExtractAsync(archivePath, destination, package.Format, message => Log("Package", message), cancellationToken);
+            var package = packages[index];
+            try
+            {
+                ValidatePackage(package, packageIds);
+                var archivePath = SafePath.ResolveInside(packageRoot, package.Id + ".pkg");
+                var file = new ManifestFile
+                {
+                    Path = package.Id,
+                    Url = package.Url,
+                    Sha256 = package.Sha256,
+                    Size = package.Size
+                };
+                Log("Package", $"Downloading package {package.Id}", 65 + index);
+                await DownloadWithRetryAsync(new Uri(package.Url), archivePath, file, onBytes: null, cancellationToken);
+
+                var expandedDir = SafePath.ResolveInside(expandedRoot, package.Id);
+                Directory.CreateDirectory(expandedDir);
+                await PackageExtractor.ExtractAsync(
+                    archivePath,
+                    expandedDir,
+                    package.Format,
+                    message => Log("Package", message),
+                    cancellationToken);
+
+                prepared.Files.AddRange(BuildPreparedPackageFiles(
+                    package,
+                    expandedDir,
+                    manifestPaths,
+                    packagePaths));
+                prepared.AppliedPackageHashes[package.Id] = package.Sha256;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex) when (!package.Required)
+            {
+                prepared.SkippedOptionalPackages.Add(package.Id);
+                Log("Package", $"Optional package {package.Id} was skipped: {ex.GetBaseException().Message}");
+            }
         }
+
+        return prepared;
+    }
+
+    internal static IReadOnlyList<PreparedPackageFile> BuildPreparedPackageFiles(
+        LauncherPackage package,
+        string expandedDir,
+        IReadOnlySet<string> manifestPaths,
+        ISet<string> packagePaths)
+    {
+        var files = new List<PreparedPackageFile>();
+        var localPaths = new HashSet<string>(
+            packagePaths,
+            OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        foreach (var sourcePath in Directory.EnumerateFiles(expandedDir, "*", SearchOption.AllDirectories))
+        {
+            var extractedRelative = Path.GetRelativePath(expandedDir, sourcePath);
+            var combined = Path.Combine(package.ExtractTo, extractedRelative);
+            var installRelative = CanonicalRelativePath(combined);
+            if (manifestPaths.Contains(installRelative))
+            {
+                throw new InvalidOperationException(
+                    $"Package {package.Id} would overwrite manifest-managed file: {installRelative}");
+            }
+
+            if (!localPaths.Add(installRelative))
+            {
+                throw new InvalidOperationException(
+                    $"Multiple packages target the same install path: {installRelative}");
+            }
+
+            files.Add(new PreparedPackageFile(package.Id, sourcePath, installRelative));
+        }
+
+        foreach (var file in files) packagePaths.Add(file.RelativeInstallPath);
+        return files;
+    }
+
+    private static void ValidatePackage(LauncherPackage package, ISet<string> packageIds)
+    {
+        _ = SafePath.ResolveInside("validation-root", package.Id + ".pkg");
+        _ = SafePath.ResolveInside("validation-root", package.ExtractTo);
+        if (!packageIds.Add(package.Id)) throw new InvalidOperationException($"Duplicate package id: {package.Id}");
+        if (package.Size < 0) throw new InvalidOperationException($"Negative package size: {package.Id}");
+        if (package.Sha256.Length != 64 || !package.Sha256.All(Uri.IsHexDigit))
+            throw new InvalidOperationException($"Invalid package sha256: {package.Id}");
+        if (!Uri.TryCreate(package.Url, UriKind.Absolute, out _))
+            throw new InvalidOperationException($"Package URL must be absolute: {package.Id}");
+    }
+
+    private static string CanonicalRelativePath(string relativePath)
+    {
+        var validationRoot = Path.GetFullPath("validation-root");
+        var fullPath = SafePath.ResolveInside(validationRoot, relativePath);
+        return Path.GetRelativePath(validationRoot, fullPath);
     }
 
     private string GetEntryPointPath(LauncherManifest manifest) => SafePath.ResolveInside(_config.InstallDir, manifest.EntryPoint);
@@ -456,22 +749,13 @@ public sealed class LauncherEngine : IDisposable
         File.Copy(source, backupPath, overwrite: true);
     }
 
-    private static void RestoreBackup(string backupRoot, string installDir)
-    {
-        if (!Directory.Exists(backupRoot)) return;
-        foreach (var backupFile in Directory.EnumerateFiles(backupRoot, "*", SearchOption.AllDirectories))
-        {
-            var relative = Path.GetRelativePath(backupRoot, backupFile);
-            var target = SafePath.ResolveInside(installDir, relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.Copy(backupFile, target, overwrite: true);
-        }
-    }
-
     private static void TryMarkExecutable(string path, bool executable)
     {
         if (!executable || OperatingSystem.IsWindows()) return;
-        TrySetUnixExecutable(path);
+        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+        {
+            TrySetUnixExecutable(path);
+        }
     }
 
     [SupportedOSPlatform("linux")]
@@ -520,19 +804,42 @@ public sealed class LauncherEngine : IDisposable
         if (string.IsNullOrWhiteSpace(manifest.EntryPoint)) throw new InvalidOperationException("Manifest entryPoint is required.");
         if (manifest.Files.Count == 0) throw new InvalidOperationException("Manifest files list is empty.");
 
-        var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenPaths = new HashSet<string>(SafePath.FileSystemComparer);
         foreach (var file in manifest.Files)
         {
-            _ = SafePath.ResolveInside("validation-root", file.Path);
-            if (!seenPaths.Add(file.Path)) throw new InvalidOperationException($"Duplicate file path in manifest: {file.Path}");
+            var canonicalPath = CanonicalRelativePath(file.Path);
+            if (!seenPaths.Add(canonicalPath)) throw new InvalidOperationException($"Duplicate file path in manifest: {file.Path}");
             if (file.Size < 0) throw new InvalidOperationException($"Negative file size in manifest: {file.Path}");
             if (string.IsNullOrWhiteSpace(file.Sha256)) throw new InvalidOperationException($"Missing sha256 for {file.Path}");
             if (file.Sha256.Length != 64 || !file.Sha256.All(Uri.IsHexDigit)) throw new InvalidOperationException($"Invalid sha256 format for {file.Path}");
         }
 
-        if (!manifest.Files.Any(file => string.Equals(file.Path, manifest.EntryPoint, StringComparison.OrdinalIgnoreCase)))
+        if (!manifest.Files.Any(file => string.Equals(file.Path, manifest.EntryPoint, SafePath.FileSystemComparison)))
         {
             throw new InvalidOperationException($"Manifest entryPoint is not listed in files: {manifest.EntryPoint}");
+        }
+    }
+
+    internal static void ValidateManifest(LauncherManifest manifest, LauncherConfig config)
+    {
+        ValidateManifest(manifest);
+        if (config.SchemaVersion < 2) return;
+        if (!string.IsNullOrWhiteSpace(config.ProjectId) && !manifest.AppId.Equals(config.ProjectId, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"Manifest appId '{manifest.AppId}' does not match selected project '{config.ProjectId}'.");
+        if (!manifest.Platform.Equals(config.TargetPlatform, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"Manifest platform '{manifest.Platform}' does not match selected platform '{config.TargetPlatform}'.");
+        if (!string.IsNullOrWhiteSpace(config.ResolvedReleaseVersion) && !manifest.Version.Equals(config.ResolvedReleaseVersion, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"Manifest version '{manifest.Version}' does not match catalog release '{config.ResolvedReleaseVersion}'.");
+        if (!manifest.Channel.Equals(config.Channel, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"Manifest channel '{manifest.Channel}' does not match selected channel '{config.Channel}'.");
+        if (manifest.Files.Count > config.Security.MaxManifestFiles)
+            throw new InvalidDataException("Manifest file count exceeds the configured limit.");
+        long total = 0;
+        foreach (var file in manifest.Files)
+        {
+            if (file.Size > config.Security.MaxSingleFileBytes) throw new InvalidDataException($"Manifest file exceeds the configured size limit: {file.Path}");
+            total = checked(total + file.Size);
+            if (total > config.Security.MaxTotalDownloadBytes) throw new InvalidDataException("Manifest total download size exceeds the configured limit.");
         }
     }
 }

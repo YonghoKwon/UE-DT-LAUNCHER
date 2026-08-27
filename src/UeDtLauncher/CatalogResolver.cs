@@ -14,9 +14,35 @@ public static class CatalogResolver
         ValidateClientSelection(config);
 
         log?.Invoke("Catalog", "Downloading release catalog...", 2);
-        using var response = await httpClient.GetAsync(config.CatalogUrl, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        var catalogJson = await response.Content.ReadAsStringAsync(cancellationToken);
+        var catalog = await DownloadCatalogAsync(config, httpClient, log, cancellationToken);
+        var release = SelectRelease(catalog, config);
+        config.ManifestUrl = release.ManifestUrl;
+        config.ManifestSignatureUrl = release.ManifestSignatureUrl;
+        config.Channel = release.Channel;
+        config.Environment = release.Environment;
+        config.TargetPlatform = release.Platform;
+        config.ResolvedReleaseVersion = release.Version;
+
+        log?.Invoke("Catalog", $"Selected {config.ProjectId} {release.Version} / {release.Environment} / {release.Platform} / {release.Channel}", 4);
+    }
+
+    internal static async Task<DistributionCatalog> DownloadCatalogAsync(
+        LauncherConfig config,
+        HttpClient httpClient,
+        Action<string, string, double?>? log = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(config.CatalogUrl))
+        {
+            throw new InvalidOperationException("catalogUrl is required.");
+        }
+
+        LauncherConfigValidator.ValidateUrl(config, new Uri(config.CatalogUrl, UriKind.Absolute), "catalog");
+        var catalogJson = await SecureHttpClientFactory.GetBoundedStringAsync(
+            httpClient,
+            config.CatalogUrl,
+            config.Security.MaxCatalogBytes,
+            cancellationToken);
 
         var signatureVerified = await VerifyCatalogIfConfiguredAsync(catalogJson, config, httpClient, cancellationToken);
         if (!signatureVerified)
@@ -31,32 +57,19 @@ public static class CatalogResolver
 
         var catalog = JsonSerializer.Deserialize<DistributionCatalog>(catalogJson, JsonFiles.Options)
             ?? throw new InvalidOperationException("Release catalog JSON was empty or invalid.");
-
-        var release = SelectRelease(catalog, config);
-        config.ManifestUrl = release.ManifestUrl;
-        config.ManifestSignatureUrl = release.ManifestSignatureUrl;
-        config.Channel = release.Channel;
-        config.Environment = release.Environment;
-        config.TargetPlatform = release.Platform;
-
-        log?.Invoke("Catalog", $"Selected {config.ProjectId} {release.Version} / {release.Environment} / {release.Platform} / {release.Channel}", 4);
+        await CatalogTrustManager.ValidateAndRecordAsync(config, catalog, cancellationToken);
+        return catalog;
     }
 
     private static async Task<bool> VerifyCatalogIfConfiguredAsync(string catalogJson, LauncherConfig config, HttpClient httpClient, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(config.CatalogSignatureUrl) || string.IsNullOrWhiteSpace(config.CatalogPublicKeyPath))
-        {
-            return false;
-        }
-
-        if (!File.Exists(config.CatalogPublicKeyPath))
-        {
-            throw new FileNotFoundException("Catalog public key file was not found.", config.CatalogPublicKeyPath);
-        }
-
-        var signatureBase64 = await httpClient.GetStringAsync(config.CatalogSignatureUrl, cancellationToken);
-        ManifestSignatureVerifier.Verify(catalogJson, signatureBase64.Trim(), await File.ReadAllTextAsync(config.CatalogPublicKeyPath, cancellationToken));
-        return true;
+        return await DetachedSignatureVerifier.VerifyIfConfiguredAsync(
+            catalogJson,
+            config.CatalogSignatureUrl,
+            config.CatalogPublicKeyPath,
+            config,
+            httpClient,
+            cancellationToken);
     }
 
     internal static DistributionRelease SelectRelease(DistributionCatalog catalog, LauncherConfig config)

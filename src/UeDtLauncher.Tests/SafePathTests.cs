@@ -4,6 +4,27 @@ namespace UeDtLauncher.Tests;
 
 public class SafePathTests
 {
+    [Fact]
+    public void IsInside_HonorsRequestedComparisonForNativePaths()
+    {
+        var parent = Path.Combine(Path.GetTempPath(), "SafePathCase");
+        var root = Path.Combine(parent, "App");
+        var childWithDifferentCase = Path.Combine(parent, "app", "game");
+
+        Assert.False(SafePath.IsInside(root, childWithDifferentCase, StringComparison.Ordinal));
+        Assert.True(SafePath.IsInside(root, childWithDifferentCase, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void IsInside_RejectsSiblingThatOnlySharesTheRootPrefix()
+    {
+        var parent = Path.Combine(Path.GetTempPath(), "SafePathBoundary");
+        var root = Path.Combine(parent, "app");
+        var sibling = Path.Combine(parent, "application", "game");
+
+        Assert.False(SafePath.IsInside(root, sibling, SafePath.FileSystemComparison));
+    }
+
     [Theory]
     [InlineData("file.txt")]
     [InlineData("sub/dir/file.txt")]

@@ -14,7 +14,7 @@ C:\ue-dt\  (또는 /opt/ue-dt/)
 └── manifest-public-key.pem   # 서명 검증을 켠 경우만
 ```
 
-런처가 실행되면서 만들어지는 것들: `app/`(설치된 프로젝트), `.staging/`(다운로드 임시), `.backup/`(롤백용 백업), `logs/`(로그), `installed-manifest.json`, `install-state.json`, `app.pid`.
+런처가 실행되면서 만들어지는 것들: `app/`(설치된 프로젝트), `.state/{projectId}/{platform}/`(프로젝트별 다운로드 임시·백업·설치 상태·PID·잠금), `logs/`(로그).
 
 설정 템플릿 생성:
 
@@ -45,16 +45,25 @@ UeDtLauncher sample-config --output launcher.config.json
 | `catalogSignatureUrl` / `catalogPublicKeyPath` | - | catalog 서명 검증 (`.sig` URL + 공개키 파일 경로) |
 | `manifestSignatureUrl` / `manifestPublicKeyPath` | - | manifest 서명 검증. 카탈로그 모드에서는 catalog의 릴리스 항목에서 자동 설정됨 |
 | `requireSignedManifests` | `false` | **true면 서명 검증이 실제로 수행되지 않는 한 업데이트를 거부.** 운영 배포에서 켜는 것을 권장. false면 서명 미설정 시 경고 로그만 남깁니다 |
+| `schemaVersion` | `1` | 운영용 신규 설정은 `2`. v2는 HTTPS·서명·credential reference와 metadata 제한을 강제합니다 |
+| `deploymentMode` | `portable` | 상용 MSI/RPM 설치는 `managed-agent`. GUI·CLI의 update/repair/rollback을 Agent IPC로 라우팅합니다 |
+| `security.credentialName` | - | `credential set --name <이름>`으로 별도 저장한 Bearer token 이름. token 자체는 JSON에 기록하지 않습니다 |
+| `security.allowedDownloadHosts` | `[]` | catalog·manifest·파일 다운로드를 허용할 host 목록. v2 운영 설정에서 사용하는 모든 host를 명시합니다 |
+| `security.trustedSigningKeys` | `[]` | `{ "keyId", "publicKeyPath" }` 목록. signature v2 key rotation에 사용합니다 |
+| `security.customCaCertificatePath` | - | 사내 CA가 필요한 경우에만 지정. TLS 검증을 끄지 않고 이 CA를 추가 신뢰합니다 |
+
+운영 설정에서는 URL에 `user:password@host`를 넣지 않습니다. 관리자 권한 터미널에서 `UeDtLauncher credential set --name ue-dt-prod`로 token을 저장하고 설정에는 `credentialName`만 둡니다.
 
 **동작/경로**
 
 | 필드 | 기본값 | 설명 |
 | --- | --- | --- |
 | `installDir` | `app` | 프로젝트 설치 폴더 |
-| `stagingDir` / `backupDir` | `.staging` / `.backup` | 다운로드 임시 / 백업 폴더 |
-| `installedManifestPath` | `installed-manifest.json` | 설치된 파일 목록 기록 |
-| `installStatePath` | `install-state.json` | 설치 버전/시각 기록 (롤백·서비스 모드가 사용) |
-| `appPidPath` | `app.pid` | 런처가 실행한 앱 프로세스 기록 (서비스 모드가 사용) |
+| `stateRootDir` | `.state` | 프로젝트/플랫폼별 상태 루트. 실제 경로는 `.state/{projectId}/{platform}/` |
+| `stagingDir` / `backupDir` | `.staging` / `.backup` | 기존 단일 프로젝트 상태 migration 입력. 실행 중에는 프로젝트별 상태 경로를 사용 |
+| `installedManifestPath` | `installed-manifest.json` | 기존 단일 프로젝트 상태 migration 입력. 새 설치 상태는 프로젝트별 상태 루트에 기록 |
+| `installStatePath` | `install-state.json` | 기존 단일 프로젝트 상태 migration 입력. 롤백·서비스 모드는 프로젝트별 상태를 사용 |
+| `appPidPath` | `app.pid` | 기존 설정 호환 필드. 런처가 실행한 앱 PID는 프로젝트별 상태 루트에 기록 |
 | `logDir` | `logs` | 일별 로그 파일 폴더 (`launcher-YYYYMMDD.log`, 14일 보관) |
 | `maxBackupCount` | `3` | 보관할 백업 개수. 초과분은 오래된 것부터 자동 삭제 |
 | `launchAfterUpdate` | `true` | 업데이트 후 앱 자동 실행 |
@@ -62,12 +71,14 @@ UeDtLauncher sample-config --output launcher.config.json
 | `launchArguments` | - | 앱 실행 인자 배열. 예: `["-log"]` |
 | `removeFilesNotInManifest` | `false` | manifest에 없는 설치 파일 삭제 (깨끗한 동기화를 원하면 true) |
 | `maxRetryCount` / `httpTimeoutSeconds` | `3` / `120` | 다운로드 재시도 횟수 / HTTP 타임아웃(초). 4xx 오류는 재시도하지 않고, 일시 오류만 지수 백오프로 재시도합니다. (`sample-config` 템플릿은 `httpTimeoutSeconds`를 넉넉하게 `300`으로 적어둡니다) |
-| `serviceMode` | - | 무인 서버용. `{ "intervalSeconds": 300, "autoRestartApp": true, "processName": "m7at10_dt" }` — 자세한 내용은 [service-mode.md](service-mode.md) |
-| `selfUpdate` | - | 런처 자체 업데이트. `autoApply: true`면 다음 실행 시 자동 교체 |
+| `serviceMode` | - | 무인 서버용. 다운로드·검증 후 앱을 중지하며 시작 실패 시 자동 롤백 가능. 자세한 내용은 [service-mode.md](service-mode.md) |
+| `selfUpdate` | - | 런처 자체 업데이트. `autoApply: true`면 다음 실행 시 자동 교체. `requireSignedManifests: true`일 때는 자체 업데이트 manifest도 서명 설정이 필수 |
 | `windowsIntegration` | - | Windows 바로가기/앱 등록(선택). `{ "appName", "publisher", "shortcutName", "iconPath", "createDesktopShortcut", "createStartMenuShortcut", "registerAppEntry" }` — 기본은 모두 끔(false) |
-| `packages` | `[]` | (고급) 클라이언트가 ZIP 패키지를 통째로 받아 푸는 별도 기능. 일반 차등 업데이트에는 불필요 |
+| `packages` | `[]` | (고급) ZIP/7z를 staging에서 검증·해제한 뒤 본 업데이트와 같은 transaction으로 적용. `required=false` 패키지는 실패 시 건너뜀 |
 | `projectAssetsDir` | `assets/projects` | GUI 프로젝트 카드 이미지 등 로컬 에셋 폴더. [launcher-ui-customization.md](launcher-ui-customization.md) 참고 |
 | `projects` | - | GUI 프로젝트 카드 목록(이름/설명/이미지/정렬/프로필별 표시). [launcher-ui-customization.md](launcher-ui-customization.md) 참고 |
+
+파일 적용과 `installed-manifest.json`/`install-state.json` 기록은 하나의 transaction으로 처리됩니다. 적용 도중 프로세스가 중단되면 프로젝트 상태 루트의 `transaction.json`을 다음 실행에서 감지하여 이전 백업으로 자동 복구합니다.
 
 ### 역할별 설정 예시
 
@@ -108,7 +119,15 @@ UeDtLauncher sample-config --output launcher.config.json
   "environment": "prod", "channel": "stable", "versionPolicy": "latest",
   "targetPlatform": "windows-x64",
   "launchArguments": ["-RenderOffscreen", "-PixelStreamingURL=ws://localhost:8888"],
-  "serviceMode": { "intervalSeconds": 300, "autoRestartApp": true, "processName": "m7at10_dt" }
+  "serviceMode": {
+    "intervalSeconds": 300,
+    "autoRestartApp": true,
+    "startupGraceSeconds": 10,
+    "healthCheckUrl": "http://127.0.0.1:8080/health",
+    "healthCheckTimeoutSeconds": 60,
+    "rollbackOnHealthCheckFailure": true,
+    "processName": "m7at10_dt"
+  }
 }
 ```
 
@@ -126,6 +145,8 @@ UeDtLauncher sample-config --output launcher.config.json
 - **설정 팝업** — 설치 버전/캐시·백업 용량 확인, 설치 폴더 열기, **이전 버전으로 롤백**, 로그 ZIP 저장
 
 오류가 나면 알기 쉬운 메시지의 오류 창이 뜨고 **다시 시도** 버튼으로 재시도할 수 있습니다. 문제 보고 시 "로그 ZIP 저장"으로 만든 파일을 관리자에게 보내세요.
+
+키보드에서는 `F5`로 실행, `F6`으로 상태 확인을 시작할 수 있으며 Tab 이동과 화면 읽기용 이름을 제공합니다. 일반 사용자에게는 repair·cache·기술 예외가 노출되지 않고 개발자 profile에서만 표시됩니다.
 
 ### 개발자 모드 (`clientProfile: "developer"`)
 
@@ -149,6 +170,9 @@ UeDtLauncher <command> [options]
 | `generate-nginx-acl` | 프로젝트별 IP 허용목록 → nginx 설정 생성 | `--allowlist` `--output`(생략 시 stdout) |
 | `sign-manifest` | manifest/catalog ECDSA 서명 생성 | `--manifest` `--private-key` `--output` |
 | `sample-config` | 설정 템플릿 생성 | `--output` |
+| `doctor` | 설정·credential·서명키·디스크·Agent·선택적 catalog 연결 점검 | `--config` `--online` |
+| `diagnostics export` | 민감정보를 제거한 지원용 ZIP 생성 | `--config` `--output` |
+| `credential` | Bearer token을 설정 파일과 분리해 저장·확인·삭제 | `set/status/delete` `--name` |
 
 > Windows에서 런처는 GUI 앱으로 빌드되어 **더블클릭하면 검은 콘솔 창 없이 런처 창만** 뜹니다. CLI 명령을 cmd/PowerShell에서 실행하면 그 터미널에 출력이 보입니다.
 
@@ -199,7 +223,9 @@ cmd/PowerShell/SSH 터미널에서 직접 실행하면, 다운로드 동안 **�
 
 ### ③ 파일 로그는 항상 동일
 
-표시 방식과 무관하게, 모든 단계는 런처 폴더의 **`logs/launcher-YYYYMMDD.log`** 에 그대로 기록됩니다(일별, 14일 보관 — CLI/GUI/서비스 공통). 진행 바를 쓰든 평문 줄을 쓰든 파일 로그 내용은 동일합니다.
+표시 방식과 무관하게, 모든 단계는 런처 폴더의 **`logs/launcher-YYYYMMDD.log`** 에 그대로 기록됩니다(일별, 30일 보관 — CLI/GUI/서비스 공통). 진행 바를 쓰든 평문 줄을 쓰든 파일 로그 내용은 동일합니다.
+
+상용 모드에서는 같은 위치에 `launcher-YYYYMMDD.jsonl` 구조화 로그도 생성됩니다. 파일당 10MB, 30일, 전체 200MB로 제한되며 Authorization, Bearer token, URL 자격정보와 사용자 홈 경로는 기록 전에 제거됩니다. 문제 전달 시 원본 폴더 대신 `diagnostics export`로 만든 ZIP을 사용하십시오.
 
 ## 4. 무인 서버(픽셀 스트리밍) 운영
 

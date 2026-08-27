@@ -10,6 +10,7 @@ UE-DT Launcher는 Unreal Engine 패키징 결과물을 **리눅스 업데이트 
 | **배포 담당자** — 빌드를 서버에 올린다 | [guide-02 — 패키징 파일 업로드(릴리스)](guide-02-publish-package.md) |
 | **사용자/운영자** — 런처를 설치·실행한다 | [guide-03 — 런처 사용법](guide-03-launcher-usage.md) · [화면 사용법](launcher-user-guide.md) |
 | **픽셀 스트리밍/무인 서버** | [service-mode — 무인 자동 업데이트](service-mode.md) |
+| **사내 상용 설치·운영 담당자** | [commercial-deployment — Agent, MSI/RPM, 인증·진단](commercial-deployment.md) |
 | **런처 화면 꾸미기** | [launcher-ui-customization](launcher-ui-customization.md) |
 
 처음 전체를 구축한다면 **guide-01 → guide-02 → guide-03 순서**로 보면 됩니다.

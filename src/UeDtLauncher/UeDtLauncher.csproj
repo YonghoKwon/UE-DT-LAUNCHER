@@ -15,6 +15,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="AtomicReleasePublisher.cs;BackupManager.cs;CatalogResolver.cs;CatalogUpdater.cs;CommercialSecurity.cs;Diagnostics.cs;DiskSpace.cs;FileLogger.cs;Hashing.cs;JsonFiles.cs;KnownValues.cs;LauncherEngine.cs;LauncherPaths.cs;ManagedAgent.cs;ManifestDownloader.cs;ManifestGenerator.cs;ManifestSignatureVerifier.cs;Models.cs;NginxAclGenerator.cs;PackageExtractor.cs;PreparedLauncherUpdate.cs;PreparedPackages.cs;SafePath.cs;SelfUpdateManager.cs;ServiceRunner.cs;SingleInstanceLock.cs;UpdateTransaction.cs;WindowsIntegration.cs" />
+    <ProjectReference Include="..\UeDtLauncher.Core\UeDtLauncher.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.14" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.14" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.14" />

@@ -8,6 +8,8 @@ UE-DT-LAUNCHER는 Unreal Engine 패키징 결과물을 Windows/Linux PC에 배�
 
 GitHub 저장소에는 `UeDtLauncher.exe` 실행 파일을 직접 커밋하지 않습니다. 저장소에는 소스 코드만 들어있고, 실행 파일은 로컬 PC 또는 GitHub Actions에서 `dotnet publish`로 생성해야 합니다.
 
+상용 배포는 portable EXE 복사 대신 Windows machine-wide MSI와 RHEL 8 RPM을 사용합니다. MSI는 GUI와 `UeDtLauncherAgent` Windows Service를 설치하고, RPM은 systemd Agent와 `%config(noreplace)` 설정을 설치합니다. 코드서명 인증서가 없는 개발 패키지는 파일명과 `BUILD-INFO.txt`에 `UNSIGNED-DEV`로 표시되며 운영 배포가 금지됩니다.
+
 Windows에서 바로 실행 파일을 만들려면:
 
 ```powershell
@@ -66,13 +68,16 @@ publish/linux-x64/UeDtLauncher
 - 파일별 SHA-256 비교
 - 변경/누락 파일만 다운로드
 - `.staging` 다운로드 후 검증
+- `.state/{projectId}/{platform}` 기반 프로젝트별 캐시·백업·설치 상태·PID 격리
 - `.backup` 백업 후 실제 설치 폴더 반영
 - 적용 실패 시 rollback
+- 중단된 적용 transaction을 다음 실행에서 자동 감지·롤백
 - HTTP Range 기반 이어받기 시도
 - 다운로드 retry
 - repair 모드
 - ZIP 패키지 다운로드/압축 해제
 - 7z 패키지 다운로드/압축 해제. 단, `7z`, `7zz`, `7za` 실행 파일이 PATH에 있어야 함
+- ZIP/7z 패키지를 staging에서 검증·해제한 뒤 본 업데이트와 같은 transaction으로 적용
 - 런처 자기 자신 업데이트 (`selfUpdate.autoApply` 활성 시 다음 실행에서 자동 교체)
 - Windows 바탕화면/시작 메뉴 shortcut 생성 옵션
 - manifest 생성 명령 (`--app-id` 지원)
@@ -87,7 +92,7 @@ publish/linux-x64/UeDtLauncher
 - 일별 파일 로그 (`logs/launcher-YYYYMMDD.log`, 14일 보관)
 - 설치 버전 기록 (`install-state.json`) 및 백업 보존 개수 관리 (`maxBackupCount`)
 - 이전 버전 롤백: CLI `rollback` 명령 + GUI 롤백 버튼
-- 무인 서버용 서비스 모드: `service` 명령 (주기 확인 → 앱 정지 → 업데이트 → 재실행)
+- 무인 서버용 서비스 모드: `service` 명령 (실행 중 사전 다운로드·검증 → 짧은 중단 적용 → 상태 확인 → 실패 시 자동 롤백)
 - GUI: 설치/최신 버전 나란히 표시, 다운로드 속도·파일 n/m·전체 % 진행률, 작업 중 버튼 비활성화
 - 리눅스 퍼블리싱 도구: `tools/*.sh` + rsync/scp 원격 업로드 (`--remote`)
 - xUnit 테스트 스위트 + CI 테스트 실행
@@ -144,7 +149,7 @@ publish/linux-x64/UeDtLauncher
 | [docs/guide-02-publish-package.md](docs/guide-02-publish-package.md) | 패키징 파일 업로드(ZIP) → manifest 생성 → catalog 갱신, 시나리오별 예시, 확인 |
 | [docs/guide-03-launcher-usage.md](docs/guide-03-launcher-usage.md) | 런처 사용법: 설정 전체 필드, GUI(일반/개발자), CLI 레퍼런스, 무인 서버, 문제 해결 |
 
-루트의 나머지 핵심: `docs/launcher-user-guide.md`(GUI 화면 사용법), `docs/launcher-ui-customization.md`(UI 커스터마이징), `docs/service-mode.md`(무인 서비스 모드).
+루트의 나머지 핵심: `docs/launcher-user-guide.md`(GUI 화면 사용법), `docs/launcher-ui-customization.md`(UI 커스터마이징), `docs/service-mode.md`(무인 서비스 모드), `docs/commercial-deployment.md`(사내 상용 설치·운영).
 
 덜 중요한 보조·레거시 문서는 [docs/reference/](docs/reference/)로 분리했습니다(퍼블리시 스크립트 상세, 구 서버 구성 문서들 — 서버 구성 정본은 guide-01).
 

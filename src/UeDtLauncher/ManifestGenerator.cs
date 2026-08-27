@@ -40,7 +40,7 @@ public static class ManifestGenerator
             });
         }
 
-        if (!manifest.Files.Any(file => string.Equals(file.Path, manifest.EntryPoint, StringComparison.OrdinalIgnoreCase)))
+        if (!manifest.Files.Any(file => string.Equals(file.Path, manifest.EntryPoint, SafePath.FileSystemComparison)))
         {
             throw new InvalidOperationException($"Entry point was not found in package directory: {entryPoint}");
         }

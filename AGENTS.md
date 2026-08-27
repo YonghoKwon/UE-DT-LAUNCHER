@@ -43,6 +43,11 @@ src/UeDtLauncher/
     MainWindow.axaml                 최소 Window XAML
     MainWindow.axaml.cs              실제 GUI 구성 및 동작
 
+src/UeDtLauncher.Core/              update/security/transaction 공용 assembly
+src/UeDtLauncher.Agent/             Windows Service/systemd 관리 Agent와 IPC
+installer/windows/                  WiX machine-wide MSI
+packaging/linux/                    RHEL 8 RPM spec와 systemd unit
+
 docs/
   README.md                          문서 색인 + 빠른 시작
   guide-01-linux-server-setup.md     서버 구성 정본

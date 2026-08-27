@@ -1,0 +1,21 @@
+[Unit]
+Description=UE-DT Launcher managed update agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=uedt
+Group=uedt
+ExecStart=/opt/ue-dt-launcher/UeDtLauncher.Agent
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+RuntimeDirectory=ue-dt-launcher
+RuntimeDirectoryMode=0770
+ProtectSystem=strict
+ReadWritePaths=/var/lib/ue-dt-launcher /var/log/ue-dt-launcher /run/ue-dt-launcher
+
+[Install]
+WantedBy=multi-user.target

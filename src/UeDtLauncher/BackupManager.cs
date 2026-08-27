@@ -18,9 +18,23 @@ public static class BackupManager
 
     public static string CreateBackupRoot(string backupDir)
     {
-        var root = Path.Combine(backupDir, DateTime.UtcNow.ToString("yyyyMMddHHmmss"));
-        Directory.CreateDirectory(root);
-        return root;
+        var prefix = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+        for (var suffix = 0; suffix < 100; suffix++)
+        {
+            var name = suffix == 0 ? prefix : $"{prefix}-{suffix:00}";
+            var root = Path.Combine(backupDir, name);
+            try
+            {
+                if (Directory.Exists(root)) continue;
+                Directory.CreateDirectory(root);
+                return root;
+            }
+            catch (IOException) when (suffix < 99)
+            {
+            }
+        }
+
+        throw new IOException($"Could not allocate a unique backup directory in: {backupDir}");
     }
 
     public static async Task WriteBackupMetadataAsync(string backupRoot, BackupInfo info, string installedManifestPath, string installStatePath, CancellationToken cancellationToken = default)
@@ -40,7 +54,12 @@ public static class BackupManager
         foreach (var directory in Directory.EnumerateDirectories(backupDir).OrderByDescending(Path.GetFileName, StringComparer.Ordinal))
         {
             var name = Path.GetFileName(directory);
-            if (name.Length != 14 || !name.All(char.IsAsciiDigit)) continue;
+            var timestamp = name.Length >= 14 ? name[..14] : string.Empty;
+            var suffixValid = name.Length == 14
+                              || (name.Length == 17
+                                  && name[14] == '-'
+                                  && name[15..].All(char.IsAsciiDigit));
+            if (!suffixValid || !timestamp.All(char.IsAsciiDigit)) continue;
 
             BackupInfo? info = null;
             var infoPath = Path.Combine(directory, MetaDirName, InfoFileName);

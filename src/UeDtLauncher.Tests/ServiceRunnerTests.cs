@@ -24,4 +24,21 @@ public class ServiceRunnerTests
         // Service mode follows the catalog even when it points to an older version (intentional downgrade).
         Assert.True(ServiceRunner.IsUpdateAvailable(new InstallState { Version = "2.0.0" }, "1.0.0"));
     }
+
+    [Theory]
+    [InlineData("https://localhost:8080/health")]
+    [InlineData("http://127.0.0.1/ready")]
+    public void ValidateServiceConfig_AcceptsHttpHealthEndpoints(string url)
+    {
+        ServiceRunner.ValidateServiceConfig(new ServiceModeConfig { HealthCheckUrl = url });
+    }
+
+    [Theory]
+    [InlineData("ready")]
+    [InlineData("file:///tmp/healthy")]
+    public void ValidateServiceConfig_RejectsInvalidHealthEndpoints(string url)
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            ServiceRunner.ValidateServiceConfig(new ServiceModeConfig { HealthCheckUrl = url }));
+    }
 }
