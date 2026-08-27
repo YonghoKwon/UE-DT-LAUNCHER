@@ -8,6 +8,10 @@ public sealed partial class MainWindow
 {
     private Control InfoTile(string title, string value, string caption)
     {
+        var valueBlock = Txt(value, 17, true);
+        valueBlock.MaxLines = 2;
+        valueBlock.TextTrimming = TextTrimming.CharacterEllipsis;
+        ToolTip.SetTip(valueBlock, value);
         return Card(new StackPanel
         {
             Spacing = 6,
@@ -15,7 +19,7 @@ public sealed partial class MainWindow
             Children =
             {
                 Muted(title, 13),
-                Txt(value, 17, true),
+                valueBlock,
                 Muted(caption, 12)
             }
         }, 18);

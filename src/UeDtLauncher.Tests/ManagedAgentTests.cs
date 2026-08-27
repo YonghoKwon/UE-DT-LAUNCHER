@@ -25,7 +25,7 @@ public class ManagedAgentTests
     [Fact]
     public async Task FrameCodec_RoundTripsRequestAndRejectsOversizedLength()
     {
-        var request = new ManagedAgentRequest { Command = "check", ProjectId = "project-a" };
+        var request = new ManagedAgentRequest { Command = "check", ProjectId = "project-a", StreamProgress = true };
         await using var stream = new MemoryStream();
         await ManagedAgentFrameCodec.WriteAsync(stream, request);
         stream.Position = 0;
@@ -35,11 +35,81 @@ public class ManagedAgentTests
         Assert.Equal(request.CorrelationId, loaded.CorrelationId);
         Assert.Equal("check", loaded.Command);
         Assert.Equal("project-a", loaded.ProjectId);
+        Assert.True(loaded.StreamProgress);
 
         var invalidPrefix = BitConverter.GetBytes(ManagedAgentProtocol.MaxFrameBytes + 1);
         await using var invalid = new MemoryStream(invalidPrefix);
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             ManagedAgentFrameCodec.ReadAsync<ManagedAgentRequest>(invalid));
+    }
+
+    [Fact]
+    public async Task StreamingResponses_ReportProgressUntilFinalResponse()
+    {
+        var request = new ManagedAgentRequest { Command = "update", ProjectId = "project-a", StreamProgress = true };
+        await using var stream = new MemoryStream();
+        await ManagedAgentFrameCodec.WriteAsync(stream, new ManagedAgentResponse
+        {
+            CorrelationId = request.CorrelationId,
+            IsFinal = false,
+            Status = "progress",
+            Progress = [new ManagedAgentProgress("Download", "Downloading", 50)]
+        });
+        await ManagedAgentFrameCodec.WriteAsync(stream, new ManagedAgentResponse
+        {
+            CorrelationId = request.CorrelationId,
+            IsFinal = true,
+            Success = true,
+            Status = "completed",
+            ProjectStatus = new ManagedProjectStatus(true, "1.0.0", "1.0.0", false, 0, 0, true)
+        });
+        stream.Position = 0;
+        var progress = new List<ManagedAgentProgress>();
+
+        var response = await ManagedAgentClient.ReadStreamingResponsesAsync(stream, request, progress.Add);
+
+        Assert.Single(progress);
+        Assert.Equal("Download", progress[0].Stage);
+        Assert.True(response.Success);
+        Assert.False(response.ProjectStatus!.UpdateRequired);
+    }
+
+    [Fact]
+    public async Task ProjectStatus_ReportsVersionAndFileDifferences()
+    {
+        using var temp = new TempDirectory();
+        var install = Path.Combine(temp.Path, "app");
+        var state = Path.Combine(temp.Path, "state");
+        var backup = Path.Combine(temp.Path, "backup");
+        Directory.CreateDirectory(install);
+        Directory.CreateDirectory(state);
+        await File.WriteAllTextAsync(Path.Combine(install, "changed.bin"), "old");
+        var config = new LauncherConfig
+        {
+            InstallDir = install,
+            BackupDir = backup,
+            InstalledManifestPath = Path.Combine(state, "installed-manifest.json")
+        };
+        await JsonFiles.WriteAsync(config.InstalledManifestPath, new LauncherManifest { Version = "1.0.0" });
+        var manifest = new LauncherManifest
+        {
+            Version = "2.0.0",
+            Files =
+            {
+                new ManifestFile { Path = "changed.bin", Sha256 = new string('0', 64), Size = 3 },
+                new ManifestFile { Path = "missing.bin", Sha256 = new string('1', 64), Size = 1 }
+            }
+        };
+
+        var status = await ManagedProjectStatusInspector.InspectAsync(config, manifest);
+
+        Assert.True(status.IsInstalled);
+        Assert.Equal("1.0.0", status.InstalledVersion);
+        Assert.Equal("2.0.0", status.AvailableVersion);
+        Assert.True(status.UpdateRequired);
+        Assert.Equal(1, status.MissingFiles);
+        Assert.Equal(1, status.ChangedFiles);
+        Assert.False(status.HasBackup);
     }
 
     [Fact]

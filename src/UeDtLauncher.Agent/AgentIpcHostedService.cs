@@ -4,6 +4,7 @@ using System.Runtime.Versioning;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text.Json;
+using System.Threading.Channels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -125,9 +126,18 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
         {
             request = await ManagedAgentFrameCodec.ReadAsync<ManagedAgentRequest>(stream, cancellationToken);
             var validationError = ManagedAgentProtocol.Validate(request);
-            response = validationError is null
-                ? await HandleValidatedRequestAsync(request, identity, cancellationToken)
-                : Error(request, "rejected", validationError, identity);
+            if (validationError is not null)
+            {
+                response = Error(request, "rejected", validationError, identity);
+            }
+            else if (request.StreamProgress)
+            {
+                response = await HandleStreamingRequestAsync(stream, request, identity, cancellationToken);
+            }
+            else
+            {
+                response = await HandleValidatedRequestAsync(request, identity, cancellationToken);
+            }
         }
         catch (Exception ex) when (ex is InvalidDataException or JsonException or InvalidOperationException)
         {
@@ -137,10 +147,58 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
         await ManagedAgentFrameCodec.WriteAsync(stream, response, cancellationToken);
     }
 
-    private async Task<ManagedAgentResponse> HandleValidatedRequestAsync(
+    private async Task<ManagedAgentResponse> HandleStreamingRequestAsync(
+        Stream stream,
         ManagedAgentRequest request,
         string? identity,
         CancellationToken cancellationToken)
+    {
+        var channel = Channel.CreateUnbounded<ManagedAgentProgress>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = false
+        });
+        var writer = Task.Run(async () =>
+        {
+            await foreach (var progress in channel.Reader.ReadAllAsync(cancellationToken))
+            {
+                await ManagedAgentFrameCodec.WriteAsync(stream, new ManagedAgentResponse
+                {
+                    CorrelationId = request.CorrelationId,
+                    Success = true,
+                    Status = "progress",
+                    AgentVersion = AgentVersion(),
+                    IsFinal = false,
+                    Progress = [progress]
+                }, cancellationToken);
+            }
+        }, cancellationToken);
+
+        try
+        {
+            var response = await HandleValidatedRequestAsync(
+                request,
+                identity,
+                cancellationToken,
+                progress => channel.Writer.TryWrite(progress));
+            channel.Writer.TryComplete();
+            await writer;
+            response.Progress.Clear();
+            return response;
+        }
+        catch (Exception ex)
+        {
+            channel.Writer.TryComplete(ex);
+            try { await writer; } catch { /* the final error response remains authoritative */ }
+            throw;
+        }
+    }
+
+    private async Task<ManagedAgentResponse> HandleValidatedRequestAsync(
+        ManagedAgentRequest request,
+        string? identity,
+        CancellationToken cancellationToken,
+        Action<ManagedAgentProgress>? progressSink = null)
     {
         if (request.Command.Equals("status", StringComparison.OrdinalIgnoreCase))
         {
@@ -166,19 +224,22 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
             void AddProgress(LauncherProgress value)
             {
                 if (progress.Count >= 256) progress.RemoveAt(0);
-                progress.Add(new ManagedAgentProgress(value.Stage, DiagnosticRedactor.Redact(value.Message), value.Percent));
+                var item = new ManagedAgentProgress(value.Stage, DiagnosticRedactor.Redact(value.Message), value.Percent);
+                progress.Add(item);
+                progressSink?.Invoke(item);
             }
 
             switch (request.Command.ToLowerInvariant())
             {
                 case "check":
-                    using (var http = SecureHttpClientFactory.Create(config))
-                    {
+                        using (var http = SecureHttpClientFactory.Create(config))
+                        {
                         await CatalogResolver.ResolveAsync(config, http, (stage, message, percent) =>
                             AddProgress(new LauncherProgress(stage, message, percent)), cancellationToken);
                         var document = await ManifestDownloader.DownloadAsync(config, http, (stage, message, percent) =>
                             AddProgress(new LauncherProgress(stage, message, percent)), cancellationToken);
-                        return Success(request, identity, "checked", $"Release {document.Manifest.Version} metadata and signatures are valid.", progress);
+                        var projectStatus = await ManagedProjectStatusInspector.InspectAsync(config, document.Manifest, cancellationToken);
+                        return Success(request, identity, "checked", $"Release {document.Manifest.Version} metadata, files and signatures are valid.", progress, projectStatus);
                     }
                 case "update":
                 case "repair":
@@ -189,9 +250,11 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                         await CatalogResolver.ResolveAsync(config, http, (stage, message, percent) =>
                             AddProgress(new LauncherProgress(stage, message, percent)), cancellationToken);
                         using var engine = new LauncherEngine(config, AddProgress, new FileLogger(layout.LogRoot), echoToConsole: false);
-                        await engine.RunAsync(cancellationToken);
-                    }
-                    return Success(request, identity, "completed", config.RepairMode ? "Repair completed." : "Update completed.", progress);
+                            await engine.RunAsync(cancellationToken);
+                        }
+                    var installed = await JsonFiles.ReadAsync<LauncherManifest>(config.InstalledManifestPath, cancellationToken);
+                    var completedStatus = await ManagedProjectStatusInspector.InspectAsync(config, installed, cancellationToken);
+                    return Success(request, identity, "completed", config.RepairMode ? "Repair completed." : "Update completed.", progress, completedStatus);
                 case "rollback":
                     var backup = BackupManager.List(config.BackupDir).FirstOrDefault();
                     if (backup.BackupRoot is null) return Error(request, "no-backup", "No rollback backup is available.", identity);
@@ -253,7 +316,8 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
         string? identity,
         string status,
         string message,
-        List<ManagedAgentProgress> progress) => new()
+        List<ManagedAgentProgress> progress,
+        ManagedProjectStatus? projectStatus = null) => new()
         {
             CorrelationId = request.CorrelationId,
             Success = true,
@@ -261,7 +325,8 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
             Message = message,
             AgentVersion = AgentVersion(),
             ClientIdentity = identity,
-            Progress = progress
+            Progress = progress,
+            ProjectStatus = projectStatus
         };
 
     private static ManagedAgentResponse Error(

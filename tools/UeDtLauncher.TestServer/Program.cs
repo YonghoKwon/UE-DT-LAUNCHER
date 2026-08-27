@@ -42,7 +42,13 @@ await File.WriteAllBytesAsync(caPath, certificate.Export(X509ContentType.Cert));
 using var signingKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
 var signingPublicKeyPath = Path.Combine(root, "release-public.pem");
 await File.WriteAllTextAsync(signingPublicKeyPath, signingKey.ExportSubjectPublicKeyInfoPem());
-var payload = Encoding.UTF8.GetBytes("UE-DT commercial HTTPS update payload\n");
+var fakeGameSource = OperatingSystem.IsWindows()
+    ? Path.Combine(Environment.SystemDirectory, "whoami.exe")
+    : "/usr/bin/true";
+if (!File.Exists(fakeGameSource))
+    throw new FileNotFoundException("The fake game executable is unavailable.", fakeGameSource);
+var payload = await File.ReadAllBytesAsync(fakeGameSource);
+var fakeGameName = OperatingSystem.IsWindows() ? "fake-game.exe" : "fake-game";
 var fileSha = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
 var baseUrl = $"https://localhost:{port}";
 var manifest = new LauncherManifest
@@ -51,11 +57,11 @@ var manifest = new LauncherManifest
     Version = "1.0.0",
     Channel = "stable",
     Platform = "windows-x64",
-    EntryPoint = "app.bin",
+    EntryPoint = fakeGameName,
     BaseUrl = baseUrl + "/files",
     Files =
     {
-        new ManifestFile { Path = "app.bin", Url = "app.bin", Size = payload.Length, Sha256 = fileSha }
+        new ManifestFile { Path = fakeGameName, Url = fakeGameName, Size = payload.Length, Sha256 = fileSha }
     }
 };
 var manifestJson = JsonSerializer.Serialize(manifest, JsonFiles.Options);
@@ -138,7 +144,10 @@ app.MapGet("/catalog.json", () => Results.Text(catalogJson, "application/json"))
 app.MapGet("/catalog.json.sig", () => Results.Text(catalogSignature, "application/json"));
 app.MapGet("/manifest.json", () => Results.Text(manifestJson, "application/json"));
 app.MapGet("/manifest.json.sig", () => Results.Text(manifestSignature, "application/json"));
-app.MapGet("/files/app.bin", () => Results.Bytes(payload, "application/octet-stream"));
+app.MapGet("/files/{fileName}", (string fileName) =>
+    fileName.Equals(fakeGameName, StringComparison.Ordinal)
+        ? Results.Bytes(payload, "application/octet-stream")
+        : Results.NotFound());
 app.Lifetime.ApplicationStarted.Register(() => Console.WriteLine(JsonSerializer.Serialize(new
 {
     status = "ready",
