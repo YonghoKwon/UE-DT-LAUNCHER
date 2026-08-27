@@ -40,6 +40,7 @@ public sealed class ManagedAgentRequest
     public string CorrelationId { get; set; } = Guid.NewGuid().ToString("N");
     public string Command { get; set; } = "status";
     public string? ProjectId { get; set; }
+    public bool StreamProgress { get; set; }
 }
 
 public sealed class ManagedAgentResponse
@@ -53,9 +54,62 @@ public sealed class ManagedAgentResponse
     public string? ClientIdentity { get; set; }
     public bool IsFinal { get; set; } = true;
     public List<ManagedAgentProgress> Progress { get; set; } = new();
+    public ManagedProjectStatus? ProjectStatus { get; set; }
 }
 
 public sealed record ManagedAgentProgress(string Stage, string Message, double? Percent);
+
+public sealed record ManagedProjectStatus(
+    bool IsInstalled,
+    string? InstalledVersion,
+    string? AvailableVersion,
+    bool UpdateRequired,
+    int MissingFiles,
+    int ChangedFiles,
+    bool HasBackup);
+
+public static class ManagedProjectStatusInspector
+{
+    public static async Task<ManagedProjectStatus> InspectAsync(
+        LauncherConfig config,
+        LauncherManifest availableManifest,
+        CancellationToken cancellationToken = default)
+    {
+        LauncherManifest? installedManifest = null;
+        if (File.Exists(config.InstalledManifestPath))
+        {
+            installedManifest = await JsonFiles.ReadAsync<LauncherManifest>(config.InstalledManifestPath, cancellationToken);
+        }
+
+        var missing = 0;
+        var changed = 0;
+        foreach (var file in availableManifest.Files)
+        {
+            var installedPath = SafePath.ResolveInside(config.InstallDir, file.Path);
+            if (!File.Exists(installedPath))
+            {
+                missing++;
+                continue;
+            }
+
+            if (!await Hashing.Sha256MatchesAsync(installedPath, file.Sha256, cancellationToken)) changed++;
+        }
+
+        var installedVersion = installedManifest?.Version;
+        var updateRequired = installedManifest is null
+                             || !string.Equals(installedVersion, availableManifest.Version, StringComparison.OrdinalIgnoreCase)
+                             || missing > 0
+                             || changed > 0;
+        return new ManagedProjectStatus(
+            installedManifest is not null,
+            installedVersion,
+            availableManifest.Version,
+            updateRequired,
+            missing,
+            changed,
+            BackupManager.List(config.BackupDir).Count > 0);
+    }
+}
 
 public sealed record ManagedLauncherPathLayout(
     string InstallRoot,
@@ -224,6 +278,47 @@ public sealed class ManagedAgentClient(string? endpoint = null)
         if (!string.Equals(response.CorrelationId, request.CorrelationId, StringComparison.Ordinal))
             throw new InvalidDataException("Agent response correlationId did not match the request.");
         return response;
+    }
+
+    public async Task<ManagedAgentResponse> SendStreamingAsync(
+        string command,
+        string? projectId,
+        Action<ManagedAgentProgress> onProgress,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(onProgress);
+        var request = new ManagedAgentRequest
+        {
+            Command = command,
+            ProjectId = projectId,
+            StreamProgress = true
+        };
+        var validationError = ManagedAgentProtocol.Validate(request);
+        if (validationError is not null) throw new InvalidOperationException(validationError);
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(timeout ?? TimeSpan.FromMinutes(30));
+        await using var stream = await ConnectAsync(timeoutCts.Token);
+        await ManagedAgentFrameCodec.WriteAsync(stream, request, timeoutCts.Token);
+        return await ReadStreamingResponsesAsync(stream, request, onProgress, timeoutCts.Token);
+    }
+
+    internal static async Task<ManagedAgentResponse> ReadStreamingResponsesAsync(
+        Stream stream,
+        ManagedAgentRequest request,
+        Action<ManagedAgentProgress> onProgress,
+        CancellationToken cancellationToken = default)
+    {
+        while (true)
+        {
+            var response = await ManagedAgentFrameCodec.ReadAsync<ManagedAgentResponse>(stream, cancellationToken);
+            if (!string.Equals(response.CorrelationId, request.CorrelationId, StringComparison.Ordinal))
+                throw new InvalidDataException("Agent response correlationId did not match the request.");
+
+            foreach (var progress in response.Progress) onProgress(progress);
+            if (response.IsFinal) return response;
+        }
     }
 
     private async Task<Stream> ConnectAsync(CancellationToken cancellationToken)
