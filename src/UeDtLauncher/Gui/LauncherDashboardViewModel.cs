@@ -3,6 +3,27 @@ using System.Runtime.CompilerServices;
 
 namespace UeDtLauncher.Gui;
 
+public enum GeneralLauncherState
+{
+    Initializing,
+    ConfigurationRequired,
+    Checking,
+    NotInstalled,
+    UpdateAvailable,
+    Ready,
+    Working,
+    RecoverableError
+}
+
+public enum PrimaryActionKind
+{
+    Disabled,
+    InstallAndLaunch,
+    UpdateAndLaunch,
+    Launch,
+    RetryCheck
+}
+
 public sealed record LauncherUiCapabilities(
     bool CanChangeReleaseTrack,
     bool CanRepair,
@@ -28,6 +49,7 @@ public sealed class LauncherDashboardViewModel : INotifyPropertyChanged
     private string _installDetail = "상태 확인을 눌러 설치 상태를 확인하세요.";
     private string _releaseNotes = "릴리스 노트가 없습니다.";
     private string _agentState = "Agent 확인 중";
+    private GeneralLauncherState _generalState = GeneralLauncherState.Initializing;
     private bool _running;
 
     public LauncherConfig Config { get => _config; set => Set(ref _config, value); }
@@ -39,6 +61,7 @@ public sealed class LauncherDashboardViewModel : INotifyPropertyChanged
     public string InstallDetail { get => _installDetail; set => Set(ref _installDetail, value); }
     public string ReleaseNotes { get => _releaseNotes; set => Set(ref _releaseNotes, value); }
     public string AgentState { get => _agentState; set => Set(ref _agentState, value); }
+    public GeneralLauncherState GeneralState { get => _generalState; set => Set(ref _generalState, value); }
     public bool Running { get => _running; set => Set(ref _running, value); }
     public bool IsDeveloper => Capabilities.CanViewTechnicalErrors;
     public LauncherUiCapabilities Capabilities => LauncherUiCapabilities.ForProfile(Config.ClientProfile);

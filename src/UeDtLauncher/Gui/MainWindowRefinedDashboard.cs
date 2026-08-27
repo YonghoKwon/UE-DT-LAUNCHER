@@ -14,6 +14,7 @@ namespace UeDtLauncher.Gui;
 
 public sealed partial class MainWindow : Window
 {
+    private readonly LauncherStartupOptions _startupOptions;
     private readonly LauncherDashboardViewModel _viewModel = new();
     private LauncherConfig _config { get => _viewModel.Config; set => _viewModel.Config = value; }
     private ProjectUiConfig _selectedProject { get => _viewModel.SelectedProject; set => _viewModel.SelectedProject = value; }
@@ -28,6 +29,7 @@ public sealed partial class MainWindow : Window
     private bool _lastLaunch = true;
     private string _agentState { get => _viewModel.AgentState; set => _viewModel.AgentState = value; }
     private bool _agentStatusRefreshing;
+    private bool _startupInitialized;
     private readonly DispatcherTimer _agentStatusTimer = new() { Interval = TimeSpan.FromSeconds(3) };
 
     private TextBox? _configPathBox;
@@ -47,14 +49,19 @@ public sealed partial class MainWindow : Window
     private double _speedBytesPerSecond;
 
     private string BaseDir => Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
-    private string ConfigPath => ResolvePath(_configPathBox?.Text ?? "launcher.config.json");
+    private string ConfigPath => ResolvePath(_configPathBox?.Text ?? _startupOptions.ConfigPath);
     private bool IsDeveloper => _viewModel.IsDeveloper;
     private string CurrentPlatform => OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64";
     private ProjectStatePaths SelectedStatePaths =>
         LauncherPaths.For(_config, ConfigPath, _selectedProject.ProjectId, CurrentPlatform);
 
-    public MainWindow()
+    public MainWindow() : this(LauncherStartupOptions.Discover(Array.Empty<string>()))
     {
+    }
+
+    public MainWindow(LauncherStartupOptions startupOptions)
+    {
+        _startupOptions = startupOptions;
         InitializeComponent();
         LoadConfig();
         try { _fileLogger = new FileLogger(LauncherPaths.ResolveConfigRelative(ConfigPath, _config.LogDir)); } catch { _fileLogger = null; }
@@ -62,7 +69,23 @@ public sealed partial class MainWindow : Window
         _agentStatusTimer.Tick += async (_, _) => await RefreshAgentStatusAsync();
         _agentStatusTimer.Start();
         Closed += (_, _) => _agentStatusTimer.Stop();
-        _ = RefreshAgentStatusAsync();
+        Opened += async (_, _) => await InitializeStartupAsync();
+    }
+
+    private async Task InitializeStartupAsync()
+    {
+        if (_startupInitialized) return;
+        _startupInitialized = true;
+        if (!File.Exists(ConfigPath))
+        {
+            _viewModel.GeneralState = GeneralLauncherState.ConfigurationRequired;
+            return;
+        }
+
+        _viewModel.GeneralState = GeneralLauncherState.Checking;
+        await RefreshAgentStatusAsync();
+        await RefreshCatalog(false, suppressDialog: true);
+        await RefreshInstallStatusAsync(suppressDialog: true);
     }
 
     private void LoadConfig()
@@ -76,7 +99,10 @@ public sealed partial class MainWindow : Window
         else
         {
             _installState = "오류";
-            _installDetail = $"설정 파일이 없습니다: {ConfigPath}";
+            _installDetail = IsDeveloper
+                ? $"설정 파일이 없습니다: {ConfigPath}"
+                : "런처 설정이 필요합니다. 관리자에게 문의해 주세요.";
+            _viewModel.GeneralState = GeneralLauncherState.ConfigurationRequired;
         }
 
         _config.TargetPlatform = CurrentPlatform;
@@ -204,13 +230,13 @@ public sealed partial class MainWindow : Window
         var bottom = new StackPanel { Spacing = 8 };
         if (IsDeveloper)
         {
-            _configPathBox = new TextBox { Text = "launcher.config.json", Watermark = "launcher.config.json", FontSize = 12, Background = B("#0F172A"), Foreground = Fg() };
+            _configPathBox = new TextBox { Text = ConfigPath, Watermark = "launcher.config.json", FontSize = 12, Background = B("#0F172A"), Foreground = Fg() };
             bottom.Children.Add(_configPathBox);
             bottom.Children.Add(SecondaryButton("설정 다시 읽기", (_, _) => { LoadConfig(); Build(); }, 38));
         }
         else
         {
-            _configPathBox = new TextBox { Text = "launcher.config.json", IsVisible = false };
+            _configPathBox = new TextBox { Text = ConfigPath, IsVisible = false };
             bottom.Children.Add(SecondaryButton("설정", (_, _) => GeneralSettings(), 42));
         }
         grid.Children.Add(AtRow(bottom, 4));
@@ -474,7 +500,7 @@ public sealed partial class MainWindow : Window
         return Card(panel, 20);
     }
 
-    private async Task RefreshCatalog(bool rebuild)
+    private async Task RefreshCatalog(bool rebuild, bool suppressDialog = false)
     {
         try
         {
@@ -489,7 +515,7 @@ public sealed partial class MainWindow : Window
         {
             _catalogState = "카탈로그 오류";
             AppendLog("카탈로그 확인 실패: " + FriendlyError(ex), true);
-            if (!IsDeveloper) ErrorDialog("카탈로그 확인 실패", FriendlyError(ex));
+            if (!IsDeveloper && !suppressDialog) ErrorDialog("카탈로그 확인 실패", FriendlyError(ex));
         }
         finally { if (rebuild) Build(); }
     }
@@ -555,7 +581,7 @@ public sealed partial class MainWindow : Window
         finally { _running = false; SetBusy(false); }
     }
 
-    private async Task RefreshInstallStatusAsync()
+    private async Task RefreshInstallStatusAsync(bool suppressDialog = false)
     {
         if (_running) return;
         _running = true; SetBusy(true); Progress(0);
@@ -595,7 +621,7 @@ public sealed partial class MainWindow : Window
             else { _installState = "최신 상태"; _installDetail = $"{version} 버전이 설치되어 있습니다."; }
             Progress(100); if (_statusText is not null) _statusText.Text = _installState; UpdateInstallTile();
         }
-        catch (Exception ex) { MarkError(ex, "상태 확인 실패"); }
+        catch (Exception ex) { MarkError(ex, "상태 확인 실패", showDialog: !suppressDialog); }
         finally { _running = false; SetBusy(false); }
     }
 
@@ -713,7 +739,7 @@ public sealed partial class MainWindow : Window
 
     private void Progress(double v) { var c = Math.Clamp(v, 0, 100); if (_progress is not null) _progress.Value = c; if (_percentText is not null) _percentText.Text = $"{c:0}%"; }
     private string FriendlyProgress(string stage, string message) => stage switch { "Catalog" => "배포 정보를 확인하고 있습니다...", "Manifest" => "업데이트 정보를 확인하고 있습니다...", "Plan" => "필요한 파일을 확인하고 있습니다...", "Download" => "필요한 파일을 다운로드하고 있습니다...", "Apply" => "업데이트를 적용하고 있습니다...", "Package" => "패키지를 처리하고 있습니다...", "Launch" => "프로젝트를 실행하고 있습니다...", _ => message };
-    private void MarkError(Exception ex, string status = "작업 실패") { if (_statusText is not null) _statusText.Text = status; _installState = "오류"; _installDetail = FriendlyError(ex); UpdateInstallTile(); AppendLog("오류: " + FriendlyError(ex), true); if (IsDeveloper) AppendLog(ex.ToString(), true); else ErrorDialog(status, FriendlyError(ex)); }
+    private void MarkError(Exception ex, string status = "작업 실패", bool showDialog = true) { if (_statusText is not null) _statusText.Text = status; _installState = "오류"; _installDetail = FriendlyError(ex); _viewModel.GeneralState = GeneralLauncherState.RecoverableError; UpdateInstallTile(); AppendLog("오류: " + FriendlyError(ex), true); if (IsDeveloper) AppendLog(ex.ToString(), true); else if (showDialog) ErrorDialog(status, FriendlyError(ex)); }
     private string FriendlyError(Exception ex) => _viewModel.FriendlyError(ex);
     private void UpdateInstallTile() { if (_installStateText is not null) { _installStateText.Text = _installState; _installStateText.Foreground = StatusBrush(_installState); } if (_installDetailText is not null) _installDetailText.Text = _installDetail; }
 
