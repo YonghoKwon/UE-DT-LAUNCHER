@@ -24,6 +24,25 @@ public enum PrimaryActionKind
     RetryCheck
 }
 
+public enum ServiceConnectionState
+{
+    Checking,
+    Connected,
+    Disconnected,
+    Error
+}
+
+public enum LauncherWorkflowStage
+{
+    None,
+    Catalog,
+    Download,
+    Verify,
+    Apply,
+    Launch,
+    Complete
+}
+
 public sealed record LauncherUiCapabilities(
     bool CanChangeReleaseTrack,
     bool CanRepair,
@@ -50,6 +69,8 @@ public sealed class LauncherDashboardViewModel : INotifyPropertyChanged
     private string _releaseNotes = "릴리스 노트가 없습니다.";
     private string _agentState = "Agent 확인 중";
     private GeneralLauncherState _generalState = GeneralLauncherState.Initializing;
+    private ManagedProjectStatus? _projectStatus;
+    private LauncherWorkflowStage _workflowStage;
     private bool _running;
 
     public LauncherConfig Config { get => _config; set => Set(ref _config, value); }
@@ -62,9 +83,66 @@ public sealed class LauncherDashboardViewModel : INotifyPropertyChanged
     public string ReleaseNotes { get => _releaseNotes; set => Set(ref _releaseNotes, value); }
     public string AgentState { get => _agentState; set => Set(ref _agentState, value); }
     public GeneralLauncherState GeneralState { get => _generalState; set => Set(ref _generalState, value); }
+    public ManagedProjectStatus? ProjectStatus { get => _projectStatus; set => Set(ref _projectStatus, value); }
+    public LauncherWorkflowStage WorkflowStage { get => _workflowStage; set => Set(ref _workflowStage, value); }
     public bool Running { get => _running; set => Set(ref _running, value); }
     public bool IsDeveloper => Capabilities.CanViewTechnicalErrors;
     public LauncherUiCapabilities Capabilities => LauncherUiCapabilities.ForProfile(Config.ClientProfile);
+    public PrimaryActionKind PrimaryAction => GeneralState switch
+    {
+        GeneralLauncherState.NotInstalled => PrimaryActionKind.InstallAndLaunch,
+        GeneralLauncherState.UpdateAvailable => PrimaryActionKind.UpdateAndLaunch,
+        GeneralLauncherState.Ready => PrimaryActionKind.Launch,
+        GeneralLauncherState.RecoverableError or GeneralLauncherState.ConfigurationRequired => PrimaryActionKind.RetryCheck,
+        _ => PrimaryActionKind.Disabled
+    };
+
+    public string PrimaryActionText => PrimaryAction switch
+    {
+        PrimaryActionKind.InstallAndLaunch => "설치 후 실행",
+        PrimaryActionKind.UpdateAndLaunch => "업데이트 후 실행",
+        PrimaryActionKind.Launch => "실행",
+        PrimaryActionKind.RetryCheck => "다시 확인",
+        _ => "상태 확인 중..."
+    };
+
+    public void ApplyProjectStatus(ManagedProjectStatus status)
+    {
+        ProjectStatus = status;
+        GeneralState = !status.IsInstalled
+            ? GeneralLauncherState.NotInstalled
+            : status.UpdateRequired
+                ? GeneralLauncherState.UpdateAvailable
+                : GeneralLauncherState.Ready;
+    }
+
+    public static string ConnectionLabel(
+        bool developer,
+        ServiceConnectionState state,
+        string? version = null) => (developer, state) switch
+    {
+        (true, ServiceConnectionState.Checking) => "Agent 확인 중",
+        (true, ServiceConnectionState.Connected) => $"연결됨 {version}".TrimEnd(),
+        (true, ServiceConnectionState.Error) => "Agent 오류",
+        (true, _) => "Agent 미연결",
+        (false, ServiceConnectionState.Checking) => "업데이트 서비스 확인 중",
+        (false, ServiceConnectionState.Connected) => "업데이트 서비스 정상",
+        (false, ServiceConnectionState.Error) => "업데이트 서비스 점검 필요",
+        _ => "업데이트 서비스 연결 필요"
+    };
+
+    public void ApplyProgressStage(string stage)
+    {
+        WorkflowStage = stage switch
+        {
+            "Catalog" => LauncherWorkflowStage.Catalog,
+            "Download" or "DownloadProgress" => LauncherWorkflowStage.Download,
+            "Manifest" or "Plan" => LauncherWorkflowStage.Verify,
+            "Apply" or "Package" or "Rollback" => LauncherWorkflowStage.Apply,
+            "Launch" => LauncherWorkflowStage.Launch,
+            _ => WorkflowStage
+        };
+    }
 
     public IEnumerable<ProjectUiConfig> VisibleProjects()
     {

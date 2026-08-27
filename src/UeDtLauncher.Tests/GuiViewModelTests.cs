@@ -77,6 +77,47 @@ public class GuiViewModelTests
         Assert.Contains("보안 검증", friendly);
     }
 
+    [Theory]
+    [InlineData(GeneralLauncherState.Initializing, PrimaryActionKind.Disabled, "상태 확인 중...")]
+    [InlineData(GeneralLauncherState.NotInstalled, PrimaryActionKind.InstallAndLaunch, "설치 후 실행")]
+    [InlineData(GeneralLauncherState.UpdateAvailable, PrimaryActionKind.UpdateAndLaunch, "업데이트 후 실행")]
+    [InlineData(GeneralLauncherState.Ready, PrimaryActionKind.Launch, "실행")]
+    [InlineData(GeneralLauncherState.RecoverableError, PrimaryActionKind.RetryCheck, "다시 확인")]
+    public void GeneralState_SelectsOnePrimaryAction(
+        GeneralLauncherState state,
+        PrimaryActionKind expectedAction,
+        string expectedText)
+    {
+        var model = new LauncherDashboardViewModel { GeneralState = state };
+
+        Assert.Equal(expectedAction, model.PrimaryAction);
+        Assert.Equal(expectedText, model.PrimaryActionText);
+    }
+
+    [Fact]
+    public void GeneralConnectionLabels_DoNotExposeAgentTerminology()
+    {
+        foreach (var state in Enum.GetValues<ServiceConnectionState>())
+        {
+            var label = LauncherDashboardViewModel.ConnectionLabel(false, state, "1.2.3");
+            Assert.DoesNotContain("Agent", label, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("서비스", label);
+        }
+    }
+
+    [Fact]
+    public void ProjectStatus_DrivesInstallUpdateAndReadyStates()
+    {
+        var model = new LauncherDashboardViewModel();
+
+        model.ApplyProjectStatus(new ManagedProjectStatus(false, null, "1.0.0", true, 2, 0, false));
+        Assert.Equal(GeneralLauncherState.NotInstalled, model.GeneralState);
+        model.ApplyProjectStatus(new ManagedProjectStatus(true, "1.0.0", "2.0.0", true, 0, 0, true));
+        Assert.Equal(GeneralLauncherState.UpdateAvailable, model.GeneralState);
+        model.ApplyProjectStatus(new ManagedProjectStatus(true, "2.0.0", "2.0.0", false, 0, 0, true));
+        Assert.Equal(GeneralLauncherState.Ready, model.GeneralState);
+    }
+
     [Fact]
     public void DeveloperProfile_ExposesCapabilitiesAndSanitizedTechnicalError()
     {

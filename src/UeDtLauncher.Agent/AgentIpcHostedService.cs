@@ -232,8 +232,8 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
             switch (request.Command.ToLowerInvariant())
             {
                 case "check":
-                    using (var http = SecureHttpClientFactory.Create(config))
-                    {
+                        using (var http = SecureHttpClientFactory.Create(config))
+                        {
                         await CatalogResolver.ResolveAsync(config, http, (stage, message, percent) =>
                             AddProgress(new LauncherProgress(stage, message, percent)), cancellationToken);
                         var document = await ManifestDownloader.DownloadAsync(config, http, (stage, message, percent) =>
@@ -250,9 +250,11 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                         await CatalogResolver.ResolveAsync(config, http, (stage, message, percent) =>
                             AddProgress(new LauncherProgress(stage, message, percent)), cancellationToken);
                         using var engine = new LauncherEngine(config, AddProgress, new FileLogger(layout.LogRoot), echoToConsole: false);
-                        await engine.RunAsync(cancellationToken);
-                    }
-                    return Success(request, identity, "completed", config.RepairMode ? "Repair completed." : "Update completed.", progress);
+                            await engine.RunAsync(cancellationToken);
+                        }
+                    var installed = await JsonFiles.ReadAsync<LauncherManifest>(config.InstalledManifestPath, cancellationToken);
+                    var completedStatus = await ManagedProjectStatusInspector.InspectAsync(config, installed, cancellationToken);
+                    return Success(request, identity, "completed", config.RepairMode ? "Repair completed." : "Update completed.", progress, completedStatus);
                 case "rollback":
                     var backup = BackupManager.List(config.BackupDir).FirstOrDefault();
                     if (backup.BackupRoot is null) return Error(request, "no-backup", "No rollback backup is available.", identity);

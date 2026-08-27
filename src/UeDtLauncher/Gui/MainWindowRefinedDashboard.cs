@@ -83,7 +83,15 @@ public sealed partial class MainWindow : Window
         }
 
         _viewModel.GeneralState = GeneralLauncherState.Checking;
-        await RefreshAgentStatusAsync();
+        var serviceAvailable = await RefreshAgentStatusAsync();
+        if (_config.IsManagedDeployment && !serviceAvailable)
+        {
+            _installState = "확인 필요";
+            _installDetail = "업데이트 서비스에 연결한 뒤 다시 확인해 주세요.";
+            _viewModel.GeneralState = GeneralLauncherState.RecoverableError;
+            Build();
+            return;
+        }
         await RefreshCatalog(false, suppressDialog: true);
         await RefreshInstallStatusAsync(suppressDialog: true);
     }
@@ -113,6 +121,7 @@ public sealed partial class MainWindow : Window
             _config.VersionPolicy = "latest";
             _config.RequestedVersion = null;
         }
+        _agentState = LauncherDashboardViewModel.ConnectionLabel(IsDeveloper, ServiceConnectionState.Checking);
 
         if (_config.Projects.Count == 0)
         {
@@ -180,22 +189,29 @@ public sealed partial class MainWindow : Window
         var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
         right.Children.Add(Pill(IsDeveloper ? "개발자" : "일반 사용자", IsDeveloper ? "#1D4ED8" : "#DBEAFE", IsDeveloper ? "#FFFFFF" : "#2563EB"));
         right.Children.Add(Pill(CurrentPlatform, IsDeveloper ? "#1E293B" : "#E0F2FE", IsDeveloper ? "#BFDBFE" : "#0369A1"));
-        right.Children.Add(Pill(_agentState, _agentState.StartsWith("연결", StringComparison.Ordinal) ? "#DCFCE7" : "#FEE2E2", _agentState.StartsWith("연결", StringComparison.Ordinal) ? "#166534" : "#991B1B"));
+        var serviceHealthy = _agentState.StartsWith("연결", StringComparison.Ordinal) || _agentState.EndsWith("정상", StringComparison.Ordinal);
+        var servicePill = Pill(_agentState, serviceHealthy ? "#DCFCE7" : "#FEE2E2", serviceHealthy ? "#166534" : "#991B1B");
+        ToolTip.SetTip(servicePill, IsDeveloper ? "관리 Agent 연결 상태" : "PC에서 업데이트를 안전하게 처리하는 서비스 상태");
+        right.Children.Add(servicePill);
         Grid.SetColumn(right, 2);
         header.Children.Add(right);
         return header;
     }
 
-    private async Task RefreshAgentStatusAsync()
+    private async Task<bool> RefreshAgentStatusAsync()
     {
-        if (_agentStatusRefreshing) return;
+        if (_agentStatusRefreshing) return _agentState.StartsWith("연결", StringComparison.Ordinal) || _agentState.EndsWith("정상", StringComparison.Ordinal);
         _agentStatusRefreshing = true;
-        var nextState = "Agent 미연결";
+        var nextState = LauncherDashboardViewModel.ConnectionLabel(IsDeveloper, ServiceConnectionState.Disconnected);
+        var connected = false;
         try
         {
             var response = await new ManagedAgentClient().SendAsync("status", timeout: TimeSpan.FromSeconds(2));
             var displayVersion = response.AgentVersion.Split('+')[0];
-            nextState = response.Success ? $"연결됨 {displayVersion}" : "Agent 오류";
+            connected = response.Success;
+            nextState = response.Success
+                ? LauncherDashboardViewModel.ConnectionLabel(IsDeveloper, ServiceConnectionState.Connected, displayVersion)
+                : LauncherDashboardViewModel.ConnectionLabel(IsDeveloper, ServiceConnectionState.Error);
         }
         catch
         {
@@ -204,9 +220,10 @@ public sealed partial class MainWindow : Window
         {
             _agentStatusRefreshing = false;
         }
-        if (string.Equals(_agentState, nextState, StringComparison.Ordinal)) return;
+        if (string.Equals(_agentState, nextState, StringComparison.Ordinal)) return connected;
         _agentState = nextState;
         await Dispatcher.UIThread.InvokeAsync(Build);
+        return connected;
     }
 
     private Control Sidebar()
@@ -444,11 +461,17 @@ public sealed partial class MainWindow : Window
     private Control GeneralActions()
     {
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("2.2*,*"), RowDefinitions = new RowDefinitions("*,*"), ColumnSpacing = 14, RowSpacing = 12, MinHeight = 132 };
-        var run = Track(PrimaryButton("▶ 실행", async (_, _) => await RunAsync(false, true), 132));
+        var run = Track(PrimaryButton("▶ " + _viewModel.PrimaryActionText, async (_, _) => await ExecutePrimaryActionAsync(), 132));
+        run.IsEnabled = _viewModel.PrimaryAction != PrimaryActionKind.Disabled && !_running;
         run.HotKey = new KeyGesture(Key.F5);
         Grid.SetRowSpan(run, 2);
         grid.Children.Add(run);
-        var status = Track(SecondaryButton("상태 확인", async (_, _) => await RefreshInstallStatusAsync(), 60));
+        var secondaryText = _viewModel.GeneralState == GeneralLauncherState.RecoverableError ? "문제 해결" : "상태 새로고침";
+        var status = Track(SecondaryButton(secondaryText, async (_, _) =>
+        {
+            if (_viewModel.GeneralState == GeneralLauncherState.RecoverableError) await TroubleshootAsync();
+            else await RefreshInstallStatusAsync();
+        }, 60));
         status.HotKey = new KeyGesture(Key.F6);
         grid.Children.Add(At(status, 1));
         var folder = SecondaryButton("설치 폴더", (_, _) => OpenInstallFolder(), 60);
@@ -493,11 +516,56 @@ public sealed partial class MainWindow : Window
         _percentText = Label("0%", 18, IsDeveloper ? B("#BFDBFE") : B("#2563EB"), true);
         header.Children.Add(At(_percentText, 1));
         panel.Children.Add(header);
+        if (!developerLog) panel.Children.Add(WorkflowSteps());
         _progress = new ProgressBar { Minimum = 0, Maximum = 100, Value = 0, Height = 12 };
         panel.Children.Add(_progress);
         _logBox = new TextBox { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = developerLog ? 260 : 72, Text = IsDeveloper ? $"config: {ConfigPath}{Environment.NewLine}profile: {_config.ClientProfile}{Environment.NewLine}platform: {CurrentPlatform}" : "업데이트 상태가 여기에 표시됩니다.", Background = B(IsDeveloper ? "#0B1220" : "#FFFFFF"), Foreground = Fg() };
         panel.Children.Add(_logBox);
         return Card(panel, 20);
+    }
+
+    private Control WorkflowSteps()
+    {
+        var row = new WrapPanel { Orientation = Orientation.Horizontal };
+        foreach (var (stage, text) in new[]
+                 {
+                     (LauncherWorkflowStage.Catalog, "배포 확인"),
+                     (LauncherWorkflowStage.Download, "다운로드"),
+                     (LauncherWorkflowStage.Verify, "검증"),
+                     (LauncherWorkflowStage.Apply, "설치"),
+                     (LauncherWorkflowStage.Launch, "실행")
+                 })
+        {
+            var active = _viewModel.WorkflowStage == stage;
+            var complete = _viewModel.WorkflowStage > stage;
+            row.Children.Add(new Border
+            {
+                Margin = new Thickness(0, 0, 8, 6),
+                Padding = new Thickness(10, 5),
+                CornerRadius = new CornerRadius(10),
+                Background = B(active ? "#DBEAFE" : complete ? "#DCFCE7" : "#F3F4F6"),
+                Child = Label((complete ? "✓ " : string.Empty) + text, 12, B(active ? "#1D4ED8" : complete ? "#166534" : "#6B7280"), active || complete)
+            });
+        }
+        AutomationProperties.SetName(row, "업데이트 진행 단계");
+        return row;
+    }
+
+    private async Task ExecutePrimaryActionAsync()
+    {
+        switch (_viewModel.PrimaryAction)
+        {
+            case PrimaryActionKind.InstallAndLaunch:
+            case PrimaryActionKind.UpdateAndLaunch:
+            case PrimaryActionKind.Launch:
+                await RunAsync(false, true);
+                break;
+            case PrimaryActionKind.RetryCheck:
+                await RefreshAgentStatusAsync();
+                await RefreshCatalog(false, suppressDialog: true);
+                await RefreshInstallStatusAsync();
+                break;
+        }
     }
 
     private async Task RefreshCatalog(bool rebuild, bool suppressDialog = false)
@@ -550,15 +618,17 @@ public sealed partial class MainWindow : Window
     {
         if (_running) return;
         if (IsDeveloper && launch && !await ConfirmDevLaunch()) return;
-        _running = true; SetBusy(true); _lastRepair = repair; _lastLaunch = launch; Progress(0); ResetSpeedTracking();
+        _running = true; _viewModel.GeneralState = GeneralLauncherState.Working; SetBusy(true); _lastRepair = repair; _lastLaunch = launch; Progress(0); ResetSpeedTracking();
         try
         {
             if (_statusText is not null) _statusText.Text = launch ? "실행 준비 중..." : "업데이트 확인 중...";
             var c = await RunConfig(repair, launch);
             if (c.IsManagedDeployment)
             {
-                var response = await new ManagedAgentClient().SendAsync(repair ? "repair" : "update", c.ProjectId);
-                foreach (var progress in response.Progress) UiProgress(progress.Stage, progress.Message, progress.Percent);
+                var response = await new ManagedAgentClient().SendStreamingAsync(
+                    repair ? "repair" : "update",
+                    c.ProjectId,
+                    progress => Dispatcher.UIThread.Post(() => UiProgress(progress.Stage, progress.Message, progress.Percent)));
                 if (!response.Success) throw new InvalidOperationException(response.Message);
                 if (launch) _ = await ManagedAppLauncher.LaunchAsync(c);
             }
@@ -573,6 +643,8 @@ public sealed partial class MainWindow : Window
                     await engine.RunAsync();
                 });
             }
+            _viewModel.GeneralState = GeneralLauncherState.Ready;
+            _viewModel.WorkflowStage = LauncherWorkflowStage.Complete;
             _installState = "최신 상태"; _installDetail = "현재 설치된 파일이 최신 배포 정보와 일치합니다.";
             Build(); // refresh the version tile and release info with the new install state
             Progress(100); if (_statusText is not null) _statusText.Text = launch ? "실행되었습니다." : "최신 상태입니다.";
@@ -584,21 +656,37 @@ public sealed partial class MainWindow : Window
     private async Task RefreshInstallStatusAsync(bool suppressDialog = false)
     {
         if (_running) return;
-        _running = true; SetBusy(true); Progress(0);
+        _running = true; _viewModel.GeneralState = GeneralLauncherState.Checking; SetBusy(true); Progress(0);
         try
         {
             if (_statusText is not null) _statusText.Text = "설치 상태 확인 중..."; Progress(5);
             var c = await RunConfig(false, false);
             if (c.IsManagedDeployment)
             {
-                var response = await new ManagedAgentClient().SendAsync("check", c.ProjectId);
-                foreach (var progress in response.Progress) UiProgress(progress.Stage, progress.Message, progress.Percent);
+                var response = await new ManagedAgentClient().SendStreamingAsync(
+                    "check",
+                    c.ProjectId,
+                    progress => Dispatcher.UIThread.Post(() => UiProgress(progress.Stage, progress.Message, progress.Percent)),
+                    timeout: TimeSpan.FromMinutes(5));
                 if (!response.Success) throw new InvalidOperationException(response.Message);
-                _installState = ReadInstalledVersion() is null ? "설치 필요" : "확인 완료";
-                _installDetail = IsDeveloper ? response.Message : "업데이트 서버의 배포 정보와 서명을 확인했습니다.";
+                if (response.ProjectStatus is not null) _viewModel.ApplyProjectStatus(response.ProjectStatus);
+                else _viewModel.GeneralState = ReadInstalledVersion() is null ? GeneralLauncherState.NotInstalled : GeneralLauncherState.Ready;
+                _installState = _viewModel.GeneralState switch
+                {
+                    GeneralLauncherState.NotInstalled => "설치 필요",
+                    GeneralLauncherState.UpdateAvailable => "업데이트 가능",
+                    _ => "최신 상태"
+                };
+                _installDetail = IsDeveloper
+                    ? response.Message
+                    : response.ProjectStatus is { UpdateRequired: true, IsInstalled: true } status
+                        ? $"새 버전 {status.AvailableVersion}을 설치할 수 있습니다."
+                        : response.ProjectStatus is { IsInstalled: false }
+                            ? "프로젝트를 처음 설치할 수 있습니다."
+                            : "설치된 파일이 최신 배포와 일치합니다.";
+                Build();
                 Progress(100);
                 if (_statusText is not null) _statusText.Text = _installState;
-                UpdateInstallTile();
                 return;
             }
             var (missing, changed, total, version) = await Task.Run(async () =>
@@ -616,13 +704,93 @@ public sealed partial class MainWindow : Window
                 }
                 return (missingCount, changedCount, manifest.Files.Count, manifest.Version);
             });
-            if (missing == total) { _installState = "설치 필요"; _installDetail = "아직 설치된 파일을 찾지 못했습니다."; }
-            else if (missing > 0 || changed > 0) { _installState = "업데이트 가능"; _installDetail = $"누락 {missing}개, 변경 {changed}개 파일이 있습니다."; }
-            else { _installState = "최신 상태"; _installDetail = $"{version} 버전이 설치되어 있습니다."; }
-            Progress(100); if (_statusText is not null) _statusText.Text = _installState; UpdateInstallTile();
+            if (missing == total) { _viewModel.GeneralState = GeneralLauncherState.NotInstalled; _installState = "설치 필요"; _installDetail = "아직 설치된 파일을 찾지 못했습니다."; }
+            else if (missing > 0 || changed > 0) { _viewModel.GeneralState = GeneralLauncherState.UpdateAvailable; _installState = "업데이트 가능"; _installDetail = $"누락 {missing}개, 변경 {changed}개 파일이 있습니다."; }
+            else { _viewModel.GeneralState = GeneralLauncherState.Ready; _installState = "최신 상태"; _installDetail = $"{version} 버전이 설치되어 있습니다."; }
+            Build();
+            Progress(100); if (_statusText is not null) _statusText.Text = _installState;
         }
         catch (Exception ex) { MarkError(ex, "상태 확인 실패", showDialog: !suppressDialog); }
         finally { _running = false; SetBusy(false); }
+    }
+
+    private async Task TroubleshootAsync()
+    {
+        if (_running) return;
+        _running = true;
+        _viewModel.GeneralState = GeneralLauncherState.Working;
+        SetBusy(true);
+        Progress(0);
+        try
+        {
+            var client = new ManagedAgentClient();
+            var service = await client.SendAsync("status", timeout: TimeSpan.FromSeconds(3));
+            if (!service.Success) throw new InvalidOperationException(service.Message);
+            var config = await RunConfig(false, false);
+            var check = await client.SendStreamingAsync(
+                "check",
+                config.ProjectId,
+                progress => Dispatcher.UIThread.Post(() => UiProgress(progress.Stage, progress.Message, progress.Percent)),
+                timeout: TimeSpan.FromMinutes(5));
+            if (!check.Success) throw new InvalidOperationException(check.Message);
+            if (check.ProjectStatus is not null) _viewModel.ApplyProjectStatus(check.ProjectStatus);
+
+            if (check.ProjectStatus is { UpdateRequired: true })
+            {
+                var repair = await client.SendStreamingAsync(
+                    "repair",
+                    config.ProjectId,
+                    progress => Dispatcher.UIThread.Post(() => UiProgress(progress.Stage, progress.Message, progress.Percent)));
+                if (!repair.Success) throw new InvalidOperationException(repair.Message);
+                var verified = await client.SendStreamingAsync(
+                    "check",
+                    config.ProjectId,
+                    progress => Dispatcher.UIThread.Post(() => UiProgress(progress.Stage, progress.Message, progress.Percent)),
+                    timeout: TimeSpan.FromMinutes(5));
+                if (!verified.Success || verified.ProjectStatus is { UpdateRequired: true })
+                    throw new InvalidOperationException(verified.Message);
+                if (verified.ProjectStatus is not null) _viewModel.ApplyProjectStatus(verified.ProjectStatus);
+            }
+
+            _viewModel.GeneralState = GeneralLauncherState.Ready;
+            _viewModel.WorkflowStage = LauncherWorkflowStage.Complete;
+            _installState = "문제 해결 완료";
+            _installDetail = "프로젝트 파일과 업데이트 서비스를 정상 상태로 복구했습니다.";
+            Progress(100);
+            Build();
+        }
+        catch (Exception ex)
+        {
+            var canRollback = _viewModel.ProjectStatus?.HasBackup == true;
+            if (canRollback && await ConfirmRollback("업데이트 서비스 최신 백업", null))
+            {
+                try
+                {
+                    var config = await RunConfig(false, false);
+                    var response = await new ManagedAgentClient().SendStreamingAsync(
+                        "rollback",
+                        config.ProjectId,
+                        progress => Dispatcher.UIThread.Post(() => UiProgress(progress.Stage, progress.Message, progress.Percent)),
+                        timeout: TimeSpan.FromMinutes(10));
+                    if (!response.Success) throw new InvalidOperationException(response.Message);
+                    _viewModel.GeneralState = GeneralLauncherState.Ready;
+                    _installState = "복구 완료";
+                    _installDetail = "안정적인 이전 버전으로 복구했습니다.";
+                    Progress(100);
+                    Build();
+                }
+                catch (Exception rollbackError) { MarkError(rollbackError, "문제 해결 실패"); }
+            }
+            else
+            {
+                MarkError(ex, "문제 해결 실패");
+            }
+        }
+        finally
+        {
+            _running = false;
+            SetBusy(false);
+        }
     }
 
     private async Task RollbackLatestAsync()
@@ -732,6 +900,7 @@ public sealed partial class MainWindow : Window
 
     private void UiProgress(string stage, string message, double? percent)
     {
+        _viewModel.ApplyProgressStage(stage);
         if (_statusText is not null) _statusText.Text = IsDeveloper ? $"{stage}: {message}" : FriendlyProgress(stage, message);
         if (percent.HasValue) Progress(percent.Value); else Progress(stage switch { "Catalog" => 10, "Manifest" => 20, "Plan" => 35, "Download" => Math.Max(_progress?.Value ?? 0, 45), "Apply" => 85, "Package" => 88, "Launch" => 95, _ => Math.Max(_progress?.Value ?? 0, 5) });
         AppendLog(IsDeveloper ? $"[{stage}] {message}" : FriendlyProgress(stage, message));
@@ -739,7 +908,18 @@ public sealed partial class MainWindow : Window
 
     private void Progress(double v) { var c = Math.Clamp(v, 0, 100); if (_progress is not null) _progress.Value = c; if (_percentText is not null) _percentText.Text = $"{c:0}%"; }
     private string FriendlyProgress(string stage, string message) => stage switch { "Catalog" => "배포 정보를 확인하고 있습니다...", "Manifest" => "업데이트 정보를 확인하고 있습니다...", "Plan" => "필요한 파일을 확인하고 있습니다...", "Download" => "필요한 파일을 다운로드하고 있습니다...", "Apply" => "업데이트를 적용하고 있습니다...", "Package" => "패키지를 처리하고 있습니다...", "Launch" => "프로젝트를 실행하고 있습니다...", _ => message };
-    private void MarkError(Exception ex, string status = "작업 실패", bool showDialog = true) { if (_statusText is not null) _statusText.Text = status; _installState = "오류"; _installDetail = FriendlyError(ex); _viewModel.GeneralState = GeneralLauncherState.RecoverableError; UpdateInstallTile(); AppendLog("오류: " + FriendlyError(ex), true); if (IsDeveloper) AppendLog(ex.ToString(), true); else if (showDialog) ErrorDialog(status, FriendlyError(ex)); }
+    private void MarkError(Exception ex, string status = "작업 실패", bool showDialog = true)
+    {
+        _installState = "오류";
+        _installDetail = FriendlyError(ex);
+        _viewModel.GeneralState = GeneralLauncherState.RecoverableError;
+        _viewModel.WorkflowStage = LauncherWorkflowStage.None;
+        Build();
+        if (_statusText is not null) _statusText.Text = status;
+        AppendLog("오류: " + FriendlyError(ex), true);
+        if (IsDeveloper) AppendLog(ex.ToString(), true);
+        else if (showDialog) ErrorDialog(status, FriendlyError(ex));
+    }
     private string FriendlyError(Exception ex) => _viewModel.FriendlyError(ex);
     private void UpdateInstallTile() { if (_installStateText is not null) { _installStateText.Text = _installState; _installStateText.Foreground = StatusBrush(_installState); } if (_installDetailText is not null) _installDetailText.Text = _installDetail; }
 
