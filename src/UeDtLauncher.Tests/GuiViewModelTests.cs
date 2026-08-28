@@ -147,6 +147,7 @@ public class GuiViewModelTests
         Assert.True(layout.ShowSidebar);
         Assert.False(layout.ShowTopProjectSelector);
         Assert.Equal(1160, layout.MinWidth);
+        Assert.Equal(124, layout.HeroHeight);
     }
 
     [Fact]

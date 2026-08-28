@@ -456,7 +456,7 @@ public sealed partial class MainWindow : Window
         var lower = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), ColumnSpacing = 16 };
         lower.Children.Add(ReleaseInfo());
         lower.Children.Add(At(StatusPanel(true), 1));
-        return new StackPanel { Spacing = 16, Children = { Hero(250), DeveloperActions(), lower } };
+        return new StackPanel { Spacing = 12, Children = { Hero(CurrentLayout().HeroHeight), DeveloperActions(), lower } };
     }
 
     private Control Hero(double h)
@@ -777,30 +777,91 @@ public sealed partial class MainWindow : Window
 
     private Control DeveloperActions()
     {
-        var panel = new StackPanel { Spacing = 12 };
-        var row1 = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*,*,*,*"), ColumnSpacing = 10 };
-        var run = Track(PrimaryButton("▶ 실행", async (_, _) => await RunAsync(false, true), 50));
+        var run = Track(CommandButton("실행", LauncherIconKind.Play, async (_, _) => await RunAsync(false, true), primary: true));
         run.HotKey = new KeyGesture(Key.F5);
-        row1.Children.Add(run);
-        Add(row1, Track(SecondaryButton("업데이트", async (_, _) => await RunAsync(false, false), 50)), 1);
-        Add(row1, Track(SecondaryButton("상태 확인", async (_, _) => await RefreshInstallStatusAsync(), 50)), 2);
-        Add(row1, Track(SecondaryButton("검증/복구", async (_, _) => await RunAsync(true, false), 50)), 3);
-        Add(row1, SecondaryButton("설치 폴더", (_, _) => OpenInstallFolder(), 50), 4);
-        Add(row1, Track(SecondaryButton("캐시 정리", (_, _) => ClearCache(), 50)), 5);
-        var row2 = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*,*,*,*"), ColumnSpacing = 10 };
-        row2.Children.Add(SecondaryButton("로그 ZIP", (_, _) => ExportLogsZip(), 42));
-        Add(row2, SecondaryButton("로그 지우기", (_, _) => ClearLog(), 42), 1);
-        Add(row2, Track(SecondaryButton("다시 시도", async (_, _) => await RunAsync(_lastRepair, _lastLaunch), 42)), 2);
-        Add(row2, Track(SecondaryButton("롤백", async (_, _) => await RollbackLatestAsync(), 42)), 3);
-        Add(row2, Track(SecondaryButton("백업 정리", (_, _) => CleanupBackups(), 42)), 4);
-        Add(row2, SecondaryButton("설정 팝업", (_, _) => DeveloperSettings(), 42), 5);
-        panel.Children.Add(row1); panel.Children.Add(row2);
-        return Card(panel, 16);
+        var status = Track(CommandButton("상태 확인", LauncherIconKind.Shield, async (_, _) => await RefreshInstallStatusAsync()));
+        status.HotKey = new KeyGesture(Key.F6);
+        var groups = new Grid { ColumnDefinitions = new ColumnDefinitions("1.05*,1.25*,1.35*"), ColumnSpacing = 10 };
+        groups.Children.Add(DeveloperCommandGroup(
+            "배포",
+            LauncherIconKind.Package,
+            run,
+            Track(CommandButton("업데이트", LauncherIconKind.Download, async (_, _) => await RunAsync(false, false))),
+            status));
+        groups.Children.Add(At(DeveloperCommandGroup(
+            "유지보수",
+            LauncherIconKind.Wrench,
+            Track(CommandButton("검증/복구", LauncherIconKind.Wrench, async (_, _) => await RunAsync(true, false))),
+            Track(CommandButton("롤백", LauncherIconKind.Refresh, async (_, _) => await RollbackLatestAsync())),
+            Track(CommandButton("캐시 정리", LauncherIconKind.Package, (_, _) => ClearCache())),
+            Track(CommandButton("백업 정리", LauncherIconKind.Package, (_, _) => CleanupBackups()))), 1));
+        groups.Children.Add(At(DeveloperCommandGroup(
+            "진단",
+            LauncherIconKind.Log,
+            CommandButton("설치 폴더", LauncherIconKind.Folder, (_, _) => OpenInstallFolder()),
+            CommandButton("로그 ZIP", LauncherIconKind.Log, (_, _) => ExportLogsZip()),
+            CommandButton("로그 지우기", LauncherIconKind.Log, (_, _) => ClearLog()),
+            Track(CommandButton("다시 시도", LauncherIconKind.Refresh, async (_, _) => await RunAsync(_lastRepair, _lastLaunch))),
+            CommandButton("설정", LauncherIconKind.Settings, (_, _) => DeveloperSettings())), 2));
+        return groups;
+    }
+
+    private Control DeveloperCommandGroup(string title, LauncherIconKind iconKind, params Button[] buttons)
+    {
+        var header = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 7,
+            Children =
+            {
+                LauncherIconFactory.Create(iconKind, 16, LauncherVisualTokens.MutedText(dark: true)),
+                Label(title, LauncherVisualTokens.FontBody, Fg(), true)
+            }
+        };
+        var columns = Math.Min(buttons.Length, 3);
+        var rows = (int)Math.Ceiling(buttons.Length / (double)columns);
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions(string.Join(',', Enumerable.Repeat("*", columns))),
+            RowDefinitions = new RowDefinitions(string.Join(',', Enumerable.Repeat("Auto", rows))),
+            ColumnSpacing = 7,
+            RowSpacing = 7
+        };
+        for (var index = 0; index < buttons.Length; index++)
+        {
+            Grid.SetColumn(buttons[index], index % columns);
+            Grid.SetRow(buttons[index], index / columns);
+            grid.Children.Add(buttons[index]);
+        }
+        return Card(new StackPanel { Spacing = 9, Children = { header, grid } }, 12);
+    }
+
+    private Button CommandButton(
+        string text,
+        LauncherIconKind iconKind,
+        EventHandler<RoutedEventArgs> handler,
+        bool primary = false)
+    {
+        var button = primary ? PrimaryButton(text, handler, 44) : SecondaryButton(text, handler, 44);
+        var foreground = primary ? Brushes.White : Fg();
+        button.Content = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Children =
+            {
+                LauncherIconFactory.Create(iconKind, 15, foreground),
+                Label(text, 12, foreground, true)
+            }
+        };
+        AutomationProperties.SetName(button, text);
+        return button;
     }
 
     private Control ReleaseInfo()
     {
-        return Card(new StackPanel { Spacing = 8, Children = { Txt("선택된 배포 정보", 18, true), KeyValue("프로젝트", _selectedProject.ProjectId), KeyValue("프로필", _config.ClientProfile), KeyValue("가동/개발", _config.Environment), KeyValue("채널", _config.Channel), KeyValue("버전 정책", _config.VersionPolicy == "exact" ? $"exact / {_config.RequestedVersion ?? "미입력"}" : "latest"), KeyValue("설치 버전", ReadInstalledVersion() ?? "미설치"), KeyValue("최신 버전", LatestCatalogVersion() ?? "카탈로그 확인 필요"), KeyValue("OS", CurrentPlatform), KeyValue("카탈로그", _catalogState), KeyValue("릴리스 노트", _releaseNotes), KeyValue("캐시/백업", StorageSummary()) } }, 18);
+        return Card(new StackPanel { Spacing = 7, Children = { Txt("선택된 배포 정보", LauncherVisualTokens.FontStatus, true), DeveloperKeyValue("프로젝트", _selectedProject.ProjectId), DeveloperKeyValue("프로필", _config.ClientProfile), DeveloperKeyValue("가동/개발", _config.Environment), DeveloperKeyValue("채널", _config.Channel), DeveloperKeyValue("버전 정책", _config.VersionPolicy == "exact" ? $"exact / {_config.RequestedVersion ?? "미입력"}" : "latest"), DeveloperKeyValue("설치 버전", ReadInstalledVersion() ?? "미설치"), DeveloperKeyValue("최신 버전", LatestCatalogVersion() ?? "카탈로그 확인 필요"), DeveloperKeyValue("OS", CurrentPlatform), DeveloperKeyValue("카탈로그", _catalogState), DeveloperKeyValue("릴리스 노트", _releaseNotes), DeveloperKeyValue("캐시/백업", StorageSummary()) } }, 16);
     }
 
     private Control StatusPanel(bool developerLog)
@@ -815,7 +876,7 @@ public sealed partial class MainWindow : Window
         _progress = new ProgressBar { Minimum = 0, Maximum = 100, Value = 0, Height = developerLog ? 12 : 8 };
         panel.Children.Add(_progress);
         if (!developerLog) panel.Children.Add(WorkflowSteps());
-        _logBox = new TextBox { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = developerLog ? 260 : 72, Text = IsDeveloper ? $"config: {ConfigPath}{Environment.NewLine}profile: {_config.ClientProfile}{Environment.NewLine}platform: {CurrentPlatform}" : "업데이트 상태가 여기에 표시됩니다.", Background = B(IsDeveloper ? "#0B1220" : "#FFFFFF"), Foreground = Fg() };
+        _logBox = new TextBox { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = developerLog ? 250 : 72, Text = IsDeveloper ? $"config: {ConfigPath}{Environment.NewLine}profile: {_config.ClientProfile}{Environment.NewLine}platform: {CurrentPlatform}" : "업데이트 상태가 여기에 표시됩니다.", Background = LauncherVisualTokens.Brush(IsDeveloper ? LauncherVisualTokens.BrandNavyDeep : LauncherVisualTokens.LightSurface), Foreground = Fg(), FontFamily = new FontFamily("Cascadia Mono,Consolas"), FontSize = 12 };
         if (developerLog) panel.Children.Add(_logBox);
         return Card(panel, developerLog ? 20 : 16);
     }

@@ -41,4 +41,29 @@ public sealed partial class MainWindow
 
         return grid;
     }
+
+    private Control DeveloperKeyValue(string key, string? value)
+    {
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("120,*"),
+            ColumnSpacing = 8
+        };
+        grid.Children.Add(Muted(key, 12));
+        var valueBox = new TextBox
+        {
+            Text = value ?? "-",
+            IsReadOnly = true,
+            BorderThickness = new Avalonia.Thickness(0),
+            Padding = new Avalonia.Thickness(0),
+            Background = Brushes.Transparent,
+            Foreground = Fg(),
+            FontFamily = new FontFamily("Cascadia Mono,Consolas"),
+            FontSize = 12,
+            MinHeight = 20
+        };
+        Grid.SetColumn(valueBox, 1);
+        grid.Children.Add(valueBox);
+        return grid;
+    }
 }
