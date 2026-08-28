@@ -6,12 +6,12 @@ namespace UeDtLauncher.Gui;
 
 public sealed partial class MainWindow
 {
-    private Control InfoTile(string title, string value, string caption)
+    private Control InfoTile(string title, string value, string caption, string? detail = null)
     {
         var valueBlock = Txt(value, 17, true);
         valueBlock.MaxLines = 2;
         valueBlock.TextTrimming = TextTrimming.CharacterEllipsis;
-        ToolTip.SetTip(valueBlock, value);
+        ToolTip.SetTip(valueBlock, detail ?? value);
         return Card(new StackPanel
         {
             Spacing = 6,

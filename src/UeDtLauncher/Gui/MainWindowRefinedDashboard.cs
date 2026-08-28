@@ -182,7 +182,7 @@ public sealed partial class MainWindow : Window
         if (!_windowMetricsInitialized)
         {
             Width = IsDeveloper ? 1480 : 1280;
-            Height = IsDeveloper ? 920 : 760;
+            Height = IsDeveloper ? 920 : 720;
             _windowMetricsInitialized = true;
         }
         var layout = CurrentLayout();
@@ -210,7 +210,7 @@ public sealed partial class MainWindow : Window
 
     private Control Header()
     {
-        var header = new Grid { Height = 72, Margin = new Thickness(18, 10, 18, 0), ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
+        var header = new Grid { Height = IsDeveloper ? 72 : 64, Margin = new Thickness(18, 8, 18, 0), ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
         Grid.SetColumnSpan(header, 2);
         header.Children.Add(new StackPanel
         {
@@ -219,13 +219,20 @@ public sealed partial class MainWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
             Children =
             {
-                new Border { Width = 38, Height = 38, CornerRadius = new CornerRadius(LauncherVisualTokens.RadiusControl), Background = LauncherVisualTokens.Brush(LauncherVisualTokens.Accent), Child = new TextBlock { Text = "U", FontSize = 24, FontWeight = FontWeight.Bold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } },
-                new StackPanel { Children = { Txt(IsDeveloper ? "UE-DT Launcher" : "UE-DT 런처", 24, true), Muted(IsDeveloper ? $"개발자용 배포 콘솔 · {CurrentPlatform}" : $"프로젝트 업데이트 및 실행 · {CurrentPlatform}", 12) } }
+                new Border { Width = IsDeveloper ? 38 : 34, Height = IsDeveloper ? 38 : 34, CornerRadius = new CornerRadius(LauncherVisualTokens.RadiusControl), Background = LauncherVisualTokens.Brush(LauncherVisualTokens.Accent), Child = new TextBlock { Text = "U", FontSize = IsDeveloper ? 24 : 21, FontWeight = FontWeight.Bold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } },
+                new StackPanel { Children = { Txt(IsDeveloper ? "UE-DT Launcher" : "UE-DT 런처", IsDeveloper ? 24 : 21, true), Muted(IsDeveloper ? $"개발자용 배포 콘솔 · {CurrentPlatform}" : "프로젝트 업데이트 및 실행", 12) } }
             }
         });
         var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
-        right.Children.Add(Pill(IsDeveloper ? "개발자" : "일반 사용자", IsDeveloper ? "#1D4ED8" : "#DBEAFE", IsDeveloper ? "#FFFFFF" : "#2563EB"));
-        right.Children.Add(Pill(CurrentPlatform, IsDeveloper ? "#1E293B" : "#E0F2FE", IsDeveloper ? "#BFDBFE" : "#0369A1"));
+        if (IsDeveloper)
+        {
+            right.Children.Add(Pill("개발자", "#1D4ED8", "#FFFFFF"));
+            right.Children.Add(Pill(CurrentPlatform, "#1E293B", "#BFDBFE"));
+        }
+        else
+        {
+            right.Children.Add(Muted(CurrentPlatform, LauncherVisualTokens.FontCaption));
+        }
         var serviceHealthy = _agentState.StartsWith("연결", StringComparison.Ordinal) || _agentState.EndsWith("정상", StringComparison.Ordinal);
         var servicePill = Pill(_agentState, serviceHealthy ? "#DCFCE7" : "#FEE2E2", serviceHealthy ? "#166534" : "#991B1B");
         ToolTip.SetTip(servicePill, IsDeveloper ? "관리 Agent 연결 상태" : "PC에서 업데이트를 안전하게 처리하는 서비스 상태");
@@ -409,7 +416,7 @@ public sealed partial class MainWindow : Window
     private Control GeneralBody()
     {
         var layout = CurrentLayout();
-        var body = new StackPanel { Spacing = 16 };
+        var body = new StackPanel { Spacing = 12 };
         if (layout.ShowTopProjectSelector) body.Children.Add(CompactProjectSelector());
         body.Children.Add(Hero(layout.HeroHeight));
         body.Children.Add(GeneralInfo());
@@ -585,7 +592,7 @@ public sealed partial class MainWindow : Window
     private Control GeneralInfo()
     {
         var columns = CurrentLayout().InfoColumns;
-        var rows = (int)Math.Ceiling(4d / columns);
+        var rows = (int)Math.Ceiling(3d / columns);
         var grid = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions(string.Join(',', Enumerable.Repeat("*", columns))),
@@ -595,10 +602,17 @@ public sealed partial class MainWindow : Window
         };
         var tiles = new Control[]
         {
-            StatusTile(),
-            VersionTile(),
-            InfoTile("설치 위치", _selectedProject.InstallPath ?? _config.InstallDir, "프로젝트 파일 위치"),
-            InfoTile("카탈로그", _catalogState, "실제 사용 가능한 배포 확인")
+            GeneralSummaryTile(),
+            InfoTile(
+                "설치",
+                ReadInstalledVersion() is null ? "설치 전" : "설치됨",
+                "설정에서 설치 위치 확인",
+                _selectedProject.InstallPath ?? _config.InstallDir),
+            InfoTile(
+                "배포 정보",
+                CatalogSummary(),
+                "운영 안정화 배포",
+                _catalogState)
         };
         for (var index = 0; index < tiles.Length; index++)
         {
@@ -607,6 +621,74 @@ public sealed partial class MainWindow : Window
             grid.Children.Add(tiles[index]);
         }
         return grid;
+    }
+
+    private Control GeneralSummaryTile()
+    {
+        var installed = ReadInstalledVersion();
+        var latest = LatestCatalogVersion();
+        var stateColor = StatusBrush(_installState);
+        var stateSoft = _installState.Contains("오류", StringComparison.Ordinal)
+            ? LauncherVisualTokens.DangerSoft
+            : _installState.Contains("업데이트", StringComparison.Ordinal) || _installState.Contains("설치 필요", StringComparison.Ordinal)
+                ? LauncherVisualTokens.WarningSoft
+                : _installState.Contains("최신", StringComparison.Ordinal) || _installState.Contains("설치", StringComparison.Ordinal)
+                    ? LauncherVisualTokens.SuccessSoft
+                    : LauncherVisualTokens.AccentSoft;
+        var iconKind = _installState.Contains("오류", StringComparison.Ordinal)
+            ? LauncherIconKind.Warning
+            : _installState.Contains("업데이트", StringComparison.Ordinal) || _installState.Contains("설치 필요", StringComparison.Ordinal)
+                ? LauncherIconKind.Download
+                : _installState.Contains("최신", StringComparison.Ordinal) || _installState.Contains("설치", StringComparison.Ordinal)
+                    ? LauncherIconKind.Check
+                    : LauncherIconKind.Shield;
+        var icon = new Border
+        {
+            Width = 42,
+            Height = 42,
+            CornerRadius = new CornerRadius(21),
+            Background = LauncherVisualTokens.Brush(stateSoft),
+            Child = LauncherIconFactory.Create(iconKind, 21, stateColor)
+        };
+        _installStateText = Label(_installState, LauncherVisualTokens.FontStatus, stateColor, true);
+        _installDetailText = Label(_installDetail, LauncherVisualTokens.FontCaption, MutedBrush());
+        _installDetailText.MaxLines = 2;
+        _installDetailText.TextTrimming = TextTrimming.CharacterEllipsis;
+        var text = new StackPanel
+        {
+            Spacing = 3,
+            Children =
+            {
+                Muted("프로젝트 상태", LauncherVisualTokens.FontCaption),
+                _installStateText,
+                _installDetailText
+            }
+        };
+        var status = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnSpacing = 12 };
+        status.Children.Add(icon);
+        status.Children.Add(At(text, 1));
+        var versions = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), ColumnSpacing = 12, Margin = new Thickness(54, 8, 0, 0) };
+        versions.Children.Add(VersionValue("설치 버전", installed ?? "미설치"));
+        versions.Children.Add(At(VersionValue("최신 버전", latest ?? "확인 필요"), 1));
+        return Card(new StackPanel { Spacing = 4, MinHeight = 92, Children = { status, versions } }, 16);
+    }
+
+    private Control VersionValue(string label, string value) => new StackPanel
+    {
+        Spacing = 1,
+        Children =
+        {
+            Muted(label, 11),
+            Label(value, LauncherVisualTokens.FontBody, Fg(), true)
+        }
+    };
+
+    private string CatalogSummary()
+    {
+        if (_catalogState.Contains("완료", StringComparison.Ordinal)) return "배포 정보 정상";
+        if (_catalogState.Contains("오류", StringComparison.Ordinal)) return "확인 필요";
+        if (_catalogState.Contains("확인 중", StringComparison.Ordinal)) return "확인 중";
+        return "미확인";
     }
 
     private Control VersionTile()
@@ -674,23 +756,23 @@ public sealed partial class MainWindow : Window
 
     private Control GeneralActions()
     {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("2.2*,*"), RowDefinitions = new RowDefinitions("*,*"), ColumnSpacing = 14, RowSpacing = 12, MinHeight = 132 };
-        var run = Track(PrimaryButton("▶ " + _viewModel.PrimaryActionText, async (_, _) => await ExecutePrimaryActionAsync(), 132));
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("2.2*,*,*"), ColumnSpacing = 10, MinHeight = 80 };
+        var run = Track(PrimaryButton("▶ " + _viewModel.PrimaryActionText, async (_, _) => await ExecutePrimaryActionAsync(), 80));
         run.IsEnabled = _viewModel.PrimaryAction != PrimaryActionKind.Disabled && !_running;
         run.HotKey = new KeyGesture(Key.F5);
-        Grid.SetRowSpan(run, 2);
         grid.Children.Add(run);
         var secondaryText = _viewModel.GeneralState == GeneralLauncherState.RecoverableError ? "문제 해결" : "상태 새로고침";
         var status = Track(SecondaryButton(secondaryText, async (_, _) =>
         {
             if (_viewModel.GeneralState == GeneralLauncherState.RecoverableError) await TroubleshootAsync();
             else await RefreshInstallStatusAsync();
-        }, 60));
+        }, 80));
         status.HotKey = new KeyGesture(Key.F6);
         grid.Children.Add(At(status, 1));
-        var folder = SecondaryButton("설치 폴더", (_, _) => OpenInstallFolder(), 60);
-        Grid.SetColumn(folder, 1); Grid.SetRow(folder, 1); grid.Children.Add(folder);
-        return Card(grid, 14);
+        var folder = SecondaryButton("설치 폴더", (_, _) => OpenInstallFolder(), 80);
+        Grid.SetColumn(folder, 2); grid.Children.Add(folder);
+        if (run.Content is TextBlock runText) runText.FontSize = 18;
+        return Card(grid, 12);
     }
 
     private Control DeveloperActions()
@@ -723,19 +805,19 @@ public sealed partial class MainWindow : Window
 
     private Control StatusPanel(bool developerLog)
     {
-        var panel = new StackPanel { Spacing = 10 };
+        var panel = new StackPanel { Spacing = developerLog ? 10 : 8 };
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 10 };
-        _statusText = Txt("준비 완료", 18, true);
+        _statusText = Txt("준비 완료", developerLog ? 18 : LauncherVisualTokens.FontStatus, true);
         header.Children.Add(_statusText);
-        _percentText = Label("0%", 18, IsDeveloper ? B("#BFDBFE") : B("#2563EB"), true);
+        _percentText = Label("0%", developerLog ? 18 : LauncherVisualTokens.FontStatus, IsDeveloper ? B("#BFDBFE") : LauncherVisualTokens.Brush(LauncherVisualTokens.Accent), true);
         header.Children.Add(At(_percentText, 1));
         panel.Children.Add(header);
-        if (!developerLog) panel.Children.Add(WorkflowSteps());
-        _progress = new ProgressBar { Minimum = 0, Maximum = 100, Value = 0, Height = 12 };
+        _progress = new ProgressBar { Minimum = 0, Maximum = 100, Value = 0, Height = developerLog ? 12 : 8 };
         panel.Children.Add(_progress);
+        if (!developerLog) panel.Children.Add(WorkflowSteps());
         _logBox = new TextBox { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = developerLog ? 260 : 72, Text = IsDeveloper ? $"config: {ConfigPath}{Environment.NewLine}profile: {_config.ClientProfile}{Environment.NewLine}platform: {CurrentPlatform}" : "업데이트 상태가 여기에 표시됩니다.", Background = B(IsDeveloper ? "#0B1220" : "#FFFFFF"), Foreground = Fg() };
-        panel.Children.Add(_logBox);
-        return Card(panel, 20);
+        if (developerLog) panel.Children.Add(_logBox);
+        return Card(panel, developerLog ? 20 : 16);
     }
 
     private Control WorkflowSteps()
@@ -752,13 +834,36 @@ public sealed partial class MainWindow : Window
         {
             var active = _viewModel.WorkflowStage == stage;
             var complete = _viewModel.WorkflowStage > stage;
+            var iconKind = complete ? LauncherIconKind.Check : stage switch
+            {
+                LauncherWorkflowStage.Catalog => LauncherIconKind.Shield,
+                LauncherWorkflowStage.Download => LauncherIconKind.Download,
+                LauncherWorkflowStage.Verify => LauncherIconKind.Check,
+                LauncherWorkflowStage.Apply => LauncherIconKind.Package,
+                _ => LauncherIconKind.Play
+            };
+            var foreground = LauncherVisualTokens.Brush(active
+                ? LauncherVisualTokens.Accent
+                : complete ? LauncherVisualTokens.Success : LauncherVisualTokens.LightMutedText);
+            var content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 5,
+                Children =
+                {
+                    LauncherIconFactory.Create(iconKind, 13, foreground),
+                    Label(text, LauncherVisualTokens.FontCaption, foreground, active || complete)
+                }
+            };
             row.Children.Add(new Border
             {
-                Margin = new Thickness(0, 0, 8, 6),
-                Padding = new Thickness(10, 5),
-                CornerRadius = new CornerRadius(10),
-                Background = B(active ? "#DBEAFE" : complete ? "#DCFCE7" : "#F3F4F6"),
-                Child = Label((complete ? "✓ " : string.Empty) + text, 12, B(active ? "#1D4ED8" : complete ? "#166534" : "#6B7280"), active || complete)
+                Margin = new Thickness(0, 0, 8, 2),
+                Padding = new Thickness(9, 4),
+                CornerRadius = new CornerRadius(LauncherVisualTokens.RadiusControl),
+                Background = LauncherVisualTokens.Brush(active
+                    ? LauncherVisualTokens.AccentSoft
+                    : complete ? LauncherVisualTokens.SuccessSoft : LauncherVisualTokens.LightSurfaceMuted),
+                Child = content
             });
         }
         AutomationProperties.SetName(row, "업데이트 진행 단계");
