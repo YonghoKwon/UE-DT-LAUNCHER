@@ -31,7 +31,7 @@ public static class LauncherIconFactory
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
             Stretch = Stretch.Uniform,
-            Data = StreamGeometry.Parse(Data(kind)),
+            Data = StreamGeometry.Parse(PathData(kind)),
             Stroke = color,
             StrokeThickness = kind == LauncherIconKind.Play ? 0 : 1.9,
             Fill = kind == LauncherIconKind.Play ? color : null,
@@ -40,7 +40,7 @@ public static class LauncherIconFactory
         };
     }
 
-    private static string Data(LauncherIconKind kind) => kind switch
+    internal static string PathData(LauncherIconKind kind) => kind switch
     {
         LauncherIconKind.Play => "M7,4 L20,12 L7,20 Z",
         LauncherIconKind.Check => "M4,12 L9,17 L20,6",

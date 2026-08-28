@@ -79,6 +79,30 @@ public class VisualDesignTests
         Assert.Equal("too-large", ProjectVisualResolver.Resolve(huge, configPath, ProjectVisualKind.Hero).FailureReason);
     }
 
+    [Fact]
+    public void EveryLauncherIconKindHasVectorPathData()
+    {
+        foreach (var kind in Enum.GetValues<LauncherIconKind>())
+        {
+            var pathData = LauncherIconFactory.PathData(kind);
+            Assert.False(string.IsNullOrWhiteSpace(pathData));
+            Assert.StartsWith("M", pathData, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void FallbackInitialsAndVariantAreStable()
+    {
+        var project = new ProjectUiConfig { ProjectId = "ue-dt-simulator", DisplayName = "UE-DT Simulator" };
+
+        var first = ProjectVisualResolver.Resolve(project, "launcher.config.json", ProjectVisualKind.Hero);
+        var second = ProjectVisualResolver.Resolve(project, "launcher.config.json", ProjectVisualKind.Thumbnail);
+
+        Assert.Equal("UD", first.Initials);
+        Assert.Equal(first.FallbackVariant, second.FallbackVariant);
+        Assert.InRange(first.FallbackVariant, 0, 2);
+    }
+
     private sealed class TempDirectory : IDisposable
     {
         public TempDirectory()
