@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Text.Json;
 using Avalonia;
+using Avalonia.Animation;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -181,7 +182,7 @@ public sealed partial class MainWindow : Window
         MinWidth = layout.MinWidth;
         MinHeight = layout.MinHeight;
         _layoutBucket = GeneralLayoutBucket(CurrentLayoutWidth());
-        Background = B(IsDeveloper ? "#0B111A" : "#F5F7FB");
+        Background = LauncherVisualTokens.Background(IsDeveloper);
 
         var root = new Grid
         {
@@ -211,7 +212,7 @@ public sealed partial class MainWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
             Children =
             {
-                new Border { Width = 38, Height = 38, CornerRadius = new CornerRadius(11), Background = B("#2563EB"), Child = new TextBlock { Text = "U", FontSize = 24, FontWeight = FontWeight.Bold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } },
+                new Border { Width = 38, Height = 38, CornerRadius = new CornerRadius(LauncherVisualTokens.RadiusControl), Background = LauncherVisualTokens.Brush(LauncherVisualTokens.Accent), Child = new TextBlock { Text = "U", FontSize = 24, FontWeight = FontWeight.Bold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } },
                 new StackPanel { Children = { Txt(IsDeveloper ? "UE-DT Launcher" : "UE-DT 런처", 24, true), Muted(IsDeveloper ? $"개발자용 배포 콘솔 · {CurrentPlatform}" : $"프로젝트 업데이트 및 실행 · {CurrentPlatform}", 12) } }
             }
         });
@@ -1071,17 +1072,66 @@ public sealed partial class MainWindow : Window
     private TextBlock Txt(string text, double size, bool bold) => Label(text, size, Fg(), bold);
     private TextBlock Muted(string text, double size) => Label(text, size, MutedBrush());
     private TextBlock Label(string text, double size, IBrush color, bool bold = false) => new() { Text = text ?? string.Empty, FontSize = size, Foreground = color, FontWeight = bold ? FontWeight.SemiBold : FontWeight.Normal, TextWrapping = TextWrapping.Wrap };
-    private IBrush Fg() => B(IsDeveloper ? "#E5E7EB" : "#111827");
-    private IBrush MutedBrush() => B(IsDeveloper ? "#94A3B8" : "#6B7280");
-    private IBrush StatusBrush(string? s) { var v = s ?? string.Empty; if (v.Contains("오류")) return B("#DC2626"); if (v.Contains("업데이트")) return B("#F97316"); if (v.Contains("설치 필요")) return B("#7C3AED"); if (v.Contains("최신") || v.Contains("설치")) return B("#16A34A"); return B(IsDeveloper ? "#60A5FA" : "#2563EB"); }
+    private IBrush Fg() => LauncherVisualTokens.Text(IsDeveloper);
+    private IBrush MutedBrush() => LauncherVisualTokens.MutedText(IsDeveloper);
+    private IBrush StatusBrush(string? s) { var v = s ?? string.Empty; if (v.Contains("오류")) return LauncherVisualTokens.Brush(LauncherVisualTokens.Danger); if (v.Contains("업데이트")) return LauncherVisualTokens.Brush(LauncherVisualTokens.Warning); if (v.Contains("설치 필요")) return LauncherVisualTokens.Brush(LauncherVisualTokens.Accent); if (v.Contains("최신") || v.Contains("설치")) return LauncherVisualTokens.Brush(LauncherVisualTokens.Success); return LauncherVisualTokens.Brush(LauncherVisualTokens.Accent); }
     private string ModeStatus() => IsDeveloper ? "개발자 빌드" : "안정 버전";
-    private Border Card(Control child, double padding) => new() { Padding = new Thickness(padding), CornerRadius = new CornerRadius(18), Background = B(IsDeveloper ? "#111827" : "#FFFFFF"), BorderBrush = B(IsDeveloper ? "#243244" : "#E5E7EB"), BorderThickness = new Thickness(1), Child = child };
-    private Button PrimaryButton(string text, EventHandler<RoutedEventArgs> handler, double height) { var b = BaseButton(text, handler, height, Brushes.White); b.Classes.Add("accent"); b.Background = B("#2563EB"); b.BorderBrush = B("#2563EB"); b.BorderThickness = new Thickness(1); return b; }
-    private Button SecondaryButton(string text, EventHandler<RoutedEventArgs> handler, double height) { var b = BaseButton(text, handler, height, IsDeveloper ? B("#F8FAFC") : B("#111827")); b.Background = B(IsDeveloper ? "#1F2937" : "#FFFFFF"); b.BorderBrush = B(IsDeveloper ? "#475569" : "#D1D5DB"); b.BorderThickness = new Thickness(1); return b; }
+    private Border Card(Control child, double padding) => new() { Padding = new Thickness(padding), CornerRadius = new CornerRadius(LauncherVisualTokens.RadiusCard), Background = LauncherVisualTokens.Surface(IsDeveloper), BorderBrush = LauncherVisualTokens.Border(IsDeveloper), BorderThickness = new Thickness(1), Child = child };
+    private Button PrimaryButton(string text, EventHandler<RoutedEventArgs> handler, double height)
+    {
+        var button = BaseButton(text, handler, height, Brushes.White);
+        button.Classes.Add("accent");
+        button.Background = LauncherVisualTokens.Brush(LauncherVisualTokens.Accent);
+        button.BorderBrush = LauncherVisualTokens.Brush(LauncherVisualTokens.Accent);
+        button.BorderThickness = new Thickness(1);
+        return button;
+    }
+
+    private Button SecondaryButton(string text, EventHandler<RoutedEventArgs> handler, double height)
+    {
+        var button = BaseButton(text, handler, height, Fg());
+        button.Background = LauncherVisualTokens.Surface(IsDeveloper);
+        button.BorderBrush = LauncherVisualTokens.Border(IsDeveloper);
+        button.BorderThickness = new Thickness(1);
+        return button;
+    }
     private Button SmallButton(string text, EventHandler<RoutedEventArgs> handler) => SecondaryButton(text, handler, 34);
-    private Button BaseButton(string text, EventHandler<RoutedEventArgs> handler, double height, IBrush color) { var b = new Button { Content = new TextBlock { Text = text, Foreground = color, FontSize = height >= 100 ? 22 : 14, FontWeight = height >= 100 ? FontWeight.SemiBold : FontWeight.Medium, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center }, Height = height, MinWidth = 110, Padding = new Thickness(14, 0), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, IsTabStop = true, TabIndex = _nextTabIndex++ }; AutomationProperties.SetName(b, text.TrimStart('▶', '↻', ' ')); b.Click += handler; return b; }
+    private Button BaseButton(string text, EventHandler<RoutedEventArgs> handler, double height, IBrush color)
+    {
+        var button = new Button
+        {
+            Content = new TextBlock
+            {
+                Text = text,
+                Foreground = color,
+                FontSize = height >= 100 ? 22 : LauncherVisualTokens.FontBody,
+                FontWeight = height >= 100 ? FontWeight.SemiBold : FontWeight.Medium,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextAlignment = TextAlignment.Center
+            },
+            Height = height,
+            MinWidth = 110,
+            Padding = new Thickness(14, 0),
+            CornerRadius = new CornerRadius(LauncherVisualTokens.RadiusControl),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            IsTabStop = true,
+            TabIndex = _nextTabIndex++,
+            Transitions = new Transitions
+            {
+                new BrushTransition { Property = Button.BackgroundProperty, Duration = LauncherVisualTokens.MotionFast },
+                new BrushTransition { Property = Button.BorderBrushProperty, Duration = LauncherVisualTokens.MotionFast }
+            }
+        };
+        AutomationProperties.SetName(button, text.TrimStart('▶', '↻', ' '));
+        button.Click += handler;
+        return button;
+    }
     private static IBrush B(string hex) => new SolidColorBrush(Color.Parse(hex));
-    private static Border Pill(string text, string bg, string fg) => new() { Padding = new Thickness(14, 7), CornerRadius = new CornerRadius(14), Background = B(bg), Child = new TextBlock { Text = text, FontWeight = FontWeight.SemiBold, Foreground = B(fg), FontSize = 13, TextAlignment = TextAlignment.Center } };
+    private static Border Pill(string text, string bg, string fg) => new() { Padding = new Thickness(12, 6), CornerRadius = new CornerRadius(LauncherVisualTokens.RadiusControl), Background = B(bg), Child = new TextBlock { Text = text, FontWeight = FontWeight.SemiBold, Foreground = B(fg), FontSize = 13, TextAlignment = TextAlignment.Center } };
     private static Control At(Control c, int col) { Grid.SetColumn(c, col); return c; }
     private static Control AtRow(Control c, int row) { Grid.SetRow(c, row); return c; }
     private static void Add(Grid g, Control c, int col) { Grid.SetColumn(c, col); g.Children.Add(c); }
