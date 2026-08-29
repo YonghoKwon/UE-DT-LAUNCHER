@@ -119,8 +119,8 @@ public class GuiViewModelTests
     }
 
     [Theory]
-    [InlineData(1280, 1, 4, false, false)]
-    [InlineData(1280, 2, 4, true, false)]
+    [InlineData(1280, 1, 3, false, false)]
+    [InlineData(1280, 2, 3, true, false)]
     [InlineData(960, 2, 2, false, true)]
     [InlineData(720, 2, 1, false, true)]
     public void LayoutPolicy_AdaptsGeneralDashboard(
@@ -147,6 +147,7 @@ public class GuiViewModelTests
         Assert.True(layout.ShowSidebar);
         Assert.False(layout.ShowTopProjectSelector);
         Assert.Equal(1160, layout.MinWidth);
+        Assert.Equal(124, layout.HeroHeight);
     }
 
     [Fact]

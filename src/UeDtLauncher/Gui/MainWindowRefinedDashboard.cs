@@ -2,12 +2,14 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Text.Json;
 using Avalonia;
+using Avalonia.Animation;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 
 namespace UeDtLauncher.Gui;
@@ -34,6 +36,7 @@ public sealed partial class MainWindow : Window
     private int _layoutBucket = -1;
     private int _nextTabIndex;
     private readonly DispatcherTimer _agentStatusTimer = new() { Interval = TimeSpan.FromSeconds(3) };
+    private readonly Dictionary<string, Bitmap> _projectVisualCache = new(StringComparer.OrdinalIgnoreCase);
 
     private TextBox? _configPathBox;
     private TextBox? _logBox;
@@ -71,7 +74,12 @@ public sealed partial class MainWindow : Window
         Build();
         _agentStatusTimer.Tick += async (_, _) => await RefreshAgentStatusAsync();
         _agentStatusTimer.Start();
-        Closed += (_, _) => _agentStatusTimer.Stop();
+        Closed += (_, _) =>
+        {
+            _agentStatusTimer.Stop();
+            foreach (var bitmap in _projectVisualCache.Values) bitmap.Dispose();
+            _projectVisualCache.Clear();
+        };
         Opened += async (_, _) => await InitializeStartupAsync();
         SizeChanged += (_, args) =>
         {
@@ -174,14 +182,14 @@ public sealed partial class MainWindow : Window
         if (!_windowMetricsInitialized)
         {
             Width = IsDeveloper ? 1480 : 1280;
-            Height = IsDeveloper ? 920 : 760;
+            Height = IsDeveloper ? 920 : 720;
             _windowMetricsInitialized = true;
         }
         var layout = CurrentLayout();
         MinWidth = layout.MinWidth;
         MinHeight = layout.MinHeight;
         _layoutBucket = GeneralLayoutBucket(CurrentLayoutWidth());
-        Background = B(IsDeveloper ? "#0B111A" : "#F5F7FB");
+        Background = LauncherVisualTokens.Background(IsDeveloper);
 
         var root = new Grid
         {
@@ -202,7 +210,7 @@ public sealed partial class MainWindow : Window
 
     private Control Header()
     {
-        var header = new Grid { Height = 72, Margin = new Thickness(18, 10, 18, 0), ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
+        var header = new Grid { Height = IsDeveloper ? 72 : 64, Margin = new Thickness(18, 8, 18, 0), ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
         Grid.SetColumnSpan(header, 2);
         header.Children.Add(new StackPanel
         {
@@ -211,13 +219,20 @@ public sealed partial class MainWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
             Children =
             {
-                new Border { Width = 38, Height = 38, CornerRadius = new CornerRadius(11), Background = B("#2563EB"), Child = new TextBlock { Text = "U", FontSize = 24, FontWeight = FontWeight.Bold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } },
-                new StackPanel { Children = { Txt(IsDeveloper ? "UE-DT Launcher" : "UE-DT 런처", 24, true), Muted(IsDeveloper ? $"개발자용 배포 콘솔 · {CurrentPlatform}" : $"프로젝트 업데이트 및 실행 · {CurrentPlatform}", 12) } }
+                new Border { Width = IsDeveloper ? 38 : 34, Height = IsDeveloper ? 38 : 34, CornerRadius = new CornerRadius(LauncherVisualTokens.RadiusControl), Background = LauncherVisualTokens.Brush(LauncherVisualTokens.Accent), Child = new TextBlock { Text = "U", FontSize = IsDeveloper ? 24 : 21, FontWeight = FontWeight.Bold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } },
+                new StackPanel { Children = { Txt(IsDeveloper ? "UE-DT Launcher" : "UE-DT 런처", IsDeveloper ? 24 : 21, true), Muted(IsDeveloper ? $"개발자용 배포 콘솔 · {CurrentPlatform}" : "프로젝트 업데이트 및 실행", 12) } }
             }
         });
         var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
-        right.Children.Add(Pill(IsDeveloper ? "개발자" : "일반 사용자", IsDeveloper ? "#1D4ED8" : "#DBEAFE", IsDeveloper ? "#FFFFFF" : "#2563EB"));
-        right.Children.Add(Pill(CurrentPlatform, IsDeveloper ? "#1E293B" : "#E0F2FE", IsDeveloper ? "#BFDBFE" : "#0369A1"));
+        if (IsDeveloper)
+        {
+            right.Children.Add(Pill("개발자", "#1D4ED8", "#FFFFFF"));
+            right.Children.Add(Pill(CurrentPlatform, "#1E293B", "#BFDBFE"));
+        }
+        else
+        {
+            right.Children.Add(Muted(CurrentPlatform, LauncherVisualTokens.FontCaption));
+        }
         var serviceHealthy = _agentState.StartsWith("연결", StringComparison.Ordinal) || _agentState.EndsWith("정상", StringComparison.Ordinal);
         var servicePill = Pill(_agentState, serviceHealthy ? "#DCFCE7" : "#FEE2E2", serviceHealthy ? "#166534" : "#991B1B");
         ToolTip.SetTip(servicePill, IsDeveloper ? "관리 Agent 연결 상태" : "PC에서 업데이트를 안전하게 처리하는 서비스 상태");
@@ -375,7 +390,10 @@ public sealed partial class MainWindow : Window
         var badges = new WrapPanel { Orientation = Orientation.Horizontal, ItemWidth = 76, ItemHeight = 26 };
         foreach (var b in new[] { _config.Environment, _config.Channel, _config.VersionPolicy, CurrentPlatform.Replace("-x64", "") }) badges.Children.Add(MiniBadge(b));
         root.Children.Add(badges);
-        var card = Card(root, 12);
+        var content = new Grid { ColumnDefinitions = new ColumnDefinitions("64,*"), ColumnSpacing = 12 };
+        content.Children.Add(ProjectThumbnail(p));
+        content.Children.Add(At(root, 1));
+        var card = Card(content, 12);
         card.MinHeight = 110;
         card.Background = B(IsDeveloper ? selected ? "#1E293B" : "#151E2A" : selected ? "#EFF6FF" : "#FFFFFF");
         card.BorderBrush = B(selected ? "#2563EB" : IsDeveloper ? "#253142" : "#E5E7EB");
@@ -398,7 +416,7 @@ public sealed partial class MainWindow : Window
     private Control GeneralBody()
     {
         var layout = CurrentLayout();
-        var body = new StackPanel { Spacing = 16 };
+        var body = new StackPanel { Spacing = 12 };
         if (layout.ShowTopProjectSelector) body.Children.Add(CompactProjectSelector());
         body.Children.Add(Hero(layout.HeroHeight));
         body.Children.Add(GeneralInfo());
@@ -438,21 +456,143 @@ public sealed partial class MainWindow : Window
         var lower = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), ColumnSpacing = 16 };
         lower.Children.Add(ReleaseInfo());
         lower.Children.Add(At(StatusPanel(true), 1));
-        return new StackPanel { Spacing = 16, Children = { Hero(250), DeveloperActions(), lower } };
+        return new StackPanel { Spacing = 12, Children = { Hero(CurrentLayout().HeroHeight), DeveloperActions(), lower } };
     }
 
     private Control Hero(double h)
     {
         var hero = new Grid { Height = h };
-        hero.Children.Add(new Border { CornerRadius = new CornerRadius(24), ClipToBounds = true, Background = new LinearGradientBrush { StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative), EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative), GradientStops = { new GradientStop(Color.Parse(IsDeveloper ? "#1E3A8A" : "#2563EB"), 0), new GradientStop(Color.Parse(IsDeveloper ? "#0F172A" : "#60A5FA"), 1) } } });
-        hero.Children.Add(new StackPanel { Spacing = 10, Margin = new Thickness(34), VerticalAlignment = VerticalAlignment.Bottom, Children = { Label(_selectedProject.DisplayName, IsDeveloper ? 30 : 38, Brushes.White, true), Label(IsDeveloper ? $"개발자 모드 · {_config.Environment} · {_config.Channel} · {CurrentPlatform}" : $"운영 안정화 · stable · {CurrentPlatform}", 16, B("#DBEAFE")), Label(_releaseNotes, 13, B("#E5E7EB")) } });
+        var asset = ProjectVisualResolver.Resolve(_selectedProject, ConfigPath, ProjectVisualKind.Hero);
+        hero.Children.Add(ProjectHeroVisual(asset));
+        hero.Children.Add(new Border
+        {
+            CornerRadius = new CornerRadius(LauncherVisualTokens.RadiusHero),
+            Background = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0.5, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(1, 0.5, RelativeUnit.Relative),
+                GradientStops =
+                {
+                    new GradientStop(Color.FromArgb(230, 9, 27, 57), 0),
+                    new GradientStop(Color.FromArgb(135, 15, 42, 86), 0.55),
+                    new GradientStop(Color.FromArgb(35, 15, 42, 86), 1)
+                }
+            }
+        });
+        hero.Children.Add(new StackPanel { Spacing = 8, Margin = new Thickness(30), VerticalAlignment = VerticalAlignment.Bottom, Children = { Label(_selectedProject.DisplayName, IsDeveloper ? 28 : LauncherVisualTokens.FontProject, Brushes.White, true), Label(IsDeveloper ? $"개발자 모드 · {_config.Environment} · {_config.Channel} · {CurrentPlatform}" : $"운영 안정화 · stable · {CurrentPlatform}", LauncherVisualTokens.FontBody, B("#DCE8FF")), Label(_releaseNotes, LauncherVisualTokens.FontCaption, B("#EDF2FA")) } });
         return hero;
+    }
+
+    private Control ProjectHeroVisual(ProjectVisualAsset asset)
+    {
+        var bitmap = CachedProjectBitmap(asset);
+        if (bitmap is not null)
+        {
+            return new Border
+            {
+                CornerRadius = new CornerRadius(LauncherVisualTokens.RadiusHero),
+                ClipToBounds = true,
+                Child = new Image { Source = bitmap, Stretch = Stretch.UniformToFill }
+            };
+        }
+
+        return BrandedFallback(asset, hero: true);
+    }
+
+    private Control ProjectThumbnail(ProjectUiConfig project)
+    {
+        var asset = ProjectVisualResolver.Resolve(project, ConfigPath, ProjectVisualKind.Thumbnail);
+        var bitmap = CachedProjectBitmap(asset);
+        if (bitmap is not null)
+        {
+            return new Border
+            {
+                Width = 54,
+                Height = 54,
+                CornerRadius = new CornerRadius(LauncherVisualTokens.RadiusControl),
+                ClipToBounds = true,
+                Child = new Image { Source = bitmap, Stretch = Stretch.UniformToFill }
+            };
+        }
+
+        var fallback = BrandedFallback(asset, hero: false);
+        fallback.Width = 54;
+        fallback.Height = 54;
+        return fallback;
+    }
+
+    private Border BrandedFallback(ProjectVisualAsset asset, bool hero)
+    {
+        var accents = new[]
+        {
+            Color.Parse("#2563EB"),
+            Color.Parse("#0F766E"),
+            Color.Parse("#5B4BDB")
+        };
+        var accent = accents[Math.Clamp(asset.FallbackVariant, 0, accents.Length - 1)];
+        var grid = new Grid { ClipToBounds = true };
+        grid.Children.Add(new Border
+        {
+            Background = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                GradientStops =
+                {
+                    new GradientStop(LauncherVisualTokens.BrandNavyDeep, 0),
+                    new GradientStop(LauncherVisualTokens.BrandNavy, 0.55),
+                    new GradientStop(accent, 1)
+                }
+            }
+        });
+        grid.Children.Add(new Border
+        {
+            Width = hero ? 360 : 44,
+            Height = hero ? 360 : 44,
+            CornerRadius = new CornerRadius(hero ? 180 : 22),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, hero ? 70 : -10, 0),
+            Background = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255))
+        });
+        grid.Children.Add(new TextBlock
+        {
+            Text = asset.Initials,
+            FontSize = hero ? 88 : 18,
+            FontWeight = FontWeight.Bold,
+            Foreground = new SolidColorBrush(Color.FromArgb(hero ? (byte)55 : (byte)220, 255, 255, 255)),
+            HorizontalAlignment = hero ? HorizontalAlignment.Right : HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = hero ? new Thickness(0, 0, 130, 0) : new Thickness(0)
+        });
+        return new Border
+        {
+            CornerRadius = new CornerRadius(hero ? LauncherVisualTokens.RadiusHero : LauncherVisualTokens.RadiusControl),
+            ClipToBounds = true,
+            Child = grid
+        };
+    }
+
+    private Bitmap? CachedProjectBitmap(ProjectVisualAsset asset)
+    {
+        if (!asset.HasImage || asset.ResolvedPath is null) return null;
+        if (_projectVisualCache.TryGetValue(asset.ResolvedPath, out var cached)) return cached;
+        try
+        {
+            var bitmap = new Bitmap(asset.ResolvedPath);
+            _projectVisualCache[asset.ResolvedPath] = bitmap;
+            return bitmap;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private Control GeneralInfo()
     {
         var columns = CurrentLayout().InfoColumns;
-        var rows = (int)Math.Ceiling(4d / columns);
+        var rows = (int)Math.Ceiling(3d / columns);
         var grid = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions(string.Join(',', Enumerable.Repeat("*", columns))),
@@ -462,10 +602,17 @@ public sealed partial class MainWindow : Window
         };
         var tiles = new Control[]
         {
-            StatusTile(),
-            VersionTile(),
-            InfoTile("설치 위치", _selectedProject.InstallPath ?? _config.InstallDir, "프로젝트 파일 위치"),
-            InfoTile("카탈로그", _catalogState, "실제 사용 가능한 배포 확인")
+            GeneralSummaryTile(),
+            InfoTile(
+                "설치",
+                ReadInstalledVersion() is null ? "설치 전" : "설치됨",
+                "설정에서 설치 위치 확인",
+                _selectedProject.InstallPath ?? _config.InstallDir),
+            InfoTile(
+                "배포 정보",
+                CatalogSummary(),
+                "운영 안정화 배포",
+                _catalogState)
         };
         for (var index = 0; index < tiles.Length; index++)
         {
@@ -474,6 +621,74 @@ public sealed partial class MainWindow : Window
             grid.Children.Add(tiles[index]);
         }
         return grid;
+    }
+
+    private Control GeneralSummaryTile()
+    {
+        var installed = ReadInstalledVersion();
+        var latest = LatestCatalogVersion();
+        var stateColor = StatusBrush(_installState);
+        var stateSoft = _installState.Contains("오류", StringComparison.Ordinal)
+            ? LauncherVisualTokens.DangerSoft
+            : _installState.Contains("업데이트", StringComparison.Ordinal) || _installState.Contains("설치 필요", StringComparison.Ordinal)
+                ? LauncherVisualTokens.WarningSoft
+                : _installState.Contains("최신", StringComparison.Ordinal) || _installState.Contains("설치", StringComparison.Ordinal)
+                    ? LauncherVisualTokens.SuccessSoft
+                    : LauncherVisualTokens.AccentSoft;
+        var iconKind = _installState.Contains("오류", StringComparison.Ordinal)
+            ? LauncherIconKind.Warning
+            : _installState.Contains("업데이트", StringComparison.Ordinal) || _installState.Contains("설치 필요", StringComparison.Ordinal)
+                ? LauncherIconKind.Download
+                : _installState.Contains("최신", StringComparison.Ordinal) || _installState.Contains("설치", StringComparison.Ordinal)
+                    ? LauncherIconKind.Check
+                    : LauncherIconKind.Shield;
+        var icon = new Border
+        {
+            Width = 42,
+            Height = 42,
+            CornerRadius = new CornerRadius(21),
+            Background = LauncherVisualTokens.Brush(stateSoft),
+            Child = LauncherIconFactory.Create(iconKind, 21, stateColor)
+        };
+        _installStateText = Label(_installState, LauncherVisualTokens.FontStatus, stateColor, true);
+        _installDetailText = Label(_installDetail, LauncherVisualTokens.FontCaption, MutedBrush());
+        _installDetailText.MaxLines = 2;
+        _installDetailText.TextTrimming = TextTrimming.CharacterEllipsis;
+        var text = new StackPanel
+        {
+            Spacing = 3,
+            Children =
+            {
+                Muted("프로젝트 상태", LauncherVisualTokens.FontCaption),
+                _installStateText,
+                _installDetailText
+            }
+        };
+        var status = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnSpacing = 12 };
+        status.Children.Add(icon);
+        status.Children.Add(At(text, 1));
+        var versions = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), ColumnSpacing = 12, Margin = new Thickness(54, 8, 0, 0) };
+        versions.Children.Add(VersionValue("설치 버전", installed ?? "미설치"));
+        versions.Children.Add(At(VersionValue("최신 버전", latest ?? "확인 필요"), 1));
+        return Card(new StackPanel { Spacing = 4, MinHeight = 92, Children = { status, versions } }, 16);
+    }
+
+    private Control VersionValue(string label, string value) => new StackPanel
+    {
+        Spacing = 1,
+        Children =
+        {
+            Muted(label, 11),
+            Label(value, LauncherVisualTokens.FontBody, Fg(), true)
+        }
+    };
+
+    private string CatalogSummary()
+    {
+        if (_catalogState.Contains("완료", StringComparison.Ordinal)) return "배포 정보 정상";
+        if (_catalogState.Contains("오류", StringComparison.Ordinal)) return "확인 필요";
+        if (_catalogState.Contains("확인 중", StringComparison.Ordinal)) return "확인 중";
+        return "미확인";
     }
 
     private Control VersionTile()
@@ -541,68 +756,129 @@ public sealed partial class MainWindow : Window
 
     private Control GeneralActions()
     {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("2.2*,*"), RowDefinitions = new RowDefinitions("*,*"), ColumnSpacing = 14, RowSpacing = 12, MinHeight = 132 };
-        var run = Track(PrimaryButton("▶ " + _viewModel.PrimaryActionText, async (_, _) => await ExecutePrimaryActionAsync(), 132));
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("2.2*,*,*"), ColumnSpacing = 10, MinHeight = 80 };
+        var run = Track(PrimaryButton("▶ " + _viewModel.PrimaryActionText, async (_, _) => await ExecutePrimaryActionAsync(), 80));
         run.IsEnabled = _viewModel.PrimaryAction != PrimaryActionKind.Disabled && !_running;
         run.HotKey = new KeyGesture(Key.F5);
-        Grid.SetRowSpan(run, 2);
         grid.Children.Add(run);
         var secondaryText = _viewModel.GeneralState == GeneralLauncherState.RecoverableError ? "문제 해결" : "상태 새로고침";
         var status = Track(SecondaryButton(secondaryText, async (_, _) =>
         {
             if (_viewModel.GeneralState == GeneralLauncherState.RecoverableError) await TroubleshootAsync();
             else await RefreshInstallStatusAsync();
-        }, 60));
+        }, 80));
         status.HotKey = new KeyGesture(Key.F6);
         grid.Children.Add(At(status, 1));
-        var folder = SecondaryButton("설치 폴더", (_, _) => OpenInstallFolder(), 60);
-        Grid.SetColumn(folder, 1); Grid.SetRow(folder, 1); grid.Children.Add(folder);
-        return Card(grid, 14);
+        var folder = SecondaryButton("설치 폴더", (_, _) => OpenInstallFolder(), 80);
+        Grid.SetColumn(folder, 2); grid.Children.Add(folder);
+        if (run.Content is TextBlock runText) runText.FontSize = 18;
+        return Card(grid, 12);
     }
 
     private Control DeveloperActions()
     {
-        var panel = new StackPanel { Spacing = 12 };
-        var row1 = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*,*,*,*"), ColumnSpacing = 10 };
-        var run = Track(PrimaryButton("▶ 실행", async (_, _) => await RunAsync(false, true), 50));
+        var run = Track(CommandButton("실행", LauncherIconKind.Play, async (_, _) => await RunAsync(false, true), primary: true));
         run.HotKey = new KeyGesture(Key.F5);
-        row1.Children.Add(run);
-        Add(row1, Track(SecondaryButton("업데이트", async (_, _) => await RunAsync(false, false), 50)), 1);
-        Add(row1, Track(SecondaryButton("상태 확인", async (_, _) => await RefreshInstallStatusAsync(), 50)), 2);
-        Add(row1, Track(SecondaryButton("검증/복구", async (_, _) => await RunAsync(true, false), 50)), 3);
-        Add(row1, SecondaryButton("설치 폴더", (_, _) => OpenInstallFolder(), 50), 4);
-        Add(row1, Track(SecondaryButton("캐시 정리", (_, _) => ClearCache(), 50)), 5);
-        var row2 = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*,*,*,*"), ColumnSpacing = 10 };
-        row2.Children.Add(SecondaryButton("로그 ZIP", (_, _) => ExportLogsZip(), 42));
-        Add(row2, SecondaryButton("로그 지우기", (_, _) => ClearLog(), 42), 1);
-        Add(row2, Track(SecondaryButton("다시 시도", async (_, _) => await RunAsync(_lastRepair, _lastLaunch), 42)), 2);
-        Add(row2, Track(SecondaryButton("롤백", async (_, _) => await RollbackLatestAsync(), 42)), 3);
-        Add(row2, Track(SecondaryButton("백업 정리", (_, _) => CleanupBackups(), 42)), 4);
-        Add(row2, SecondaryButton("설정 팝업", (_, _) => DeveloperSettings(), 42), 5);
-        panel.Children.Add(row1); panel.Children.Add(row2);
-        return Card(panel, 16);
+        var status = Track(CommandButton("상태 확인", LauncherIconKind.Shield, async (_, _) => await RefreshInstallStatusAsync()));
+        status.HotKey = new KeyGesture(Key.F6);
+        var groups = new Grid { ColumnDefinitions = new ColumnDefinitions("1.05*,1.25*,1.35*"), ColumnSpacing = 10 };
+        groups.Children.Add(DeveloperCommandGroup(
+            "배포",
+            LauncherIconKind.Package,
+            run,
+            Track(CommandButton("업데이트", LauncherIconKind.Download, async (_, _) => await RunAsync(false, false))),
+            status));
+        groups.Children.Add(At(DeveloperCommandGroup(
+            "유지보수",
+            LauncherIconKind.Wrench,
+            Track(CommandButton("검증/복구", LauncherIconKind.Wrench, async (_, _) => await RunAsync(true, false))),
+            Track(CommandButton("롤백", LauncherIconKind.Refresh, async (_, _) => await RollbackLatestAsync())),
+            Track(CommandButton("캐시 정리", LauncherIconKind.Package, (_, _) => ClearCache())),
+            Track(CommandButton("백업 정리", LauncherIconKind.Package, (_, _) => CleanupBackups()))), 1));
+        groups.Children.Add(At(DeveloperCommandGroup(
+            "진단",
+            LauncherIconKind.Log,
+            CommandButton("설치 폴더", LauncherIconKind.Folder, (_, _) => OpenInstallFolder()),
+            CommandButton("로그 ZIP", LauncherIconKind.Log, (_, _) => ExportLogsZip()),
+            CommandButton("로그 지우기", LauncherIconKind.Log, (_, _) => ClearLog()),
+            Track(CommandButton("다시 시도", LauncherIconKind.Refresh, async (_, _) => await RunAsync(_lastRepair, _lastLaunch))),
+            CommandButton("설정", LauncherIconKind.Settings, (_, _) => DeveloperSettings())), 2));
+        return groups;
+    }
+
+    private Control DeveloperCommandGroup(string title, LauncherIconKind iconKind, params Button[] buttons)
+    {
+        var header = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 7,
+            Children =
+            {
+                LauncherIconFactory.Create(iconKind, 16, LauncherVisualTokens.MutedText(dark: true)),
+                Label(title, LauncherVisualTokens.FontBody, Fg(), true)
+            }
+        };
+        var columns = Math.Min(buttons.Length, 3);
+        var rows = (int)Math.Ceiling(buttons.Length / (double)columns);
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions(string.Join(',', Enumerable.Repeat("*", columns))),
+            RowDefinitions = new RowDefinitions(string.Join(',', Enumerable.Repeat("Auto", rows))),
+            ColumnSpacing = 7,
+            RowSpacing = 7
+        };
+        for (var index = 0; index < buttons.Length; index++)
+        {
+            Grid.SetColumn(buttons[index], index % columns);
+            Grid.SetRow(buttons[index], index / columns);
+            grid.Children.Add(buttons[index]);
+        }
+        return Card(new StackPanel { Spacing = 9, Children = { header, grid } }, 12);
+    }
+
+    private Button CommandButton(
+        string text,
+        LauncherIconKind iconKind,
+        EventHandler<RoutedEventArgs> handler,
+        bool primary = false)
+    {
+        var button = primary ? PrimaryButton(text, handler, 44) : SecondaryButton(text, handler, 44);
+        var foreground = primary ? Brushes.White : Fg();
+        button.Content = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Children =
+            {
+                LauncherIconFactory.Create(iconKind, 15, foreground),
+                Label(text, 12, foreground, true)
+            }
+        };
+        AutomationProperties.SetName(button, text);
+        return button;
     }
 
     private Control ReleaseInfo()
     {
-        return Card(new StackPanel { Spacing = 8, Children = { Txt("선택된 배포 정보", 18, true), KeyValue("프로젝트", _selectedProject.ProjectId), KeyValue("프로필", _config.ClientProfile), KeyValue("가동/개발", _config.Environment), KeyValue("채널", _config.Channel), KeyValue("버전 정책", _config.VersionPolicy == "exact" ? $"exact / {_config.RequestedVersion ?? "미입력"}" : "latest"), KeyValue("설치 버전", ReadInstalledVersion() ?? "미설치"), KeyValue("최신 버전", LatestCatalogVersion() ?? "카탈로그 확인 필요"), KeyValue("OS", CurrentPlatform), KeyValue("카탈로그", _catalogState), KeyValue("릴리스 노트", _releaseNotes), KeyValue("캐시/백업", StorageSummary()) } }, 18);
+        return Card(new StackPanel { Spacing = 7, Children = { Txt("선택된 배포 정보", LauncherVisualTokens.FontStatus, true), DeveloperKeyValue("프로젝트", _selectedProject.ProjectId), DeveloperKeyValue("프로필", _config.ClientProfile), DeveloperKeyValue("가동/개발", _config.Environment), DeveloperKeyValue("채널", _config.Channel), DeveloperKeyValue("버전 정책", _config.VersionPolicy == "exact" ? $"exact / {_config.RequestedVersion ?? "미입력"}" : "latest"), DeveloperKeyValue("설치 버전", ReadInstalledVersion() ?? "미설치"), DeveloperKeyValue("최신 버전", LatestCatalogVersion() ?? "카탈로그 확인 필요"), DeveloperKeyValue("OS", CurrentPlatform), DeveloperKeyValue("카탈로그", _catalogState), DeveloperKeyValue("릴리스 노트", _releaseNotes), DeveloperKeyValue("캐시/백업", StorageSummary()) } }, 16);
     }
 
     private Control StatusPanel(bool developerLog)
     {
-        var panel = new StackPanel { Spacing = 10 };
+        var panel = new StackPanel { Spacing = developerLog ? 10 : 8 };
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 10 };
-        _statusText = Txt("준비 완료", 18, true);
+        _statusText = Txt("준비 완료", developerLog ? 18 : LauncherVisualTokens.FontStatus, true);
         header.Children.Add(_statusText);
-        _percentText = Label("0%", 18, IsDeveloper ? B("#BFDBFE") : B("#2563EB"), true);
+        _percentText = Label("0%", developerLog ? 18 : LauncherVisualTokens.FontStatus, IsDeveloper ? B("#BFDBFE") : LauncherVisualTokens.Brush(LauncherVisualTokens.Accent), true);
         header.Children.Add(At(_percentText, 1));
         panel.Children.Add(header);
-        if (!developerLog) panel.Children.Add(WorkflowSteps());
-        _progress = new ProgressBar { Minimum = 0, Maximum = 100, Value = 0, Height = 12 };
+        _progress = new ProgressBar { Minimum = 0, Maximum = 100, Value = 0, Height = developerLog ? 12 : 8 };
         panel.Children.Add(_progress);
-        _logBox = new TextBox { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = developerLog ? 260 : 72, Text = IsDeveloper ? $"config: {ConfigPath}{Environment.NewLine}profile: {_config.ClientProfile}{Environment.NewLine}platform: {CurrentPlatform}" : "업데이트 상태가 여기에 표시됩니다.", Background = B(IsDeveloper ? "#0B1220" : "#FFFFFF"), Foreground = Fg() };
-        panel.Children.Add(_logBox);
-        return Card(panel, 20);
+        if (!developerLog) panel.Children.Add(WorkflowSteps());
+        _logBox = new TextBox { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = developerLog ? 250 : 72, Text = IsDeveloper ? $"config: {ConfigPath}{Environment.NewLine}profile: {_config.ClientProfile}{Environment.NewLine}platform: {CurrentPlatform}" : "업데이트 상태가 여기에 표시됩니다.", Background = LauncherVisualTokens.Brush(IsDeveloper ? LauncherVisualTokens.BrandNavyDeep : LauncherVisualTokens.LightSurface), Foreground = Fg(), FontFamily = new FontFamily("Cascadia Mono,Consolas"), FontSize = 12 };
+        if (developerLog) panel.Children.Add(_logBox);
+        return Card(panel, developerLog ? 20 : 16);
     }
 
     private Control WorkflowSteps()
@@ -619,13 +895,36 @@ public sealed partial class MainWindow : Window
         {
             var active = _viewModel.WorkflowStage == stage;
             var complete = _viewModel.WorkflowStage > stage;
+            var iconKind = complete ? LauncherIconKind.Check : stage switch
+            {
+                LauncherWorkflowStage.Catalog => LauncherIconKind.Shield,
+                LauncherWorkflowStage.Download => LauncherIconKind.Download,
+                LauncherWorkflowStage.Verify => LauncherIconKind.Check,
+                LauncherWorkflowStage.Apply => LauncherIconKind.Package,
+                _ => LauncherIconKind.Play
+            };
+            var foreground = LauncherVisualTokens.Brush(active
+                ? LauncherVisualTokens.Accent
+                : complete ? LauncherVisualTokens.Success : LauncherVisualTokens.LightMutedText);
+            var content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 5,
+                Children =
+                {
+                    LauncherIconFactory.Create(iconKind, 13, foreground),
+                    Label(text, LauncherVisualTokens.FontCaption, foreground, active || complete)
+                }
+            };
             row.Children.Add(new Border
             {
-                Margin = new Thickness(0, 0, 8, 6),
-                Padding = new Thickness(10, 5),
-                CornerRadius = new CornerRadius(10),
-                Background = B(active ? "#DBEAFE" : complete ? "#DCFCE7" : "#F3F4F6"),
-                Child = Label((complete ? "✓ " : string.Empty) + text, 12, B(active ? "#1D4ED8" : complete ? "#166534" : "#6B7280"), active || complete)
+                Margin = new Thickness(0, 0, 8, 2),
+                Padding = new Thickness(9, 4),
+                CornerRadius = new CornerRadius(LauncherVisualTokens.RadiusControl),
+                Background = LauncherVisualTokens.Brush(active
+                    ? LauncherVisualTokens.AccentSoft
+                    : complete ? LauncherVisualTokens.SuccessSoft : LauncherVisualTokens.LightSurfaceMuted),
+                Child = content
             });
         }
         AutomationProperties.SetName(row, "업데이트 진행 단계");
@@ -1071,17 +1370,66 @@ public sealed partial class MainWindow : Window
     private TextBlock Txt(string text, double size, bool bold) => Label(text, size, Fg(), bold);
     private TextBlock Muted(string text, double size) => Label(text, size, MutedBrush());
     private TextBlock Label(string text, double size, IBrush color, bool bold = false) => new() { Text = text ?? string.Empty, FontSize = size, Foreground = color, FontWeight = bold ? FontWeight.SemiBold : FontWeight.Normal, TextWrapping = TextWrapping.Wrap };
-    private IBrush Fg() => B(IsDeveloper ? "#E5E7EB" : "#111827");
-    private IBrush MutedBrush() => B(IsDeveloper ? "#94A3B8" : "#6B7280");
-    private IBrush StatusBrush(string? s) { var v = s ?? string.Empty; if (v.Contains("오류")) return B("#DC2626"); if (v.Contains("업데이트")) return B("#F97316"); if (v.Contains("설치 필요")) return B("#7C3AED"); if (v.Contains("최신") || v.Contains("설치")) return B("#16A34A"); return B(IsDeveloper ? "#60A5FA" : "#2563EB"); }
+    private IBrush Fg() => LauncherVisualTokens.Text(IsDeveloper);
+    private IBrush MutedBrush() => LauncherVisualTokens.MutedText(IsDeveloper);
+    private IBrush StatusBrush(string? s) { var v = s ?? string.Empty; if (v.Contains("오류")) return LauncherVisualTokens.Brush(LauncherVisualTokens.Danger); if (v.Contains("업데이트")) return LauncherVisualTokens.Brush(LauncherVisualTokens.Warning); if (v.Contains("설치 필요")) return LauncherVisualTokens.Brush(LauncherVisualTokens.Accent); if (v.Contains("최신") || v.Contains("설치")) return LauncherVisualTokens.Brush(LauncherVisualTokens.Success); return LauncherVisualTokens.Brush(LauncherVisualTokens.Accent); }
     private string ModeStatus() => IsDeveloper ? "개발자 빌드" : "안정 버전";
-    private Border Card(Control child, double padding) => new() { Padding = new Thickness(padding), CornerRadius = new CornerRadius(18), Background = B(IsDeveloper ? "#111827" : "#FFFFFF"), BorderBrush = B(IsDeveloper ? "#243244" : "#E5E7EB"), BorderThickness = new Thickness(1), Child = child };
-    private Button PrimaryButton(string text, EventHandler<RoutedEventArgs> handler, double height) { var b = BaseButton(text, handler, height, Brushes.White); b.Classes.Add("accent"); b.Background = B("#2563EB"); b.BorderBrush = B("#2563EB"); b.BorderThickness = new Thickness(1); return b; }
-    private Button SecondaryButton(string text, EventHandler<RoutedEventArgs> handler, double height) { var b = BaseButton(text, handler, height, IsDeveloper ? B("#F8FAFC") : B("#111827")); b.Background = B(IsDeveloper ? "#1F2937" : "#FFFFFF"); b.BorderBrush = B(IsDeveloper ? "#475569" : "#D1D5DB"); b.BorderThickness = new Thickness(1); return b; }
+    private Border Card(Control child, double padding) => new() { Padding = new Thickness(padding), CornerRadius = new CornerRadius(LauncherVisualTokens.RadiusCard), Background = LauncherVisualTokens.Surface(IsDeveloper), BorderBrush = LauncherVisualTokens.Border(IsDeveloper), BorderThickness = new Thickness(1), Child = child };
+    private Button PrimaryButton(string text, EventHandler<RoutedEventArgs> handler, double height)
+    {
+        var button = BaseButton(text, handler, height, Brushes.White);
+        button.Classes.Add("accent");
+        button.Background = LauncherVisualTokens.Brush(LauncherVisualTokens.Accent);
+        button.BorderBrush = LauncherVisualTokens.Brush(LauncherVisualTokens.Accent);
+        button.BorderThickness = new Thickness(1);
+        return button;
+    }
+
+    private Button SecondaryButton(string text, EventHandler<RoutedEventArgs> handler, double height)
+    {
+        var button = BaseButton(text, handler, height, Fg());
+        button.Background = LauncherVisualTokens.Surface(IsDeveloper);
+        button.BorderBrush = LauncherVisualTokens.Border(IsDeveloper);
+        button.BorderThickness = new Thickness(1);
+        return button;
+    }
     private Button SmallButton(string text, EventHandler<RoutedEventArgs> handler) => SecondaryButton(text, handler, 34);
-    private Button BaseButton(string text, EventHandler<RoutedEventArgs> handler, double height, IBrush color) { var b = new Button { Content = new TextBlock { Text = text, Foreground = color, FontSize = height >= 100 ? 22 : 14, FontWeight = height >= 100 ? FontWeight.SemiBold : FontWeight.Medium, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center }, Height = height, MinWidth = 110, Padding = new Thickness(14, 0), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, IsTabStop = true, TabIndex = _nextTabIndex++ }; AutomationProperties.SetName(b, text.TrimStart('▶', '↻', ' ')); b.Click += handler; return b; }
+    private Button BaseButton(string text, EventHandler<RoutedEventArgs> handler, double height, IBrush color)
+    {
+        var button = new Button
+        {
+            Content = new TextBlock
+            {
+                Text = text,
+                Foreground = color,
+                FontSize = height >= 100 ? 22 : LauncherVisualTokens.FontBody,
+                FontWeight = height >= 100 ? FontWeight.SemiBold : FontWeight.Medium,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextAlignment = TextAlignment.Center
+            },
+            Height = height,
+            MinWidth = 110,
+            Padding = new Thickness(14, 0),
+            CornerRadius = new CornerRadius(LauncherVisualTokens.RadiusControl),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            IsTabStop = true,
+            TabIndex = _nextTabIndex++,
+            Transitions = new Transitions
+            {
+                new BrushTransition { Property = Button.BackgroundProperty, Duration = LauncherVisualTokens.MotionFast },
+                new BrushTransition { Property = Button.BorderBrushProperty, Duration = LauncherVisualTokens.MotionFast }
+            }
+        };
+        AutomationProperties.SetName(button, text.TrimStart('▶', '↻', ' '));
+        button.Click += handler;
+        return button;
+    }
     private static IBrush B(string hex) => new SolidColorBrush(Color.Parse(hex));
-    private static Border Pill(string text, string bg, string fg) => new() { Padding = new Thickness(14, 7), CornerRadius = new CornerRadius(14), Background = B(bg), Child = new TextBlock { Text = text, FontWeight = FontWeight.SemiBold, Foreground = B(fg), FontSize = 13, TextAlignment = TextAlignment.Center } };
+    private static Border Pill(string text, string bg, string fg) => new() { Padding = new Thickness(12, 6), CornerRadius = new CornerRadius(LauncherVisualTokens.RadiusControl), Background = B(bg), Child = new TextBlock { Text = text, FontWeight = FontWeight.SemiBold, Foreground = B(fg), FontSize = 13, TextAlignment = TextAlignment.Center } };
     private static Control At(Control c, int col) { Grid.SetColumn(c, col); return c; }
     private static Control AtRow(Control c, int row) { Grid.SetRow(c, row); return c; }
     private static void Add(Grid g, Control c, int col) { Grid.SetColumn(c, col); g.Children.Add(c); }
