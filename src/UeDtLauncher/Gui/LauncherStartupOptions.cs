@@ -30,6 +30,9 @@ public sealed record LauncherStartupOptions(
         }
 
         var layout = managedLayout ?? ManagedLauncherPathLayout.Current();
+        var localConfig = Path.Combine(baseDirectory, "launcher.config.json");
+        if (File.Exists(localConfig))
+            return new LauncherStartupOptions(Path.GetFullPath(localConfig), LauncherConfigSource.Portable, true);
         var managedPath = Path.Combine(layout.ConfigRoot, "launcher.config.json");
         if (File.Exists(managedPath))
             return new LauncherStartupOptions(Path.GetFullPath(managedPath), LauncherConfigSource.Managed, true);

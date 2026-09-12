@@ -22,7 +22,7 @@ public class GuiViewModelTests
     }
 
     [Fact]
-    public void StartupOptions_UsesManagedBeforePortableConfig()
+    public void StartupOptions_UsesLocalPresentationConfigBeforeManagedConfig()
     {
         var root = Path.Combine(Path.GetTempPath(), "launcher-startup-managed", Guid.NewGuid().ToString("N"));
         var managed = LayoutUnder(Path.Combine(root, "managed"));
@@ -34,8 +34,8 @@ public class GuiViewModelTests
 
         var options = LauncherStartupOptions.Discover([], managed, portable, root);
 
-        Assert.Equal(LauncherConfigSource.Managed, options.ConfigSource);
-        Assert.Equal(Path.Combine(managed.ConfigRoot, "launcher.config.json"), options.ConfigPath);
+        Assert.Equal(LauncherConfigSource.Portable, options.ConfigSource);
+        Assert.Equal(Path.Combine(portable, "launcher.config.json"), options.ConfigPath);
         Assert.True(options.ConfigExists);
     }
 

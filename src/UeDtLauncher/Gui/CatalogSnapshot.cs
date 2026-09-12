@@ -9,6 +9,8 @@ public sealed class CatalogSnapshot
 
 public sealed class CatalogProjectOption
 {
+    public string? HeroPath { get; init; }
+    public string? ThumbnailPath { get; init; }
     public string ProjectId { get; init; } = string.Empty;
     public string DisplayName { get; init; } = string.Empty;
     public int ReleaseCount { get; init; }
@@ -34,8 +36,18 @@ public static class CatalogSnapshotService
             return new CatalogSnapshot { Status = "직접 manifest 모드" };
         }
 
-        using var httpClient = SecureHttpClientFactory.Create(config);
-        var catalog = await CatalogResolver.DownloadCatalogAsync(config, httpClient, cancellationToken: cancellationToken);
+        DistributionCatalog catalog;
+        if (config.IsManagedDeployment && !string.IsNullOrWhiteSpace(config.DistributionServerUrl))
+        {
+            var response = await new ManagedAgentClient().SendStreamingAsync("catalog", null, _ => { }, cancellationToken: cancellationToken);
+            if (!response.Success || response.Catalog is null) throw new InvalidOperationException("배포 목록을 가져오지 못했습니다.");
+            catalog = response.Catalog;
+        }
+        else
+        {
+            using var httpClient = SecureHttpClientFactory.Create(config);
+            catalog = await CatalogResolver.DownloadCatalogAsync(config, httpClient, cancellationToken: cancellationToken);
+        }
 
         var allowedProjects = new List<CatalogProjectOption>();
         var allowedReleases = new List<CatalogReleaseOption>();
@@ -45,12 +57,15 @@ public static class CatalogSnapshotService
             var releases = project.Releases
                 .Where(release => string.Equals(release.Platform, currentPlatform, StringComparison.OrdinalIgnoreCase))
                 .Where(release => release.AllowedClientProfiles.Any(profile => string.Equals(profile, config.ClientProfile, StringComparison.OrdinalIgnoreCase)))
+                .Where(release => config.ClientProfile == "developer" || (release.Environment == "prod" && release.Channel == "stable"))
                 .ToList();
 
             if (releases.Count == 0) continue;
 
             allowedProjects.Add(new CatalogProjectOption
             {
+                HeroPath = await ProjectAssetCache.GetAsync(project.Hero, config, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UE-DT Launcher", "images"), cancellationToken),
+                ThumbnailPath = await ProjectAssetCache.GetAsync(project.Thumbnail, config, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UE-DT Launcher", "images"), cancellationToken),
                 ProjectId = project.ProjectId,
                 DisplayName = string.IsNullOrWhiteSpace(project.DisplayName) ? project.ProjectId : project.DisplayName,
                 ReleaseCount = releases.Count

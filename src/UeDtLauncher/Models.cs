@@ -90,6 +90,8 @@ public sealed class DistributionCatalog
 
 public sealed class DistributionProject
 {
+    public RemoteProjectAsset? Hero { get; set; }
+    public RemoteProjectAsset? Thumbnail { get; set; }
     public string ProjectId { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
     public List<DistributionRelease> Releases { get; set; } = new();
@@ -204,6 +206,8 @@ public sealed class InstallState
     public Dictionary<string, string> AppliedPackageHashes { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public List<string> SkippedOptionalPackages { get; set; } = new();
 }
+
+public sealed record RemoteProjectAsset(string Url, string Sha256, long Size);
 
 public sealed class UpdatePlan
 {

@@ -59,7 +59,12 @@ public sealed partial class MainWindow : Window
     private bool IsDeveloper => _viewModel.IsDeveloper;
     private string CurrentPlatform => OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64";
     private ProjectStatePaths SelectedStatePaths =>
-        LauncherPaths.For(_config, ConfigPath, _selectedProject.ProjectId, CurrentPlatform);
+        _selectedRuntimeConfig is { } runtime
+            ? new ProjectStatePaths(Path.GetDirectoryName(runtime.InstallStatePath)!, runtime.StagingDir, runtime.BackupDir,
+                runtime.InstalledManifestPath, runtime.InstallStatePath, runtime.AppPidPath, LauncherPaths.UpdateLockPath(runtime))
+            : LauncherPaths.For(_config, ConfigPath, _selectedProject.ProjectId, CurrentPlatform);
+    private LauncherConfig? _selectedRuntimeConfig;
+    private bool UsesDistributionServer => !string.IsNullOrWhiteSpace(_config.DistributionServerUrl);
 
     public MainWindow() : this(LauncherStartupOptions.Discover(Array.Empty<string>()))
     {
@@ -366,6 +371,9 @@ public sealed partial class MainWindow : Window
 
     private void SelectionChanged()
     {
+        _selectedRuntimeConfig = null;
+        _viewModel.ProjectStatus = null;
+        _viewModel.GeneralState = GeneralLauncherState.Checking;
         _config.TargetPlatform = CurrentPlatform;
         _installState = "확인 필요";
         _installDetail = "배포 선택이 변경되었습니다. 상태 확인을 다시 실행하세요.";
@@ -971,12 +979,27 @@ public sealed partial class MainWindow : Window
 
     private void MergeCatalogProjects()
     {
+        if (UsesDistributionServer)
+            _config.Projects.RemoveAll(p => !_catalog.Projects.Any(c => c.ProjectId.Equals(p.ProjectId, StringComparison.OrdinalIgnoreCase)));
         foreach (var cp in _catalog.Projects)
         {
-            if (_config.Projects.Any(p => string.Equals(p.ProjectId, cp.ProjectId, StringComparison.OrdinalIgnoreCase))) continue;
+            var configured = _config.Projects.FirstOrDefault(p => string.Equals(p.ProjectId, cp.ProjectId, StringComparison.OrdinalIgnoreCase));
+            if (configured is not null)
+            {
+                if (UsesDistributionServer) { configured.DisplayName = cp.DisplayName; configured.HeroPath = cp.HeroPath; configured.ThumbnailPath = cp.ThumbnailPath; }
+                continue;
+            }
             _config.Projects.Add(new ProjectUiConfig { ProjectId = cp.ProjectId, DisplayName = cp.DisplayName, Description = "카탈로그에서 발견된 프로젝트입니다.", Status = $"릴리스 {cp.ReleaseCount}개", InstallPath = $"apps/{cp.ProjectId}", Technology = CurrentPlatform, SortOrder = 100, VisibleToProfiles = new List<string> { _config.ClientProfile } });
+            _config.Projects[^1].HeroPath = cp.HeroPath; _config.Projects[^1].ThumbnailPath = cp.ThumbnailPath;
         }
-        SelectProject();
+        if (_config.Projects.Count > 0) SelectProject();
+        else
+        {
+            _selectedProject = new ProjectUiConfig { ProjectId = "unavailable", DisplayName = "사용 가능한 프로젝트가 없습니다" };
+            _viewModel.GeneralState = GeneralLauncherState.RecoverableError;
+            _installState = "접근 권한 확인 필요";
+            _installDetail = "이 PC에 허용된 배포가 없습니다. 관리자에게 문의해 주세요.";
+        }
     }
 
     private IEnumerable<CatalogReleaseOption> MatchingReleases() => _catalog.Releases.Where(r => r.ProjectId.Equals(_selectedProject.ProjectId, StringComparison.OrdinalIgnoreCase) && r.Platform.Equals(CurrentPlatform, StringComparison.OrdinalIgnoreCase) && r.Environment.Equals(_config.Environment, StringComparison.OrdinalIgnoreCase) && r.Channel.Equals(_config.Channel, StringComparison.OrdinalIgnoreCase));
@@ -989,10 +1012,32 @@ public sealed partial class MainWindow : Window
 
     private async Task<LauncherConfig> RunConfig(bool repair, bool launch)
     {
-        var c = await LauncherPaths.LoadResolvedAsync(ConfigPath);
+        var runtimePath = UsesDistributionServer && _config.IsManagedDeployment
+            ? Path.Combine(ManagedLauncherPathLayout.Current().ConfigRoot, "launcher.config.json") : ConfigPath;
+        var c = await LauncherPaths.LoadResolvedAsync(runtimePath);
         c.ProjectId = _selectedProject.ProjectId; c.Environment = _config.Environment; c.Channel = _config.Channel; c.TargetPlatform = CurrentPlatform; c.VersionPolicy = _config.VersionPolicy; c.RequestedVersion = _config.RequestedVersion; c.RepairMode = repair; c.LaunchAfterUpdate = launch;
-        LauncherPaths.ResolveInPlace(c, ConfigPath, _selectedProject.InstallPath);
+        c.ClientProfile = _config.ClientProfile;
+        LauncherPaths.ResolveInPlace(c, runtimePath, UsesDistributionServer ? null : _selectedProject.InstallPath);
         return c;
+    }
+
+    private ReleaseSelection? CurrentReleaseSelection()
+    {
+        if (!UsesDistributionServer) return null;
+        var release = _config.VersionPolicy == "exact"
+            ? MatchingReleases().FirstOrDefault(r => r.Version == _config.RequestedVersion)
+            : MatchingReleases().FirstOrDefault(r => r.IsLatest) ?? MatchingReleases().FirstOrDefault();
+        if (release is null) throw new InvalidOperationException("허용된 배포 버전을 먼저 선택해 주세요.");
+        return new(release.ProjectId, release.Environment, release.Channel, release.Platform, release.Version);
+    }
+
+    private void ApplyManagedSelection(LauncherConfig config, ManagedAgentResponse response, ReleaseSelection? requested)
+    {
+        if (!UsesDistributionServer) return;
+        if (response.SelectedRelease is null || (requested is not null && response.SelectedRelease != requested))
+            throw new InvalidDataException("업데이트 서비스가 선택한 버전을 확인하지 못했습니다. 서비스 업데이트가 필요합니다.");
+        VersionedReleasePaths.Bind(config, response.SelectedRelease);
+        _selectedRuntimeConfig = config;
     }
 
     private async Task RunAsync(bool repair, bool launch)
@@ -1006,11 +1051,13 @@ public sealed partial class MainWindow : Window
             var c = await RunConfig(repair, launch);
             if (c.IsManagedDeployment)
             {
+                var requested = CurrentReleaseSelection();
                 var response = await new ManagedAgentClient().SendStreamingAsync(
                     repair ? "repair" : "update",
                     c.ProjectId,
-                    ReportManagedProgress);
+                    ReportManagedProgress, selection: requested);
                 if (!response.Success) throw new InvalidOperationException(response.Message);
+                ApplyManagedSelection(c, response, requested);
                 if (launch) _ = await ManagedAppLauncher.LaunchAsync(c);
             }
             else
@@ -1044,12 +1091,14 @@ public sealed partial class MainWindow : Window
             var c = await RunConfig(false, false);
             if (c.IsManagedDeployment)
             {
+                var requested = CurrentReleaseSelection();
                 var response = await new ManagedAgentClient().SendStreamingAsync(
                     "check",
                     c.ProjectId,
                     ReportManagedProgress,
-                    timeout: TimeSpan.FromMinutes(5));
+                    timeout: TimeSpan.FromMinutes(5), selection: requested);
                 if (!response.Success) throw new InvalidOperationException(response.Message);
+                ApplyManagedSelection(c, response, requested);
                 if (response.ProjectStatus is not null) _viewModel.ApplyProjectStatus(response.ProjectStatus);
                 else _viewModel.GeneralState = ReadInstalledVersion() is null ? GeneralLauncherState.NotInstalled : GeneralLauncherState.Ready;
                 _installState = _viewModel.GeneralState switch
@@ -1112,7 +1161,7 @@ public sealed partial class MainWindow : Window
                 "check",
                 config.ProjectId,
                 ReportManagedProgress,
-                timeout: TimeSpan.FromMinutes(5));
+                timeout: TimeSpan.FromMinutes(5), selection: CurrentReleaseSelection());
             if (!check.Success) throw new InvalidOperationException(check.Message);
             if (check.ProjectStatus is not null) _viewModel.ApplyProjectStatus(check.ProjectStatus);
 
@@ -1121,13 +1170,13 @@ public sealed partial class MainWindow : Window
                 var repair = await client.SendStreamingAsync(
                     "repair",
                     config.ProjectId,
-                    ReportManagedProgress);
+                    ReportManagedProgress, selection: CurrentReleaseSelection());
                 if (!repair.Success) throw new InvalidOperationException(repair.Message);
                 var verified = await client.SendStreamingAsync(
                     "check",
                     config.ProjectId,
                     ReportManagedProgress,
-                    timeout: TimeSpan.FromMinutes(5));
+                    timeout: TimeSpan.FromMinutes(5), selection: CurrentReleaseSelection());
                 if (!verified.Success || verified.ProjectStatus is { UpdateRequired: true })
                     throw new InvalidOperationException(verified.Message);
                 if (verified.ProjectStatus is not null) _viewModel.ApplyProjectStatus(verified.ProjectStatus);
@@ -1152,7 +1201,7 @@ public sealed partial class MainWindow : Window
                         "rollback",
                         config.ProjectId,
                         ReportManagedProgress,
-                        timeout: TimeSpan.FromMinutes(10));
+                        timeout: TimeSpan.FromMinutes(10), selection: CurrentReleaseSelection());
                     if (!response.Success) throw new InvalidOperationException(response.Message);
                     _viewModel.GeneralState = GeneralLauncherState.Ready;
                     _installState = "복구 완료";
@@ -1184,7 +1233,7 @@ public sealed partial class MainWindow : Window
             _running = true; SetBusy(true); Progress(0);
             try
             {
-                var response = await new ManagedAgentClient().SendAsync("rollback", config.ProjectId);
+                var response = await new ManagedAgentClient().SendStreamingAsync("rollback", config.ProjectId, ReportManagedProgress, selection: CurrentReleaseSelection());
                 foreach (var progress in response.Progress) UiProgress(progress.Stage, progress.Message, progress.Percent);
                 if (!response.Success) throw new InvalidOperationException(response.Message);
                 _installState = "롤백 완료";

@@ -60,6 +60,8 @@ public static class DistributionHttp
                 Projects = releases.GroupBy(r => r.Metadata.ProjectId).Select(group => new DistributionProject
                 {
                     ProjectId = group.Key, DisplayName = group.First().Metadata.DisplayName,
+                    Hero = Asset(group.Last(), group.Last().Metadata.HeroPath, store.Settings.PublicUrl),
+                    Thumbnail = Asset(group.Last(), group.Last().Metadata.ThumbnailPath, store.Settings.PublicUrl),
                     Releases = group.Select(r => new DistributionRelease
                     {
                         Version = r.Metadata.Version, Environment = r.Metadata.Environment, Channel = r.Metadata.Channel,
@@ -105,5 +107,13 @@ public static class DistributionHttp
         using var db = store.Open(); using var command = db.CreateCommand();
         command.CommandText = "CREATE TABLE IF NOT EXISTS sequence(id INTEGER PRIMARY KEY CHECK(id=1),value INTEGER); INSERT OR IGNORE INTO sequence VALUES(1,0); UPDATE sequence SET value=value+1 WHERE id=1 RETURNING value";
         return Convert.ToInt64(command.ExecuteScalar());
+    }
+    private static RemoteProjectAsset? Asset(PublishedRelease release, string? path, string url)
+    {
+        if (path is null) return null;
+        var manifest = JsonSerializer.Deserialize<LauncherManifest>(File.ReadAllText(Path.Combine(release.Directory, "manifest.json")), JsonFiles.Options)!;
+        var file = manifest.Files.SingleOrDefault(f => f.Path == path.Replace('\\', '/'));
+        return file is null ? null : new RemoteProjectAsset(url.TrimEnd('/') + "/releases/" + release.ReleaseId + "/files/" + file.Path,
+            file.Sha256, file.Size);
     }
 }
