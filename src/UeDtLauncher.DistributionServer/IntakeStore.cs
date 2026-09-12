@@ -31,7 +31,6 @@ public sealed class IntakeStore
         using var db = Open();
         using var command = db.CreateCommand();
         command.CommandText = """
-            PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,source TEXT NOT NULL,state TEXT NOT NULL,snapshot TEXT,message TEXT);
             CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,at TEXT NOT NULL,action TEXT NOT NULL,job TEXT NOT NULL);
             """;
@@ -69,6 +68,14 @@ public sealed class IntakeStore
         command.ExecuteNonQuery(); transaction.Commit();
     }
     public IDisposable Lock() => new FileStream(Path.Combine(Root, ".writer.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+    public void Audit(string action, string subject)
+    {
+        using var db = Open(); using var command = db.CreateCommand();
+        command.CommandText = "INSERT INTO audit(at,action,job) VALUES($at,$action,$subject)";
+        command.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$action", action); command.Parameters.AddWithValue("$subject", subject);
+        command.ExecuteNonQuery();
+    }
 
     public async Task<IntakeJob> IngestAsync(string directory, CancellationToken token = default)
     {
@@ -88,7 +95,8 @@ public sealed class IntakeStore
             var metadataPath = Path.Combine(source, "release.json");
             if (!File.Exists(metadataPath)) { Save(job); return job; }
             RejectLink(metadataPath);
-            var metadata = await SidecarPackageValidator.ReadAsync(metadataPath, token);
+            var metadataBytes = await SidecarPackageValidator.ReadDocumentAsync(metadataPath, token);
+            var metadata = SidecarPackageValidator.Parse(metadataBytes);
             var zip = Path.Combine(source, metadata.PackageFile);
             if (!File.Exists(zip)) { Save(job); return job; }
             RejectLink(zip);
@@ -96,14 +104,21 @@ public sealed class IntakeStore
             var snapshot = Path.Combine(Root, "processing", id + "-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(snapshot);
             // Copies are private and immutable to upload users. Approval uses only this snapshot.
-            await JsonFiles.WriteAsync(Path.Combine(snapshot, "release.json"), metadata, token);
+            await File.WriteAllBytesAsync(Path.Combine(snapshot, "release.json"), metadataBytes, token);
             var capturedZip = Path.Combine(snapshot, metadata.PackageFile);
             await using (var input = new FileStream(zip, FileMode.Open, FileAccess.Read, FileShare.Read))
             await using (var output = new FileStream(capturedZip, FileMode.CreateNew, FileAccess.Write))
             {
                 if (input.Length != metadata.PackageSize || input.Length > Settings.Limits.MaxZipBytes)
                     throw new InvalidDataException("ZIP size mismatch or limit exceeded.");
-                await input.CopyToAsync(output, token);
+                var buffer = new byte[128 * 1024]; long copied = 0; int read;
+                while ((read = await input.ReadAsync(buffer, token)) != 0)
+                {
+                    copied += read;
+                    if (copied > metadata.PackageSize) throw new InvalidDataException("ZIP changed while capturing upload.");
+                    await output.WriteAsync(buffer.AsMemory(0, read), token);
+                }
+                if (copied != metadata.PackageSize) throw new InvalidDataException("ZIP truncated while capturing upload.");
             }
             await SidecarPackageValidator.ValidateAndExtractAsync(capturedZip, metadata, Path.Combine(snapshot, "payload"), Settings.Limits, token);
             job = job with { State = "pending", Snapshot = snapshot };

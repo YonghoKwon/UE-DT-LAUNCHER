@@ -21,7 +21,7 @@ public static class ManifestGenerator
         };
 
         var files = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
-            .Where(path => !Path.GetFileName(path).Equals(Path.GetFileName(outputPath), StringComparison.OrdinalIgnoreCase))
+            .Where(path => !Path.GetFullPath(path).Equals(Path.GetFullPath(outputPath), SafePath.FileSystemComparison))
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToList();
 

@@ -33,6 +33,8 @@ public class DistributionAccessTests
             tokens.Revoke("pc"); Assert.Null(tokens.Authenticate(token));
             using var db = store.Open(); using var command = db.CreateCommand(); command.CommandText = "SELECT hash FROM tokens";
             Assert.NotEqual(token, command.ExecuteScalar());
+            command.CommandText = "SELECT sqlite_version()";
+            Assert.True(Version.Parse((string)command.ExecuteScalar()!) >= new Version(3, 50, 2));
         }
         finally { SqliteConnection.ClearAllPools(); Directory.Delete(root, true); }
     }

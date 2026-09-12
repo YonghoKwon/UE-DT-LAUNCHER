@@ -10,7 +10,7 @@ public static class Program
 {
     private static readonly string[] KnownSubcommands =
     {
-        "run", "service", "rollback", "generate-manifest", "update-catalog", "release-metadata",
+        "run", "service", "rollback", "generate-manifest", "update-catalog", "release-metadata", "import-install",
         "list-releases", "generate-nginx-acl", "sign-manifest", "generate-signing-key", "sample-config", "publish-release", "doctor", "diagnostics", "agent", "credential"
     };
 
@@ -139,6 +139,7 @@ public static class Program
             return command switch
             {
                 "release-metadata" => await GenerateSidecarAsync(args.Skip(1).ToArray()),
+                "import-install" => await ImportInstallAsync(args.Skip(1).ToArray()),
                 "run" => await RunLauncherAsync(args.Skip(1).ToArray()),
                 "service" => await RunServiceAsync(args.Skip(1).ToArray()),
                 "rollback" => await RollbackAsync(args.Skip(1).ToArray()),
@@ -190,6 +191,12 @@ public static class Program
         return 0;
     }
 
+    private static async Task<int> ImportInstallAsync(string[] args)
+    {
+        var plan = await LegacyInstallImport.RunAsync(Required(args, "--config"), Required(args, "--destination-root"), Has(args, "--apply"));
+        Console.WriteLine(JsonSerializer.Serialize(plan, JsonFiles.Options)); return 0;
+    }
+
     private static async Task<int> RunLauncherAsync(string[] args)
     {
         var configPath = Get(args, "--config") ?? "launcher.config.json";
@@ -202,9 +209,18 @@ public static class Program
 
         if (config.IsManagedDeployment)
         {
-            var managedResponse = await new ManagedAgentClient().SendAsync(repair ? "repair" : "update", config.ProjectId);
+            ReleaseSelection? selection = null;
+            if (!string.IsNullOrWhiteSpace(config.DistributionServerUrl))
+            {
+                using var http = SecureHttpClientFactory.Create(config);
+                await CatalogResolver.ResolveAsync(config, http);
+                selection = config.SelectedRelease;
+            }
+            var managedResponse = await new ManagedAgentClient().SendStreamingAsync(repair ? "repair" : "update", config.ProjectId,
+                progress => Console.WriteLine($"[{progress.Stage}] {progress.Message}"), selection: selection);
             PrintAgentResponse(managedResponse);
             if (!managedResponse.Success) return 1;
+            if (selection is not null && managedResponse.SelectedRelease != selection) throw new InvalidDataException("Agent release mismatch.");
             if (!noLaunch) _ = await ManagedAppLauncher.LaunchAsync(config);
             return 0;
         }

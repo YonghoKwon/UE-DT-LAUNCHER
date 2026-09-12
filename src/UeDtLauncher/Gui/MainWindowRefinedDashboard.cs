@@ -251,6 +251,8 @@ public sealed partial class MainWindow : Window
 
     private async Task<bool> RefreshAgentStatusAsync()
     {
+        // The v1 agent handles one operation at a time; a separate probe must not label active work disconnected.
+        if (_running) return _agentState.StartsWith("연결", StringComparison.Ordinal) || _agentState.EndsWith("정상", StringComparison.Ordinal);
         if (_agentStatusRefreshing) return _agentState.StartsWith("연결", StringComparison.Ordinal) || _agentState.EndsWith("정상", StringComparison.Ordinal);
         _agentStatusRefreshing = true;
         var nextState = LauncherDashboardViewModel.ConnectionLabel(IsDeveloper, ServiceConnectionState.Disconnected);
@@ -378,6 +380,8 @@ public sealed partial class MainWindow : Window
         _installState = "확인 필요";
         _installDetail = "배포 선택이 변경되었습니다. 상태 확인을 다시 실행하세요.";
         UpdateReleaseNotes();
+        if (UsesDistributionServer)
+            Dispatcher.UIThread.Post(async () => await RefreshInstallStatusAsync(suppressDialog: true));
     }
 
     private void RenderProjects()
@@ -407,7 +411,7 @@ public sealed partial class MainWindow : Window
         card.BorderBrush = B(selected ? "#2563EB" : IsDeveloper ? "#253142" : "#E5E7EB");
         card.BorderThickness = new Thickness(selected ? 2 : 1);
         card.Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand);
-        card.PointerPressed += (_, _) => { _selectedProject = p; _config.ProjectId = p.ProjectId; SelectionChanged(); Build(); };
+        card.PointerPressed += (_, _) => { if (_running) return; _selectedProject = p; _config.ProjectId = p.ProjectId; SelectionChanged(); Build(); };
         return card;
     }
 
@@ -615,7 +619,7 @@ public sealed partial class MainWindow : Window
                 "설치",
                 ReadInstalledVersion() is null ? "설치 전" : "설치됨",
                 "설정에서 설치 위치 확인",
-                _selectedProject.InstallPath ?? _config.InstallDir),
+                _selectedRuntimeConfig?.InstallDir ?? _selectedProject.InstallPath ?? _config.InstallDir),
             InfoTile(
                 "배포 정보",
                 CatalogSummary(),
@@ -1405,7 +1409,7 @@ public sealed partial class MainWindow : Window
         d.Show(this);
     }
 
-    private void OpenInstallFolder() { var path = LauncherPaths.ResolveConfigRelative(ConfigPath, _selectedProject.InstallPath ?? _config.InstallDir); Directory.CreateDirectory(path); try { Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true }); } catch (Exception ex) { AppendLog("폴더를 열 수 없습니다: " + FriendlyError(ex), true); } }
+    private void OpenInstallFolder() { var path = _selectedRuntimeConfig?.InstallDir ?? LauncherPaths.ResolveConfigRelative(ConfigPath, _selectedProject.InstallPath ?? _config.InstallDir); Directory.CreateDirectory(path); try { Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true }); } catch (Exception ex) { AppendLog("폴더를 열 수 없습니다: " + FriendlyError(ex), true); } }
     private void ClearCache() { try { var p = SelectedStatePaths.StagingDir; if (Directory.Exists(p)) Directory.Delete(p, true); Directory.CreateDirectory(p); AppendLog("캐시를 정리했습니다.", true); } catch (Exception ex) { AppendLog("캐시 정리 실패: " + FriendlyError(ex), true); } }
     private void CleanupBackups() { try { var p = SelectedStatePaths.BackupDir; BackupManager.Prune(p, _config.MaxBackupCount, m => AppendLog("백업 정리: " + m, true)); AppendLog($"백업을 정리했습니다. 최근 {_config.MaxBackupCount}개는 롤백을 위해 보관합니다.", true); } catch (Exception ex) { AppendLog("백업 정리 실패: " + FriendlyError(ex), true); } }
     private void ClearLog() { if (_logBox is not null) _logBox.Text = string.Empty; }

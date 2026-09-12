@@ -67,13 +67,13 @@ public sealed class DistributionTokens(IntakeStore store)
         using var db = store.Open(); using var command = db.CreateCommand();
         command.CommandText = "INSERT INTO tokens(hash,client) VALUES($hash,$client)";
         command.Parameters.AddWithValue("$hash", Hash(token)); command.Parameters.AddWithValue("$client", client);
-        command.ExecuteNonQuery(); return token;
+        command.ExecuteNonQuery(); store.Audit("token-issued", client); return token;
     }
     public void Revoke(string client)
     {
         Initialize(); using var gate = store.Lock(); using var db = store.Open(); using var command = db.CreateCommand();
         command.CommandText = "UPDATE tokens SET revoked=1 WHERE client=$client";
-        command.Parameters.AddWithValue("$client", client); command.ExecuteNonQuery();
+        command.Parameters.AddWithValue("$client", client); command.ExecuteNonQuery(); store.Audit("tokens-revoked", client);
     }
     public string? Authenticate(string? token)
     {

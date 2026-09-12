@@ -66,10 +66,26 @@ public static class SidecarPackageValidator
 {
     public static async Task<ReleaseSidecar> ReadAsync(string path, CancellationToken token = default)
     {
-        if (new FileInfo(path).Length > 1024 * 1024) throw new InvalidDataException("release.json exceeds 1 MiB.");
-        var metadata = await JsonFiles.ReadAsync<ReleaseSidecar>(path, token);
+        var bytes = await ReadDocumentAsync(path, token);
+        return Parse(bytes);
+    }
+    public static ReleaseSidecar Parse(byte[] bytes)
+    {
+        var metadata = System.Text.Json.JsonSerializer.Deserialize<ReleaseSidecar>(bytes, JsonFiles.Options)
+            ?? throw new InvalidDataException("release.json is empty.");
         metadata.Validate();
         return metadata;
+    }
+    public static async Task<byte[]> ReadDocumentAsync(string path, CancellationToken token = default)
+    {
+        await using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var output = new MemoryStream(); var buffer = new byte[8192]; int count;
+        while ((count = await input.ReadAsync(buffer, token)) != 0)
+        {
+            if (output.Length + count > 1024 * 1024) throw new InvalidDataException("release.json exceeds 1 MiB.");
+            output.Write(buffer, 0, count);
+        }
+        return output.ToArray();
     }
 
     public static async Task GenerateAsync(string zipPath, string output, ReleaseSidecar metadata,
@@ -122,6 +138,9 @@ public static class SidecarPackageValidator
             if (!entries.TryGetValue(prefix + ReleaseSidecar.Relative(required), out var directory) || directory)
                 throw new InvalidDataException("Required file is absent from ZIP: " + required);
 
+        var drive = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(destination))!);
+        if (drive.AvailableFreeSpace < expanded + 64L * 1024 * 1024)
+            throw new IOException("Insufficient disk space for ZIP extraction.");
         Directory.CreateDirectory(destination);
         long actualTotal = 0;
         var buffer = new byte[128 * 1024];

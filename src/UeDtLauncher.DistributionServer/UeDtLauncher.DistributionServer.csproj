@@ -7,5 +7,6 @@
   <ItemGroup>
     <ProjectReference Include="../UeDtLauncher.Core/UeDtLauncher.Core.csproj" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.22" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.13" />
   </ItemGroup>
 </Project>

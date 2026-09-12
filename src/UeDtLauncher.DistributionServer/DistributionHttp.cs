@@ -40,7 +40,7 @@ public static class DistributionHttp
                 var path = context.Request.Path.Value ?? "";
                 if (path == "/internal/authorize") path = context.Request.Headers["X-Original-URI"].ToString().Split('?')[0];
                 var release = allowed.FirstOrDefault(r => path.StartsWith("/releases/" + r.ReleaseId + "/", StringComparison.Ordinal));
-                if (release is null) { context.Response.StatusCode = 403; return; }
+                if (release is null) { store.Audit("download-denied", clientId); context.Response.StatusCode = 403; return; }
                 context.Items["release"] = release;
                 await next();
             }
@@ -76,7 +76,8 @@ public static class DistributionHttp
             foreach (var project in catalog.Projects)
                 foreach (var track in project.Releases.GroupBy(r => (r.Environment, r.Channel, r.Platform))) track.Last().IsLatest = true;
             var payload = JsonSerializer.Serialize(catalog, JsonFiles.Options);
-            return Results.Json(new DistributionEnvelope(Convert.ToBase64String(Encoding.UTF8.GetBytes(payload)), publisher.Sign(payload)), JsonFiles.Options);
+            return Results.Bytes(JsonSerializer.SerializeToUtf8Bytes(new DistributionEnvelope(
+                Convert.ToBase64String(Encoding.UTF8.GetBytes(payload)), publisher.Sign(payload)), JsonFiles.Options), "application/json");
         });
         app.MapGet("/internal/authorize", () => Results.NoContent());
         app.MapMethods("/releases/{project}/{environment}/{channel}/{version}/{platform}/{**path}", new[] { "GET", "HEAD" },

@@ -6,6 +6,8 @@ UE-DT-LAUNCHER는 Unreal Engine 패키징 결과물을 Windows/Linux PC에 배�
 
 ## 먼저 알아둘 점
 
+ZIP과 외부 release.json 두 파일 접수, 관리자 승인, IP/PC토큰별 배포 목록·파일 접근, 버전별 동시 설치는 [통합 배포 운영 가이드](docs/distribution-workflow.md)를 기준으로 사용합니다. 신규 운영 구성에서는 과거 공개 정적 서버 경로를 사용하지 않습니다.
+
 GitHub 저장소에는 `UeDtLauncher.exe` 실행 파일을 직접 커밋하지 않습니다. 저장소에는 소스 코드만 들어있고, 실행 파일은 로컬 PC 또는 GitHub Actions에서 `dotnet publish`로 생성해야 합니다.
 
 상용 배포는 portable EXE 복사 대신 Windows machine-wide MSI와 RHEL 8 RPM을 사용합니다. MSI는 GUI와 `UeDtLauncherAgent` Windows Service를 설치하고, RPM은 systemd Agent와 `%config(noreplace)` 설정을 설치합니다. 코드서명 인증서가 없는 개발 패키지는 파일명과 `BUILD-INFO.txt`에 `UNSIGNED-DEV`로 표시되며 운영 배포가 금지됩니다.

@@ -57,5 +57,24 @@ public sealed class DurableIntakeTests : IDisposable
         store.Retry(failed.Id); Assert.Equal("waiting", store.Get(failed.Id).State);
         await store.ScanAsync(default); Assert.Equal("failed", store.Get(failed.Id).State);
     }
+    [Fact]
+    public async Task InterruptedApprovalResumesWithoutPublishingPartialFiles()
+    {
+        var store = new IntakeStore(new DistributionSettings { Root = root, SigningKeyPath = Path.Combine(root, "sign.pem") });
+        var upload = Path.Combine(root, "incoming", "crash"); Directory.CreateDirectory(upload);
+        var zip = Path.Combine(upload, "Linux.zip");
+        using (var archive = ZipFile.Open(zip, ZipArchiveMode.Create))
+        using (var writer = new StreamWriter(archive.CreateEntry("game.sh").Open())) writer.Write("#!/bin/sh\nexit 0\n");
+        await SidecarPackageValidator.GenerateAsync(zip, Path.Combine(upload, "release.json"), new ReleaseSidecar
+        { ProjectId = "demo", Version = "1.0.0", Platform = "linux-x64", EntryPoint = "game.sh" });
+        var job = await store.IngestAsync(upload); var publisher = new ApprovedPublisher(store);
+        await Assert.ThrowsAsync<FileNotFoundException>(() => publisher.ApproveAsync(job.Id));
+        Assert.Empty(publisher.List()); Assert.Equal("publishing", store.Get(job.Id).State);
+        using var key = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
+        File.WriteAllText(store.Settings.SigningKeyPath, key.ExportECPrivateKeyPem());
+        var released = await new ApprovedPublisher(new IntakeStore(store.Settings)).ApproveAsync(job.Id);
+        Assert.True(File.Exists(Path.Combine(released.Directory, "manifest.json.sig")));
+        Assert.Single(publisher.List());
+    }
     public void Dispose() { SqliteConnection.ClearAllPools(); if (Directory.Exists(root)) Directory.Delete(root, true); }
 }

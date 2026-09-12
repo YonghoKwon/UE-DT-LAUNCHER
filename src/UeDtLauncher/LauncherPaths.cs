@@ -23,7 +23,7 @@ public static partial class LauncherPaths
 
         ResolveInPlace(config, fullConfigPath);
         LauncherConfigValidator.Validate(config);
-        MigrateLegacySingleProjectState(config, legacy);
+        if (string.IsNullOrWhiteSpace(config.DistributionServerUrl)) MigrateLegacySingleProjectState(config, legacy);
         return config;
     }
 

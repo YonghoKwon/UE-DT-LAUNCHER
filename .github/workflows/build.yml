@@ -51,3 +51,7 @@ jobs:
       - name: Publish Linux Agent
         if: runner.os == 'Linux'
         run: dotnet publish src/UeDtLauncher.Agent/UeDtLauncher.Agent.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -o publish/agent-linux-x64
+
+      - name: Publish Distribution Server
+        if: runner.os == 'Linux'
+        run: dotnet publish src/UeDtLauncher.DistributionServer -c Release -r linux-x64 --self-contained true -o publish/distribution-server

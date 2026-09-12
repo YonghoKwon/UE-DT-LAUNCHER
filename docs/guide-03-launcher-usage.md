@@ -139,11 +139,11 @@ GUI 설정 파일 탐색 순서:
 
 ```text
 gui --config로 명시한 경로
-→ Windows ProgramData 또는 Linux /etc의 관리형 설정
 → 실행 파일 옆 launcher.config.json
+→ Windows ProgramData 또는 Linux /etc의 관리형 설정
 ```
 
-개발 검증에서 설정을 직접 지정하려면 `UeDtLauncher.exe gui --config C:\test\launcher.config.json`을 사용합니다. 일반 사용자 PC에서는 MSI/RPM이 설치한 관리형 설정이 자동 선택됩니다.
+개발 검증에서 설정을 직접 지정하려면 `UeDtLauncher.exe gui --config C:\test\launcher.config.json`을 사용합니다. 실행 폴더의 clientProfile은 화면 모드를 정하며, 신규 관리형 배포 서버의 설치 경로와 자격정보는 Agent의 보호된 설정을 사용합니다. [통합 운영 가이드](distribution-workflow.md)를 참고하세요.
 
 ### 일반 사용자 모드 (`clientProfile: "general"`)
 

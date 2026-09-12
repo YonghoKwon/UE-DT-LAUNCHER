@@ -3,6 +3,11 @@ using UeDtLauncher;
 using UeDtLauncher.Distribution;
 
 var arguments = args.ToList();
+if (arguments.Contains("--help"))
+{
+    Console.WriteLine("UeDtLauncher.DistributionServer <serve|watch|ingest directory|list|inspect id|approve id|reject id|retry id|token-issue client|token-revoke client|usage|cleanup [--apply]> --config server.json");
+    return;
+}
 var configIndex = arguments.IndexOf("--config");
 var configPath = configIndex >= 0 ? arguments[configIndex + 1] : "/etc/ue-dt-distribution/server.json";
 if (configIndex >= 0) arguments.RemoveRange(configIndex, 2);
@@ -12,6 +17,8 @@ var action = arguments.FirstOrDefault() ?? "list";
 switch (action)
 {
     case "serve": await DistributionHttp.RunAsync(store); break;
+    case "usage": Console.WriteLine(JsonSerializer.Serialize(StorageMaintenance.Usage(store), JsonFiles.Options)); break;
+    case "cleanup": Console.WriteLine(JsonSerializer.Serialize(StorageMaintenance.Cleanup(store, arguments.Contains("--apply")), JsonFiles.Options)); break;
     case "token-issue": Console.WriteLine(new DistributionTokens(store).Issue(arguments[1])); break;
     case "token-revoke": new DistributionTokens(store).Revoke(arguments[1]); break;
     case "approve": Console.WriteLine(JsonSerializer.Serialize(await new ApprovedPublisher(store).ApproveAsync(arguments[1]), JsonFiles.Options)); break;

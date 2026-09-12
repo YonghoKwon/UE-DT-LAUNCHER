@@ -12,7 +12,7 @@ public sealed class ApprovedPublisher(IntakeStore store)
     {
         using var db = store.Open(); using var command = db.CreateCommand();
         command.CommandText = "CREATE TABLE IF NOT EXISTS releases(id TEXT PRIMARY KEY,job TEXT NOT NULL,directory TEXT NOT NULL,metadata TEXT NOT NULL)";
-        command.ExecuteNonQuery(); command.CommandText = "SELECT id,job,directory,metadata FROM releases";
+        command.ExecuteNonQuery(); command.CommandText = "SELECT id,job,directory,metadata FROM releases ORDER BY rowid";
         using var reader = command.ExecuteReader(); var items = new List<PublishedRelease>();
         while (reader.Read()) items.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2),
             JsonSerializer.Deserialize<ReleaseSidecar>(reader.GetString(3), JsonFiles.Options)!));
