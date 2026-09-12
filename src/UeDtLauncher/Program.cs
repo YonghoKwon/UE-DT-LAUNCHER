@@ -10,7 +10,7 @@ public static class Program
 {
     private static readonly string[] KnownSubcommands =
     {
-        "run", "service", "rollback", "generate-manifest", "update-catalog",
+        "run", "service", "rollback", "generate-manifest", "update-catalog", "release-metadata",
         "list-releases", "generate-nginx-acl", "sign-manifest", "generate-signing-key", "sample-config", "publish-release", "doctor", "diagnostics", "agent", "credential"
     };
 
@@ -138,6 +138,7 @@ public static class Program
             var command = args[0].ToLowerInvariant();
             return command switch
             {
+                "release-metadata" => await GenerateSidecarAsync(args.Skip(1).ToArray()),
                 "run" => await RunLauncherAsync(args.Skip(1).ToArray()),
                 "service" => await RunServiceAsync(args.Skip(1).ToArray()),
                 "rollback" => await RollbackAsync(args.Skip(1).ToArray()),
@@ -163,6 +164,30 @@ public static class Program
             Console.Error.WriteLine(ex.ToString());
             return 1;
         }
+    }
+
+    private static async Task<int> GenerateSidecarAsync(string[] args)
+    {
+        var zip = Required(args, "--zip");
+        var metadata = new ReleaseSidecar
+        {
+            ProjectId = Required(args, "--project-id"),
+            DisplayName = Get(args, "--display-name") ?? Required(args, "--project-id"),
+            Version = Required(args, "--version"),
+            Environment = Get(args, "--environment") ?? "prod",
+            Channel = Get(args, "--channel") ?? "stable",
+            Platform = Required(args, "--platform"),
+            PayloadRoot = Get(args, "--payload-root") ?? ".",
+            EntryPoint = Required(args, "--entry-point"),
+            ExecutablePaths = (Get(args, "--executable-paths") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).ToList(),
+            Notes = Get(args, "--notes"),
+            HeroPath = Get(args, "--hero-path"),
+            ThumbnailPath = Get(args, "--thumbnail-path")
+        };
+        var output = Get(args, "--output") ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(zip))!, "release.json");
+        await SidecarPackageValidator.GenerateAsync(zip, output, metadata);
+        Console.WriteLine("Created external release metadata: " + output);
+        return 0;
     }
 
     private static async Task<int> RunLauncherAsync(string[] args)
@@ -660,6 +685,7 @@ public static class Program
         Console.WriteLine("UE-DT-LAUNCHER");
         Console.WriteLine();
         Console.WriteLine("Commands:");
+        Console.WriteLine("  release-metadata --zip <zip> --project-id <id> --version <version> --platform <platform> --entry-point <path> [--payload-root <path>] [--output <release.json>]");
         Console.WriteLine("  gui                 (also: --gui forces GUI; --cli forces CLI -> defaults to 'run')");
         Console.WriteLine("  sample-config --output launcher.config.json");
         Console.WriteLine("  generate-manifest --package-dir <dir> --base-url <url> --entry-point <relative path> --version <version> [--app-id <id>] --output <manifest.json>");
