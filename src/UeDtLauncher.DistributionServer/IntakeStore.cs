@@ -14,6 +14,7 @@ public sealed class DistributionSettings
     public string SigningKeyPath { get; set; } = "/etc/ue-dt-distribution/signing.pem";
     public string SigningKeyId { get; set; } = "release-1";
     public string ListenUrl { get; set; } = "http://127.0.0.1:18500";
+    public string PolicyPath { get; set; } = "/etc/ue-dt-distribution/access-policy.json";
     public ZipIntakeLimits Limits { get; set; } = new();
 }
 

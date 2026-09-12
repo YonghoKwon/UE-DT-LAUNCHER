@@ -11,6 +11,9 @@ var store = new IntakeStore(settings);
 var action = arguments.FirstOrDefault() ?? "list";
 switch (action)
 {
+    case "serve": await DistributionHttp.RunAsync(store); break;
+    case "token-issue": Console.WriteLine(new DistributionTokens(store).Issue(arguments[1])); break;
+    case "token-revoke": new DistributionTokens(store).Revoke(arguments[1]); break;
     case "approve": Console.WriteLine(JsonSerializer.Serialize(await new ApprovedPublisher(store).ApproveAsync(arguments[1]), JsonFiles.Options)); break;
     case "ingest": Console.WriteLine(JsonSerializer.Serialize(await store.IngestAsync(arguments[1]), JsonFiles.Options)); break;
     case "list": Console.WriteLine(JsonSerializer.Serialize(store.List(), JsonFiles.Options)); break;
