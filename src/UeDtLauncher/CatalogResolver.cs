@@ -11,7 +11,7 @@ public static class CatalogResolver
             return;
         }
 
-        ValidateClientSelection(config);
+        if (string.IsNullOrWhiteSpace(config.DistributionServerUrl)) ValidateClientSelection(config);
 
         log?.Invoke("Catalog", "Downloading release catalog...", 2);
         var catalog = await DownloadCatalogAsync(config, httpClient, log, cancellationToken);
@@ -22,6 +22,8 @@ public static class CatalogResolver
         config.Environment = release.Environment;
         config.TargetPlatform = release.Platform;
         config.ResolvedReleaseVersion = release.Version;
+        if (!string.IsNullOrWhiteSpace(config.DistributionServerUrl))
+            VersionedReleasePaths.Bind(config, new ReleaseSelection(config.ProjectId!, release.Environment, release.Channel, release.Platform, release.Version));
 
         log?.Invoke("Catalog", $"Selected {config.ProjectId} {release.Version} / {release.Environment} / {release.Platform} / {release.Channel}", 4);
     }
@@ -44,7 +46,15 @@ public static class CatalogResolver
             config.Security.MaxCatalogBytes,
             cancellationToken);
 
-        var signatureVerified = await VerifyCatalogIfConfiguredAsync(catalogJson, config, httpClient, cancellationToken);
+        bool signatureVerified;
+        if (!string.IsNullOrWhiteSpace(config.DistributionServerUrl))
+        {
+            var envelope = JsonSerializer.Deserialize<DistributionEnvelope>(catalogJson, JsonFiles.Options)
+                ?? throw new InvalidDataException("Missing signed distribution catalog.");
+            catalogJson = DistributionEnvelopeVerifier.Verify(envelope, config);
+            signatureVerified = true;
+        }
+        else signatureVerified = await VerifyCatalogIfConfiguredAsync(catalogJson, config, httpClient, cancellationToken);
         if (!signatureVerified)
         {
             if (config.RequireSignedManifests)

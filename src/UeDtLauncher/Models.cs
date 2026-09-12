@@ -13,6 +13,9 @@ public sealed class LauncherConfig
 
     // Release catalog mode. Recommended for multi-project / multi-version / multi-client deployment.
     public string? CatalogUrl { get; set; }
+    public string? DistributionServerUrl { get; set; }
+    [JsonIgnore] public string? VersionedInstallRoot { get; set; }
+    [JsonIgnore] public ReleaseSelection? SelectedRelease { get; set; }
     public string? CatalogSignatureUrl { get; set; }
     public string? CatalogPublicKeyPath { get; set; }
 

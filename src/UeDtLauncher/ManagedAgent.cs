@@ -14,7 +14,7 @@ public static class ManagedAgentProtocol
     public const string DefaultLinuxSocketPath = "/run/ue-dt-launcher/agent-v1.sock";
 
     public static readonly IReadOnlySet<string> AllowedCommands = new HashSet<string>(
-        ["status", "check", "update", "repair", "rollback", "service-run", "diagnostics"],
+        ["status", "catalog", "check", "update", "repair", "rollback", "service-run", "diagnostics"],
         StringComparer.OrdinalIgnoreCase);
 
     public static string ResolveEndpoint()
@@ -41,6 +41,7 @@ public sealed class ManagedAgentRequest
     public string Command { get; set; } = "status";
     public string? ProjectId { get; set; }
     public bool StreamProgress { get; set; }
+    public ReleaseSelection? Selection { get; set; }
 }
 
 public sealed class ManagedAgentResponse
@@ -55,6 +56,8 @@ public sealed class ManagedAgentResponse
     public bool IsFinal { get; set; } = true;
     public List<ManagedAgentProgress> Progress { get; set; } = new();
     public ManagedProjectStatus? ProjectStatus { get; set; }
+    public ReleaseSelection? SelectedRelease { get; set; }
+    public DistributionCatalog? Catalog { get; set; }
 }
 
 public sealed record ManagedAgentProgress(string Stage, string Message, double? Percent);
@@ -285,14 +288,16 @@ public sealed class ManagedAgentClient(string? endpoint = null)
         string? projectId,
         Action<ManagedAgentProgress> onProgress,
         TimeSpan? timeout = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ReleaseSelection? selection = null)
     {
         ArgumentNullException.ThrowIfNull(onProgress);
         var request = new ManagedAgentRequest
         {
             Command = command,
             ProjectId = projectId,
-            StreamProgress = true
+            StreamProgress = true,
+            Selection = selection
         };
         var validationError = ManagedAgentProtocol.Validate(request);
         if (validationError is not null) throw new InvalidOperationException(validationError);

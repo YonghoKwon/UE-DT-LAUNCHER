@@ -220,6 +220,16 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
             var configPath = Path.Combine(layout.ConfigRoot, "launcher.config.json");
             if (!File.Exists(configPath)) return Error(request, "not-configured", $"Managed config was not found: {configPath}", identity);
             var config = await LoadProjectConfigAsync(configPath, request.ProjectId, cancellationToken);
+            if (request.Selection is not null)
+            {
+                if (string.IsNullOrWhiteSpace(config.DistributionServerUrl)) throw new InvalidOperationException("Explicit selection requires distribution server configuration.");
+                request.Selection.Validate();
+                if (request.Selection.ProjectId != request.ProjectId || request.Selection.Platform != config.TargetPlatform)
+                    throw new InvalidDataException("Release selection does not match this project/platform.");
+                config.Environment = request.Selection.Environment; config.Channel = request.Selection.Channel;
+                config.VersionPolicy = "exact"; config.RequestedVersion = request.Selection.Version;
+                config.ClientProfile = "developer"; // Server policy, not the presentation profile, authorizes this selection.
+            }
             var progress = new List<ManagedAgentProgress>();
             void AddProgress(LauncherProgress value)
             {
@@ -231,6 +241,12 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
 
             switch (request.Command.ToLowerInvariant())
             {
+                case "catalog":
+                    using (var http = SecureHttpClientFactory.Create(config))
+                    {
+                        var catalog = await CatalogResolver.DownloadCatalogAsync(config, http, cancellationToken: cancellationToken);
+                        return new ManagedAgentResponse { CorrelationId = request.CorrelationId, Success = true, Catalog = catalog, AgentVersion = AgentVersion() };
+                    }
                 case "check":
                         using (var http = SecureHttpClientFactory.Create(config))
                         {
@@ -239,7 +255,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                         var document = await ManifestDownloader.DownloadAsync(config, http, (stage, message, percent) =>
                             AddProgress(new LauncherProgress(stage, message, percent)), cancellationToken);
                         var projectStatus = await ManagedProjectStatusInspector.InspectAsync(config, document.Manifest, cancellationToken);
-                        return Success(request, identity, "checked", $"Release {document.Manifest.Version} metadata, files and signatures are valid.", progress, projectStatus);
+                        return Success(request, identity, "checked", $"Release {document.Manifest.Version} metadata, files and signatures are valid.", progress, projectStatus, config.SelectedRelease);
                     }
                 case "update":
                 case "repair":
@@ -254,8 +270,9 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                         }
                     var installed = await JsonFiles.ReadAsync<LauncherManifest>(config.InstalledManifestPath, cancellationToken);
                     var completedStatus = await ManagedProjectStatusInspector.InspectAsync(config, installed, cancellationToken);
-                    return Success(request, identity, "completed", config.RepairMode ? "Repair completed." : "Update completed.", progress, completedStatus);
+                    return Success(request, identity, "completed", config.RepairMode ? "Repair completed." : "Update completed.", progress, completedStatus, config.SelectedRelease);
                 case "rollback":
+                    if (request.Selection is not null) VersionedReleasePaths.Bind(config, request.Selection);
                     var backup = BackupManager.List(config.BackupDir).FirstOrDefault();
                     if (backup.BackupRoot is null) return Error(request, "no-backup", "No rollback backup is available.", identity);
                     using (SingleInstanceLock.Acquire(LauncherPaths.UpdateLockPath(config)))
@@ -303,7 +320,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
         var selected = string.IsNullOrWhiteSpace(requestedProjectId)
             ? config.Projects.FirstOrDefault(project => project.ProjectId.Equals(config.ProjectId, StringComparison.OrdinalIgnoreCase))
             : config.Projects.FirstOrDefault(project => project.ProjectId.Equals(requestedProjectId, StringComparison.OrdinalIgnoreCase));
-        if (!string.IsNullOrWhiteSpace(requestedProjectId) && selected is null && !requestedProjectId.Equals(config.ProjectId, StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(config.DistributionServerUrl) && !string.IsNullOrWhiteSpace(requestedProjectId) && selected is null && !requestedProjectId.Equals(config.ProjectId, StringComparison.OrdinalIgnoreCase))
             throw new UnauthorizedAccessException($"Project is not declared in managed config: {requestedProjectId}");
         if (!string.IsNullOrWhiteSpace(requestedProjectId)) config.ProjectId = requestedProjectId;
         LauncherPaths.ResolveInPlace(config, configPath, selected?.InstallPath);
@@ -317,7 +334,8 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
         string status,
         string message,
         List<ManagedAgentProgress> progress,
-        ManagedProjectStatus? projectStatus = null) => new()
+        ManagedProjectStatus? projectStatus = null,
+        ReleaseSelection? selectedRelease = null) => new()
         {
             CorrelationId = request.CorrelationId,
             Success = true,
@@ -326,7 +344,8 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
             AgentVersion = AgentVersion(),
             ClientIdentity = identity,
             Progress = progress,
-            ProjectStatus = projectStatus
+            ProjectStatus = projectStatus,
+            SelectedRelease = selectedRelease
         };
 
     private static ManagedAgentResponse Error(

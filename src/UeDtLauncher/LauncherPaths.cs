@@ -34,6 +34,12 @@ public static partial class LauncherPaths
     {
         var fullConfigPath = Path.GetFullPath(configPath);
         config.InstallDir = ResolveConfigRelative(fullConfigPath, installPathOverride ?? config.InstallDir);
+        if (!string.IsNullOrWhiteSpace(config.DistributionServerUrl))
+        {
+            config.CatalogUrl = config.DistributionServerUrl.TrimEnd('/') + "/api/v1/catalog";
+            config.VersionedInstallRoot ??= config.InstallDir;
+        }
+        config.StateRootDir = ResolveConfigRelative(fullConfigPath, config.StateRootDir);
         config.LogDir = ResolveConfigRelative(fullConfigPath, config.LogDir);
         config.ManifestPublicKeyPath = ResolveOptionalConfigRelative(fullConfigPath, config.ManifestPublicKeyPath);
         config.CatalogPublicKeyPath = ResolveOptionalConfigRelative(fullConfigPath, config.CatalogPublicKeyPath);

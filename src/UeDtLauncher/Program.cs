@@ -231,7 +231,13 @@ public static class Program
         var command = args.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal)) ?? "status";
         var endpoint = Get(args, "--endpoint");
         var projectId = Get(args, "--project");
-        var response = await new ManagedAgentClient(endpoint).SendAsync(command, projectId);
+        var version = Get(args, "--version");
+        var selection = version is null ? null : new ReleaseSelection(projectId ?? throw new ArgumentException("--project is required"),
+            Get(args, "--environment") ?? "prod", Get(args, "--channel") ?? "stable",
+            Get(args, "--platform") ?? (OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64"), version);
+        var response = await new ManagedAgentClient(endpoint).SendStreamingAsync(command, projectId, _ => { }, selection: selection);
+        if (selection is not null && response.Success && response.SelectedRelease != selection)
+            throw new InvalidDataException("Agent did not confirm the requested release.");
         PrintAgentResponse(response);
         if (!string.IsNullOrWhiteSpace(response.ClientIdentity)) Console.WriteLine($"Client: {response.ClientIdentity}");
         return response.Success ? 0 : 1;
