@@ -11,6 +11,7 @@ var store = new IntakeStore(settings);
 var action = arguments.FirstOrDefault() ?? "list";
 switch (action)
 {
+    case "approve": Console.WriteLine(JsonSerializer.Serialize(await new ApprovedPublisher(store).ApproveAsync(arguments[1]), JsonFiles.Options)); break;
     case "ingest": Console.WriteLine(JsonSerializer.Serialize(await store.IngestAsync(arguments[1]), JsonFiles.Options)); break;
     case "list": Console.WriteLine(JsonSerializer.Serialize(store.List(), JsonFiles.Options)); break;
     case "inspect": Console.WriteLine(JsonSerializer.Serialize(store.Get(arguments[1]), JsonFiles.Options)); break;

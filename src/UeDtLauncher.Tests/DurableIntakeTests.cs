@@ -34,6 +34,17 @@ public sealed class DurableIntakeTests : IDisposable
         Assert.Single(reopened.List());
         Assert.True(await Hashing.Sha256MatchesAsync(Path.Combine(job.Snapshot!, metadata.PackageFile), metadata.PackageSha256));
         Assert.Empty(Directory.EnumerateFileSystemEntries(Path.Combine(root, "releases")));
+        using var key = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
+        reopened.Settings.SigningKeyPath = Path.Combine(root, "key.pem");
+        File.WriteAllText(reopened.Settings.SigningKeyPath, key.ExportECPrivateKeyPem());
+        var publisher = new ApprovedPublisher(reopened);
+        var release = await publisher.ApproveAsync(job.Id);
+        Assert.True(File.Exists(Path.Combine(release.Directory, "files", "game.exe")));
+        var signedBytes = File.ReadAllText(Path.Combine(release.Directory, "manifest.json"));
+        var signature = await JsonFiles.ReadAsync<DetachedSignatureEnvelope>(Path.Combine(release.Directory, "manifest.json.sig"));
+        Assert.True(key.VerifyData(System.Text.Encoding.UTF8.GetBytes(signedBytes), Convert.FromBase64String(signature.Signature), System.Security.Cryptography.HashAlgorithmName.SHA256));
+        Assert.Equal(release.ReleaseId, (await publisher.ApproveAsync(job.Id)).ReleaseId);
+        Assert.Single(publisher.List());
     }
     [Fact]
     public async Task BadMetadataRequiresExplicitRetryAndWatchRecovers()
