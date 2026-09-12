@@ -18,7 +18,7 @@ public static class Program
     public static int Main(string[] args)
     {
         CrashReporter.Install(Path.Combine(AppContext.BaseDirectory, "logs"));
-        if (args.Any(arg => arg.Equals("--version", StringComparison.OrdinalIgnoreCase)))
+        if (args.Length == 1 && args[0].Equals("--version", StringComparison.OrdinalIgnoreCase))
         {
             Console.WriteLine(typeof(Program).Assembly.GetCustomAttributes(false)
                 .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
