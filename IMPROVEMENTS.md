@@ -14,6 +14,9 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | OPS-04/P1 | StorageMaintenance는 scratch만 정리, 공개판·snapshot 누적 | 보관 기간/용량·참조 보호·dry-run·감사 정리. 사용 중 자료 보존 검증 |
 | OPS-05/P1 | 수동 백업·복원, catalog sequence 역행 위험 | 일관된 백업/복원 도구·sequence 보호·복구 훈련. 기존 PC 검증 성공, RPO/RTO 별도 합의 |
 | OPS-06/P1 | E2E 스크립트는 있으나 build.yml에 실행 단계 없음 | HTTPS·권한·다중 버전 E2E CI gate, 민감정보 없는 결과 보관 |
+| OPS-07/P1 | AgentWorker는 IPC 대기만 하고 service-run은 once=true. CLI는 managed 반복 실행을 거부 | Agent 스케줄러 또는 명시적 외부 스케줄 운영을 확정. 재부팅 후 정기 점검·중복 작업 방지·maintenance window 시험 |
+| OPS-08/P0 | release.yml은 MSI 생성 후 payload EXE 서명. Product.wxs는 embedded CAB이므로 뒤늦은 EXE 서명이 MSI 내부에 반영되지 않음 | EXE 서명 → 서명 검증 → MSI 생성 → MSI 서명 순서로 변경. 실제 설치된 GUI/Agent EXE와 MSI의 서명을 각각 검증 |
+| OPS-09/P0 | ServiceRunner가 PID 검증에 이름 부분 일치, fallback으로 동명 첫 프로세스를 사용. 다중 버전에서 다른 프로세스 선택 위험 | 실행 경로·시작 시각·설치 식별자로 프로세스 결속. 동명 다른 버전/무관 앱을 종료하지 않는 회귀 테스트 |
 
 ## 성능·저장 공간
 
@@ -32,6 +35,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | USER-02/P1 | 서버/Agent/토큰/공개키 초기 설정 단계가 많음 | 관리자 사전 점검·설정 검증, 사용자 오류 코드/조치 안내. 새 PC 최초 실행·비밀정보 미노출 |
 | USER-03/P2 | 엔진 취소 토큰과 별개로 일반 UX 취소는 이전 범위에서 제외 | 안전 중단 지점·취소/재개 설계. 다운로드·검증·설치별 중단 후 손상 없음 |
 | USER-04/P2 | 오프라인·권한 폐기 후 기설치 실행 최종 정책 미정 | 실행/권한 재확인 규칙 합의. 미설치·기설치·폐기 토큰 수용 테스트 |
+| USER-05/P1 | sample-config와 build-rpm.sh의 기본 설정은 정적 catalog 예시. 새 통합 서버 초기 설정과 불일치 | DistributionServer용 설정 생성 및 설치 템플릿 제공. 생성 직후 URL·키·credential 누락 진단과 최초 연결 시험 |
 
 ## UI·접근성
 
@@ -48,14 +52,17 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 |---|---|---|
 | SEC-01/P1 | DistributionTokens 발급·PC 단위 전체 폐기, 만료/개별 관리 없음 | 만료·토큰별 폐기·순환·감사 설계. 비밀 노출 없는 교체/만료/폐기 시험 |
 | SEC-02/P1 | loopback nginx 신뢰와 직접 사내 IP 전제 | NAT/추가 proxy의 실제 IP 계약·rate limit 검토. 위조 헤더 차단과 회사 망 경로별 검증 |
+| SEC-03/P0 | CommercialSecurity는 Linux credential을 0600으로 저장하지만 서비스 계정 소유권을 설정하지 않음. root 등록 시 uedt가 못 읽을 수 있음 | 등록 계정/서비스 계정별 소유권 검증·안전한 provisioning. 서비스 실제 읽기 성공 및 무관 계정 읽기 실패 시험 |
 | EXT-01/P2 | IAccessPolicyProvider 파일 구현만 존재 | 회사 API 합의 후 timeout/cache TTL/기본 거부. 장애·취소·오래된 응답에서 권한 확대 없음 |
 | DEV-01/P2 | Core 링크 컴파일, MainWindow 동작 코드 잔존 | 기능 변경과 분리한 물리 폴더·ViewModel 정리. API/CLI/IPC 회귀 없음 |
 
 근거 소스: [서버 API](src/UeDtLauncher.DistributionServer/DistributionHttp.cs), [저장 관리](src/UeDtLauncher.DistributionServer/StorageMaintenance.cs), [권한](src/UeDtLauncher.DistributionServer/AccessPolicy.cs), [엔진](src/UeDtLauncher/LauncherEngine.cs), [버전 경로](src/UeDtLauncher.Core/Distribution/VersionedReleasePaths.cs), [CI](.github/workflows/build.yml).
 
+추가 교차 확인: [AgentWorker](src/UeDtLauncher.Agent/Program.cs), [Agent 작업](src/UeDtLauncher.Agent/AgentIpcHostedService.cs), [서명 순서](.github/workflows/release.yml), [MSI CAB](installer/windows/Product.wxs), [RPM 설정](scripts/build-rpm.sh), [credential 저장](src/UeDtLauncher/CommercialSecurity.cs), [프로세스 식별](src/UeDtLauncher/ServiceRunner.cs). 위 항목은 코드에서 확인한 차이이며 이번에 수정한 것은 문서뿐입니다.
+
 ## 처리 제안과 상태 관리
 
-1. OPS-01/02·USER-01: 회사 환경·실제 패키지·데이터 보존 확인.
+1. OPS-08/09·SEC-03: 설치 payload 서명·프로세스 오인·credential 접근 문제 우선 보완. 이어 OPS-01/02·USER-01의 회사 환경·실제 패키지·데이터 보존 검증.
 2. OPS-03/04/05·SEC-01: 최신판·보관·복원·토큰 운영 사고 예방.
 3. PERF 기준선·OPS-06: 측정 후 개선, 자동 회귀 검증.
 4. USER/UI·API 범위는 [목표 문서](PROJECT_GOALS.md)에서 확정 후 진행.

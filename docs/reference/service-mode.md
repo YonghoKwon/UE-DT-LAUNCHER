@@ -64,6 +64,8 @@
 
 버전 비교는 문자열의 차이를 감지하며 단순히 숫자가 큰 버전만 적용하는 규칙이 아닙니다. 서버 정책·메타데이터 검증도 통과해야 합니다. 버전별 설치에서 이전 프로세스 탐색·동시 실행 방지·실제 UE 종료/재기동은 현장 검증 대상입니다.
 
+현재 PID 확인은 프로세스 이름 부분 일치이며 fallback은 동명 첫 프로세스 선택입니다. 다른 버전·다른 설치와 이름이 같으면 오인 종료 위험이 있으므로 그런 환경의 무인 적용을 승인하지 마세요. 실행 경로·시작 시각·설치 ID 결속 보완은 [OPS-09](../../IMPROVEMENTS.md)에 기록했습니다.
+
 Linux Agent unit은 `packaging/linux/ue-dt-launcher-agent.service`이며 `uedt`로 실행합니다. 기존 portable loop를 직접 systemd/작업 스케줄러에 등록하는 방식은 별도 운영 방식입니다. 관리 Agent와 같은 설치를 동시에 소유하게 구성하지 마세요.
 
 [상용 배포 준비](commercial-deployment.md)와 [검증 범위](distribution-validation.md)를 확인한 뒤 실제 UE·픽셀 스트리밍에 적용하세요.

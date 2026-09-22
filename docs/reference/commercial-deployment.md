@@ -32,6 +32,8 @@ Linux RPM:
 
 `.github/workflows/release.yml`은 `launcher-v*` tag에서 Windows PFX·RPM GPG 비밀값을 검사합니다. 코드에 gate가 있다는 사실과 실제 서명된 설치 결과 검증은 다릅니다. 배포 전 MSI 내부에 설치되는 EXE의 서명까지 검사하세요.
 
+현재 순서는 MSI 생성 후 payload EXE 서명이므로 embedded CAB 내부 EXE에는 그 서명이 반영되지 않습니다. **EXE 서명·검증 → MSI 생성 → MSI 서명·설치 후 검증** 순서로 수정하기 전 운영 배포를 승인하지 마세요. 이는 코드에서 확인한 미해결 항목 OPS-08입니다.
+
 ## 현장 적용 순서
 
 1. 격리된 관리자 테스트 PC/실제 RHEL에서 설치·업그레이드·제거를 확인합니다.
