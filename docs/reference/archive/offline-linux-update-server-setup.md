@@ -1,5 +1,7 @@
 # Offline Linux Update Server Setup Guide
 
+> 보존 자료 / 2026-09-22 분류: 아래 본문은 과거 설계·구축 당시 기록이며 현행 기능이나 회사 배포 완료의 증거가 아닙니다. 공개 정적 경로·HTTP·Basic Auth·직접 압축 게시 명령을 신규 운영에 적용하지 마세요. 현재 절차는 [통합 배포 운영](../distribution-workflow.md), 현재 기능과 미정 목표는 [프로젝트 README](../../../README.md)를 따릅니다.
+
 > **참고:** 이 문서의 최신 정본은 [guide-01-linux-server-setup.md](../guide-01-linux-server-setup.md)입니다. 내용이 다를 경우 정본을 따르세요.
 
 이 문서는 인터넷이 차단된 Linux 서버, 특히 RHEL 8.x 계열 서버에 UE-DT Launcher용 업데이트 서버를 구성하는 방법을 설명합니다.

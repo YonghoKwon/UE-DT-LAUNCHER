@@ -1,4 +1,6 @@
 # Linux 배포 서버 설정
+
+> 참고 가이드 / 문서 점검 2026-09-22 / 구현 기준 2cd28c8. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
 현재 운영 기준은 [ZIP·외부 JSON 통합 배포](distribution-workflow.md)입니다.
 기존 공개 /projects 및 /catalogs 정적 파일 규칙, Basic Auth, project-ip-allowlist 생성 방식은 새 배포 서비스의 인증 정책을 대신하지 않습니다.
 

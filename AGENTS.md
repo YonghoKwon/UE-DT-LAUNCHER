@@ -1,218 +1,58 @@
-# AGENTS.md
+# 작업 지침
 
-이 문서는 UE-DT-LAUNCHER 저장소를 수정하는 자동화 에이전트/개발자를 위한 작업 지침입니다.
+점검: 2026-09-22 / 구현 기준 2cd28c8. 저장소 전체에 적용합니다.
 
-## 프로젝트 개요
+## 문서 관리 계약
 
-UE-DT-LAUNCHER는 Unreal Engine 패키징 결과물을 Windows/Linux PC에 배포하고 실행 전 최신 상태로 업데이트하는 .NET 8 + Avalonia 기반 런처입니다.
+- 루트 정본은 README.md(현재), AGENTS.md(규칙), IMPROVEMENTS.md(보완), PROJECT_GOALS.md(목표·미정) 4개입니다.
+- 나머지 상세 가이드·검증 기록은 docs/reference/, 과거 자료는 archive/에 두고 색인에 연결합니다.
+- 기능·설정·보안·CLI·UI 변경 시 관련 정본과 상세 가이드를 함께 갱신합니다. 같은 설정 전문을 중복 관리하지 않습니다.
+- 구현됨/과거 테스트됨/이번 검증됨/회사 미검증을 구분하고 날짜·플랫폼·입력을 기록합니다.
+- 목표는 사용자 확정 전까지 미정입니다. 제안을 확정 기능이나 완료 기능으로 바꾸지 않습니다.
+- 문서를 이동하면 상대 링크와 스크립트 내 참조도 확인합니다.
 
-핵심 흐름:
+## 코드 지도
 
-```text
-launcher.config.json
-  ↓
-release catalog 선택 또는 직접 manifest 사용
-  ↓
-manifest 다운로드 및 선택적 서명 검증
-  ↓
-파일 SHA-256 비교
-  ↓
-변경/누락 파일 다운로드
-  ↓
-staging 검증
-  ↓
-backup 후 installDir 반영
-  ↓
-앱 실행
-```
+| 위치 | 책임 |
+|---|---|
+| src/UeDtLauncher/Program.cs | GUI/CLI 명령 |
+| src/UeDtLauncher/Gui/ | programmatic Avalonia View·ViewModel·시각 토큰 |
+| src/UeDtLauncher.Core/ | 공용 assembly, Distribution 메타데이터·경로·이미지 |
+| src/UeDtLauncher/*.cs | 엔진·보안·transaction·IPC 소스 일부. Core csproj가 링크 컴파일 |
+| src/UeDtLauncher.Agent/ | Windows Service/Linux systemd Agent |
+| src/UeDtLauncher.DistributionServer/ | SQLite 접수·승인·서명 게시·인증 API |
+| src/UeDtLauncher.Tests/, tools/test-distribution-e2e.sh | 자동화·실제 프로세스 E2E |
+| installer/windows/, packaging/linux/, .github/workflows/ | 설치본·nginx·서비스·CI |
 
-## 주요 디렉터리
+## 보존할 경계
 
-```text
-src/UeDtLauncher/
-  Program.cs                         CLI/GUI 진입점
-  LauncherEngine.cs                  업데이트 엔진
-  CatalogResolver.cs                 release catalog 선택 로직
-  ManifestGenerator.cs               manifest 생성
-  ManifestSignatureVerifier.cs       ECDSA 서명 검증/생성
-  PackageExtractor.cs                ZIP/7z 압축 해제
-  SelfUpdateManager.cs               런처 자기 업데이트 준비
-  WindowsIntegration.cs              shortcut 등 Windows 연동
-  Models.cs                          설정/manifest/catalog 모델
-  Gui/
-    MainWindow.axaml                 최소 Window XAML
-    MainWindow.axaml.cs              실제 GUI 구성 및 동작
+- ZIP + 외부 release.json을 비공개 snapshot으로 검사하고 관리자 승인 후 게시합니다. 업로드 프로그램을 서버에서 실행하지 않습니다.
+- .uploading/한 파일만 도착한 상태를 게시하지 않습니다. 동일 릴리스 식별자 덮어쓰기를 허용하지 않습니다.
+- 실제 IP/CIDR + PC별 토큰을 목록·Manifest·이미지·파일·Range 모두에 적용합니다. 공개 정적 경로 우회를 만들지 않습니다.
+- HTTPS·서명·해시·경로 안전 검사를 완화하지 않습니다. 개인키·토큰·Authorization을 로그나 Git에 넣지 않습니다.
+- GUI 프로필은 화면 정책입니다. Agent의 보호된 운영 설정·credential·서버 권한과 분리합니다. 정확한 선택을 다른 버전으로 몰래 대체하지 않습니다.
+- 설치·상태·잠금·PID는 프로젝트/환경/채널/버전/OS별 격리입니다. 기존 설치·사용자 데이터는 승인 없이 삭제하지 않습니다.
+- 일반 GUI는 자동 점검만 합니다. 설치는 사용자 동작, rollback은 확인 후 실행합니다. 무인 서비스와 구분합니다.
+- IPC v1 단일 응답과 streaming 클라이언트 호환성을 보존합니다.
 
-src/UeDtLauncher.Core/              update/security/transaction 공용 assembly
-src/UeDtLauncher.Agent/             Windows Service/systemd 관리 Agent와 IPC
-installer/windows/                  WiX machine-wide MSI
-packaging/linux/                    RHEL 8 RPM spec와 systemd unit
+## UI 규칙
 
-docs/
-  README.md                          문서 색인 + 빠른 시작
-  guide-01-linux-server-setup.md     서버 구성 정본
-  guide-02-publish-package.md        릴리스 퍼블리시
-  guide-03-launcher-usage.md         런처 사용/설정 레퍼런스
-  launcher-user-guide.md             GUI 화면 사용법
-  launcher-ui-customization.md       UI 커스터마이징
-  service-mode.md                    무인 서비스 모드
-  reference/                         보조·레거시 문서
+- programmatic View와 LauncherVisualTokens·ViewModel을 사용합니다.
+- 일반 화면은 한 버튼·친화적 오류, Agent 대신 업데이트 서비스로 표기합니다. 기술 예외·내부 경로·비밀정보를 기본 화면에 표시하지 않습니다.
+- 개발자 명령을 보존하되 서버 권한을 확대하지 않습니다. 배포 서버 모드 GUI는 현재 OS용 릴리스를 선택합니다.
+- 이미지 누락·손상·과대 파일은 브랜드 fallback으로 처리합니다. 키보드·focus·스크린리더·DPI를 확인합니다.
+- GUI 설정 탐색은 explicit --config → 실행 파일 옆 → 관리 설정입니다. 관리형 운영 값은 Agent 설정을 사용합니다.
+- single-file 네이티브 라이브러리 포함 옵션과 XAML의 &amp; escaping을 유지합니다.
 
-examples/
-  catalogs/
-  configs/
-```
+## 작업·검증·커밋
 
-## 빌드/실행
+1. git status와 지침을 확인하고 사용자 변경을 보존합니다. 브랜치·remote를 임의로 교체하지 않습니다.
+2. 의미 단위 구현 후 관련 테스트를 실행합니다. --no-restore 전 restore가 필요합니다.
+3. 기능 변경은 publish된 GUI/Agent/CLI/서버로 실행 검증합니다. Unreal Editor 프로젝트가 아닙니다.
+4. Windows/WSL 결과를 회사 RHEL/실제 UE 결과로 보고하지 않습니다.
+5. 관련 파일만 git add로 선별 stage하고 staged diff 확인 후 부분별 커밋합니다. git add -A는 사용하지 않습니다.
+6. 최종 git diff --check, 링크, 커밋 범위, worktree를 확인합니다. push/PR은 요청 범위에 따릅니다.
 
-Windows publish:
+기본 빌드·테스트 명령은 README를 따릅니다. 문서 전용 수정은 소스·명령·링크 대조와 diff 검사로 검증 가능하며 GUI 실행·전체 테스트를 수행한 것처럼 보고하지 않습니다.
 
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\scripts\publish-win-x64.ps1
-```
-
-Windows GUI 실행:
-
-```powershell
-.\publish\win-x64\UeDtLauncher.exe
-```
-
-Linux publish:
-
-```bash
-chmod +x ./scripts/publish-linux-x64.sh
-./scripts/publish-linux-x64.sh
-```
-
-## GUI 개발 지침
-
-현재 GUI는 `MainWindow.axaml`에 복잡한 XAML을 두지 않고, `MainWindow.axaml.cs`에서 프로그래밍 방식으로 구성합니다.
-
-이유:
-
-- Avalonia XAML 파싱 오류를 줄이기 위함
-- 일반 사용자/개발자 모드 분기를 코드에서 쉽게 관리하기 위함
-- 프로젝트 카드, 검색, 동적 상태 표시, ComboBox 등을 설정 기반으로 구성하기 위함
-
-### 일반 사용자 모드
-
-`clientProfile = general`일 때는 다음 원칙을 지켜야 합니다.
-
-- 기술 로그, stack trace, config path 입력창을 노출하지 않습니다.
-- 개발자용 기능인 복구, 캐시 정리, 매니페스트 검증, 환경/채널/플랫폼 변경은 숨깁니다.
-- 노출 기능은 실행, 상태 확인, 설정 팝업, 설치 폴더 열기, 문제 보고용 로그 저장 정도로 제한합니다.
-- 오류 메시지는 친화적인 문장으로 변환해서 보여줍니다.
-
-### 개발자 모드
-
-`clientProfile = developer`일 때는 다음 기능을 유지합니다.
-
-- 환경 ComboBox: `prod`, `dev`
-- 채널 ComboBox: `stable`, `beta`, `dev`
-- 플랫폼 ComboBox: `windows-x64`, `linux-x64`
-- 버전 정책 ComboBox: `latest`, `exact`
-- 업데이트, 실행, 검증/복구, 캐시 정리, 로그 저장, 로그 지우기, 다시 시도
-- 상세 로그와 예외 정보 표시
-
-## 프로젝트 UI 메타데이터
-
-프로젝트 목록은 `launcher.config.json`의 `projects` 배열로 구성합니다.
-
-```json
-{
-  "projectId": "ue-dt-simulator",
-  "displayName": "UE-DT Simulator",
-  "description": "센서/디지털 트윈 개발 검증용 빌드입니다.",
-  "thumbnailPath": "assets/projects/ue-dt-simulator/thumbnail.png",
-  "heroPath": "assets/projects/ue-dt-simulator/hero.png",
-  "status": "최신 버전",
-  "installPath": "app",
-  "engineVersion": "Unreal 5.4",
-  "technology": "Windows",
-  "sortOrder": 0,
-  "isPinned": true,
-  "visibleToProfiles": ["general", "developer"]
-}
-```
-
-정렬 기준:
-
-```text
-1. isPinned = true 먼저
-2. sortOrder 낮은 순
-3. displayName 이름순
-```
-
-`visibleToProfiles`가 비어 있으면 모든 프로필에 표시합니다.
-
-## 이미지 자산 규칙
-
-기본 이미지 위치:
-
-```text
-publish/win-x64/assets/projects/{projectId}/thumbnail.png
-publish/win-x64/assets/projects/{projectId}/hero.png
-```
-
-권장 크기:
-
-```text
-thumbnail.png: 480 x 320
-hero.png: 1920 x 720
-```
-
-이미지가 없으면 GUI가 placeholder를 표시해야 합니다. 이미지 누락으로 런처가 실패하면 안 됩니다.
-
-## 업데이트/상태 확인 지침
-
-- 상태 확인은 manifest를 다운로드하고 실제 설치 파일의 SHA-256을 비교합니다.
-- 상태는 최소한 `설치 필요`, `업데이트 가능`, `최신 상태`, `오류`, `확인 필요`로 구분합니다.
-- 일반 사용자에게는 내부 단계명 대신 친화적인 메시지를 표시합니다.
-- 개발자에게는 내부 단계명과 상세 로그를 표시할 수 있습니다.
-
-## 로그 지침
-
-- 일반 사용자에게는 중복/기술 로그를 최소화합니다.
-- 개발자에게는 상세 로그와 stack trace를 보여도 됩니다.
-- 로그 저장은 `logs/launcher-yyyyMMdd-HHmmss.log` 형식으로 저장합니다.
-
-## 캐시/백업 지침
-
-- 캐시는 `_config.StagingDir`입니다.
-- 백업은 `_config.BackupDir`입니다.
-- UI에서는 캐시/백업 용량을 표시합니다.
-- 캐시 정리는 staging 폴더만 삭제/재생성합니다. backup 폴더는 자동 삭제하지 않습니다.
-
-## 보안 지침
-
-일반 사용자가 개발 버전을 받지 못하게 하는 것은 런처 UI만으로는 충분하지 않습니다.
-
-서버에서도 반드시 다음 구조를 지킵니다.
-
-```text
-/catalogs/general/        공개
-/projects/*/prod/stable/ 공개
-/catalogs/developer/      인증 필요
-/projects/*/dev/          인증 필요
-```
-
-catalog와 manifest는 ECDSA SHA-256 서명을 권장합니다.
-
-## 문서 업데이트 규칙
-
-다음 변경이 있으면 반드시 README.md와 관련 docs를 함께 수정합니다.
-
-- config schema 변경
-- GUI 노출 기능 변경
-- catalog/manifest 형식 변경
-- publish 스크립트 변경
-- 서버 배포 구조 변경
-- 일반 사용자/개발자 권한 정책 변경
-
-## 주의사항
-
-- 실행 파일은 Git에 커밋하지 않습니다.
-- `publish/`, `bin/`, `obj/`, `.staging/`, `.backup/`, `app/`은 커밋하지 않습니다.
-- Avalonia XAML에 `&` 문자를 직접 쓰지 않습니다. 필요하면 `&amp;`로 escape합니다.
-- single-file publish에서 SkiaSharp 네이티브 DLL이 누락되지 않도록 `IncludeNativeLibrariesForSelfExtract=true` 옵션을 유지합니다.
+publish/bin/obj, 테스트 logs·DB·인증서·토큰, 패키지·설치 데이터는 커밋하지 않습니다. 새 테스트 없이 과거 검증 날짜·결과를 덮어쓰지 않습니다.

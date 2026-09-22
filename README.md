@@ -1,469 +1,91 @@
-# UE-DT-LAUNCHER
+# UE-DT Launcher
 
-UE-DT-LAUNCHER는 Unreal Engine 패키징 결과물을 Windows/Linux PC에 배포하고, 실행 전에 최신 파일로 자동 업데이트한 뒤 앱을 실행하기 위한 경량 런처입니다.
+Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 런처입니다.
 
-이 브랜치는 Netmarble Launcher 분석 결과를 바탕으로, PC 배포에 필요한 핵심 기능과 여러 프로젝트/버전/OS/환경/클라이언트 프로필을 관리하는 release catalog 기능을 포함합니다.
+문서 점검: **2026-09-22**, 구현 기준: `2cd28c8` (`codex/distribution-workflow-integration`). 로컬 작업 브랜치 기준이며 main 반영·운영 배포 완료를 뜻하지 않습니다.
 
-## 먼저 알아둘 점
+## 관리 문서 4개
 
-ZIP과 외부 release.json 두 파일 접수, 관리자 승인, IP/PC토큰별 배포 목록·파일 접근, 버전별 동시 설치는 [통합 배포 운영 가이드](docs/distribution-workflow.md)를 기준으로 사용합니다. 신규 운영 구성에서는 과거 공개 정적 서버 경로를 사용하지 않습니다.
+| 문서 | 관리 내용 |
+|---|---|
+| [README](README.md) | 현재 기능·사용 흐름·시작 방법 |
+| [AGENTS](AGENTS.md) | 개발·검증·커밋·문서 갱신 규칙 |
+| [보완 필요 사항](IMPROVEMENTS.md) | 성능·사용자·UI·보안·운영 보완과 완료 조건 |
+| [최종 프로젝트 목표](PROJECT_GOALS.md) | 합의한 방향과 아직 미정인 결정 |
 
-GitHub 저장소에는 `UeDtLauncher.exe` 실행 파일을 직접 커밋하지 않습니다. 저장소에는 소스 코드만 들어있고, 실행 파일은 로컬 PC 또는 GitHub Actions에서 `dotnet publish`로 생성해야 합니다.
+그 외 자료는 [참고 문서 모음](docs/reference/README.md)에 있습니다. 상세 명령·설정·검증 기록은 참고 문서에, 과거 자료는 그 아래 `archive/`에 보존합니다. 과거 서버 절차를 신규 설치 지침으로 사용하지 않습니다.
 
-상용 배포는 portable EXE 복사 대신 Windows machine-wide MSI와 RHEL 8 RPM을 사용합니다. MSI는 GUI와 `UeDtLauncherAgent` Windows Service를 설치하고, RPM은 systemd Agent와 `%config(noreplace)` 설정을 설치합니다. 코드서명 인증서가 없는 개발 패키지는 파일명과 `BUILD-INFO.txt`에 `UNSIGNED-DEV`로 표시되며 운영 배포가 금지됩니다.
+## 현재 구현
 
-Windows에서 바로 실행 파일을 만들려면:
+| 영역 | 내용 |
+|---|---|
+| 접수 | 업로드 폴더별 ZIP + 외부 release.json, 크기·SHA-256·안전한 ZIP 검사, SQLite 작업 기록 |
+| 게시 | 관리자 승인, 디렉터리 자동 생성, Manifest·서명, 완료 전 비공개, 중단 게시 재개 |
+| 권한 | 실제 IP/CIDR + PC별 토큰, 프로젝트·환경·채널·선택적 버전 제한, 기본 거부 |
+| 전송 | 인증된 목록·Manifest·이미지·파일·Range, 서명·해시 검증, 재시도·이어받기 |
+| 설치 | 정확한 릴리스, 버전별 설치·상태·잠금·PID 분리, transaction 복구·repair·rollback |
+| 일반 화면 | 자동 상태 확인, 상태별 실행 버튼, 친화적 오류·문제 해결, 이미지/fallback |
+| 개발자 화면 | 해당 PC에 허용된 배포 선택, 상세 진행·진단·유지보수 |
+| 운영 | Windows/Linux Agent·IPC·CLI, 진단 내보내기, 무인 서비스 모드, MSI/RPM 제작 구성 |
 
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\scripts\publish-win-x64.ps1
-```
+GUI의 general/developer는 표시 정책이지 다운로드 권한이 아닙니다. 운영은 HTTPS·서명 검증을 사용하고 nginx 뒤 API는 loopback에만 바인딩합니다. 과거 공개 `/catalogs`, `/projects` 경로와 혼합하지 않습니다.
 
-생성 후 실행 파일 위치:
+일반 GUI는 자동 점검만 하며 설치는 사용자 클릭 후 수행합니다. 무인 서비스 자동 업데이트와 구분합니다. 관리형 런처 자체 갱신은 MSI/RPM, 게임 콘텐츠 갱신은 Agent 책임입니다.
 
-```text
-publish\win-x64\UeDtLauncher.exe
-```
+## 처음 준비할 것
 
-GUI 실행:
+1. Linux 서버에 DistributionServer·nginx·HTTPS·systemd 설정.
+2. 서버 서명 개인키와 PC별 IP/배포 권한 등록. 공개키만 PC에 배포.
+3. PC별 토큰 발급 후 해당 PC의 보호된 credential 저장소에 저장.
+4. PC에 런처·Agent 설치, 보호된 운영 설정 작성.
+5. 런처 옆 설정에서 general/developer 화면 선택.
 
-```powershell
-.\publish\win-x64\UeDtLauncher.exe
-```
+경로·정책·설정 예시는 [통합 운영 가이드](docs/reference/distribution-workflow.md)를 따릅니다. 회사 도메인·인증서·IP·계정은 실제 값으로 설정합니다.
 
-CLI 실행:
+## 새 버전 배포
 
-```powershell
-.\publish\win-x64\UeDtLauncher.exe run --config launcher.config.json
-```
-
-Linux에서 실행 파일을 만들려면:
-
-```bash
-chmod +x ./scripts/publish-linux-x64.sh
-./scripts/publish-linux-x64.sh
-```
-
-생성 후 실행 파일 위치:
-
-```text
-publish/linux-x64/UeDtLauncher
-```
-
-## 현재 구현된 기능
-
-- Avalonia 기반 Windows/Linux GUI 런처
-- CLI 런처 유지
-- release catalog 기반 프로젝트/버전/OS/환경/클라이언트 프로필 선택
-- 일반 사용자 프로필 제한: `windows-x64` + `prod` + `stable` + `latest`만 허용
-- 개발자 프로필: catalog 권한에 따라 Windows/Linux 개발 버전 선택 가능
-- 일반 사용자용 설정 팝업
-- 개발자용 환경/채널/플랫폼/버전 정책 ComboBox
-- 프로젝트 검색, 고정, 정렬, 프로필별 표시 제어
-- 설치됨/업데이트 가능/오류 상태 확인
-- 업데이트 실패 시 다시 시도 버튼
-- 로그 저장 및 로그 지우기
-- 캐시/백업 용량 표시
-- GitHub Actions 기반 Windows/Linux 빌드 검증 워크플로
-- 원격 `manifest.json` 다운로드
-- catalog/manifest ECDSA SHA-256 서명 검증 옵션
-- 파일별 SHA-256 비교
-- 변경/누락 파일만 다운로드
-- `.staging` 다운로드 후 검증
-- `.state/{projectId}/{platform}` 기반 프로젝트별 캐시·백업·설치 상태·PID 격리
-- `.backup` 백업 후 실제 설치 폴더 반영
-- 적용 실패 시 rollback
-- 중단된 적용 transaction을 다음 실행에서 자동 감지·롤백
-- HTTP Range 기반 이어받기 시도
-- 다운로드 retry
-- repair 모드
-- ZIP 패키지 다운로드/압축 해제
-- 7z 패키지 다운로드/압축 해제. 단, `7z`, `7zz`, `7za` 실행 파일이 PATH에 있어야 함
-- ZIP/7z 패키지를 staging에서 검증·해제한 뒤 본 업데이트와 같은 transaction으로 적용
-- 런처 자기 자신 업데이트 (`selfUpdate.autoApply` 활성 시 다음 실행에서 자동 교체)
-- Windows 바탕화면/시작 메뉴 shortcut 생성 옵션
-- manifest 생성 명령 (`--app-id` 지원)
-- catalog 릴리스 등록/제거 명령 (`update-catalog`)
-- catalog/manifest 서명 생성 명령
-- sample config 생성 명령
-- `requireSignedManifests` 서명 강제 옵션 (서명 미설정 시 명시적 경고 로그)
-- 디스크 여유 공간 사전 확인
-- 동일 설치 폴더 다중 실행 잠금
-- 일시 오류만 지수 백오프로 재시도 (404/403 등 4xx는 즉시 실패)
-- ZIP/7z 추출 경로 검증 및 설치 폴더 내 symlink 차단
-- 일별 파일 로그 (`logs/launcher-YYYYMMDD.log`, 14일 보관)
-- 설치 버전 기록 (`install-state.json`) 및 백업 보존 개수 관리 (`maxBackupCount`)
-- 이전 버전 롤백: CLI `rollback` 명령 + GUI 롤백 버튼
-- 무인 서버용 서비스 모드: `service` 명령 (실행 중 사전 다운로드·검증 → 짧은 중단 적용 → 상태 확인 → 실패 시 자동 롤백)
-- GUI: 설치/최신 버전 나란히 표시, 다운로드 속도·파일 n/m·전체 % 진행률, 작업 중 버튼 비활성화
-- 리눅스 퍼블리싱 도구: `tools/*.sh` + rsync/scp 원격 업로드 (`--remote`)
-- xUnit 테스트 스위트 + CI 테스트 실행
-
-## GUI 사용법
-
-### 일반 사용자 모드
-
-`launcher.config.json`의 `clientProfile`이 `general`이면 일반 사용자용 화면으로 표시됩니다.
-
-일반 사용자에게는 다음 기능만 노출됩니다.
+| 순서 | 담당 | 작업 |
+|---:|---|---|
+| 1 | 개발자 | Windows/Linux ZIP을 각각 준비 |
+| 2 | 개발자 | release-metadata로 ZIP 옆 외부 JSON 생성 |
+| 3 | 개발자 | incoming/새업로드ID/에 두 파일을 .uploading 이름으로 전송 후 최종 이름으로 변경 |
+| 4 | 서버 | 파일 쌍·해시·ZIP 검사 후 승인 대기 |
+| 5 | 관리자 | list / inspect 확인 후 approve |
+| 6 | 서버 | 서명·디렉터리 생성 후 배포 목록 공개 |
+| 7 | 사용자 | 런처에서 설치/업데이트 후 실행 |
 
 ```text
-프로젝트 선택(여러 프로젝트가 있을 때만)
-설치 후 실행 / 업데이트 후 실행 / 실행 중 현재 상태에 맞는 한 버튼
-자동 상태 확인
-문제 해결(오류가 있을 때만)
-설정 팝업
-설치 폴더 열기
-문제 보고용 로그 저장
+UeDtLauncher release-metadata --zip Windows.zip --project-id demo --version 1.2.0 --platform windows-x64 --payload-root Windows --entry-point Demo.exe --output release.json
 ```
 
-상단의 `업데이트 서비스` 표시는 PC에서 안전하게 파일을 설치·복구하는 백그라운드 서비스 상태입니다. 런처가 시작되면 서비스·배포·설치 상태를 자동으로 확인하며, 사용자가 기술적인 Agent나 Manifest를 직접 다룰 필요가 없습니다.
+payloadRoot는 ZIP 내부 프로그램 루트, entryPoint는 그 기준 경로입니다. ZIP을 변경하면 JSON도 다시 생성합니다. [업로드·승인 상세](docs/reference/guide-02-publish-package.md)
 
-일반 사용자 설정 팝업에서는 프로젝트명, 설치 위치, 배포 채널, 설치 상태, 캐시/백업 용량을 확인할 수 있습니다. 단일 프로젝트 PC에서는 프로젝트 사이드바를 숨기고, 화면 폭에 따라 정보 카드를 3열·2열·1열로 자동 조정합니다.
+서버 등록 위치는 `releases/<project>/<environment>/<channel>/<version>/<platform>/`입니다. 클라이언트는 필요한 개별 파일을 받습니다. 다만 새 버전은 별도 설치 경로이므로 다른 버전 파일 재사용·전송량 절감까지 자동 보장되지는 않습니다.
 
-프로젝트의 `heroPath`와 `thumbnailPath`가 존재하면 기업형 네이비 overlay와 함께 실제 이미지를 표시합니다. 이미지가 없거나 손상되었거나 20MB를 넘으면 프로젝트 이니셜 기반 브랜드 fallback을 사용하므로 이미지 누락으로 런처가 실패하지 않습니다.
+## 빌드·검증
 
-### 개발자 모드
-
-`launcher.config.json`의 `clientProfile`이 `developer`이면 개발자용 화면으로 표시됩니다.
-
-개발자 화면에서는 다음 기능이 추가됩니다.
+.NET 8 SDK, 저장소 루트 기준:
 
 ```text
-환경 ComboBox: prod / dev
-채널 ComboBox: stable / beta / dev
-플랫폼 ComboBox: windows-x64 / linux-x64
-버전 정책 ComboBox: latest / exact
-업데이트
-검증/복구
-캐시 정리
-로그 저장
-로그 지우기
-다시 시도
-폴더 크기 새로고침
+dotnet restore UeDtLauncher.sln
+dotnet build UeDtLauncher.sln -c Release --no-restore
+dotnet test src/UeDtLauncher.Tests/UeDtLauncher.Tests.csproj -c Release --no-build
+dotnet publish src/UeDtLauncher/UeDtLauncher.csproj -c Release -r win-x64 --self-contained true -o publish/client-win-x64
+dotnet publish src/UeDtLauncher.Agent/UeDtLauncher.Agent.csproj -c Release -r win-x64 --self-contained true -o publish/agent-win-x64
+dotnet publish src/UeDtLauncher.DistributionServer -c Release -r linux-x64 --self-contained true -o publish/distribution-server
 ```
 
-개발자 명령은 `배포`, `유지보수`, `진단` 그룹으로 구분되며 선택한 배포 정보와 기술 로그는 복사 가능한 monospace 작업 영역으로 표시됩니다.
+Linux 클라이언트/Agent는 `-r linux-x64`로 생성합니다. 네이티브 의존성이 있으므로 출력 폴더 전체를 배치합니다. 설치·실행은 [클라이언트 가이드](docs/reference/guide-03-launcher-usage.md)를 따릅니다.
 
-개발자 화면에서 ComboBox를 변경하면 현재 UI 설정에 반영되고, 실행/업데이트/상태 확인 시 변경된 값으로 catalog release를 선택합니다.
+## 검증 범위와 제약
 
-## 문서
+2026-09-12 [기존 실행 기록](docs/reference/distribution-validation.md): Windows 210/210, WSL Ubuntu 210/210, Release 경고·오류 0. 테스트 프로그램으로 HTTPS 배포와 Windows GUI/Agent·Linux CLI 설치·실행을 확인했습니다.
 
-처음이라면 **[docs/README.md](docs/README.md)**(문서 색인 + 5분 빠른 시작)부터 보세요. 핵심은 아래 **가이드 3부작**입니다 — 서버 구축 → 릴리스 배포 → 클라이언트 운영 순서.
+2026-09-22 작업은 문서·소스 대조입니다. 위 실행 시험을 다시 수행했다는 뜻이 아닙니다. 실제 회사 RHEL·UE 패키지·IP/CA·설치본 수명주기는 별도 검증해야 합니다. 코드서명 없는 개발 산출물을 운영용 서명 제품으로 배포하지 않습니다.
 
-| 가이드 | 내용 |
-| --- | --- |
-| [docs/guide-01-linux-server-setup.md](docs/guide-01-linux-server-setup.md) | 리눅스(RHEL 8.4) 업데이트 서버 세팅: 디렉터리, nginx, 인증, SELinux, 프로젝트별 IP 제한, 동작 확인 |
-| [docs/guide-02-publish-package.md](docs/guide-02-publish-package.md) | 패키징 파일 업로드(ZIP) → manifest 생성 → catalog 갱신, 시나리오별 예시, 확인 |
-| [docs/guide-03-launcher-usage.md](docs/guide-03-launcher-usage.md) | 런처 사용법: 설정 전체 필드, GUI(일반/개발자), CLI 레퍼런스, 무인 서버, 문제 해결 |
-
-루트의 나머지 핵심: `docs/launcher-user-guide.md`(GUI 화면 사용법), `docs/launcher-ui-customization.md`(UI 커스터마이징), `docs/service-mode.md`(무인 서비스 모드), `docs/commercial-deployment.md`(사내 상용 설치·운영).
-
-덜 중요한 보조·레거시 문서는 [docs/reference/](docs/reference/)로 분리했습니다(퍼블리시 스크립트 상세, 구 서버 구성 문서들 — 서버 구성 정본은 guide-01).
-
-예시 파일:
-
-```text
-examples/catalogs/general/catalog.json
-examples/catalogs/developer/catalog.json
-examples/catalogs/developer/m7at10-catalog.json
-examples/configs/general-windows-launcher.config.json
-examples/configs/developer-windows-launcher.config.json
-examples/configs/developer-linux-launcher.config.json
-examples/configs/m7at10-developer-windows-launcher.config.json
-```
-
-## 저장소 구조
-
-```text
-UE-DT-LAUNCHER/
-  scripts/
-    publish-win-x64.ps1
-    publish-linux-x64.sh
-  examples/
-    catalogs/
-    configs/
-  src/
-    UeDtLauncher/
-      UeDtLauncher.csproj
-      Program.cs
-      CatalogResolver.cs
-      LauncherEngine.cs
-      ManifestGenerator.cs
-      ManifestSignatureVerifier.cs
-      PackageExtractor.cs
-      SelfUpdateManager.cs
-      WindowsIntegration.cs
-      Gui/
-        App.axaml
-        App.axaml.cs
-        MainWindow.axaml
-        MainWindow.axaml.cs
-  docs/
-    README.md                       # 색인 + 5분 빠른 시작
-    guide-01-linux-server-setup.md
-    guide-02-publish-package.md
-    guide-03-launcher-usage.md
-    launcher-user-guide.md
-    launcher-ui-customization.md
-    service-mode.md
-    reference/                      # 보조·레거시 문서
-```
-
-## release catalog 방식
-
-기존에는 클라이언트가 `manifestUrl` 하나만 바라봤습니다. 이제는 다음 구조를 권장합니다.
-
-```text
-launcher.config.json
-  ↓
-catalogUrl
-  ↓
-projectId + clientProfile + environment + channel + targetPlatform + versionPolicy 기준 release 선택
-  ↓
-선택된 release의 manifestUrl 다운로드
-  ↓
-업데이트/실행
-```
-
-일반 사용자 PC 예시:
-
-```json
-{
-  "catalogUrl": "https://updates.example.com/catalogs/general/catalog.json",
-  "catalogSignatureUrl": "https://updates.example.com/catalogs/general/catalog.json.sig",
-  "catalogPublicKeyPath": "manifest-public-key.pem",
-  "projectId": "ue-dt-simulator",
-  "clientProfile": "general",
-  "environment": "prod",
-  "channel": "stable",
-  "versionPolicy": "latest",
-  "targetPlatform": "windows-x64"
-}
-```
-
-개발자 Windows PC 예시:
-
-```json
-{
-  "catalogUrl": "https://updates.example.com/catalogs/developer/catalog.json",
-  "catalogSignatureUrl": "https://updates.example.com/catalogs/developer/catalog.json.sig",
-  "catalogPublicKeyPath": "manifest-public-key.pem",
-  "projectId": "ue-dt-simulator",
-  "clientProfile": "developer",
-  "environment": "dev",
-  "channel": "dev",
-  "versionPolicy": "latest",
-  "targetPlatform": "windows-x64"
-}
-```
-
-개발자 Linux PC 예시:
-
-```json
-{
-  "catalogUrl": "https://updates.example.com/catalogs/developer/catalog.json",
-  "catalogSignatureUrl": "https://updates.example.com/catalogs/developer/catalog.json.sig",
-  "catalogPublicKeyPath": "manifest-public-key.pem",
-  "projectId": "ue-dt-simulator",
-  "clientProfile": "developer",
-  "environment": "dev",
-  "channel": "dev",
-  "versionPolicy": "latest",
-  "targetPlatform": "linux-x64"
-}
-```
-
-## 프로젝트 UI 설정
-
-`projects` 배열로 프로젝트 목록, 이미지, 정렬, 프로필별 표시를 제어합니다.
-
-```json
-{
-  "projectAssetsDir": "assets/projects",
-  "projects": [
-    {
-      "projectId": "ue-dt-simulator",
-      "displayName": "UE-DT Simulator",
-      "description": "센서/디지털 트윈 개발 검증용 빌드입니다.",
-      "thumbnailPath": "assets/projects/ue-dt-simulator/thumbnail.png",
-      "heroPath": "assets/projects/ue-dt-simulator/hero.png",
-      "status": "최신 버전",
-      "installPath": "app",
-      "engineVersion": "Unreal 5.4",
-      "technology": "Windows",
-      "sortOrder": 0,
-      "isPinned": true,
-      "visibleToProfiles": ["general", "developer"]
-    }
-  ]
-}
-```
-
-정렬 기준:
-
-```text
-1. isPinned = true 먼저
-2. sortOrder 낮은 순
-3. displayName 이름순
-```
-
-## 보안상 중요한 점
-
-일반 사용자가 개발 버전을 못 받게 하려면 런처 코드만 믿으면 안 됩니다.
-
-반드시 서버에서도 다음처럼 나눠야 합니다.
-
-```text
-/catalogs/general/        공개
-/projects/*/prod/stable/ 공개
-/catalogs/developer/      인증 필요
-/projects/*/dev/          인증 필요
-```
-
-자세한 Nginx 설정(프로젝트별 IP 제한 포함)은 `docs/guide-01-linux-server-setup.md`에 있습니다.
-
-## 빌드 방법
-
-.NET 8 SDK가 필요합니다.
-
-```powershell
-dotnet build src/UeDtLauncher/UeDtLauncher.csproj -c Release
-```
-
-Windows publish:
-
-```powershell
-.\scripts\publish-win-x64.ps1
-```
-
-Linux publish:
-
-```bash
-./scripts/publish-linux-x64.sh
-```
-
-## 실행 방법
-
-Windows GUI:
-
-```powershell
-.\publish\win-x64\UeDtLauncher.exe
-```
-
-Windows CLI:
-
-```powershell
-.\publish\win-x64\UeDtLauncher.exe run --config launcher.config.json
-```
-
-Linux GUI:
-
-```bash
-./publish/linux-x64/UeDtLauncher
-```
-
-Linux CLI:
-
-```bash
-./publish/linux-x64/UeDtLauncher run --config launcher.config.json
-```
-
-복구 모드:
-
-```powershell
-.\publish\win-x64\UeDtLauncher.exe run --config launcher.config.json --repair
-```
-
-업데이트만 하고 앱 실행은 하지 않기:
-
-```powershell
-.\publish\win-x64\UeDtLauncher.exe run --config launcher.config.json --no-launch
-```
-
-이전 버전으로 롤백:
-
-```powershell
-.\publish\win-x64\UeDtLauncher.exe rollback --config launcher.config.json --list
-.\publish\win-x64\UeDtLauncher.exe rollback --config launcher.config.json
-```
-
-무인 서버(픽셀 스트리밍) 서비스 모드 — 자세한 내용은 `docs/service-mode.md`:
-
-```bash
-./publish/linux-x64/UeDtLauncher service --config launcher.config.json --interval 300
-```
-
-## manifest 생성
-
-Windows 패키징 파일용 manifest 생성 예시:
-
-```powershell
-.\publish\win-x64\UeDtLauncher.exe generate-manifest `
-  --package-dir "C:\PackageBuilds\ue-dt-simulator\1.0.0\windows-x64" `
-  --base-url "https://updates.example.com/projects/ue-dt-simulator/prod/stable/1.0.0/windows-x64/files" `
-  --entry-point "Windows/m7at10_dt.exe" `
-  --version "1.0.0" `
-  --platform "windows-x64" `
-  --output "manifest.json"
-```
-
-Linux 패키징 파일용 manifest 생성 예시:
-
-```bash
-./publish/linux-x64/UeDtLauncher generate-manifest \
-  --package-dir "/home/builds/ue-dt-simulator/1.1.0-dev.3/linux-x64" \
-  --base-url "https://updates.example.com/projects/ue-dt-simulator/dev/dev/1.1.0-dev.3/linux-x64/files" \
-  --entry-point "Linux/m7at10_dt.sh" \
-  --version "1.1.0-dev.3" \
-  --platform "linux-x64" \
-  --output "manifest.json"
-```
-
-## catalog/manifest 서명
-
-운영 환경에서는 catalog와 manifest 변조 방지를 위해 서명 검증을 켜는 것을 권장합니다.
-
-ECDSA P-256 키 생성 예시:
-
-```bash
-openssl ecparam -name prime256v1 -genkey -noout -out manifest-private-key.pem
-openssl ec -in manifest-private-key.pem -pubout -out manifest-public-key.pem
-```
-
-manifest 또는 catalog 서명 생성:
-
-```powershell
-.\publish\win-x64\UeDtLauncher.exe sign-manifest `
-  --manifest "catalog.json" `
-  --private-key "manifest-private-key.pem" `
-  --output "catalog.json.sig"
-```
-
-클라이언트에는 public key만 배포합니다.
-
-## ZIP/7z 패키지 업데이트
-
-파일 단위 manifest 업데이트와 별개로 큰 파일 묶음을 패키지 단위로 받을 수 있습니다.
-
-```json
-{
-  "packages": [
-    {
-      "id": "content-paks-1.0.1",
-      "url": "https://your-server.example.com/packages/content-paks-1.0.1.zip",
-      "sha256": "<package sha256>",
-      "size": 123456789,
-      "extractTo": ".",
-      "required": true,
-      "format": "zip"
-    }
-  ]
-}
-```
-
-7z를 쓰려면 클라이언트 PC의 PATH에서 `7z`, `7zz`, `7za` 중 하나가 발견되어야 합니다.
-
-## CI
-
-`.github/workflows/build.yml`에서 Windows/Linux `dotnet build`와 publish를 수행합니다. GitHub Actions 결과를 통해 실제 빌드 오류를 확인할 수 있습니다.
+- latest는 같은 환경/채널/OS에서 마지막 승인된 판이며 최대 버전 번호가 아닙니다.
+- 신규 프로젝트 게시가 PC 권한을 자동 부여하지 않습니다.
+- cleanup은 임시 작업 폴더 대상이며 공개 버전·참조 원본은 삭제하지 않습니다.
+- 기존 설치 이전은 명시적 import-install입니다. UE 사용자 데이터는 실제 저장 경로에 맞춰 별도 보존합니다.
+- 회사 백엔드 API는 인터페이스만 있고 현재는 파일 정책 구현입니다.
+- 기설치 앱 원격 삭제·실행 금지는 범위 밖입니다.

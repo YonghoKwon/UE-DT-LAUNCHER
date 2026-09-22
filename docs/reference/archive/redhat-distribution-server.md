@@ -1,5 +1,7 @@
 # Red Hat Enterprise Linux 8.4 업데이트 서버 구성 가이드
 
+> 보존 자료 / 2026-09-22 분류: 아래 본문은 과거 설계·구축 당시 기록이며 현행 기능이나 회사 배포 완료의 증거가 아닙니다. 공개 정적 경로·HTTP·Basic Auth·직접 압축 게시 명령을 신규 운영에 적용하지 마세요. 현재 절차는 [통합 배포 운영](../distribution-workflow.md), 현재 기능과 미정 목표는 [프로젝트 README](../../../README.md)를 따릅니다.
+
 > **참고:** 이 문서의 최신 정본은 [guide-01-linux-server-setup.md](../guide-01-linux-server-setup.md)입니다. 내용이 다를 경우 정본을 따르세요.
 
 이 문서는 하나의 Linux 서버에서 여러 프로젝트의 Windows/Linux 패키징 파일을 관리하고, 클라이언트 유형별로 다른 업데이트를 제공하기 위한 권장 구조를 설명합니다.

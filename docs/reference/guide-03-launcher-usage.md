@@ -1,0 +1,90 @@
+# 런처 설정·CLI 레퍼런스
+
+> 참고 가이드 / 문서 점검 2026-09-22 / 구현 기준 2cd28c8. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
+
+현재 기본 배포는 DistributionServer의 ZIP + 외부 `release.json` 접수·승인 방식입니다. 서버는 [서버 가이드](guide-01-linux-server-setup.md), 게시는 [게시 가이드](guide-02-publish-package.md), 화면은 [GUI 사용법](launcher-user-guide.md), 개요는 [README](../../README.md)를 참고하세요.
+
+## 설정 파일의 역할
+
+| 설정 | 역할 |
+| --- | --- |
+| Agent 보호 설정 | 서버 URL, credential 이름, 공개키, 설치·상태 루트와 실행 설정 |
+| GUI 표시 설정 | `clientProfile`, 프로젝트 이름·이미지·정렬, 화면의 릴리스 선택 |
+| portable 설정 | Agent 없이 현재 사용자 권한으로 업데이트하는 전체 설정 |
+
+GUI는 `gui --config <경로>` → 실행 파일 옆 `launcher.config.json` → 관리 설정 순으로 찾습니다. 명시한 파일이 없다고 다음 설정으로 넘어가지는 않습니다. 현재 작업 폴더 자동 탐색은 없으며 명시한 상대 경로만 현재 작업 폴더 기준입니다.
+
+CLI의 `run --config` 등은 지정한 파일을 읽고, 생략하면 현재 작업 폴더의 `launcher.config.json`을 사용하므로 GUI와 다릅니다.
+
+관리 설정 기본 위치는 Windows `%ProgramData%\UE-DT Launcher\config\launcher.config.json`, Linux `/etc/ue-dt-launcher/launcher.config.json`입니다. 관리형 DistributionServer GUI는 실제 작업 때 관리 설정을 다시 읽고 Agent도 자신의 보호 설정으로 검증합니다. GUI 설정만 고쳐 서버 권한을 늘릴 수 없습니다.
+
+## 관리 설정 예시
+
+Linux 경로 예시입니다. Windows에서는 경로를 Windows 관리 디렉터리로 바꾸고 `targetPlatform`을 `windows-x64`로 지정합니다. 공개키 상대 경로는 관리 설정 파일 기준입니다.
+
+```json
+{
+  "schemaVersion": 2,
+  "deploymentMode": "managed-agent",
+  "distributionServerUrl": "https://updates.example.com",
+  "projectId": "demo",
+  "clientProfile": "general",
+  "environment": "prod",
+  "channel": "stable",
+  "versionPolicy": "latest",
+  "targetPlatform": "linux-x64",
+  "installDir": "/var/lib/ue-dt-launcher/apps",
+  "stateRootDir": "/var/lib/ue-dt-launcher/state",
+  "logDir": "/var/log/ue-dt-launcher",
+  "requireSignedManifests": true,
+  "security": {
+    "credentialName": "company-distribution",
+    "allowedDownloadHosts": ["updates.example.com"],
+    "trustedSigningKeys": [
+      {"keyId": "release-1", "publicKeyPath": "release-public.pem"}
+    ]
+  }
+}
+```
+
+`distributionServerUrl`에서 `/api/v1/catalog` 주소가 구성됩니다. 서버는 토큰 + 실제 IP + 프로젝트/환경/채널/버전 grant로 접근을 제한합니다. `clientProfile=developer`는 UI 선택지를 늘릴 뿐 서버 접근 권한이 아닙니다.
+
+`installDir`은 버전 설치 루트이며 실제 설치는 `{project}/{environment}/{channel}/{version}/{platform}`으로 분리됩니다. 상태·staging·백업도 릴리스 단위입니다. 예전 단일 설치의 `stagingDir`, `backupDir`, `installedManifestPath`를 버전별 경로로 직접 조립하지 마세요.
+
+사내 CA가 필요하면 `security.customCaCertificatePath`를 사용합니다. HTTPS 검증을 끄거나 URL에 비밀번호를 넣지 않습니다. 허용 host와 공개키는 실제 배포 서버에 맞춰 지정합니다.
+
+## 인증정보와 점검
+
+```text
+UeDtLauncher credential set --name company-distribution
+UeDtLauncher credential status --name company-distribution
+UeDtLauncher doctor --config launcher.config.json --online
+UeDtLauncher agent status
+UeDtLauncher agent check --project demo
+```
+
+토큰은 대화형 입력으로 저장하고 JSON·명령 이력에 직접 넣지 않습니다. Linux credential은 0600이므로 Agent 계정이 읽을 수 있는 소유권도 확인합니다. Windows는 DPAPI LocalMachine과 파일 ACL을 함께 사용합니다.
+
+## 업데이트·실행
+
+```text
+UeDtLauncher run --config launcher.config.json
+UeDtLauncher run --config launcher.config.json --no-launch
+UeDtLauncher run --config launcher.config.json --repair --no-launch
+UeDtLauncher agent update --project demo --environment dev --channel dev --version 1.2.0
+UeDtLauncher diagnostics export --config launcher.config.json --output diagnostics.zip
+```
+
+- `run`: 선택 릴리스 업데이트 후 실행. `--no-launch`는 설치만 수행합니다.
+- `--repair`: 파일 해시를 재검증하고 손상·누락 파일을 복구합니다.
+- `agent update`: 보호 설정으로 설치만 수행하며 UE 앱을 실행하지 않습니다. 명시 버전 선택은 DistributionServer 설정이 필요합니다.
+- GUI는 현재 OS 패키지만 선택합니다. CLI/Agent 플랫폼도 실행 PC와 일치하게 설정하세요.
+- 이전 버전 사용은 개발자 `exact` 선택과 해당 버전 설치로 수행합니다. 백업 복원인 `rollback`과 구분합니다.
+
+portable Linux CLI는 같은 설정에서 `deploymentMode=portable`로 지정하고 현재 계정이 쓸 수 있는 경로를 사용합니다. 같은 업데이트 엔진을 거치지만 보호된 Agent 경계는 사용하지 않습니다.
+
+## 레거시 호환과 검증 범위
+
+`catalogUrl`/직접 `manifestUrl`, `generate-manifest`, `update-catalog`, `publish-release`는 기존 정적 배포 호환 기능입니다. `sample-config` 출력도 아직 정적 catalog 예시이므로 새 운영 설정으로 그대로 사용하지 않습니다. 공개 `/catalogs/general` 또는 `/projects` 구조는 현재 통합 서버의 보안 모델이 아닙니다.
+
+무인 실행은 [서비스 모드](service-mode.md), 이전은 [통합 운영](distribution-workflow.md), 패키징은 [상용 배포 준비](commercial-deployment.md)를 참고하세요. [2026-09-12 검증](distribution-validation.md)은 Windows GUI/Agent·Linux CLI 테스트 패키지 결과이며 실제 회사 RHEL·실제 UE 검증 완료를 뜻하지 않습니다.

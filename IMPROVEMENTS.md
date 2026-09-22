@@ -1,0 +1,63 @@
+# 보완 필요 사항
+
+점검: 2026-09-22 / 코드 기준 2cd28c8. 정적 코드·기존 기록에 근거한 제안입니다. 이번에 성능 측정·기능 구현은 하지 않았습니다.
+
+P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선. 우선순위는 제안이며 일정·수치 목표는 미정입니다. 미검증과 미구현을 구분합니다.
+
+## 운영·배포
+
+| ID/우선 | 현재 근거·영향 | 보완 방향·완료 조건 |
+|---|---|---|
+| OPS-01/P0 | [기록](docs/reference/distribution-validation.md)은 WSL·테스트 프로그램, 실제 RHEL/UE 미검증 | 실제 회사 TLS/CA·IP·대형 UE Windows/Linux 패키지로 접수→설치→실행→복구 증거 확보 |
+| OPS-02/P0 | MSI/RPM 구성은 있으나 이번 통합의 실기기 수명주기 미검증 | 설치/upgrade/repair/uninstall, 서비스 자동 시작·credential ACL·데이터 보존, 코드서명 gate 검증 |
+| OPS-03/P1 | DistributionHttp의 track.Last()가 latest. 과거판 승인 시 역행 가능 | 승인과 운영 승격 분리·변경 이력. 과거판 등록 시 latest 유지 및 명시적 변경 테스트 |
+| OPS-04/P1 | StorageMaintenance는 scratch만 정리, 공개판·snapshot 누적 | 보관 기간/용량·참조 보호·dry-run·감사 정리. 사용 중 자료 보존 검증 |
+| OPS-05/P1 | 수동 백업·복원, catalog sequence 역행 위험 | 일관된 백업/복원 도구·sequence 보호·복구 훈련. 기존 PC 검증 성공, RPO/RTO 별도 합의 |
+| OPS-06/P1 | E2E 스크립트는 있으나 build.yml에 실행 단계 없음 | HTTPS·권한·다중 버전 E2E CI gate, 민감정보 없는 결과 보관 |
+
+## 성능·저장 공간
+
+| ID/우선 | 현재 근거·영향 | 보완 방향·완료 조건 |
+|---|---|---|
+| PERF-01/P1 | LauncherEngine 파일별 검증·다운로드, 실제 대형 UE 기준선 없음 | 다운로드/해시/적용 시간·CPU·메모리·디스크 측정 후 제한된 병렬화 검토. 무결성 회귀 없이 전후 수치 확보 |
+| PERF-02/P1 | VersionedReleasePaths의 새 버전은 별도 경로, 버전 간 파일 재사용 없음 | 검증된 공용 캐시/복사 재사용. 동일 파일 재전송 감소와 repair·버전 격리 검증 |
+| PERF-03/P1 | API 요청마다 정책·release 조회, catalog마다 sequence DB 갱신·서명 | PC 동시접속 측정 후 정책 캐시·인덱스·처리량 제한 검토. 폐기 반영 지연·p95 목표 합의 후 시험 |
+| PERF-04/P2 | ScanAsync 폴더 순회·접수/승인 재검증은 대형 ZIP I/O 사용 | 검사 진행·디스크 소요 안내, 제한된 접수 병렬화. 동시 업로드·공간 부족·재시작 시험 |
+
+## 사용자 관점
+
+| ID/우선 | 현재 근거·영향 | 보완 방향·완료 조건 |
+|---|---|---|
+| USER-01/P1 | LegacyInstallImport 원본 보존 복사, UE 저장 위치는 프로젝트별 | 세이브·설정 위치 계약·이전 dry-run·백업. 실제 버전 전환/rollback 후 데이터 유지 |
+| USER-02/P1 | 서버/Agent/토큰/공개키 초기 설정 단계가 많음 | 관리자 사전 점검·설정 검증, 사용자 오류 코드/조치 안내. 새 PC 최초 실행·비밀정보 미노출 |
+| USER-03/P2 | 엔진 취소 토큰과 별개로 일반 UX 취소는 이전 범위에서 제외 | 안전 중단 지점·취소/재개 설계. 다운로드·검증·설치별 중단 후 손상 없음 |
+| USER-04/P2 | 오프라인·권한 폐기 후 기설치 실행 최종 정책 미정 | 실행/권한 재확인 규칙 합의. 미설치·기설치·폐기 토큰 수용 테스트 |
+
+## UI·접근성
+
+| ID/우선 | 현재 상태·영향 | 보완 방향·완료 조건 |
+|---|---|---|
+| UI-01/P1 | 반응형·fallback 기초 구현, 최신 통합의 전체 조건 재검증 필요 | 긴 한글명·오류·여러 버전·빈 권한 목록, 1280×720/1366×768/1920×1080 및 100/125/150%에서 핵심 버튼·진행률 확인 |
+| UI-02/P1 | 빈 목록·서비스 단절·권한 오류 원인이 다름 | 401/403/검사 실패 문구·재시도 일관화. 친화적 행동 안내와 개발자 진단에 같은 오류 ID |
+| UI-03/P2 | 키보드·접근성 속성 기초 존재 | 실제 스크린리더·Tab/Shift+Tab·고대비 검증. 마우스 없이 핵심 흐름 수행 |
+| UI-04/P2 | 트레이·완료 알림은 이전 범위에서 제외 | 필요성 합의 후 opt-in 구현. 닫기/종료 의미·알림 설정 명확화 |
+
+## 보안·확장·유지보수
+
+| ID/우선 | 현재 근거·영향 | 보완 방향·완료 조건 |
+|---|---|---|
+| SEC-01/P1 | DistributionTokens 발급·PC 단위 전체 폐기, 만료/개별 관리 없음 | 만료·토큰별 폐기·순환·감사 설계. 비밀 노출 없는 교체/만료/폐기 시험 |
+| SEC-02/P1 | loopback nginx 신뢰와 직접 사내 IP 전제 | NAT/추가 proxy의 실제 IP 계약·rate limit 검토. 위조 헤더 차단과 회사 망 경로별 검증 |
+| EXT-01/P2 | IAccessPolicyProvider 파일 구현만 존재 | 회사 API 합의 후 timeout/cache TTL/기본 거부. 장애·취소·오래된 응답에서 권한 확대 없음 |
+| DEV-01/P2 | Core 링크 컴파일, MainWindow 동작 코드 잔존 | 기능 변경과 분리한 물리 폴더·ViewModel 정리. API/CLI/IPC 회귀 없음 |
+
+근거 소스: [서버 API](src/UeDtLauncher.DistributionServer/DistributionHttp.cs), [저장 관리](src/UeDtLauncher.DistributionServer/StorageMaintenance.cs), [권한](src/UeDtLauncher.DistributionServer/AccessPolicy.cs), [엔진](src/UeDtLauncher/LauncherEngine.cs), [버전 경로](src/UeDtLauncher.Core/Distribution/VersionedReleasePaths.cs), [CI](.github/workflows/build.yml).
+
+## 처리 제안과 상태 관리
+
+1. OPS-01/02·USER-01: 회사 환경·실제 패키지·데이터 보존 확인.
+2. OPS-03/04/05·SEC-01: 최신판·보관·복원·토큰 운영 사고 예방.
+3. PERF 기준선·OPS-06: 측정 후 개선, 자동 회귀 검증.
+4. USER/UI·API 범위는 [목표 문서](PROJECT_GOALS.md)에서 확정 후 진행.
+
+모든 항목은 현재 열림입니다. 완료 시 ID에 구현 커밋·환경·검증 링크를 기록하고 README·참고 가이드를 갱신합니다. 빌드 성공만으로 완료하지 않습니다.

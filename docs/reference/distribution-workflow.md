@@ -1,5 +1,9 @@
 # ZIP·외부 release.json 통합 배포 운영
 
+> 참고 가이드 / 문서 점검 2026-09-22 / 구현 기준 2cd28c8. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
+
+문서 점검: 2026-09-22 / 구현 기준 2cd28c8. 설정 예시는 실제 회사 주소·계정·권한으로 바꿔야 합니다. 실제 실행 근거는 [2026-09-12 검증 기록](distribution-validation.md), 남은 검증은 [보완 목록](../../IMPROVEMENTS.md)을 확인합니다.
+
 ZIP과 JSON은 별개 파일입니다. 내부 release.json은 분류에 사용하지 않습니다. 현재 서버는 Linux systemd 서비스, 클라이언트는 Windows GUI/Linux CLI를 기준으로 운영합니다.
 
 ## 1. 서버 준비
@@ -88,11 +92,15 @@ Agent 관리 설정에 `distributionServerUrl`, `installDir`(버전 설치 루�
 
 Windows 경로는 Windows 관리 디렉터리로 지정합니다. 런처 폴더의 GUI 설정은 clientProfile=general 또는 developer를 지정합니다. GUI 경로 우선순위는 `gui --config` → 실행 파일 옆 설정 → 관리 설정이며, 관리형 설치 보안 값은 Agent의 보호된 설정에서 가져옵니다.
 
+위 JSON은 주요 필드 예시이며 회사 PC에 그대로 복사하는 완성 설정이 아닙니다. 프로젝트 ID·대상 OS·일반/개발자 표시 설정과 로그 쓰기 권한을 함께 점검합니다. Agent 서비스 계정이 credential과 공개키를 읽을 수 있어야 합니다. Linux credential 파일의 0600 및 Windows 서비스 ACL을 실제 설치 환경에서 확인하세요.
+
 ```text
 UeDtLauncher agent update --project demo --environment dev --channel dev --version 1.2.0
 ```
 
 정확한 선택을 지원하는 Agent가 필요합니다. 서버 권한을 재확인하고 apps/demo/dev/dev/1.2.0/windows-x64 등 버전 전용 폴더로 설치합니다. Linux CLI의 portable 설정에도 distributionServerUrl을 사용하면 동일한 서명·서버 권한 검사를 거칩니다.
+
+새 버전은 별도 설치 디렉터리를 사용합니다. 같은 설치의 누락·변경 파일만 받는 기능과 버전 사이의 공통 파일 재사용은 다릅니다. 후자는 아직 구현되지 않아 새 버전 최초 설치의 전송량·공간을 충분히 확보해야 합니다.
 
 기존 설치 복사 이전은 `import-install --config <기존 설정> --destination-root <새 앱 루트>`로 사전 검사하고 `--apply`로 복사합니다. 원본은 삭제하지 않습니다. 새 설정으로 첫 check/update를 실행해 버전별 설치 상태를 다시 기록합니다. 기존 사용자 저장 데이터는 원본을 보존하고 실제 UE 프로젝트의 데이터 경로에 맞춰 별도 이전합니다.
 

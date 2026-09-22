@@ -1,5 +1,7 @@
 # Netmarble Launcher 분석 기반 UE-DT-LAUNCHER 개발 방향
 
+> 보존 자료 / 2026-09-22 분류: 아래 본문은 과거 설계·구축 당시 기록이며 현행 기능이나 회사 배포 완료의 증거가 아닙니다. 공개 정적 경로·HTTP·Basic Auth·직접 압축 게시 명령을 신규 운영에 적용하지 마세요. 현재 절차는 [통합 배포 운영](../distribution-workflow.md), 현재 기능과 미정 목표는 [프로젝트 README](../../../README.md)를 따릅니다.
+
 ## 요약
 
 업로드된 Netmarble Launcher는 Electron + Vue 기반의 상용 게임 플랫폼 런처 구조에 가깝다. 단순히 게임 실행 파일을 실행하는 프로그램이 아니라, 런처 자체 업데이트, 게임 설치/업데이트/삭제, 계정/웹뷰, 배너, 상태 페이지, Windows registry, shortcut, protocol scheme, fragment download, 압축 해제, 실패 복구 등을 포함한다.

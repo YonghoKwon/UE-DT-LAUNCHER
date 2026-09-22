@@ -1,5 +1,7 @@
 # Launcher Refinement Notes
 
+> 보존 자료 / 2026-09-22 분류: 아래 본문은 과거 설계·구축 당시 기록이며 현행 기능이나 회사 배포 완료의 증거가 아닙니다. 공개 정적 경로·HTTP·Basic Auth·직접 압축 게시 명령을 신규 운영에 적용하지 마세요. 현재 절차는 [통합 배포 운영](../distribution-workflow.md), 현재 기능과 미정 목표는 [프로젝트 README](../../../README.md)를 따릅니다.
+
 이 문서는 `feature/launcher-production-hardening` 브랜치에서 추가로 다듬은 런처 개선 사항을 정리합니다.
 
 ## 반영된 개선 사항
