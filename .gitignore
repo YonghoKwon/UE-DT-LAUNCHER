@@ -4,6 +4,7 @@ obj/
 out/
 publish/
 artifacts/
+__pycache__/
 
 # Local launcher runtime state
 app/
