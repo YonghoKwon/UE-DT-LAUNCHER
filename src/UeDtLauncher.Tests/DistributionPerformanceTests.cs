@@ -1,4 +1,5 @@
 using System.Net;
+using System.IO.Compression;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
@@ -201,6 +202,84 @@ public sealed class DistributionPerformanceTests
         var all = sequences.SelectMany(values => values).ToList();
         Assert.Equal(120, all.Count);
         Assert.Equal(all.Count, all.Distinct().Count());
+    }
+
+    [Fact]
+    public async Task HttpCatalogAndBackgroundClaimsProgressAndPublicationShareSqlCoordination()
+    {
+        await using var server = await ServerFixture.CreateAsync();
+        // Separate store objects for the same root must participate in the same process-local gate.
+        var stores = new[] { new IntakeStore(server.Store.Settings), new IntakeStore(server.Store.Settings) };
+        var uploads = new List<string>();
+        for (var index = 0; index < 8; index++)
+        {
+            var upload = Path.Combine(server.Store.Root, "incoming", "concurrent-" + index);
+            Directory.CreateDirectory(upload);
+            var zip = Path.Combine(upload, "game.zip");
+            using (var archive = ZipFile.Open(zip, ZipArchiveMode.Create))
+            using (var writer = new StreamWriter(archive.CreateEntry("game.bin").Open())) writer.Write(new string('x', 128 * 1024));
+            await SidecarPackageValidator.GenerateAsync(zip, Path.Combine(upload, "release.json"),
+                new() { ProjectId = "demo", Version = "3.0." + index, EntryPoint = "game.bin" });
+            uploads.Add(upload);
+        }
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var observerProbe = 0;
+        var progressCount = 0;
+        var writes = stores.Select((store, worker) => Task.Run(async () =>
+        {
+            await start.Task;
+            for (var index = worker; index < uploads.Count; index += stores.Length)
+            {
+                var job = await store.IngestAsync(uploads[index], observer: new InlinePackageProgress(_ =>
+                {
+                    Interlocked.Increment(ref progressCount);
+                    if (Interlocked.CompareExchange(ref observerProbe, 1, 0) == 0)
+                    {
+                        // Deadlock guard, not a throughput assertion: observers must run outside the SQL gate.
+                        var nestedWrite = Task.Run(() => server.Store.Audit("observer-probe", "synthetic"));
+                        Assert.True(nestedWrite.Wait(TimeSpan.FromSeconds(15)), "Progress observer retained the database gate.");
+                        nestedWrite.GetAwaiter().GetResult();
+                    }
+                }));
+                Assert.Equal("pending", job.State);
+                await new ApprovedPublisher(store).ApproveAsync(job.Id);
+                Assert.Equal("published", store.Get(job.Id).State);
+            }
+        })).ToArray();
+        var reads = Enumerable.Range(0, 24).Select(async _ =>
+        {
+            await start.Task;
+            var sequences = new List<long>();
+            for (var index = 0; index < 6; index++)
+            {
+                using var response = await server.GetAsync("/api/v1/catalog", "a");
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var (catalog, envelope) = await ReadCatalog(response);
+                Assert.True(server.VerifySignature(envelope));
+                Assert.Equal("1.0.0", Assert.Single(Assert.Single(catalog.Projects).Releases).Version);
+                sequences.Add(catalog.Sequence);
+                using var denied = await server.GetAsync("/releases/demo/prod/stable/9.0.0/windows-x64/manifest.json", "a");
+                Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode); // Nested HTTP writer -> Audit writer.
+            }
+            return sequences;
+        }).ToArray();
+        start.SetResult();
+        await Task.WhenAll(writes.Cast<Task>().Concat(reads));
+        var sequences = reads.SelectMany(task => task.Result).ToList();
+        Assert.Equal(144, sequences.Count);
+        Assert.Equal(sequences.Count, sequences.Distinct().Count());
+        Assert.True(progressCount >= 8 * 4);
+        Assert.Equal(8, server.Store.List().Count);
+        Assert.All(server.Store.List(), job => Assert.Equal("published", job.State));
+        Assert.Equal(10, new ApprovedPublisher(server.Store).List().Count);
+        using var db = server.Store.Open(); using var query = db.CreateCommand();
+        query.CommandText = "SELECT COUNT(*) FROM active_work";
+        Assert.Equal(0L, query.ExecuteScalar());
+    }
+
+    private sealed class InlinePackageProgress(Action<PackageWorkProgress> callback) : IProgress<PackageWorkProgress>
+    {
+        public void Report(PackageWorkProgress value) => callback(value);
     }
 
     [Fact]

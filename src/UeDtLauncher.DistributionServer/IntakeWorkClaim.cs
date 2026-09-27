@@ -14,6 +14,7 @@ internal sealed class IntakeWorkClaim : IDisposable
     {
         this.store = store; jobId = job.Id;
         using var gate = store.Lock();
+        using var database = store.DatabaseWrite();
         using var db = store.Open(); using var transaction = db.BeginTransaction();
         using var command = db.CreateCommand(); command.Transaction = transaction;
         var parameters = expectedStates.Select((_, i) => "$state" + i).ToArray();
@@ -35,7 +36,8 @@ internal sealed class IntakeWorkClaim : IDisposable
 
     public void Dispose()
     {
-        using var gate = store.Lock(); using var db = store.Open(); using var command = db.CreateCommand();
+        using var gate = store.Lock(); using var database = store.DatabaseWrite();
+        using var db = store.Open(); using var command = db.CreateCommand();
         command.CommandText = "DELETE FROM active_work WHERE job=$id AND owner=$owner";
         command.Parameters.AddWithValue("$id", jobId); command.Parameters.AddWithValue("$owner", owner);
         command.ExecuteNonQuery();

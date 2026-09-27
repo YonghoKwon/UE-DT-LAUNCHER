@@ -15,11 +15,14 @@ public static class StorageMaintenance
         {
             var referenced = store.List().Select(j => j.Snapshot).OfType<string>()
                 .ToHashSet(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
-            using var db = store.Open(); using var command = db.CreateCommand();
-            command.CommandText = "SELECT job,scratch,snapshot FROM active_work";
             var active = new List<(string Job, string? Scratch, string? Snapshot)>();
-            using (var reader = command.ExecuteReader())
+            using (var database = store.DatabaseRead())
+            {
+                using var db = store.Open(); using var command = db.CreateCommand();
+                command.CommandText = "SELECT job,scratch,snapshot FROM active_work";
+                using var reader = command.ExecuteReader();
                 while (reader.Read()) active.Add((reader.GetString(0), reader.IsDBNull(1) ? null : reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2)));
+            }
             foreach (var work in active)
             {
                 IDisposable? ownerLock = null;
@@ -35,8 +38,10 @@ public static class StorageMaintenance
                     {
                         if (apply)
                         {
+                            using var database = store.DatabaseWrite();
+                            using var db = store.Open(); using var command = db.CreateCommand();
                             command.CommandText = "DELETE FROM active_work WHERE job=$job";
-                            command.Parameters.Clear(); command.Parameters.AddWithValue("$job", work.Job); command.ExecuteNonQuery();
+                            command.Parameters.AddWithValue("$job", work.Job); command.ExecuteNonQuery();
                         }
                     }
             }

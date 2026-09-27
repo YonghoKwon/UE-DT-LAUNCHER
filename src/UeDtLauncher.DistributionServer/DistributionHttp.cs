@@ -31,11 +31,11 @@ public static class DistributionHttp
         var tokens = new DistributionTokens(store);
         var assets = new PublishedAssetCache();
         var sequenceGate = new SemaphoreSlim(1, 1);
-        var databaseGate = new ReaderWriterLockSlim(LockRecursionPolicy.NoRecursion);
+        var databaseGate = store.DatabaseGate;
         IAccessPolicyProvider provider = new FileAccessPolicyProvider(store.Settings.PolicyPath);
         app.Lifetime.ApplicationStopped.Register(() => app.Logger.LogInformation("DistributionPerformance {Metrics}",
             JsonSerializer.Serialize(DistributionPerformance.Snapshot())));
-        // Let app-scoped coordination be collected: forced shutdown must not dispose a gate while an
+        // Let shared-store coordination be collected: forced shutdown must not dispose a gate while an
         // in-flight synchronous SQLite commit is still about to release it.
         app.Use(async (context, next) =>
         {

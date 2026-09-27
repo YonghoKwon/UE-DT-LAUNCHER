@@ -158,6 +158,7 @@ public sealed class DistributionTokens(IntakeStore store)
     {
         ReleaseSidecar.Segment(client); using var gate = store.Lock();
         var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+        using var database = store.DatabaseWrite();
         using var db = store.Open(); using var command = db.CreateCommand();
         command.CommandText = "INSERT INTO tokens(hash,client) VALUES($hash,$client)";
         command.Parameters.AddWithValue("$hash", Hash(token)); command.Parameters.AddWithValue("$client", client);
@@ -165,7 +166,8 @@ public sealed class DistributionTokens(IntakeStore store)
     }
     public void Revoke(string client)
     {
-        using var gate = store.Lock(); using var db = store.Open(); using var command = db.CreateCommand();
+        using var gate = store.Lock(); using var database = store.DatabaseWrite();
+        using var db = store.Open(); using var command = db.CreateCommand();
         command.CommandText = "UPDATE tokens SET revoked=1 WHERE client=$client";
         command.Parameters.AddWithValue("$client", client); command.ExecuteNonQuery(); store.Audit("tokens-revoked", client);
     }
@@ -173,6 +175,7 @@ public sealed class DistributionTokens(IntakeStore store)
     {
         if (string.IsNullOrWhiteSpace(token) || token.Length > 1024) return null;
         using var measurement = DistributionPerformance.MeasureDatabase("token-authenticate");
+        using var database = store.DatabaseRead();
         using var db = store.Open(); using var command = db.CreateCommand();
         command.CommandText = "SELECT client FROM tokens WHERE hash=$hash AND revoked=0";
         command.Parameters.AddWithValue("$hash", Hash(token));

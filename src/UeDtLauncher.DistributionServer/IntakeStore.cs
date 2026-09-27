@@ -29,6 +29,9 @@ public sealed class IntakeStore
     private string? scanCursor;
     private const string JobColumns = "id,source,state,snapshot,message,phase,processed_bytes,total_bytes,estimated_disk_bytes,progress_at";
     public DistributionSettings Settings { get; }
+    internal ReaderWriterLockSlim DatabaseGate { get; }
+    internal IDisposable DatabaseRead() => DistributionDatabaseCoordinator.Read(DatabaseGate);
+    internal IDisposable DatabaseWrite() => DistributionDatabaseCoordinator.Write(DatabaseGate);
     public string Root => Settings.Root;
     public IntakeStore(DistributionSettings settings, Func<string, long>? availableBytes = null)
     {
@@ -36,10 +39,12 @@ public sealed class IntakeStore
         if (settings.IntakeWorkers is < 1 or > 2) throw new ArgumentOutOfRangeException(nameof(settings.IntakeWorkers), "IntakeWorkers must be 1 or 2.");
         Settings = settings;
         settings.Root = Path.GetFullPath(settings.Root);
+        DatabaseGate = DistributionDatabaseCoordinator.ForRoot(settings.Root);
         foreach (var directory in new[] { "incoming", "processing", "releases", "archive", ".job-locks" })
             Directory.CreateDirectory(Path.Combine(Root, directory));
         using var gate = Lock();
         var existed = File.Exists(Path.Combine(Root, "distribution.db"));
+        using var database = DatabaseWrite();
         using var db = Open();
         using var command = db.CreateCommand();
         command.CommandText = "PRAGMA user_version";
@@ -89,6 +94,7 @@ public sealed class IntakeStore
     public List<IntakeJob> List()
     {
         using var measurement = DistributionPerformance.MeasureDatabase("jobs-list");
+        using var database = DatabaseRead();
         using var db = Open(); using var command = db.CreateCommand();
         command.CommandText = "SELECT " + JobColumns + " FROM jobs ORDER BY rowid";
         using var reader = command.ExecuteReader(); var list = new List<IntakeJob>();
@@ -98,6 +104,7 @@ public sealed class IntakeStore
     public IntakeJob? Find(string id)
     {
         using var measurement = DistributionPerformance.MeasureDatabase("job-find");
+        using var database = DatabaseRead();
         using var db = Open(); using var command = db.CreateCommand();
         command.CommandText = "SELECT " + JobColumns + " FROM jobs WHERE id=$id";
         command.Parameters.AddWithValue("$id", id);
@@ -111,6 +118,7 @@ public sealed class IntakeStore
     public void Save(IntakeJob job)
     {
         using var measurement = DistributionPerformance.MeasureDatabase("job-save");
+        using var database = DatabaseWrite();
         using var db = Open(); using var transaction = db.BeginTransaction();
         using var command = db.CreateCommand(); command.Transaction = transaction;
         command.CommandText = """
@@ -137,12 +145,16 @@ public sealed class IntakeStore
     }
     internal ThrottledPackageProgress Progress(string id, IProgress<PackageWorkProgress>? observer = null) => new(value =>
     {
-        using var db = Open(); using var command = db.CreateCommand();
-        command.CommandText = "UPDATE jobs SET phase=$phase,processed_bytes=$processed,total_bytes=$total,estimated_disk_bytes=$disk,progress_at=$progressAt WHERE id=$id";
-        command.Parameters.AddWithValue("$id", id);
-        AddProgressParameters(command, new(id, "", "", null, null, value.Phase, value.ProcessedBytes, value.TotalBytes,
-            value.EstimatedAdditionalDiskBytes, DateTimeOffset.UtcNow.ToString("O")));
-        command.ExecuteNonQuery(); observer?.Report(value);
+        using (var database = DatabaseWrite())
+        {
+            using var db = Open(); using var command = db.CreateCommand();
+            command.CommandText = "UPDATE jobs SET phase=$phase,processed_bytes=$processed,total_bytes=$total,estimated_disk_bytes=$disk,progress_at=$progressAt WHERE id=$id";
+            command.Parameters.AddWithValue("$id", id);
+            AddProgressParameters(command, new(id, "", "", null, null, value.Phase, value.ProcessedBytes, value.TotalBytes,
+                value.EstimatedAdditionalDiskBytes, DateTimeOffset.UtcNow.ToString("O")));
+            command.ExecuteNonQuery();
+        }
+        observer?.Report(value); // Observers may perform I/O; never call them while holding the SQL gate.
     });
     internal Func<string, long>? AvailableBytes => availableBytes;
     public IDisposable Lock()
@@ -162,6 +174,7 @@ public sealed class IntakeStore
     }
     internal bool ChangeState(string id, string expected, string next, bool reset = false, string? message = null)
     {
+        using var database = DatabaseWrite();
         using var db = Open(); using var transaction = db.BeginTransaction(); using var command = db.CreateCommand(); command.Transaction = transaction;
         command.CommandText = "UPDATE jobs SET state=$next,message=$message" + (reset ? ",snapshot=NULL,phase=NULL,processed_bytes=0,total_bytes=0,estimated_disk_bytes=0,progress_at=NULL" : "") + " WHERE id=$id AND state=$expected";
         command.Parameters.AddWithValue("$id", id); command.Parameters.AddWithValue("$expected", expected); command.Parameters.AddWithValue("$next", next);
@@ -173,6 +186,7 @@ public sealed class IntakeStore
     }
     public void Audit(string action, string subject)
     {
+        using var database = DatabaseWrite();
         using var db = Open(); using var command = db.CreateCommand();
         command.CommandText = "INSERT INTO audit(at,action,job) VALUES($at,$action,$subject)";
         command.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O"));

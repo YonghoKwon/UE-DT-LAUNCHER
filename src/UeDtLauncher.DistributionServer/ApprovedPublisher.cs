@@ -11,6 +11,7 @@ public sealed class ApprovedPublisher(IntakeStore store)
     public List<PublishedRelease> List()
     {
         using var measurement = DistributionPerformance.MeasureDatabase("releases-list");
+        using var database = store.DatabaseRead();
         using var db = store.Open(); using var command = db.CreateCommand();
         command.CommandText = "SELECT id,job,directory,metadata FROM releases ORDER BY rowid";
         using var reader = command.ExecuteReader(); var items = new List<PublishedRelease>();
@@ -23,6 +24,7 @@ public sealed class ApprovedPublisher(IntakeStore store)
     private PublishedRelease? FindOne(string column, string value)
     {
         using var measurement = DistributionPerformance.MeasureDatabase("release-find");
+        using var database = store.DatabaseRead();
         using var db = store.Open(); using var command = db.CreateCommand();
         command.CommandText = "SELECT id,job,directory,metadata FROM releases WHERE " + column + "=$value";
         command.Parameters.AddWithValue("$value", value);
@@ -117,6 +119,7 @@ public sealed class ApprovedPublisher(IntakeStore store)
             }
             else Directory.Move(staged, final);
 
+            using var database = store.DatabaseWrite();
             using var db = store.Open(); using var transaction = db.BeginTransaction(); using var command = db.CreateCommand();
             command.Transaction = transaction;
             command.CommandText = """
