@@ -13,6 +13,11 @@ public sealed class LauncherEngine : IDisposable
     private readonly FileLogger? _fileLogger;
     private readonly bool _echoToConsole;
     private readonly bool _ownsHttpClient;
+    private readonly object _progressGate = new();
+    private readonly SemaphoreSlim _hashSlots;
+    private ClientPerformanceCounters _performance = new();
+    private bool _performanceReported;
+    public LauncherPerformanceMetrics PerformanceMetrics => _performance.Snapshot();
 
     public LauncherEngine(LauncherConfig config, Action<LauncherProgress>? progress = null, FileLogger? fileLogger = null, bool echoToConsole = true)
         : this(config, progress, fileLogger, echoToConsole, httpClient: null)
@@ -26,7 +31,9 @@ public sealed class LauncherEngine : IDisposable
         bool echoToConsole,
         HttpClient? httpClient)
     {
+        LauncherConfigValidator.Validate(config);
         _config = config;
+        _hashSlots = new SemaphoreSlim(config.Performance.HashConcurrency);
         _progress = progress;
         _fileLogger = fileLogger;
         _echoToConsole = echoToConsole;
@@ -38,6 +45,7 @@ public sealed class LauncherEngine : IDisposable
     public void Dispose()
     {
         if (_ownsHttpClient) _httpClient.Dispose();
+        _hashSlots.Dispose();
     }
 
     public async Task RunAsync(CancellationToken cancellationToken = default)
@@ -49,6 +57,8 @@ public sealed class LauncherEngine : IDisposable
 
     internal async Task<PreparedLauncherUpdate> PrepareAsync(CancellationToken cancellationToken = default)
     {
+        _performance = new ClientPerformanceCounters();
+        _performanceReported = false;
         var instanceLock = SingleInstanceLock.Acquire(LauncherPaths.UpdateLockPath(_config));
         try
         {
@@ -107,6 +117,7 @@ public sealed class LauncherEngine : IDisposable
         catch
         {
             instanceLock.Dispose();
+            ReportPerformance();
             throw;
         }
     }
@@ -114,6 +125,15 @@ public sealed class LauncherEngine : IDisposable
     internal async Task<string?> CommitPreparedAsync(
         PreparedLauncherUpdate prepared,
         CancellationToken cancellationToken = default)
+    {
+        var started = Stopwatch.GetTimestamp();
+        try { return await CommitPreparedCoreAsync(prepared, cancellationToken); }
+        finally { _performance.AddApply(started); ReportPerformance(); }
+    }
+
+    private async Task<string?> CommitPreparedCoreAsync(
+        PreparedLauncherUpdate prepared,
+        CancellationToken cancellationToken)
     {
         prepared.ThrowIfDisposed();
         if (!prepared.HasLiveChanges)
@@ -202,12 +222,34 @@ public sealed class LauncherEngine : IDisposable
 
     private void Log(string stage, string message, double? percent = null)
     {
-        if (_echoToConsole)
+        lock (_progressGate)
         {
-            Console.WriteLine(percent.HasValue ? $"[{stage}] {message} ({percent:0}%)" : $"[{stage}] {message}");
+            if (_echoToConsole)
+            {
+                Console.WriteLine(percent.HasValue ? $"[{stage}] {message} ({percent:0}%)" : $"[{stage}] {message}");
+            }
+            _fileLogger?.Log(stage, message);
+            _progress?.Invoke(new LauncherProgress(stage, message, percent));
         }
-        _fileLogger?.Log(stage, message);
-        _progress?.Invoke(new LauncherProgress(stage, message, percent));
+    }
+
+    private void ReportPerformance()
+    {
+        if (_performanceReported) return;
+        _performanceReported = true;
+        var summary = System.Text.Json.JsonSerializer.Serialize(PerformanceMetrics,
+            new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
+        // Machine-readable diagnostics are not a GUI/IPC progress phase.
+        if (_echoToConsole) Console.WriteLine("[Performance] " + summary);
+        _fileLogger?.Log("Performance", summary);
+    }
+
+    private async Task<bool> HashMatchesAsync(string path, string expected, CancellationToken cancellationToken)
+    {
+        await _hashSlots.WaitAsync(cancellationToken);
+        var started = Stopwatch.GetTimestamp();
+        try { return await Hashing.Sha256MatchesAsync(path, expected, cancellationToken); }
+        finally { _performance.AddHash(started); _hashSlots.Release(); }
     }
 
     private async Task WriteInstallStateAsync(
@@ -292,10 +334,12 @@ public sealed class LauncherEngine : IDisposable
         var localByPath = local?.Files.ToDictionary(file => file.Path, SafePath.FileSystemComparer)
                           ?? new Dictionary<string, ManifestFile>(SafePath.FileSystemComparer);
 
-        foreach (var remoteFile in remote.Files)
+        var needsDownload = new bool[remote.Files.Count];
+        await BoundedFileWorkers.RunAsync(remote.Files.Count, _config.Performance.HashConcurrency, async (index, token) =>
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var installedPath = SafePath.ResolveInside(_config.InstallDir, remoteFile.Path);
+            var remoteFile = remote.Files[index];
+            token.ThrowIfCancellationRequested();
+            var installedPath = SafePath.ResolveInsideChecked(_config.InstallDir, remoteFile.Path);
             var shouldDownload = _config.RepairMode || !File.Exists(installedPath);
 
             if (!shouldDownload && localByPath.TryGetValue(remoteFile.Path, out var localFile))
@@ -305,11 +349,15 @@ public sealed class LauncherEngine : IDisposable
 
             if (!shouldDownload)
             {
-                shouldDownload = !await Hashing.Sha256MatchesAsync(installedPath, remoteFile.Sha256, cancellationToken);
+                shouldDownload = new FileInfo(installedPath).Length != remoteFile.Size ||
+                    !await HashMatchesAsync(installedPath, remoteFile.Sha256, token);
             }
 
-            if (shouldDownload) plan.DownloadOrRepair.Add(remoteFile);
-        }
+            needsDownload[index] = shouldDownload;
+        }, cancellationToken);
+        // Preserve manifest order regardless of hash worker completion order.
+        for (var index = 0; index < remote.Files.Count; index++)
+            if (needsDownload[index]) plan.DownloadOrRepair.Add(remote.Files[index]);
 
         if (_config.RemoveFilesNotInManifest && local is not null)
         {
@@ -328,34 +376,26 @@ public sealed class LauncherEngine : IDisposable
         if (Directory.Exists(_config.StagingDir)) Directory.Delete(_config.StagingDir, recursive: true);
         Directory.CreateDirectory(_config.StagingDir);
 
-        var fileCount = plan.DownloadOrRepair.Count;
-        var totalBytes = plan.DownloadOrRepair.Sum(file => Math.Max(0, file.Size));
-        long completedBytes = 0;
-
-        for (var index = 0; index < fileCount; index++)
+        var progress = new DownloadProgressAggregator(plan.DownloadOrRepair, value =>
         {
-            var file = plan.DownloadOrRepair[index];
-            cancellationToken.ThrowIfCancellationRequested();
-            var stagingPath = SafePath.ResolveInside(_config.StagingDir, file.Path);
-            Directory.CreateDirectory(Path.GetDirectoryName(stagingPath)!);
-            var downloadUri = ResolveDownloadUri(remote, file);
-            Log("Download", $"({index + 1}/{fileCount}) {file.Path}", DownloadPercent(completedBytes, totalBytes));
-
-            var fileBaseBytes = completedBytes;
-            var fileIndex = index + 1;
-            void OnBytes(long bytesForFile) => _progress?.Invoke(new LauncherProgress(
-                "DownloadProgress", file.Path,
-                DownloadPercent(fileBaseBytes + bytesForFile, totalBytes),
-                fileBaseBytes + bytesForFile, totalBytes, fileIndex, fileCount));
-
-            await DownloadWithRetryAsync(downloadUri, stagingPath, file, OnBytes, cancellationToken);
-            completedBytes += Math.Max(0, file.Size);
+            lock (_progressGate) _progress?.Invoke(value);
+        });
+        var started = Stopwatch.GetTimestamp();
+        try
+        {
+            await BoundedFileWorkers.RunAsync(plan.DownloadOrRepair.Count, _config.Performance.DownloadConcurrency, async (index, token) =>
+            {
+                var file = plan.DownloadOrRepair[index];
+                token.ThrowIfCancellationRequested();
+                var stagingPath = SafePath.ResolveInsideChecked(_config.StagingDir, file.Path);
+                Directory.CreateDirectory(Path.GetDirectoryName(stagingPath)!);
+                var downloadUri = ResolveDownloadUri(remote, file);
+                await DownloadWithRetryAsync(downloadUri, stagingPath, file, bytes => progress.Report(index, bytes), token);
+                progress.Report(index, file.Size, completed: true);
+            }, cancellationToken);
         }
+        finally { _performance.AddDownload(started); }
     }
-
-    // Downloads occupy the 35..65 band of the overall progress bar.
-    private static double DownloadPercent(long bytesDone, long totalBytes) =>
-        totalBytes <= 0 ? 35 : 35 + Math.Clamp(bytesDone / (double)totalBytes, 0, 1) * 30;
 
     private Uri ResolveDownloadUri(LauncherManifest manifest, ManifestFile file)
     {
@@ -373,13 +413,16 @@ public sealed class LauncherEngine : IDisposable
     private async Task DownloadWithRetryAsync(Uri uri, string targetPath, ManifestFile file, Action<long>? onBytes, CancellationToken cancellationToken)
     {
         Exception? lastError = null;
+        // A private randomized scratch file cannot alias another manifest entry such as app.download.
+        // The same scratch path is retained across retries so Range resume still works.
+        var tempPath = targetPath + ".download-" + Guid.NewGuid().ToString("N");
         var maxAttempts = Math.Max(1, _config.MaxRetryCount);
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
             try
             {
-                await DownloadFileAsync(uri, targetPath, file.Size, onBytes, cancellationToken);
-                if (!await Hashing.Sha256MatchesAsync(targetPath, file.Sha256, cancellationToken))
+                await DownloadFileAsync(uri, targetPath, tempPath, file.Size, onBytes, cancellationToken);
+                if (!await HashMatchesAsync(targetPath, file.Sha256, cancellationToken))
                     throw new IOException($"SHA-256 mismatch after download: {file.Path}");
                 return;
             }
@@ -419,9 +462,8 @@ public sealed class LauncherEngine : IDisposable
         return ex is IOException or System.Net.Sockets.SocketException or TaskCanceledException;
     }
 
-    private async Task DownloadFileAsync(Uri uri, string targetPath, long expectedSize, Action<long>? onBytes, CancellationToken cancellationToken)
+    private async Task DownloadFileAsync(Uri uri, string targetPath, string tempPath, long expectedSize, Action<long>? onBytes, CancellationToken cancellationToken)
     {
-        var tempPath = targetPath + ".download";
         var existingLength = File.Exists(tempPath) ? new FileInfo(tempPath).Length : 0;
 
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
@@ -449,17 +491,14 @@ public sealed class LauncherEngine : IDisposable
         {
             var buffer = new byte[81920];
             var written = existingLength;
-            var lastReport = Environment.TickCount64;
             int read;
             while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
             {
+                _performance.AddNetworkBytes(read);
+                if (written + read > expectedSize) throw new IOException("File body exceeds the manifest size.");
                 await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
                 written += read;
-                if (onBytes is not null && Environment.TickCount64 - lastReport >= 200)
-                {
-                    onBytes(written);
-                    lastReport = Environment.TickCount64;
-                }
+                onBytes?.Invoke(written);
             }
 
             await target.FlushAsync(cancellationToken);
@@ -467,7 +506,7 @@ public sealed class LauncherEngine : IDisposable
         }
 
         var actualSize = new FileInfo(tempPath).Length;
-        if (expectedSize > 0 && actualSize != expectedSize) throw new IOException($"Size mismatch. Expected {expectedSize}, actual {actualSize}.");
+        if (actualSize != expectedSize) throw new IOException($"Size mismatch. Expected {expectedSize}, actual {actualSize}.");
         await MoveFileWithRetryAsync(tempPath, targetPath, cancellationToken);
     }
 

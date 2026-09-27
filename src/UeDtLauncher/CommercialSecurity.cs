@@ -63,6 +63,10 @@ public static class LauncherConfigValidator
             throw new InvalidOperationException($"Unsupported launcher config schemaVersion: {config.SchemaVersion}.");
         if (config.DeploymentMode is not ("portable" or "managed-agent"))
             throw new InvalidOperationException("deploymentMode must be portable or managed-agent.");
+        if (config.Performance is null || config.Performance.DownloadConcurrency is < 1 or > 8)
+            throw new InvalidOperationException("performance.downloadConcurrency must be between 1 and 8.");
+        if (config.Performance.HashConcurrency is < 1 or > 4)
+            throw new InvalidOperationException("performance.hashConcurrency must be between 1 and 4.");
         if (config.SchemaVersion < 2) return;
 
         var production = string.Equals(config.Environment, "prod", StringComparison.OrdinalIgnoreCase);

@@ -48,6 +48,7 @@ public sealed class LauncherConfig
     public bool RemoveFilesNotInManifest { get; set; }
     public int MaxRetryCount { get; set; } = 3;
     public int HttpTimeoutSeconds { get; set; } = 120;
+    public LauncherPerformanceConfig Performance { get; set; } = new();
     public string[]? LaunchArguments { get; set; }
     public List<LauncherPackage> Packages { get; set; } = new();
     public SelfUpdateConfig? SelfUpdate { get; set; }
@@ -59,6 +60,13 @@ public sealed class LauncherConfig
 
     [JsonIgnore] public string? ResolvedReleaseVersion { get; set; }
     [JsonIgnore] public bool IsManagedDeployment => DeploymentMode.Equals("managed-agent", StringComparison.OrdinalIgnoreCase);
+}
+
+public sealed class LauncherPerformanceConfig
+{
+    public int DownloadConcurrency { get; set; } = 2;
+    public int HashConcurrency { get; set; } = 2;
+    public bool ReusePreviousInstallations { get; set; } = true;
 }
 
 public sealed class ProjectUiConfig

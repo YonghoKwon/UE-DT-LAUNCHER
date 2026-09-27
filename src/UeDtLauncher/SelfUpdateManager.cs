@@ -194,6 +194,12 @@ public static class SelfUpdateManager
             RepairMode = false,
             RemoveFilesNotInManifest = false,
             MaxRetryCount = parentConfig.MaxRetryCount,
-            HttpTimeoutSeconds = parentConfig.HttpTimeoutSeconds
+            HttpTimeoutSeconds = parentConfig.HttpTimeoutSeconds,
+            Performance = new LauncherPerformanceConfig
+            {
+                DownloadConcurrency = parentConfig.Performance.DownloadConcurrency,
+                HashConcurrency = parentConfig.Performance.HashConcurrency,
+                ReusePreviousInstallations = parentConfig.Performance.ReusePreviousInstallations
+            }
         };
 }
