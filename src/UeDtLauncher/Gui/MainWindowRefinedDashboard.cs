@@ -1238,7 +1238,7 @@ public sealed partial class MainWindow : Window
             try
             {
                 var response = await new ManagedAgentClient().SendStreamingAsync("rollback", config.ProjectId, ReportManagedProgress, selection: CurrentReleaseSelection());
-                foreach (var progress in response.Progress) UiProgress(progress.Stage, progress.Message, progress.Percent);
+                foreach (var progress in response.Progress) ReportManagedProgress(progress);
                 if (!response.Success) throw new InvalidOperationException(response.Message);
                 _installState = "롤백 완료";
                 _installDetail = "관리 Agent가 가장 최근 백업을 복원했습니다.";
@@ -1296,7 +1296,8 @@ public sealed partial class MainWindow : Window
     {
         if (p.Stage == "DownloadProgress" && p.TotalBytes is > 0 && p.BytesDownloaded is not null)
         {
-            UpdateSpeed(p.BytesDownloaded.Value);
+            // Logical file progress includes reused/resumed bytes; network speed does not.
+            UpdateSpeed(p.Performance?.NetworkBytes ?? p.BytesDownloaded.Value);
             var overall = Math.Clamp(p.BytesDownloaded.Value / (double)p.TotalBytes.Value * 100, 0, 100);
             var speedText = _speedBytesPerSecond > 0 ? $"{FormatBytes((long)_speedBytesPerSecond)}/s" : "측정 중";
             if (_statusText is not null) _statusText.Text = $"다운로드 중 · 파일 {p.FileIndex}/{p.FileCount} · {speedText} · 전체 {overall:0}%";
@@ -1344,11 +1345,11 @@ public sealed partial class MainWindow : Window
     {
         if (Dispatcher.UIThread.CheckAccess())
         {
-            UiProgress(progress.Stage, progress.Message, progress.Percent);
+            EngineProgress(progress.ToLauncherProgress());
             return;
         }
 
-        Dispatcher.UIThread.InvokeAsync(() => UiProgress(progress.Stage, progress.Message, progress.Percent))
+        Dispatcher.UIThread.InvokeAsync(() => EngineProgress(progress.ToLauncherProgress()))
             .GetAwaiter()
             .GetResult();
     }

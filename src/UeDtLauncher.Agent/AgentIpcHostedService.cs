@@ -234,7 +234,8 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
             void AddProgress(LauncherProgress value)
             {
                 if (progress.Count >= 256) progress.RemoveAt(0);
-                var item = new ManagedAgentProgress(value.Stage, DiagnosticRedactor.Redact(value.Message), value.Percent);
+                var item = new ManagedAgentProgress(value.Stage, DiagnosticRedactor.Redact(value.Message), value.Percent,
+                    value.BytesDownloaded, value.TotalBytes, value.FileIndex, value.FileCount, value.Performance);
                 progress.Add(item);
                 progressSink?.Invoke(item);
             }

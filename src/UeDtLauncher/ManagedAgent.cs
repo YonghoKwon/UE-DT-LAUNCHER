@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO.Pipes;
 using System.Net.Sockets;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace UeDtLauncher;
 
@@ -60,7 +61,17 @@ public sealed class ManagedAgentResponse
     public DistributionCatalog? Catalog { get; set; }
 }
 
-public sealed record ManagedAgentProgress(string Stage, string Message, double? Percent);
+public sealed record ManagedAgentProgress(
+    string Stage, string Message, double? Percent,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? BytesDownloaded = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? TotalBytes = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? FileIndex = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? FileCount = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LauncherPerformanceMetrics? Performance = null)
+{
+    internal LauncherProgress ToLauncherProgress() => new(Stage, Message, Percent,
+        BytesDownloaded, TotalBytes, FileIndex, FileCount, Performance);
+}
 
 public sealed record ManagedProjectStatus(
     bool IsInstalled,
@@ -73,30 +84,44 @@ public sealed record ManagedProjectStatus(
 
 public static class ManagedProjectStatusInspector
 {
-    public static async Task<ManagedProjectStatus> InspectAsync(
+    public static Task<ManagedProjectStatus> InspectAsync(
         LauncherConfig config,
         LauncherManifest availableManifest,
+        CancellationToken cancellationToken = default) =>
+        InspectCoreAsync(config, availableManifest, Hashing.Sha256MatchesAsync, cancellationToken);
+
+    internal static async Task<ManagedProjectStatus> InspectCoreAsync(
+        LauncherConfig config,
+        LauncherManifest availableManifest,
+        Func<string, string, CancellationToken, Task<bool>> hashMatches,
         CancellationToken cancellationToken = default)
     {
+        if (config.Performance is null || config.Performance.HashConcurrency is < 1 or > 4)
+            throw new InvalidOperationException("performance.hashConcurrency must be between 1 and 4.");
         LauncherManifest? installedManifest = null;
         if (File.Exists(config.InstalledManifestPath))
         {
             installedManifest = await JsonFiles.ReadAsync<LauncherManifest>(config.InstalledManifestPath, cancellationToken);
         }
 
-        var missing = 0;
-        var changed = 0;
-        foreach (var file in availableManifest.Files)
+        // Each worker owns one result slot; counts do not depend on completion order.
+        var outcomes = new byte[availableManifest.Files.Count]; // 0=unchanged, 1=missing, 2=changed
+        await BoundedFileWorkers.RunAsync(availableManifest.Files.Count, config.Performance.HashConcurrency, async (index, token) =>
         {
-            var installedPath = SafePath.ResolveInside(config.InstallDir, file.Path);
+            token.ThrowIfCancellationRequested();
+            var file = availableManifest.Files[index];
+            var installedPath = SafePath.ResolveInsideChecked(config.InstallDir, file.Path);
             if (!File.Exists(installedPath))
             {
-                missing++;
-                continue;
+                outcomes[index] = 1;
+                return;
             }
 
-            if (!await Hashing.Sha256MatchesAsync(installedPath, file.Sha256, cancellationToken)) changed++;
-        }
+            if (new FileInfo(installedPath).Length != file.Size ||
+                !await hashMatches(installedPath, file.Sha256, token)) outcomes[index] = 2;
+        }, cancellationToken);
+        var missing = outcomes.Count(outcome => outcome == 1);
+        var changed = outcomes.Count(outcome => outcome == 2);
 
         var installedVersion = installedManifest?.Version;
         var updateRequired = installedManifest is null

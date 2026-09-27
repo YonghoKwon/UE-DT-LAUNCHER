@@ -232,7 +232,7 @@ public sealed class LauncherEngine : IDisposable
                 Console.WriteLine(percent.HasValue ? $"[{stage}] {message} ({percent:0}%)" : $"[{stage}] {message}");
             }
             _fileLogger?.Log(stage, message);
-            _progress?.Invoke(new LauncherProgress(stage, message, percent));
+            _progress?.Invoke(new LauncherProgress(stage, message, percent, Performance: PerformanceMetrics));
         }
     }
 
@@ -382,7 +382,7 @@ public sealed class LauncherEngine : IDisposable
 
         var progress = new DownloadProgressAggregator(plan.DownloadOrRepair, value =>
         {
-            lock (_progressGate) _progress?.Invoke(value);
+            lock (_progressGate) _progress?.Invoke(value with { Performance = PerformanceMetrics });
         });
         var started = Stopwatch.GetTimestamp();
         try
