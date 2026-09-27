@@ -218,11 +218,14 @@ public class ClientPerformanceTests
         internal bool InterruptFirst { get; init; }
         internal bool CorruptFirst { get; init; }
         internal bool FailFirst { get; init; }
+        internal string? Signature { get; init; }
         internal bool Stall { get; init; }
         internal bool SawRange { get; private set; }
         internal TaskCompletionSource TwoStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            if (request.RequestUri!.AbsolutePath.EndsWith(".sig"))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(Signature ?? "") };
             if (request.RequestUri!.AbsolutePath.EndsWith("manifest.json"))
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(manifest, JsonFiles.Options)) };
             var payload = payloads[Path.GetFileName(request.RequestUri.AbsolutePath)];

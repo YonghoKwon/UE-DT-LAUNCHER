@@ -2,7 +2,10 @@ using System.Diagnostics;
 
 namespace UeDtLauncher;
 
-/// <summary>Per-update counters. Hash time is summed worker time; phase times are wall time.</summary>
+/// <summary>
+/// Per-update counters. Hash/copy are summed active worker times. Download is staging wall time
+/// including copy, hash verification and retries; apply is commit wall time. These durations overlap.
+/// </summary>
 public sealed record LauncherPerformanceMetrics(
     double HashMilliseconds, double DownloadMilliseconds, double CopyMilliseconds,
     double ApplyMilliseconds, long NetworkBytes, long ReusedBytes);

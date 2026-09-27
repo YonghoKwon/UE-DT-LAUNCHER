@@ -62,6 +62,7 @@ public sealed class LauncherEngine : IDisposable
         var instanceLock = SingleInstanceLock.Acquire(LauncherPaths.UpdateLockPath(_config));
         try
         {
+            var targetExisted = Directory.Exists(_config.InstallDir) || File.Exists(_config.InstallStatePath);
             Directory.CreateDirectory(_config.InstallDir);
             Directory.CreateDirectory(_config.StagingDir);
             Directory.CreateDirectory(_config.BackupDir);
@@ -78,6 +79,8 @@ public sealed class LauncherEngine : IDisposable
                 cancellationToken);
             var remoteManifest = manifestDocument.Manifest;
             var manifestJson = manifestDocument.Json;
+            var previousInstallations = await PreviousInstallationReuse.DiscoverAsync(
+                _config, manifestDocument, targetExisted, cancellationToken);
 
             Log("Manifest", $"App: {remoteManifest.AppId} / Version: {remoteManifest.Version} / Platform: {remoteManifest.Platform}", 10);
             var localManifest = await TryLoadLocalManifestAsync(cancellationToken);
@@ -99,7 +102,7 @@ public sealed class LauncherEngine : IDisposable
                 DiskSpace.EnsureAvailable(_config.InstallDir, requiredBytes, (stage, message) => Log(stage, message));
 
                 Log("Download", "Downloading changed files to staging...", 35);
-                await PrepareStagingAsync(plan, remoteManifest, cancellationToken);
+                await PrepareStagingAsync(plan, remoteManifest, previousInstallations, cancellationToken);
                 preparedPackages = await PreparePackagesAsync(packagesToPrepare, remoteManifest, cancellationToken);
             }
 
@@ -371,7 +374,8 @@ public sealed class LauncherEngine : IDisposable
         return plan;
     }
 
-    private async Task PrepareStagingAsync(UpdatePlan plan, LauncherManifest remote, CancellationToken cancellationToken)
+    private async Task PrepareStagingAsync(UpdatePlan plan, LauncherManifest remote,
+        PreviousInstallationReuse? previousInstallations, CancellationToken cancellationToken)
     {
         if (Directory.Exists(_config.StagingDir)) Directory.Delete(_config.StagingDir, recursive: true);
         Directory.CreateDirectory(_config.StagingDir);
@@ -389,8 +393,12 @@ public sealed class LauncherEngine : IDisposable
                 token.ThrowIfCancellationRequested();
                 var stagingPath = SafePath.ResolveInsideChecked(_config.StagingDir, file.Path);
                 Directory.CreateDirectory(Path.GetDirectoryName(stagingPath)!);
-                var downloadUri = ResolveDownloadUri(remote, file);
-                await DownloadWithRetryAsync(downloadUri, stagingPath, file, bytes => progress.Report(index, bytes), token);
+                if (previousInstallations is null ||
+                    !await previousInstallations.TryCopyAsync(file, stagingPath, HashMatchesAsync, _performance, token))
+                {
+                    var downloadUri = ResolveDownloadUri(remote, file);
+                    await DownloadWithRetryAsync(downloadUri, stagingPath, file, bytes => progress.Report(index, bytes), token);
+                }
                 progress.Report(index, file.Size, completed: true);
             }, cancellationToken);
         }

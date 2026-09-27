@@ -6,6 +6,8 @@ public static class CatalogResolver
 {
     public static async Task ResolveAsync(LauncherConfig config, HttpClient httpClient, Action<string, string, double?>? log = null, CancellationToken cancellationToken = default)
     {
+        config.CatalogAuthenticated = false;
+        config.SelectedRelease = null;
         if (string.IsNullOrWhiteSpace(config.CatalogUrl))
         {
             return;
@@ -15,7 +17,9 @@ public static class CatalogResolver
 
         log?.Invoke("Catalog", "Downloading release catalog...", 2);
         var catalog = await DownloadCatalogAsync(config, httpClient, log, cancellationToken);
-        var release = SelectRelease(catalog, config);
+        DistributionRelease release;
+        try { release = SelectRelease(catalog, config); }
+        catch { config.CatalogAuthenticated = false; throw; }
         config.ManifestUrl = release.ManifestUrl;
         config.ManifestSignatureUrl = release.ManifestSignatureUrl;
         config.Channel = release.Channel;
@@ -34,6 +38,7 @@ public static class CatalogResolver
         Action<string, string, double?>? log = null,
         CancellationToken cancellationToken = default)
     {
+        config.CatalogAuthenticated = false;
         if (string.IsNullOrWhiteSpace(config.CatalogUrl))
         {
             throw new InvalidOperationException("catalogUrl is required.");
@@ -68,6 +73,7 @@ public static class CatalogResolver
         var catalog = JsonSerializer.Deserialize<DistributionCatalog>(catalogJson, JsonFiles.Options)
             ?? throw new InvalidOperationException("Release catalog JSON was empty or invalid.");
         await CatalogTrustManager.ValidateAndRecordAsync(config, catalog, cancellationToken);
+        config.CatalogAuthenticated = signatureVerified;
         return catalog;
     }
 

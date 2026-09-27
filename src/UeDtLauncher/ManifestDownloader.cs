@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace UeDtLauncher;
 
-internal sealed record ManifestDocument(LauncherManifest Manifest, string Json);
+internal sealed record ManifestDocument(LauncherManifest Manifest, string Json, bool SignatureVerified = false);
 
 internal static class ManifestDownloader
 {
@@ -40,6 +40,6 @@ internal static class ManifestDownloader
         var manifest = JsonSerializer.Deserialize<LauncherManifest>(json, JsonFiles.Options)
                        ?? throw new InvalidOperationException("Remote manifest JSON was empty or invalid.");
         LauncherEngine.ValidateManifest(manifest, config);
-        return new ManifestDocument(manifest, json);
+        return new ManifestDocument(manifest, json, signatureVerified);
     }
 }
