@@ -15,6 +15,7 @@
 | [무인 서비스](service-mode.md) | Agent와 앱 감시 서비스의 차이·운영 주의 |
 | [설치본·상용 배포](commercial-deployment.md) | MSI/RPM·자격 증명·운영 gate |
 | [2026-09-12 검증 기록](distribution-validation.md) | 당시 테스트 환경·결과·회사 미검증 범위 |
+| [성능 설정·2026-09-28 검증](performance-validation.md) | 병렬 처리·파일 재사용·접수 worker·실측 결과와 미달 항목 |
 
 처음 적용은 통합 운영 → ZIP 업로드 → 클라이언트 순서입니다. 실제 회사 RHEL/UE 검증과 테스트용 Windows/WSL 실행은 구분합니다. 과거 검증 날짜를 문서 점검 날짜로 덮어쓰지 않습니다.
 

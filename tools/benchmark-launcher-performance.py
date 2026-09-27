@@ -217,6 +217,8 @@ def main():
     parser.add_argument("--download-concurrency", type=int, default=2)
     parser.add_argument("--hash-concurrency", type=int, default=2)
     parser.add_argument("--no-reuse", action="store_true")
+    parser.add_argument("--corrupt-source-record", action="store_true",
+                        help="Test fallback by replacing this fresh fixture's old install-state with JSON null")
     parser.add_argument("--workers", type=int, default=1)
     args = parser.parse_args()
     if args.runs < 1:
@@ -249,7 +251,8 @@ def main():
               "transport": "loopback HTTP + signed metadata/Bearer; HTTPS validated separately",
               "fileRequestDelayMs": args.latency_ms, "cacheCondition": "fresh app/state per iteration; OS cache not flushed",
               "settings": {"downloads": args.download_concurrency, "hashes": args.hash_concurrency,
-                           "reuse": not args.no_reuse, "intakeWorkers": args.workers},
+                           "reuse": not args.no_reuse, "intakeWorkers": args.workers,
+                           "corruptSourceRecord": args.corrupt_source_record},
               "client": [], "api": [], "intake": [], "sqliteBusyWaitMs": None}
     for profile in profiles:
         for version in ("1.0.0", "2.0.0"):
@@ -301,6 +304,9 @@ def main():
                                                "allowedDownloadHosts": ["127.0.0.1"],
                                                "trustedSigningKeys": [{"keyId": "release-1", "publicKeyPath": str(root / "public.pem")}]}}
                         write_json(client / "config.json", config)
+                        if scenario == "next-version" and args.corrupt_source_record:
+                            old_state = client / "state" / ("bench-" + profile) / "prod/stable/1.0.0" / platform / "install-state.json"
+                            old_state.write_text("null", encoding="utf-8")
                         if scenario == "repair":
                             target = client / "apps" / ("bench-" + profile) / "prod/stable/2.0.0" / platform / "g0/f00000.bin"
                             target.write_bytes(b"damaged fixture")

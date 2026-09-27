@@ -55,3 +55,16 @@ jobs:
       - name: Publish Distribution Server
         if: runner.os == 'Linux'
         run: dotnet publish src/UeDtLauncher.DistributionServer -c Release -r linux-x64 --self-contained true -o publish/distribution-server
+
+      - name: Install isolated distribution E2E prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nginx zip unzip openssl curl
+
+      - name: Signed HTTPS distribution end to end
+        if: runner.os == 'Linux'
+        timeout-minutes: 10
+        run: bash tools/test-distribution-e2e.sh publish/distribution-server/UeDtLauncher.DistributionServer publish/linux-x64/UeDtLauncher /usr/sbin/nginx
+        # Functional gate only. Shared-runner wall times are not a performance acceptance gate.
+        # Do not upload the temporary server root: it contains test keys and credentials.

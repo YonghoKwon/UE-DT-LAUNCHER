@@ -1,8 +1,8 @@
 # ZIP·외부 release.json 통합 배포 운영
 
-> 참고 가이드 / 문서 점검 2026-09-22 / 구현 기준 2cd28c8. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
+> 참고 가이드 / 성능 추가 점검 2026-09-28. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
 
-문서 점검: 2026-09-22 / 구현 기준 2cd28c8. 설정 예시는 실제 회사 주소·계정·권한으로 바꿔야 합니다. 실제 실행 근거는 [2026-09-12 검증 기록](distribution-validation.md), 남은 검증은 [보완 목록](../../IMPROVEMENTS.md)을 확인합니다.
+설정 예시는 실제 회사 주소·계정·권한으로 바꿔야 합니다. 이전 실행 근거는 [2026-09-12 기록](distribution-validation.md), 성능 추가 결과와 한계는 [2026-09-28 기록](performance-validation.md), 남은 검증은 [보완 목록](../../IMPROVEMENTS.md)을 확인합니다.
 
 ZIP과 JSON은 별개 파일입니다. 내부 release.json은 분류에 사용하지 않습니다. 현재 서버는 Linux systemd 서비스, 클라이언트는 Windows GUI/Linux CLI를 기준으로 운영합니다.
 
@@ -100,11 +100,13 @@ UeDtLauncher agent update --project demo --environment dev --channel dev --versi
 
 정확한 선택을 지원하는 Agent가 필요합니다. 서버 권한을 재확인하고 apps/demo/dev/dev/1.2.0/windows-x64 등 버전 전용 폴더로 설치합니다. Linux CLI의 portable 설정에도 distributionServerUrl을 사용하면 동일한 서명·서버 권한 검사를 거칩니다.
 
-새 버전은 별도 설치 디렉터리를 사용합니다. 같은 설치의 누락·변경 파일만 받는 기능과 버전 사이의 공통 파일 재사용은 다릅니다. 후자는 아직 구현되지 않아 새 버전 최초 설치의 전송량·공간을 충분히 확보해야 합니다.
+새 버전은 별도 설치 디렉터리를 사용합니다. 같은 트랙의 최근 정상 설치에서 검증 후 복사하는 기능이 추가됐습니다. 네트워크 전송은 줄일 수 있지만 독립된 복사본이므로 설치 디스크 공간은 여전히 필요합니다. repair는 재사용하지 않습니다. [성능 설정과 제한](performance-validation.md)
 
 기존 설치 복사 이전은 `import-install --config <기존 설정> --destination-root <새 앱 루트>`로 사전 검사하고 `--apply`로 복사합니다. 원본은 삭제하지 않습니다. 새 설정으로 첫 check/update를 실행해 버전별 설치 상태를 다시 기록합니다. 기존 사용자 저장 데이터는 원본을 보존하고 실제 UE 프로젝트의 데이터 경로에 맞춰 별도 이전합니다.
 
 ## 5. 유지보수 및 검증
+
+2026-09-28 추가: 서버 `intakeWorkers`는 기본1/최대2입니다. 접수 상태의 단계·처리 바이트·예상 추가 공간을 inspect로 확인할 수 있습니다. DB schema v2로 최초 실행 시 기존 DB를 백업한 뒤 migration하며, 이전/새 프로세스를 같은 DB에 동시에 실행하지 않습니다. active_work·OS 작업 잠금이 활성 임시 폴더를 정리로부터 보호합니다. 상세 교체/복원·측정 주의는 [성능 검증](performance-validation.md)을 따릅니다.
 
 usage는 디렉터리별 용량을 표시합니다. cleanup은 실패한 scratch 작업 폴더만 대상으로 기본 dry-run하며 `--apply`를 명시해야 지웁니다. 게시된 릴리스와 참조 중인 원본 snapshot은 삭제하지 않습니다.
 DB audit에는 접수/승인 상태 변경이 기록됩니다. nginx 접근 로그는 토큰을 포함하지 않아야 하며, 서비스 로그와 함께 접근 거부를 확인합니다.

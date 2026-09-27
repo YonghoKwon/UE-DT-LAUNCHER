@@ -5,6 +5,7 @@ out/
 publish/
 artifacts/
 __pycache__/
+TestResults/
 
 # Local launcher runtime state
 app/

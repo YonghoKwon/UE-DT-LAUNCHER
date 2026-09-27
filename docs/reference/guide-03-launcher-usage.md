@@ -1,6 +1,6 @@
 # 런처 설정·CLI 레퍼런스
 
-> 참고 가이드 / 문서 점검 2026-09-22 / 구현 기준 2cd28c8. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
+> 참고 가이드 / 기본 지침 2026-09-22, 성능 설정 추가 2026-09-28. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
 
 현재 기본 배포는 DistributionServer의 ZIP + 외부 `release.json` 접수·승인 방식입니다. 서버는 [서버 가이드](guide-01-linux-server-setup.md), 게시는 [게시 가이드](guide-02-publish-package.md), 화면은 [GUI 사용법](launcher-user-guide.md), 개요는 [README](../../README.md)를 참고하세요.
 
@@ -54,6 +54,8 @@ Linux 경로 예시입니다. Windows에서는 경로를 Windows 관리 디렉�
 사내 CA가 필요하면 `security.customCaCertificatePath`를 사용합니다. HTTPS 검증을 끄거나 URL에 비밀번호를 넣지 않습니다. 허용 host와 공개키는 실제 배포 서버에 맞춰 지정합니다.
 
 ## 인증정보와 점검
+
+성능 설정은 선택적 `performance` 객체로 지정합니다. 기본 다운로드2/해시2, 범위1~8/1~4이며 같은 트랙의 이전 설치 재사용은 기본 활성입니다. 관리형에서는 Agent 설정에 지정합니다. IPC v1의 선택적 진행 필드로 실제 네트워크 수신과 재사용을 구분하고 일반 화면에는 원시 측정값 JSON을 표시하지 않습니다. [설정 전문·측정 조건](performance-validation.md)
 
 ```text
 UeDtLauncher credential set --name company-distribution
