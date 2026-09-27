@@ -60,6 +60,42 @@ public class PreviousInstallationReuseTests
     }
 
     [Theory]
+    [InlineData("install-state.json", "malformed")]
+    [InlineData("install-state.json", "null")]
+    [InlineData("install-state.json", "oversized")]
+    [InlineData("installed-manifest.json", "malformed")]
+    [InlineData("installed-manifest.json", "null")]
+    [InlineData("installed-manifest.json", "oversized")]
+    public async Task InvalidPreviousMetadata_FallsBackToHttpForAuthenticatedTarget(string metadataFile, string kind)
+    {
+        using var fixture = new Fixture(1);
+        var signature = await ConfigureVersionedAsync(fixture);
+        fixture.Config.Security.MaxManifestBytes = 1024;
+        var old = Clone(fixture.Manifest); old.Version = "1.0.0";
+        var source = await CreateInstallationAsync(fixture, old, fixture.Payloads);
+        var selection = fixture.Config.SelectedRelease! with { Version = old.Version };
+        var metadataPath = SafePath.ResolveInside(fixture.Config.StateRootDir, selection.ReleaseId + "/" + metadataFile);
+        var maximumBytes = metadataFile == "install-state.json" ? 64 * 1024 : fixture.Config.Security.MaxManifestBytes;
+        var invalidMetadata = kind switch
+        {
+            "malformed" => "{",
+            "null" => "null",
+            _ => new string(' ', maximumBytes + 1)
+        };
+        await File.WriteAllTextAsync(metadataPath, invalidMetadata);
+        using var http = new HttpClient(new PayloadHandler(fixture.Manifest, fixture.Payloads) { Signature = signature });
+        using var engine = new LauncherEngine(fixture.Config, null, null, false, http);
+
+        await engine.RunAsync();
+
+        Assert.Equal(0, engine.PerformanceMetrics.ReusedBytes);
+        Assert.Equal(65536, engine.PerformanceMetrics.NetworkBytes);
+        Assert.True(await Hashing.Sha256MatchesAsync(Path.Combine(fixture.Config.InstallDir, "file0.bin"), fixture.Manifest.Files[0].Sha256));
+        Assert.True(await Hashing.Sha256MatchesAsync(Path.Combine(source, "file0.bin"), old.Files[0].Sha256));
+        Assert.Equal(invalidMetadata, await File.ReadAllTextAsync(metadataPath));
+    }
+
+    [Theory]
     [InlineData("project")] [InlineData("environment")] [InlineData("channel")] [InlineData("platform")]
     public async Task DoesNotReuseAcrossTrackBoundaries(string field)
     {

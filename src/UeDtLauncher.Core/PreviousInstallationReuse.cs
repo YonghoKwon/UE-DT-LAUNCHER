@@ -140,7 +140,7 @@ internal sealed class PreviousInstallationReuse
 
     private static bool Same(string? left, string? right) => string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
     private static string Canonical(string path) => path.Replace('\\', '/');
-    private static bool IsUnavailable(Exception ex) => ex is IOException or UnauthorizedAccessException or
+    private static bool IsUnavailable(Exception ex) => ex is IOException or InvalidDataException or UnauthorizedAccessException or
         JsonException or InvalidOperationException or ArgumentException;
 
     private static async Task<T> ReadBoundedAsync<T>(string path, int maximum, CancellationToken token)
