@@ -17,7 +17,6 @@ public sealed class ApprovedPublisher(IntakeStore store)
             JsonSerializer.Deserialize<ReleaseSidecar>(reader.GetString(3), JsonFiles.Options)!));
         return items;
     }
-
     public PublishedRelease? Find(string releaseId) => FindOne("id", releaseId);
     public PublishedRelease? FindByJob(string jobId) => FindOne("job", jobId);
     private PublishedRelease? FindOne(string column, string value)
@@ -30,7 +29,8 @@ public sealed class ApprovedPublisher(IntakeStore store)
             JsonSerializer.Deserialize<ReleaseSidecar>(reader.GetString(3), JsonFiles.Options)!) : null;
     }
 
-    public async Task<PublishedRelease> ApproveAsync(string id, CancellationToken token = default)
+    public async Task<PublishedRelease> ApproveAsync(string id, CancellationToken token = default,
+        IProgress<PackageWorkProgress>? observer = null)
     {
         using var gate = store.Lock();
         var job = store.Get(id);
@@ -46,14 +46,16 @@ public sealed class ApprovedPublisher(IntakeStore store)
         }
         // A publishing journal is committed before touching release directories. Repeating approval recovers it.
         store.Save(job with { State = "publishing", Message = null });
+        var progress = store.Progress(id, observer);
         var build = Path.Combine(store.Root, "processing", "publish-" + id + "-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(build);
         var payload = await SidecarPackageValidator.ValidateAndExtractAsync(Path.Combine(snapshot, metadata.PackageFile), metadata,
-            Path.Combine(build, "unpacked"), store.Settings.Limits, token);
+            Path.Combine(build, "unpacked"), store.Settings.Limits, token, progress, store.AvailableBytes);
         var staged = Path.Combine(build, "release"); Directory.CreateDirectory(staged);
         Directory.Move(payload, Path.Combine(staged, "files"));
         var final = SafePath.ResolveInside(Path.Combine(store.Root, "releases"), metadata.ReleaseId);
         var manifestPath = Path.Combine(staged, "manifest.json");
+        progress.Report(new("manifest", 0, 0, 0));
         await ManifestGenerator.GenerateAsync(packageDir: Path.Combine(staged, "files"), outputPath: manifestPath,
             baseUrl: store.Settings.PublicUrl.TrimEnd('/') + "/releases/" + metadata.ReleaseId + "/files",
             entryPoint: metadata.EntryPoint, version: metadata.Version, channel: metadata.Channel,
@@ -89,7 +91,8 @@ public sealed class ApprovedPublisher(IntakeStore store)
             command.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O"));
             command.ExecuteNonQuery(); transaction.Commit();
         }
-        store.Save(job with { State = "published" });
+        progress.Report(new("published", metadata.PackageSize, metadata.PackageSize, 0));
+        store.Save(store.Get(id) with { State = "published" });
         return new(metadata.ReleaseId, id, final, metadata);
     }
 

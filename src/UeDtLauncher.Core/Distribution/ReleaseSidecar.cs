@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 
 namespace UeDtLauncher;
@@ -100,14 +101,28 @@ public static class SidecarPackageValidator
     }
 
     public static async Task<string> ValidateAndExtractAsync(string zipPath, ReleaseSidecar metadata,
-        string destination, ZipIntakeLimits? limits = null, CancellationToken token = default)
+        string destination, ZipIntakeLimits? limits = null, CancellationToken token = default,
+        IProgress<PackageWorkProgress>? progress = null, Func<string, long>? availableBytes = null)
     {
         metadata.Validate();
         limits ??= new();
         if (new FileInfo(zipPath).Length != metadata.PackageSize || metadata.PackageSize > limits.MaxZipBytes)
             throw new InvalidDataException("ZIP size mismatch or size limit exceeded.");
-        if (!await Hashing.Sha256MatchesAsync(zipPath, metadata.PackageSha256, token))
-            throw new InvalidDataException("ZIP SHA-256 mismatch.");
+        progress?.Report(new("hash", 0, metadata.PackageSize, 0));
+        using (var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
+        {
+            await using var input = new FileStream(zipPath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                128 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            var hashBuffer = new byte[128 * 1024]; long hashed = 0; int read;
+            while ((read = await input.ReadAsync(hashBuffer, token)) != 0)
+            {
+                hash.AppendData(hashBuffer, 0, read); hashed += read;
+                progress?.Report(new("hash", hashed, metadata.PackageSize, 0));
+            }
+            if (hashed != metadata.PackageSize || !Convert.ToHexString(hash.GetHashAndReset()).Equals(metadata.PackageSha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("ZIP SHA-256 mismatch.");
+        }
+        progress?.Report(new("archive-scan", 0, 0, 0));
         if (Directory.Exists(destination)) throw new IOException("Extraction destination must be new.");
         using var archive = ZipFile.OpenRead(zipPath);
         if (archive.Entries.Count > limits.MaxFiles) throw new InvalidDataException("ZIP entry limit exceeded.");
@@ -138,9 +153,9 @@ public static class SidecarPackageValidator
             if (!entries.TryGetValue(prefix + ReleaseSidecar.Relative(required), out var directory) || directory)
                 throw new InvalidDataException("Required file is absent from ZIP: " + required);
 
-        var drive = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(destination))!);
-        if (drive.AvailableFreeSpace < expanded + 64L * 1024 * 1024)
-            throw new IOException("Insufficient disk space for ZIP extraction.");
+        var estimate = IntakeDiskSpace.Estimate(expanded);
+        progress?.Report(new("extract", 0, expanded, estimate));
+        IntakeDiskSpace.Require(destination, estimate, availableBytes);
         Directory.CreateDirectory(destination);
         long actualTotal = 0;
         var buffer = new byte[128 * 1024];
@@ -161,6 +176,7 @@ public static class SidecarPackageValidator
                 if (written > entry.Length || actualTotal > limits.MaxExpandedBytes)
                     throw new InvalidDataException("ZIP expanded beyond declared limits.");
                 await output.WriteAsync(buffer.AsMemory(0, count), token);
+                progress?.Report(new("extract", actualTotal, expanded, IntakeDiskSpace.Estimate(expanded - actualTotal)));
             }
             if (written != entry.Length) throw new InvalidDataException("Truncated ZIP entry.");
         }
