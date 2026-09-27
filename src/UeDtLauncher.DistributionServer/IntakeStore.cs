@@ -33,6 +33,10 @@ public sealed class IntakeStore
         command.CommandText = """
             CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,source TEXT NOT NULL,state TEXT NOT NULL,snapshot TEXT,message TEXT);
             CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,at TEXT NOT NULL,action TEXT NOT NULL,job TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS tokens(hash TEXT PRIMARY KEY,client TEXT NOT NULL,revoked INTEGER NOT NULL DEFAULT 0);
+            CREATE TABLE IF NOT EXISTS releases(id TEXT PRIMARY KEY,job TEXT NOT NULL,directory TEXT NOT NULL,metadata TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS sequence(id INTEGER PRIMARY KEY CHECK(id=1),value INTEGER);
+            INSERT OR IGNORE INTO sequence VALUES(1,0);
             """;
         command.ExecuteNonQuery();
     }
@@ -51,7 +55,16 @@ public sealed class IntakeStore
             reader.IsDBNull(3) ? null : reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4)));
         return list;
     }
-    public IntakeJob Get(string id) => List().Single(j => j.Id == id);
+    public IntakeJob? Find(string id)
+    {
+        using var db = Open(); using var command = db.CreateCommand();
+        command.CommandText = "SELECT id,source,state,snapshot,message FROM jobs WHERE id=$id";
+        command.Parameters.AddWithValue("$id", id);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? new(reader.GetString(0), reader.GetString(1), reader.GetString(2),
+            reader.IsDBNull(3) ? null : reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4)) : null;
+    }
+    public IntakeJob Get(string id) => Find(id) ?? throw new InvalidOperationException("Job not found.");
     public void Save(IntakeJob job)
     {
         using var db = Open(); using var transaction = db.BeginTransaction();
@@ -85,7 +98,7 @@ public sealed class IntakeStore
         if (!string.Equals(Path.GetDirectoryName(source), incoming, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
             throw new InvalidDataException("Upload must be an immediate child of incoming.");
         var id = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source))).ToLowerInvariant()[..24];
-        var previous = List().SingleOrDefault(j => j.Id == id);
+        var previous = Find(id);
         if (previous is { State: "pending" or "published" or "rejected" or "failed" or "publishing" }) return previous;
         var job = new IntakeJob(id, source, "waiting", null, null);
         try

@@ -11,23 +11,34 @@ public sealed class ApprovedPublisher(IntakeStore store)
     public List<PublishedRelease> List()
     {
         using var db = store.Open(); using var command = db.CreateCommand();
-        command.CommandText = "CREATE TABLE IF NOT EXISTS releases(id TEXT PRIMARY KEY,job TEXT NOT NULL,directory TEXT NOT NULL,metadata TEXT NOT NULL)";
-        command.ExecuteNonQuery(); command.CommandText = "SELECT id,job,directory,metadata FROM releases ORDER BY rowid";
+        command.CommandText = "SELECT id,job,directory,metadata FROM releases ORDER BY rowid";
         using var reader = command.ExecuteReader(); var items = new List<PublishedRelease>();
         while (reader.Read()) items.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2),
             JsonSerializer.Deserialize<ReleaseSidecar>(reader.GetString(3), JsonFiles.Options)!));
         return items;
     }
 
+    public PublishedRelease? Find(string releaseId) => FindOne("id", releaseId);
+    public PublishedRelease? FindByJob(string jobId) => FindOne("job", jobId);
+    private PublishedRelease? FindOne(string column, string value)
+    {
+        using var db = store.Open(); using var command = db.CreateCommand();
+        command.CommandText = "SELECT id,job,directory,metadata FROM releases WHERE " + column + "=$value";
+        command.Parameters.AddWithValue("$value", value);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? new(reader.GetString(0), reader.GetString(1), reader.GetString(2),
+            JsonSerializer.Deserialize<ReleaseSidecar>(reader.GetString(3), JsonFiles.Options)!) : null;
+    }
+
     public async Task<PublishedRelease> ApproveAsync(string id, CancellationToken token = default)
     {
         using var gate = store.Lock();
         var job = store.Get(id);
-        if (job.State == "published") return List().Single(r => r.JobId == id);
+        if (job.State == "published") return FindByJob(id) ?? throw new InvalidDataException("Published release record missing.");
         if (job.State is not ("pending" or "publishing")) throw new InvalidOperationException("Job is not awaiting approval.");
         var snapshot = job.Snapshot ?? throw new InvalidDataException("Missing private snapshot.");
         var metadata = await SidecarPackageValidator.ReadAsync(Path.Combine(snapshot, "release.json"), token);
-        var existing = List().SingleOrDefault(r => r.ReleaseId == metadata.ReleaseId);
+        var existing = Find(metadata.ReleaseId);
         if (existing is not null)
         {
             if (existing.JobId != id) throw new IOException("Release version already published; use a new version.");
