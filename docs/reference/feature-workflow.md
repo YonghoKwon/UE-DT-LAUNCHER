@@ -1,0 +1,387 @@
+# DT 배포 시스템 — 기능 지도와 단계별 실행 안내
+
+확인일: 2026-09-28 / 구현 기준 `c4c9375`. **현재 구현된 기능**을 설명하며 회사 운영 승인 완료를 뜻하지 않습니다. 먼저 한 문장으로 이해하면:
+
+> 개발자가 ZIP과 설명서를 올리면 서버가 검사합니다. 관리자가 승인하면, 허용된 PC의 사용자가 런처 버튼을 눌러 설치하고 DT 프로그램을 실행합니다.
+
+## 1. 무엇이 어디에서 동작하나요?
+
+아래는 Windows 관리형 설치를 중심으로 본 업무·파일 흐름입니다. Linux는 GUI 대신 CLI를 검증 대상으로 사용하며, Agent를 쓰는 관리형과 현재 계정으로 직접 처리하는 portable 방식이 있습니다.
+
+```mermaid
+flowchart LR
+    buildPc["개발자 PC"] -->|"ZIP와 외부 JSON"| distribution["Linux 배포 서버"]
+    operator["서버 관리자"] -->|"승인과 PC 권한"| distribution
+    distribution -->|"허용 목록과 파일"| updater["PC 업데이트 서비스"]
+    launcher["일반 또는 개발자 런처"] -->|"설치와 복구 요청"| updater
+    updater -->|"검증 후 설치"| installed["버전별 DT 설치본"]
+    launcher -->|"준비 완료 후 실행"| dtApp["DT 프로그램"]
+    installed -->|"실행 파일"| dtApp
+```
+
+| 구성 | 쉬운 설명 | 현재 상태 |
+|---|---|---|
+| Unreal 패키징·ZIP 만들기 | 배포할 프로그램 원본 준비 | Unreal/압축 도구에서 하는 외부 작업. 이 런처가 UE 빌드를 대신하지 않음 |
+| `release-metadata` | ZIP의 프로젝트·버전·OS·실행 위치를 적은 외부 설명서 생성 | 구현. ZIP 크기·해시 자동 계산, ZIP 자체는 수정하지 않음 |
+| 배포 서버 | 두 파일 접수, 검사, 승인 대기, 서명·게시 | 구현. 폴더 감지와 관리 CLI, 관리자 웹 화면은 없음 |
+| nginx·HTTPS | PC가 접속하는 안전한 다운로드 입구 | 구성 제공. 배포 API는 loopback에만 연결 |
+| PC 권한 | 어느 PC가 어떤 프로그램을 받을지 결정 | IP/CIDR + PC별 토큰 + 배포 허용 목록, 기본 거부 |
+| 일반 런처 | 이미지·버전·상태와 실행 버튼 | 구현. 시작 시 자동 점검, 설치는 클릭 후 수행 |
+| 개발자 런처 | 허용된 프로젝트·환경·채널·버전 선택과 상세 출력 | 구현. developer로 바꿔도 서버 권한은 늘어나지 않음 |
+| 업데이트 서비스 = Agent | PC 안에서 다운로드·검사·설치·복구를 담당하는 백그라운드 프로그램 | 구현. GUI/CLI가 요청하고, GUI/CLI가 사용자 세션에서 DT 실행 |
+| 파일 재사용·병렬 처리 | 이미 받은 동일 파일은 검증 후 복사하고 나머지는 제한 병렬 다운로드 | 구현. 다른 버전과 파일을 공유하는 hard link는 아님 |
+| 복구·백업 복원 | 손상 파일 복구, 해당 설치의 보관 백업으로 되돌리기 | 구현. 일반 GUI의 rollback은 확인 후 수행 |
+| 회사 백엔드 API 연동 | 회사 서버에서 PC별 권한 정책을 가져오기 | 인터페이스만 존재. 실제 연동 미구현 |
+
+**개발자 화면도 그 PC에 허용된 현재 OS 배포만 보여줍니다.** 일반/개발자 구분은 화면 정책이고 권한은 서버가 정합니다. 이미 설치된 실행 파일의 원격 삭제·실행 금지는 구현 범위가 아닙니다.
+
+## 2. 한눈에 보는 전체 순서
+
+| 구분 | 순서 | 누가 / 어디서 | 입력·동작 | 끝났을 때 |
+|---|---:|---|---|---|
+| 처음 한 번 | A1 | 개발 담당 / 소스 저장소 | 런처·Agent·배포 서버 `dotnet publish` | OS별 실행 폴더 준비 |
+| 처음 한 번 | A2 | 관리자 / Linux 서버 | 서버 설정·HTTPS·서명키·서비스 구성 | 인증 없는 목록 요청은 401, 서비스 실행 중 |
+| PC 추가 시 | A3 | 관리자 / 서버와 PC | PC IP·grant 등록, 토큰 발급·보호 저장 | 그 PC의 접근 범위 확정 |
+| PC 추가 시 | A4 | 관리자 / 클라이언트 PC | Agent 운영 설정 + GUI 표시 설정 | status 성공, 게시·허용 릴리스가 있으면 check 성공 |
+| 버전마다 | B1 | 개발자 / Unreal·작업 PC | Windows/Linux 각각 패키징·ZIP | 완성된 ZIP |
+| 버전마다 | B2 | 개발자 / Windows PowerShell | `release-metadata` | ZIP 옆 `release.json` |
+| 버전마다 | B3 | 개발자 / SFTP 또는 SSH/SCP | 새 incoming 폴더에 두 파일 전송·이름 변경 | ZIP + JSON 두 파일 완성 |
+| 자동 | B4 | 배포 서버 | 폴더 감지·크기/해시/경로/압축 검사 | `pending` 승인 대기 |
+| 버전마다 | B5 | 관리자 / Linux 터미널 | `list` → `inspect` → `approve` | `published`, 배포 폴더 자동 생성 |
+| 사용할 때 | C1 | 사용자 / Windows 런처 | 프로젝트·필요한 버전 선택 | 설치 상태·가능한 작업 표시 |
+| 사용할 때 | C2 | 사용자 / 런처 버튼 | 설치 후 실행 / 업데이트 후 실행 / 실행 | 필요한 파일 준비 후 DT 실행 |
+| 문제 발생 시 | D | 사용자·관리자 | 재확인 → 검사 → 복구, 필요 시 백업 복원 | 상태 확인 또는 원인·다음 조치 확보 |
+
+## 3. 명령어 예시의 공통 조건
+
+예시는 프로젝트 `demo`, 표시 이름 `DT Simulator`, 버전 `1.2.0`, `prod/stable`, 서버 `updates.example.com`입니다. **주소·SSH 계정·PC IP는 반드시 회사의 실제 값으로 바꿉니다.** 예시 도메인으로 서비스를 실행하지 않습니다.
+
+- Windows 명령은 PowerShell입니다. `& $Launcher ... | Out-Host`는 GUI 형식 EXE도 명령 완료·출력을 기다리게 합니다.
+- Linux 명령은 서버 터미널입니다. 관리 CLI는 전용 `uedt-distribution` 계정 또는 허용된 운영자로 실행합니다.
+- 각 명령이 실패하면 다음 단계로 진행하지 말고 출력된 원인을 확인합니다. 회사 공용 nginx나 서비스 설정을 바꿀 때는 해당 관리자가 기존 서비스 영향을 검토합니다.
+- 아래 `JOB_ID`는 `list`에 나온 실제 작업 ID로 바꿉니다. `upload-001`은 예시이며 새 배포마다 새 폴더를 사용합니다.
+- **검증 환경부터 적용**합니다. 현재 MSI 서명 순서·프로세스 식별·Linux credential 소유권 등 운영 전 보완이 남아 있습니다. [회사 운영 승인 조건](../../PROJECT_GOALS.md)
+
+## A. 처음 한 번: 서버와 PC 준비
+
+### A1. 실행 프로그램 만들기 — 개발 PC, 저장소 루트
+
+```powershell
+dotnet restore UeDtLauncher.sln
+dotnet publish src/UeDtLauncher/UeDtLauncher.csproj -c Release -r win-x64 --self-contained true -o publish/client-win-x64
+dotnet publish src/UeDtLauncher.Agent/UeDtLauncher.Agent.csproj -c Release -r win-x64 --self-contained true -o publish/agent-win-x64
+dotnet publish src/UeDtLauncher.DistributionServer -c Release -r linux-x64 --self-contained true -o publish/distribution-server
+
+$Launcher = (Resolve-Path .\publish\client-win-x64\UeDtLauncher.exe).Path
+```
+
+**결과:** 클라이언트, Agent, Linux 배포 서버의 출력 폴더 3개. 실행 파일 하나만 복사하지 말고 **폴더 전체**를 전달합니다. Linux 클라이언트/Agent가 필요하면 해당 프로젝트를 `-r linux-x64`로 publish합니다. 회사용 설치본은 별도 MSI/RPM 제작·서명·실기기 검증이 필요합니다.
+
+### A2. Linux 서버 구성 — 관리자
+
+관리자가 먼저 nginx 설치, 회사 DNS/TLS 인증서, SSH 업로드 계정, 전용 서비스 계정과 디렉터리 권한을 준비합니다. OS 패키지 설치·인증서 발급 방법은 회사 정책에 따라 달라지므로 여기서 임의의 회사 설정을 확정하지 않습니다.
+
+| 준비물 | 배치 위치 / 입력 내용 | 확인할 점 |
+|---|---|---|
+| 배포 서버 publish 폴더 전체 | `/opt/ue-dt-distribution/` | Linux 실행 권한과 네이티브 의존성 |
+| 서버 설정 | `/etc/ue-dt-distribution/server.json` | root·publicUrl·서명키·policy 경로 |
+| 접근 정책 | `/etc/ue-dt-distribution/access-policy.json` | PC별 IP와 허용 프로젝트/트랙 |
+| 업로드 경로 | `/srv/ue-dt-distribution/incoming/` | 업로더 쓰기 + 서비스 계정 읽기/폴더 접근 |
+| 비공개 처리·보관 | 같은 root의 processing·DB·releases | 업로더가 검사 snapshot·키·DB를 바꾸지 못함 |
+| 서명키 | 서버 개인키, PC 공개키 | ZIP/JSON에 개인키·토큰을 넣지 않음 |
+
+서명키 생성 예시 — Windows 개발 도구에서 **처음 한 번**, 출력 파일이 없는 폴더에서 실행:
+
+```powershell
+New-Item -ItemType Directory -Force "$env:USERPROFILE\DT-Deploy\keys" | Out-Null
+& $Launcher generate-signing-key --private-key "$env:USERPROFILE\DT-Deploy\keys\release-private.pem" --public-key "$env:USERPROFILE\DT-Deploy\keys\release-public.pem" | Out-Host
+```
+
+개인키는 서버 관리자가 안전한 경로로 받아 서버 서비스/승인 운영자만 읽도록 보호합니다. 공개키만 PC에 전달합니다. 이미 운영 중인 키를 배포할 때마다 새로 만들지 않습니다. TLS 인증서와 이 배포 서명키는 서로 다른 용도입니다.
+
+서버 설정 JSON 전문·정책 예시는 [통합 운영 가이드](distribution-workflow.md)를 사용합니다. 서비스 파일은 `packaging/linux/ue-dt-distribution.service`, nginx 예시는 `packaging/linux/distribution-nginx.conf`입니다. 템플릿의 도메인·TLS 경로를 실제 값으로 수정하고, 서버 관리자가 표준 설치 위치에 배치한 **후** 다음을 실행합니다.
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now ue-dt-distribution
+sudo systemctl status ue-dt-distribution --no-pager
+sudo nginx -t && sudo systemctl reload nginx
+curl --silent --output /dev/null --write-out '%{http_code}\n' https://updates.example.com/api/v1/catalog
+```
+
+**결과:** 서비스 active, nginx 설정 검사 성공, 토큰 없는 Catalog 요청은 `401`. `401` 하나만으로 정상 PC 다운로드까지 검증된 것은 아닙니다. 인증서 오류는 우회하지 않고 DNS/회사 CA 설정을 수정합니다. API 포트18500은 외부에 열지 않고, 기존 공개 정적 경로를 섞지 않습니다.
+
+### A3. PC 권한·토큰 등록 — 관리자
+
+서버 정책에 PC 식별자·실제 IP/CIDR·프로젝트/환경/채널·필요 시 버전을 기록합니다. 다음은 **예시 정책의 일부**입니다.
+
+```json
+{
+  "clients": [
+    {
+      "id": "office-pc-01",
+      "addresses": ["10.10.20.15"],
+      "grants": [
+        {"projectId": "demo", "environment": "prod", "channel": "stable", "versions": []}
+      ]
+    }
+  ]
+}
+```
+
+`versions: []`는 해당 트랙의 모든 버전 허용, `grants: []`는 허용 없음입니다. 정책 변경은 검증한 임시 파일을 rename하여 적용하며, 잘못된 정책에서 이전 권한을 대신 허용하지 않습니다.
+
+Linux 서버에서 토큰 발급:
+
+```bash
+sudo -u uedt-distribution /opt/ue-dt-distribution/UeDtLauncher.DistributionServer token-issue office-pc-01 --config /etc/ue-dt-distribution/server.json
+```
+
+표시된 토큰은 해당 PC 관리자에게 안전하게 전달합니다. 토큰을 문서·Git·명령 인자·스크린샷에 붙여 넣지 않습니다. PC의 보호 저장소에 입력합니다.
+
+```powershell
+# 클라이언트 프로그램 폴더에서 실행하고, 표시되는 비밀 입력 안내에 토큰 입력
+.\UeDtLauncher.exe credential set --name company-distribution | Out-Host
+.\UeDtLauncher.exe credential status --name company-distribution | Out-Host
+```
+
+`company-distribution`은 토큰 자체가 아니라 저장소에서 찾는 이름입니다. Windows의 Agent 계정 ACL, Linux의0600 파일 소유자·서비스 계정 읽기를 확인해야 합니다. Linux root로 저장했다고 서비스가 자동으로 읽을 수 있는 것은 아닙니다.
+
+분실/교체 시 서버의 `token-revoke office-pc-01`은 그 PC의 기존 토큰을 모두 폐기합니다. 이후 새로 `token-issue`하고 PC 저장소를 갱신합니다. 새 토큰 발급만으로 이전 토큰이 자동 폐기되지는 않습니다.
+
+### A4. 런처와 Agent 설정 — PC 관리자
+
+| 파일/설정 | 정할 것 | 누가 관리 |
+|---|---|---|
+| Agent 보호 설정 | 서버 URL, 저장소 이름, 공개키, 설치/상태/로그 루트, OS | 관리자 |
+| 런처 표시 설정 | `deploymentMode=managed-agent`, `distributionServerUrl`, `clientProfile=general` 또는 `developer` | 관리자 또는 배포 담당 |
+
+Windows 관리 설정은 보통 `C:\ProgramData\UE-DT Launcher\config\launcher.config.json`, Linux는 `/etc/ue-dt-launcher/launcher.config.json`입니다. GUI 설정 탐색은 명시한 `--config` → 실행 파일 옆 → 관리 설정 순서입니다. [전체 설정 예시](guide-03-launcher-usage.md)
+
+개발/검증 PC에서는 Agent를 console mode로 실행할 수 있습니다. 이는 Windows 서비스 설치가 아닙니다.
+
+```powershell
+# PowerShell 창 1: Agent publish 폴더에서 실행한 채 유지
+.\UeDtLauncher.Agent.exe
+```
+
+```powershell
+# PowerShell 창 2: 클라이언트 publish 폴더에서 실행
+.\UeDtLauncher.exe agent status | Out-Host
+.\UeDtLauncher.exe agent check --project demo | Out-Host
+.\UeDtLauncher.exe --gui --config .\launcher.config.json
+```
+
+**결과:** Agent running과 허용된 배포 상태 확인. 아직 게시·허용한 릴리스가 없으면 check 성공을 기대하지 말고 B단계를 먼저 완료합니다. 회사 PC에서는 검증된 설치본·서비스 자동 시작으로 배포하고 계정 권한까지 점검합니다.
+
+## B. 새 버전마다: ZIP → 승인된 배포
+
+```mermaid
+flowchart TD
+    package["B1 개발자: ZIP 준비"] --> metadata["B2 개발자: 외부 JSON 생성"]
+    metadata --> upload["B3 개발자: 두 파일 업로드"]
+    upload --> paired{"두 파일 전송 완료?"}
+    paired -->|"아니오"| waiting["서버: 파일 대기"]
+    waiting -->|"전송 완료"| paired
+    paired -->|"예"| validate["B4 서버: 비공개 검사"]
+    validate --> valid{"검사 통과?"}
+    valid -->|"아니오"| fix["원인 확인 후 수정·재접수"]
+    valid -->|"예"| pending["B5 승인 대기"]
+    pending --> approved{"관리자 승인?"}
+    approved -->|"보류·거절"| private["다운로드 비공개 유지"]
+    approved -->|"승인"| publish["서명·배포 폴더 생성·등록"]
+    publish --> visible["권한 있는 PC에 표시"]
+```
+
+### B1. 완성된 ZIP 준비
+
+예시는 ZIP 내부가 `Windows/Demo.exe`인 경우입니다. Unreal 패키징 후 ZIP을 완성하고, 아래 위치에 복사합니다.
+
+```text
+사용자폴더/DT-Deploy/upload-001/
+  Windows.zip
+```
+
+ZIP을 열자마자 `Demo.exe`가 보인다면 다음 단계에서 `--payload-root .`로 지정합니다. Windows와 Linux는 서로 다른 업로드 폴더를 사용합니다.
+
+### B2. release.json 만들기 — 개발 PC PowerShell
+
+B2~B3는 같은 PowerShell 창에서 실행합니다. 새 창이면 아래 변수를 다시 정의합니다. 소스 저장소 루트 기준입니다.
+
+```powershell
+$Launcher = (Resolve-Path .\publish\client-win-x64\UeDtLauncher.exe).Path
+$UploadDir = "$env:USERPROFILE\DT-Deploy\upload-001"
+$ServerHost = 'updates.example.com'
+$UploadUser = 'uploader'
+$RemoteUpload = '/srv/ue-dt-distribution/incoming/upload-001'
+
+& $Launcher release-metadata --zip "$UploadDir\Windows.zip" --project-id demo --display-name 'DT Simulator' --version 1.2.0 --environment prod --channel stable --platform windows-x64 --payload-root Windows --entry-point Demo.exe --output "$UploadDir\release.json" | Out-Host
+Get-Content -LiteralPath "$UploadDir\release.json"
+```
+
+**결과:** ZIP 옆에 외부 JSON이 생기며 파일명·크기·SHA-256이 포함됩니다. ZIP 내부에 넣지 않습니다. 이미 있는 JSON은 덮어쓰지 않습니다. ZIP을 다시 만들었다면 새 작업 폴더에서 JSON도 다시 생성합니다.
+
+Linux ZIP 내부가 `Linux/Demo.sh`, `Linux/Demo/Binaries/Linux/Demo`라면 별도 폴더에서:
+
+```powershell
+& $Launcher release-metadata --zip "$env:USERPROFILE\DT-Deploy\upload-002\Linux.zip" --project-id demo --version 1.2.0 --environment prod --channel stable --platform linux-x64 --payload-root Linux --entry-point Demo.sh --executable-paths 'Demo.sh,Demo/Binaries/Linux/Demo' --output "$env:USERPROFILE\DT-Deploy\upload-002\release.json" | Out-Host
+```
+
+`payloadRoot`는 ZIP 내부 루트, `entryPoint`와 `executablePaths`는 그 기준 경로입니다. 이미지가 필요하면 ZIP의 프로그램 루트 아래 이미지 파일을 넣고 `--hero-path assets/hero.png --thumbnail-path assets/thumbnail.png`를 지정합니다. 없으면 기본 브랜드 그래픽이 표시됩니다.
+
+### B3. 서버로 두 파일 올리기 — 개발 PC
+
+**쉬운 방법:** WinSCP/SFTP에서 새 upload-001 폴더를 만들고, `Windows.zip.uploading`과 `release.json.uploading`으로 전송합니다. 둘 다 끝나면 각각 `Windows.zip`, `release.json`으로 이름을 바꿉니다. 계정에는 incoming만 접근하도록 관리자가 구성합니다.
+
+OpenSSH가 준비된 PC의 명령 예시:
+
+```powershell
+# 같은 폴더가 이미 있으면 중단하고 새 업로드 ID를 사용
+ssh "${UploadUser}@${ServerHost}" "mkdir '$RemoteUpload'"
+if ($LASTEXITCODE -ne 0) { throw '폴더 생성 실패. 기존 폴더를 재사용하지 말고 원인을 확인하세요.' }
+scp "$UploadDir\Windows.zip" "${UploadUser}@${ServerHost}:$RemoteUpload/Windows.zip.uploading"
+if ($LASTEXITCODE -ne 0) { throw 'ZIP 전송 실패. 최종 이름으로 변경하지 마세요.' }
+scp "$UploadDir\release.json" "${UploadUser}@${ServerHost}:$RemoteUpload/release.json.uploading"
+if ($LASTEXITCODE -ne 0) { throw 'JSON 전송 실패. 최종 이름으로 변경하지 마세요.' }
+# 두 scp가 모두 성공한 것을 확인한 뒤 최종 이름으로 변경
+ssh "${UploadUser}@${ServerHost}" "mv -n '$RemoteUpload/Windows.zip.uploading' '$RemoteUpload/Windows.zip'"
+if ($LASTEXITCODE -ne 0) { throw 'ZIP 이름 변경 실패. 다음 단계로 진행하지 마세요.' }
+ssh "${UploadUser}@${ServerHost}" "mv -n '$RemoteUpload/release.json.uploading' '$RemoteUpload/release.json'"
+if ($LASTEXITCODE -ne 0) { throw 'JSON 이름 변경 실패. 서버 폴더 상태를 확인하세요.' }
+```
+
+**결과:** 서버 폴더 안에 ZIP과 JSON 두 파일. 디렉터리 이름만 `.uploading`으로 만드는 것이 아니라 **파일 이름**에 붙입니다. 별도의 세 번째 완료 파일은 필요 없습니다. 업로더의 새 폴더·파일을 서비스 계정이 읽을 수 있도록 서버 측 기본 그룹/ACL을 사전에 점검합니다.
+
+### B4~B5. 검사 결과 보고 승인 — Linux 서버 운영자
+
+`serve` 서비스는 폴더를 주기적으로 확인합니다. 자동 검사를 기다리거나, 수동 접수를 요청합니다.
+
+```bash
+sudo -u uedt-distribution /opt/ue-dt-distribution/UeDtLauncher.DistributionServer ingest /srv/ue-dt-distribution/incoming/upload-001 --config /etc/ue-dt-distribution/server.json
+sudo -u uedt-distribution /opt/ue-dt-distribution/UeDtLauncher.DistributionServer list --config /etc/ue-dt-distribution/server.json
+sudo -u uedt-distribution /opt/ue-dt-distribution/UeDtLauncher.DistributionServer inspect JOB_ID --config /etc/ue-dt-distribution/server.json
+```
+
+`JOB_ID`를 실제 값으로 치환합니다. `inspect`는 작업 상태·진행·`snapshot` 경로를 보여줍니다. 상태가 pending인 작업의 **snapshot 경로 안에 있는 release.json**을 읽어 프로젝트·버전·OS·환경·실행 경로를 확인합니다. 업로드자가 수정할 수 있는 incoming 원본 대신 승인에 실제 사용되는 비공개 사본을 확인하는 것입니다.
+
+```bash
+# 아래 값을 inspect에 출력된 실제 snapshot 절대 경로로 치환
+SNAPSHOT='/srv/ue-dt-distribution/processing/실제-snapshot-폴더'
+sudo -u uedt-distribution cat "$SNAPSHOT/release.json"
+# 내용이 맞고 승인 가능한 배포인 것을 확인한 뒤 실행
+sudo -u uedt-distribution /opt/ue-dt-distribution/UeDtLauncher.DistributionServer approve JOB_ID --config /etc/ue-dt-distribution/server.json
+```
+
+**pending은 아직 공개가 아닙니다.** 업로드 프로그램을 서버에서 실행하지 않습니다.
+
+정상 승인 후 자동 생성되는 위치:
+
+```text
+/srv/ue-dt-distribution/releases/demo/prod/stable/1.2.0/windows-x64/
+  manifest.json
+  manifest.json.sig
+  files/
+    Demo.exe
+    ...
+```
+
+운영자가 직접 압축을 풀어 이 폴더에 옮기거나 Catalog를 수동 편집하지 않습니다. 신규 프로젝트는 게시와 별개로 PC grant를 추가해야 합니다. `latest`는 해당 PC에 허용된 트랙에서 마지막 게시된 판이며 최고 버전 번호가 아닙니다.
+
+## C. 사용자 PC: 상태 확인 → 설치 → 실행
+
+```mermaid
+flowchart TD
+    openLauncher["런처 실행"] --> automatic["자동: 서비스·배포·설치 확인"]
+    automatic --> click["사용자: 상태별 메인 버튼 클릭"]
+    click --> verify["배포·권한·서명 재확인"]
+    verify --> ready{"파일 준비 필요?"}
+    ready -->|"예"| prepare["검증 복사와 필요한 다운로드"]
+    prepare --> apply["검증 후 안전하게 설치"]
+    apply --> launch["선택 버전 DT 실행"]
+    ready -->|"아니오"| launch
+    verify -->|"확인 실패"| guidance["안내 확인·재시도·문제 해결"]
+    automatic -->|"확인 실패"| guidance
+    prepare -->|"실패"| guidance
+    apply -->|"실패"| guidance
+    launch -->|"시작 실패"| guidance
+```
+
+| 일반 화면에서 보이는 상태 | 눌러야 할 것 | 실제 처리 |
+|---|---|---|
+| 확인 중 | 기다리기 | 상태 확인만 하며 자동 설치하지 않음 |
+| 미설치 | 설치 후 실행 | 필요한 파일 설치 후 실행 |
+| 변경·업데이트 필요 | 업데이트 후 실행 | 필요한 파일 갱신 후 실행 |
+| 최신 상태 | 실행 | 배포 확인 경로를 거친 뒤 변경 없으면 실행 |
+| 확인 실패 | 다시 확인 / 문제 해결 | 안내에 따라 연결·파일 상태 점검 |
+
+‘실행’도 네트워크 없이 로컬 파일만 즉시 실행하는 오프라인 기능으로 해석하지 않습니다. 새 버전을 별도 경로로 처음 설치하면 이전 버전이 있어도 선택 대상은 미설치로 표시될 수 있습니다.
+
+개발자는 허용된 프로젝트 → 환경 → 채널 → latest/exact → 버전을 선택하고 실행합니다. Windows GUI는 Windows 배포, Linux CLI는 Linux 배포를 대상으로 설정합니다. 정확한 이전 버전을 별도 설치하는 것과 백업을 복원하는 rollback은 다릅니다.
+
+운영자가 Windows CLI로 설치/실행을 점검하려면 **전체 운영 설정**을 지정합니다. GUI 표시용 설정과 달리 CLI는 지정 파일로 Catalog·키·credential을 먼저 읽으므로 필요한 읽기 권한이 있는 계정에서 실행해야 합니다. 일반 사용자는 GUI가 기본 경로입니다.
+
+```powershell
+$RuntimeConfig = "$env:ProgramData\UE-DT Launcher\config\launcher.config.json"
+.\UeDtLauncher.exe run --config $RuntimeConfig --no-launch | Out-Host
+.\UeDtLauncher.exe run --config $RuntimeConfig | Out-Host
+```
+
+관리 Agent에 특정 배포의 **설치만** 요청하려면:
+
+```powershell
+.\UeDtLauncher.exe agent update --project demo --environment prod --channel stable --version 1.2.0 | Out-Host
+```
+
+`agent update`는 DT를 실행하지 않습니다. Linux Bash에서는 다음처럼 실행하며 PowerShell의 `Out-Host`를 붙이지 않습니다.
+
+```bash
+./UeDtLauncher agent update --project demo --environment prod --channel stable --version 1.2.0
+./UeDtLauncher run --config /etc/ue-dt-launcher/launcher.config.json --no-launch
+./UeDtLauncher run --config /etc/ue-dt-launcher/launcher.config.json
+```
+
+Linux도 전체 운영 설정과 읽기/설치 권한을 확인합니다. portable `run`은 현재 계정으로 설치·실행하고, 관리형은 Agent에 설치를 요청합니다. Agent를 설치했다는 이유만으로 주기 업데이트가 시작되지는 않습니다. [무인 운영 차이](service-mode.md)
+
+## D. 막혔을 때 어떤 순서로 확인하나요?
+
+| 증상 | 먼저 할 일 | 명령·조치 | 정상 복귀 기준 |
+|---|---|---|---|
+| 서버 작업 waiting | ZIP/JSON 둘 다 있는지, .uploading이 남았는지 확인 | `list`, `inspect JOB_ID` | 자동 검사 후 pending |
+| failed | inspect의 크기·해시·경로 등 오류 확인, 원본 쌍 수정 | `retry JOB_ID` 후 감지 대기 또는 ingest | pending. 버전 충돌이면 새 버전/업로드 ID 사용 |
+| pending | 정상적인 승인 대기 | 관리자 `approve JOB_ID` | published |
+| publishing 중 중단 | 같은 작업인지 확인 | 같은 `approve JOB_ID` 재실행 | 이전 공개판 유지하며 게시 완료 |
+| rejected | 거절 이유 확인 | 수정본을 **새 업로드 폴더**에 접수 | 새 job으로 검사 |
+| 목록에 프로젝트 없음 | 해당 PC의 IP·토큰·grant 및 OS 확인 | 서버 정책 확인, 런처 상태 재확인 | 허용된 배포만 표시 |
+| 서비스 연결 필요 | Agent 실행·설정·권한 확인 | `agent status` | running |
+| 파일 손상 | 먼저 상태 확인 | GUI 문제 해결 또는 `agent repair --project demo --environment prod --channel stable --version 1.2.0` | 해시 검사·복구 후 정상 |
+| 계속 실패 | 복원 가능한 백업 존재 확인 | GUI가 제안한 경우 내용 확인 후 rollback, 없으면 관리자 문의 | 복원 후 상태 확인 |
+| 원인 전달 필요 | 비밀정보 없는 진단 자료 생성 | `diagnostics export --config launcher.config.json --output diagnostics.zip` | 관리자에게 안전하게 전달 |
+
+서버 명령 앞에는 B5의 프로그램 경로·서비스 계정을 붙입니다. PC 명령 앞에는 `UeDtLauncher.exe` 또는 `./UeDtLauncher`를 붙입니다. 일시적 다운로드 오류의 제한된 자동 재시도/Range 기능은 있지만, 프로세스 종료 후 언제나 같은 바이트부터 재개한다고 보장하지 않습니다.
+
+## 4. 용어를 쉽게 정리하면
+
+| 용어 | 뜻 | 누가 주로 다루나 |
+|---|---|---|
+| release.json | 업로드한 ZIP이 어느 프로젝트·버전·OS인지 적은 외부 설명서 | 개발자 |
+| Catalog | 그 PC가 받을 수 있는 배포 목록 | 서버·런처가 자동 처리 |
+| Manifest | 선택한 버전의 파일별 크기·해시·실행 위치 목록 | 서버가 생성, PC가 검사 |
+| SHA-256 해시 | 파일 내용이 같은지 비교하는 지문 | 도구가 계산·검증 |
+| 서명 | 신뢰하는 배포자가 만든 목록/파일 정보인지 확인하는 증명 | 서버 개인키로 생성, PC 공개키로 검증 |
+| 토큰 | 어느 PC에 발급한 다운로드 자격인지 확인하는 비밀값 | 관리자 |
+| Agent | PC 안에서 설치·복구를 대신 처리하는 업데이트 서비스 | 사용자는 서비스 상태만 확인 |
+| repair / rollback | 파일 복구 / 보관 백업 복원 | 사용자 또는 관리자 |
+
+숫자 버전도 구분합니다. 외부 release.json은 schema1, 런처 운영 설정은 schema2, Catalog/서명 envelope와 내부 DB도 각자의 schema2입니다. 서로 같은 파일이 아닙니다.
+
+## 5. 회사에서 쓰려면 다음에 무엇을 해야 하나요?
+
+1. **운영 전 차단 항목 보완:** 설치본 내부 EXE 서명 순서, 동명 프로세스 식별, Linux credential 소유권.
+2. **검증 서버1대·PC1대부터:** 실제 UE ZIP으로 A→B→C→D 전체 과정과 저장 데이터 유지 확인.
+3. **회사 환경 시험:** 실제 RHEL·인증서·IP·방화벽·대용량 다운로드·재부팅·설치본 갱신/제거 확인.
+4. **운영 기준 확정:** latest 승인/승격, 보관·삭제, 토큰 교체, 백업 복원, 무인 업데이트 시간·담당자.
+5. **제한된 시범 운영 후 확대:** 성능·UI·장애 대응 결과와 책임자 확인을 남기고 대상 PC를 늘림.
+
+현재10개 연결 API 지연은 성능 기준 미달이고, WSL1 nginx 대용량 전송 제한도 발견됐습니다. 이 문서의 사용 흐름이 존재한다는 사실만으로 전사 운영 준비가 끝난 것은 아닙니다. [보완 목록](../../IMPROVEMENTS.md) · [최종 목표와 수용 조건](../../PROJECT_GOALS.md) · [실제 검증 기록](performance-validation.md)
+
+문서 검증: 현재 코드·명령 옵션과 대조하고 PowerShell/Bash 예시 문법, 도식 노드·연결, 로컬 링크를 확인했습니다. 이번 문서 작성에서 회사 서버 명령을 실행하거나 프로그램 테스트를 다시 수행하지는 않았습니다. Mermaid 지원 뷰어는 순서도를 그림으로 표시하며, 지원하지 않는 환경에서도 위 표로 같은 순서를 확인할 수 있습니다.
