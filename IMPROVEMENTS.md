@@ -4,6 +4,18 @@
 
 P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선. 우선순위는 제안이며 일정·수치 목표는 미정입니다. 미검증과 미구현을 구분합니다.
 
+## 확정 목표에 따른 진행 순서
+
+목표는 [회사에서 활용 가능한 DT 배포 시스템](PROJECT_GOALS.md)입니다. 아래는 개발·도입 우선순위이며, 새 패키지를 배포하는 명령 순서는 [기능 지도·실행 안내](docs/reference/feature-workflow.md)에서 확인합니다.
+
+| 순서 | 우선 처리 | 다음 단계로 가는 조건 |
+|---:|---|---|
+| 1 | OPS-08·09, SEC-03 | 서명·프로세스 식별·서비스 credential 접근 안전성 확보 |
+| 2 | OPS-01·02, USER-01·05 | 실제 UE·회사 서버·시험 PC에서 설치/실행과 사용자 데이터 보존 확인 |
+| 3 | PERF-03, UI-01~03, USER-02 | 회사 규모 성능·화면·오류 대응 기준 통과 |
+| 4 | OPS-03~07, SEC-01·02 | 승인/최신판·보관·복원·토큰·무인 운영 기준과 절차 확보 |
+| 5 | 제한된 시범 운영·인수 | 목표 문서 G1~G6 결과와 담당자 확인 후 대상 확대 |
+
 ## 운영·배포
 
 | ID/우선 | 현재 근거·영향 | 보완 방향·완료 조건 |
@@ -13,7 +25,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | OPS-03/P1 | DistributionHttp의 track.Last()가 latest. 과거판 승인 시 역행 가능 | 승인과 운영 승격 분리·변경 이력. 과거판 등록 시 latest 유지 및 명시적 변경 테스트 |
 | OPS-04/P1 | StorageMaintenance는 scratch만 정리, 공개판·snapshot 누적 | 보관 기간/용량·참조 보호·dry-run·감사 정리. 사용 중 자료 보존 검증 |
 | OPS-05/P1 | 수동 백업·복원, catalog sequence 역행 위험 | 일관된 백업/복원 도구·sequence 보호·복구 훈련. 기존 PC 검증 성공, RPO/RTO 별도 합의 |
-| OPS-06/P1 | E2E 스크립트는 있으나 build.yml에 실행 단계 없음 | HTTPS·권한·다중 버전 E2E CI gate, 민감정보 없는 결과 보관 |
+| OPS-06/P1 | Linux signed HTTPS E2E가 build.yml에 추가됨. 원격 CI 실행·운영 결과 보관은 미확인 | 실제 PR/배포 CI 성공 확인 및 민감정보 없는 결과 보관 정책 확정 |
 | OPS-07/P1 | AgentWorker는 IPC 대기만 하고 service-run은 once=true. CLI는 managed 반복 실행을 거부 | Agent 스케줄러 또는 명시적 외부 스케줄 운영을 확정. 재부팅 후 정기 점검·중복 작업 방지·maintenance window 시험 |
 | OPS-08/P0 | release.yml은 MSI 생성 후 payload EXE 서명. Product.wxs는 embedded CAB이므로 뒤늦은 EXE 서명이 MSI 내부에 반영되지 않음 | EXE 서명 → 서명 검증 → MSI 생성 → MSI 서명 순서로 변경. 실제 설치된 GUI/Agent EXE와 MSI의 서명을 각각 검증 |
 | OPS-09/P0 | ServiceRunner가 PID 검증에 이름 부분 일치, fallback으로 동명 첫 프로세스를 사용. 다중 버전에서 다른 프로세스 선택 위험 | 실행 경로·시작 시각·설치 식별자로 프로세스 결속. 동명 다른 버전/무관 앱을 종료하지 않는 회귀 테스트 |

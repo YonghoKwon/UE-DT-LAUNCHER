@@ -4,6 +4,20 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 
 문서 점검: **2026-09-28**, 구현 기준: `codex/launcher-performance` (시작점 `39ca4d6`). 로컬 작업 브랜치 기준이며 main 반영·운영 배포 완료를 뜻하지 않습니다.
 
+## 프로젝트 목표와 처음 읽을 안내
+
+최종 목표는 **Unreal Engine DT 프로그램의 패키징 결과를 안전하게 배포하고, 회사에서 안정적으로 설치·업데이트·실행·복구할 수 있는 배포 시스템**입니다. 목표는 확정됐지만 회사 운영 승인 조건을 모두 충족한 상태는 아닙니다.
+
+```mermaid
+flowchart LR
+    package["개발자: ZIP와 외부 JSON"] --> inspect["서버: 자동 검사"]
+    inspect --> approve["관리자: 승인"]
+    approve --> publish["서버: 서명과 공개"]
+    publish --> launch["허용된 PC: 설치와 실행"]
+```
+
+**어떤 명령을 어디서 실행하는지 알고 싶다면 [기능 지도·단계별 실행 안내](docs/reference/feature-workflow.md)부터 읽으세요.** 최초 준비 A, 새 버전 배포 B, 사용자 실행 C, 문제 해결 D로 나누고 각 단계의 담당자·명령·정상 결과를 제공합니다. 배포 서버가 사용자 PC에 자동 설치를 밀어 넣는 방식은 아닙니다.
+
 ## 관리 문서 4개
 
 | 문서 | 관리 내용 |
@@ -11,7 +25,7 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 | [README](README.md) | 현재 기능·사용 흐름·시작 방법 |
 | [AGENTS](AGENTS.md) | 개발·검증·커밋·문서 갱신 규칙 |
 | [보완 필요 사항](IMPROVEMENTS.md) | 성능·사용자·UI·보안·운영 보완과 완료 조건 |
-| [최종 프로젝트 목표](PROJECT_GOALS.md) | 합의한 방향과 아직 미정인 결정 |
+| [최종 프로젝트 목표](PROJECT_GOALS.md) | 확정한 DT 배포 시스템 목표·회사 운영 승인 조건·미정 세부 정책 |
 
 그 외 자료는 [참고 문서 모음](docs/reference/README.md)에 있습니다. 상세 명령·설정·검증 기록은 참고 문서에, 과거 자료는 그 아래 `archive/`에 보존합니다. 과거 서버 절차를 신규 설치 지침으로 사용하지 않습니다.
 
