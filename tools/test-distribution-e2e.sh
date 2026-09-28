@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Requires published Linux binaries, nginx, openssl, curl, zip and unzip. Keeps evidence under $root.
+# Requires published Linux binaries, nginx, openssl, curl and zip (or Python 3). Keeps evidence under $root.
 server=$(realpath "${1:?distribution server executable}")
 launcher=$(realpath "${2:?launcher executable}")
 nginx=$(realpath "${3:?nginx executable}")
@@ -21,7 +21,11 @@ EOF
 for version in 1.0.0 2.0.0; do
     upload="$root/server/incoming/$version"
     mkdir -p "$upload"
-    (cd "$root/game" && zip -q "$upload/Linux.zip" game.sh)
+    if command -v zip >/dev/null 2>&1; then
+        (cd "$root/game" && zip -q "$upload/Linux.zip" game.sh)
+    else
+        (cd "$root/game" && python3 -m zipfile -c "$upload/Linux.zip" game.sh)
+    fi
     "$launcher" release-metadata --zip "$upload/Linux.zip" --project-id demo --version "$version" --platform linux-x64 --entry-point game.sh --output "$upload/release.json" >> "$root/intake.log"
     "$server" ingest "$upload" --config "$root/server.json" > "$root/job.json"
     job=$(sed -n 's/.*"id": "\([a-z0-9]*\)".*/\1/p' "$root/job.json")

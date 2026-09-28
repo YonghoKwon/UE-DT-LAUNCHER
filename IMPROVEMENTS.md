@@ -1,6 +1,6 @@
 # 개선 진행 현황과 보완 필요 사항
 
-점검: 2026-09-28 / 코드·증거 기준 `8b42354`, codex/launcher-performance. 기존 구현·검증 기록을 바탕으로 진행 표시를 명확히 했습니다. 이번 갱신은 문서 정리이며 새 기능 구현이나 재시험이 아닙니다.
+점검: 2026-09-28 / `codex/intranet-request-auth`, 기준 `edcb8de` 이후 부분 커밋과 [실제 검증](docs/reference/intranet-auth-validation.md)을 반영했습니다. 현재 구현·이번 검증·회사 미검증을 구분합니다.
 
 P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선. 우선순위는 제안이며 일정·수치 목표는 미정입니다. 미검증과 미구현을 구분합니다.
 
@@ -10,9 +10,9 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 | 완료 | 부분 진행 | 대기 | 전체 |
 |---:|---:|---:|---:|
-| 3개 | 5개 | 20개 | 28개 |
+| 4개 | 4개 | 20개 | 28개 |
 
-완료를 제외하면 열린 항목은 **25개**입니다. 각 분야 표에서 `진행률`과 `상태`를 먼저 보면 됩니다.
+완료를 제외하면 열린 항목은 **24개**입니다. 각 분야 표에서 `진행률`과 `상태`를 먼저 보면 됩니다.
 
 ### 퍼센트의 의미
 
@@ -43,6 +43,9 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | PERF-04 | 작업 잠금·큐·진행·공간 점검 확인 | 복구·충돌·cleanup 회귀 확인 | worker1/2 및 API 동시 측정 확인 | 기본1 유지, 선택2의 재현 범위 충족 | 100% |
 | PERF-03 | 권한 유지·조회/SQL 조정 확인 | 동시 요청·권한/서명 회귀 확인 | 1/10/30개 연결 측정 확인 | **10개 연결 지연 미달** | 75% |
 | OPS-06 | CI의 HTTPS E2E 단계 확인 | 같은 E2E 스크립트 로컬 통과 | **현재 변경의 원격 CI 증거 미확인** | 결과 보관 정책·운영 확인 남음 | 50% |
+| USER-05 | schema 3 생성기·doctor·설치 예제 확인 | 관련 자동화 통과 | Windows/Linux 생성 설정 연결·실제 MSI/RPM 내용 확인 | 설정 예제 보완 범위 충족, 회사 설치 승인은 별도 | 100% |
+| SEC-03 | 생성 시 ACL/mode/owner·명시적 repair | Windows/WSL 권한 회귀 통과 | uedt 읽기 성공·nobody 거부 확인 | Windows LocalService 실제 실행 미확인 | 75% |
+| SEC-04 | 요청 서명·nonce·Catalog 결속·Agent 이미지 | 변조/replay/만료 갱신 회귀 통과 | Windows GUI/Agent·Linux HTTP/HTTPS 및 부하 실행 | WSL proxy 간헐 timeout·메모리 계측 공백 남음 | 75% |
 
 근거: [성능 검증 기록](docs/reference/performance-validation.md), [CI 구성](.github/workflows/build.yml), 각 항목의 커밋·미완료 조건. 다른 항목의 기존 기반 기능이나 문서 작성만으로 추가 보완 진척을 자동 가산하지 않았습니다.
 
@@ -52,11 +55,11 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 | 순서 | 우선 처리 | 다음 단계로 가는 조건 |
 |---:|---|---|
-| 1 | OPS-08·09, SEC-03 | 서명·프로세스 식별·서비스 credential 접근 안전성 확보 |
-| 2 | OPS-01·02, USER-01·05 | 실제 UE·회사 서버·시험 PC에서 설치/실행과 사용자 데이터 보존 확인 |
+| 1 | SEC-03·04 잔여 확인, USER-05 완료 유지 | HTTP 인증·credential·초기 설정 1차 작업. 남은 환경 제약은 별도 기록 |
+| 2 | OPS-08·09, USER-01 | MSI payload 서명·프로세스 오인·사용자 데이터 보존 보완 |
 | 3 | PERF-03, UI-01~03, USER-02 | 회사 규모 성능·화면·오류 대응 기준 통과 |
 | 4 | OPS-03~07, SEC-01·02 | 승인/최신판·보관·복원·토큰·무인 운영 기준과 절차 확보 |
-| 5 | 제한된 시범 운영·인수 | 목표 문서 G1~G6 결과와 담당자 확인 후 대상 확대 |
+| 5 | OPS-01·02, 제한된 시범 운영·인수 | 실제 UE/RHEL·설치본 수명주기·G1~G6 결과와 담당자 확인 후 확대 |
 
 ## 운영·배포
 
@@ -91,7 +94,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | USER-02/P1 | 0% | 대기 · 추가 보완 | 서버/Agent/토큰/공개키 초기 설정 단계가 많음 | 관리자 사전 점검·설정 검증, 사용자 오류 코드/조치 안내. 새 PC 최초 실행·비밀정보 미노출 |
 | USER-03/P2 | 0% | 대기 · 추가 보완 | 엔진 취소 토큰과 별개로 일반 UX 취소는 이전 범위에서 제외 | 안전 중단 지점·취소/재개 설계. 다운로드·검증·설치별 중단 후 손상 없음 |
 | USER-04/P2 | 0% | 대기 · 추가 보완 | 오프라인·권한 폐기 후 기설치 실행 최종 정책 미정 | 실행/권한 재확인 규칙 합의. 미설치·기설치·폐기 토큰 수용 테스트 |
-| USER-05/P1 | 50% | 부분 · 최종 양 OS 확인 대기 | DistributionServer schema 3 생성기·doctor·MSI 예제/RPM 설정 연결, Windows publish 생성 설정 E2E 통과 | Linux 생성 설정과 최종 artifact/회귀 확인 남음. [기록](docs/reference/intranet-auth-validation.md) |
+| USER-05/P1 | 100% | 완료 · 설정 보완 범위 | schema 3 생성기·doctor·MSI 예제/RPM 설정, Windows/Linux publish 생성 설정 E2E와 실제 artifact 내용 확인 | `24cc451` 및 최종 검증. MSI/RPM 실제 설치 수명주기는 OPS-02로 유지. [기록](docs/reference/intranet-auth-validation.md) |
 
 ## UI·접근성
 
@@ -108,8 +111,8 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 |---|---:|---|---|---|
 | SEC-01/P1 | 0% | 대기 · 추가 보완 | DistributionTokens 발급·PC 단위 전체 폐기, 만료/개별 관리 없음 | 만료·토큰별 폐기·순환·감사 설계. 비밀 노출 없는 교체/만료/폐기 시험 |
 | SEC-02/P1 | 0% | 대기 · 추가 보완 | loopback nginx 신뢰와 직접 사내 IP 전제 | NAT/추가 proxy의 실제 IP 계약·rate limit 검토. 위조 헤더 차단과 회사 망 경로별 검증 |
-| SEC-03/P0 | 50% | 부분 · 계정 실행 확인 대기 | 생성 시 제한 권한·Linux owner 검사·명시적 repair·Windows ACL/DPAPI 구현, Windows/WSL 관련 자동화 각 15개 통과 | 실제 서비스/무관 계정 읽기 분리와 최종 provisioning E2E 남음. [기록](docs/reference/intranet-auth-validation.md) |
-| SEC-04/P0 | 50% | 부분 · 관리형 GUI 연결 대기 | 요청 서명·challenge/nonce·Catalog 결속·키 등록/폐기 구현, Windows 자동화 및 Windows/Linux publish CLI E2E 통과 | Agent 이미지 전달·nginx 경유·최종 부하/계정 분리 검증 남음. [기록](docs/reference/intranet-auth-validation.md) |
+| SEC-03/P0 | 75% | 부분 · Windows 서비스 실행 대기 | `e22a908` 이후 생성 시 ACL/mode/owner 검증. Linux uedt 실제 읽기·nobody 거부 통과 | Windows LocalService 실제 설치 계정 읽기와 기존 credential 이전 현장 확인 남음. [기록](docs/reference/intranet-auth-validation.md) |
+| SEC-04/P0 | 75% | 부분 · 환경 제약 남음 | `babb88e`, `10d4063`: 요청 서명·challenge/nonce·Catalog 결속·Agent 이미지, Windows/Linux E2E·1/10/30 연결 실패 0 | WSL proxy의 간헐 handshake/startup timeout과 메모리 지표 미수집을 보존. 실제 RHEL 대용량·회사 HTTP 위험 수용 별도. [기록](docs/reference/intranet-auth-validation.md) |
 | EXT-01/P2 | 0% | 대기 · 추가 보완 | IAccessPolicyProvider 파일 구현만 존재 | 회사 API 합의 후 timeout/cache TTL/기본 거부. 장애·취소·오래된 응답에서 권한 확대 없음 |
 | DEV-01/P2 | 0% | 대기 · 추가 보완 | Core 링크 컴파일, MainWindow 동작 코드 잔존 | 기능 변경과 분리한 물리 폴더·ViewModel 정리. API/CLI/IPC 회귀 없음 |
 
@@ -124,6 +127,6 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 3. PERF 기준선·OPS-06: 측정 후 개선, 자동 회귀 검증.
 4. USER/UI·API 범위는 [목표 문서](PROJECT_GOALS.md)에서 확정 후 진행.
 
-PERF-01/02/04는 100%(재현 범위), PERF-03은 75%(수용 기준 미달), OPS-06·SEC-03·SEC-04·USER-05는 50%(각 미완료 조건 참조)입니다. 나머지 20개는 0%이며, 기존 기능 부재를 의미하지 않습니다.
+PERF-01/02/04·USER-05는 100%(각 합의 범위), PERF-03·SEC-03·SEC-04는 75%(미달/미확인 조건 보존), OPS-06은 50%(원격 증거 미확인)입니다. 나머지 20개는 0%이며, 기존 기능 부재를 의미하지 않습니다.
 
 진행률을 변경할 때는 상태·체크포인트·커밋/검증 링크·남은 조건·상단 집계를 함께 갱신합니다. 100% 항목은 완료 이력으로 남기고, 새 미달 조건이나 범위 변경이 확인되면 이유를 기록해 다시 열 수 있습니다. 빌드 성공만으로 완료하지 않습니다.

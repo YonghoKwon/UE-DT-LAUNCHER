@@ -68,3 +68,9 @@ jobs:
         run: bash tools/test-distribution-e2e.sh publish/distribution-server/UeDtLauncher.DistributionServer publish/linux-x64/UeDtLauncher /usr/sbin/nginx
         # Functional gate only. Shared-runner wall times are not a performance acceptance gate.
         # Do not upload the temporary server root: it contains test keys and credentials.
+
+      - name: Signed intranet HTTP and managed Agent end to end
+        if: runner.os == 'Linux'
+        timeout-minutes: 10
+        run: python3 tools/test-intranet-auth.py --server publish/distribution-server/UeDtLauncher.DistributionServer --launcher publish/linux-x64/UeDtLauncher --agent publish/agent-linux-x64/UeDtLauncher.Agent --nginx /usr/sbin/nginx
+        # Functional only; test keys and private roots must never become public CI artifacts.

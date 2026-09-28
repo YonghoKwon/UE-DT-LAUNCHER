@@ -126,7 +126,11 @@ public static partial class DiagnosticRedactor
         result = UrlUserInfoPattern().Replace(result, "$1<redacted>@");
         result = SensitiveJsonPattern().Replace(result, "$1\"<redacted>\"");
         var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (!string.IsNullOrWhiteSpace(profile)) result = result.Replace(profile, "<user-profile>", StringComparison.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(profile))
+        {
+            result = result.Replace(JsonSerializer.Serialize(profile)[1..^1], "<user-profile>", StringComparison.OrdinalIgnoreCase);
+            result = result.Replace(profile, "<user-profile>", StringComparison.OrdinalIgnoreCase);
+        }
         return result;
     }
 

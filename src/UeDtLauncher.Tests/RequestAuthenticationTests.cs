@@ -12,6 +12,44 @@ namespace UeDtLauncher.Tests;
 
 public sealed class RequestAuthenticationTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ClientRenewsExpiredChallengeOnce_UsesFreshNonceAndPreservesRange(bool alwaysStale)
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var config = LauncherConfigurationTemplates.Distribution(new(ServerUrl: "http://127.0.0.1:18500", DeploymentMode: "portable"));
+        var transport = new StaleChallengeTransport(alwaysStale);
+        using var http = new HttpClient(new DeviceSignatureHandler(config, transport, new(1, "pc", key.ExportPkcs8PrivateKeyPem())));
+        using var request = new HttpRequestMessage(HttpMethod.Get, "http://127.0.0.1:18500/releases/file"); request.Headers.Range = new(3, null);
+        using var response = await http.SendAsync(request);
+        Assert.Equal(alwaysStale ? HttpStatusCode.Unauthorized : HttpStatusCode.PartialContent, response.StatusCode);
+        Assert.Equal(2, transport.Challenges); Assert.Equal(2, transport.Requests.Count);
+        Assert.NotEqual(transport.Requests[0].Nonce, transport.Requests[1].Nonce);
+        Assert.All(transport.Ranges, value => Assert.Equal("bytes=3-", value));
+        Assert.True(response.RequestMessage!.Options.TryGetValue(RequestSignatures.ContextKey, out var successfulAttempt));
+        Assert.Equal(transport.Requests[1], successfulAttempt);
+    }
+
+    private sealed class StaleChallengeTransport(bool alwaysStale) : HttpMessageHandler
+    {
+        public int Challenges;
+        public List<RequestSignatureContext> Requests = new();
+        public List<string?> Ranges = new();
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.RequestUri!.AbsolutePath == "/api/v1/auth/challenge")
+            {
+                Challenges++;
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new AuthChallenge("challenge-" + Challenges), options: JsonFiles.Options) });
+            }
+            Assert.Null(request.Headers.Authorization);
+            Assert.True(request.Options.TryGetValue(RequestSignatures.ContextKey, out var context)); Requests.Add(context!); Ranges.Add(request.Headers.Range?.ToString());
+            var response = new HttpResponseMessage(alwaysStale || Requests.Count == 1 ? HttpStatusCode.Unauthorized : HttpStatusCode.PartialContent) { RequestMessage = request, Content = new ByteArrayContent([]) };
+            if (response.StatusCode == HttpStatusCode.Unauthorized) response.Headers.Add("X-UE-DT-Auth-Error", "stale-challenge");
+            return Task.FromResult(response);
+        }
+    }
     [Fact]
     public void SignatureBase_UsesRfc9421ComponentsAndParameters()
     {

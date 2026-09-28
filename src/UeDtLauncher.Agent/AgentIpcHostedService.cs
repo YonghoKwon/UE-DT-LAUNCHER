@@ -181,7 +181,10 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
             return new ManagedAgentResponse { CorrelationId = request.CorrelationId, Success = true, Status = "completed", AgentVersion = AgentVersion() };
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or System.Security.Cryptography.CryptographicException or HttpRequestException or OperationCanceledException or UnauthorizedAccessException)
-        { return Error(request, "asset-unavailable", "Project image is unavailable. A built-in image will be shown.", identity); }
+        {
+            logger.LogWarning("Project image transfer failed ({ErrorType}); using fallback", ex.GetType().Name);
+            return Error(request, "asset-unavailable", "Project image is unavailable. A built-in image will be shown.", identity);
+        }
         finally { _commandGate.Release(); }
     }
 

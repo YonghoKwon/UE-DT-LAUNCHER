@@ -13,6 +13,13 @@ public static class DistributionPerformance
     private static readonly Histogram<double> SequenceWaitDuration = Meter.CreateHistogram<double>("distribution.sequence.wait", "ms");
     private static readonly Counter<long> Busy = Meter.CreateCounter<long>("distribution.database.busy");
     private static long databaseOperations, databaseTicks, requests, requestTicks, sequenceWaitTicks, databaseBusy, policyCompilations, policyReuses, assetHits, assetMisses;
+    private static long authenticationOperations, authenticationTicks;
+
+    public static IDisposable MeasureAuthentication() => new Measurement(elapsed =>
+    {
+        Interlocked.Increment(ref authenticationOperations);
+        Interlocked.Add(ref authenticationTicks, elapsed.Ticks);
+    });
 
     public static IDisposable MeasureDatabase(string operation) => new Measurement(elapsed =>
     {
@@ -49,6 +56,8 @@ public static class DistributionPerformance
         databaseElapsedMs = TimeSpan.FromTicks(Interlocked.Read(ref databaseTicks)).TotalMilliseconds,
         sequenceWaitMs = TimeSpan.FromTicks(Interlocked.Read(ref sequenceWaitTicks)).TotalMilliseconds,
         databaseBusyErrors = Interlocked.Read(ref databaseBusy),
+        authenticationOperations = Interlocked.Read(ref authenticationOperations),
+        authenticationElapsedMs = TimeSpan.FromTicks(Interlocked.Read(ref authenticationTicks)).TotalMilliseconds,
         policyCompilations = Interlocked.Read(ref policyCompilations), policyReuses = Interlocked.Read(ref policyReuses),
         assetCacheHits = Interlocked.Read(ref assetHits), assetCacheMisses = Interlocked.Read(ref assetMisses)
     };

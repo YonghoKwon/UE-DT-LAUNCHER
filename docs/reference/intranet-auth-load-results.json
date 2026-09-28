@@ -1,0 +1,54 @@
+{
+  "date": "2026-09-28",
+  "environment": "Local Windows host, Ubuntu WSL1, synthetic packages; not company RHEL or Unreal",
+  "protocol": "HTTP request-signature-v1",
+  "workload": "alternating fresh signed catalog and 3-byte Range, independent Python signing and response verification",
+  "warmupRuns": 1,
+  "measurementRuns": 3,
+  "requestsPerClientPerRun": 20,
+  "cacheCondition": "OS cache not flushed; challenge and HTTP connection reused within each concurrency group",
+  "timingIncludesClientCryptography": true,
+  "directApi": {
+    "fixture": "uedt-intranet-kkkhyxpr",
+    "clients": [1, 10, 30],
+    "medianP50Ms": [2.84, 9.33, 11.64],
+    "medianP95Ms": [4.47, 26.45, 90.77],
+    "failedMeasuredRequests": [0, 0, 0],
+    "measuredRequests": [60, 600, 1800],
+    "serverCpuSecondsDelta": 10.52,
+    "peakRssBytes": null,
+    "serverAggregatesIncludingFixtureAndWarmup": {
+      "requests": 3354,
+      "databaseOperations": 13208,
+      "databaseElapsedMs": 5546.6999,
+      "sequenceWaitMs": 91006.4824,
+      "databaseBusyErrors": 0,
+      "authenticationOperations": 3302,
+      "authenticationElapsedMs": 7686.6639
+    }
+  },
+  "nginx": {
+    "fixture": "uedt-intranet-rfr_yl8m",
+    "clients": [1, 10, 30],
+    "medianP50Ms": [4.47, 14.94, 41.15],
+    "medianP95Ms": [8.41, 44.20, 125.90],
+    "failedMeasuredRequests": [0, 0, 0],
+    "measuredRequests": [60, 600, 1800],
+    "serverCpuSecondsDelta": 12.75,
+    "peakRssBytes": null,
+    "serverAggregatesIncludingFixtureAndWarmup": {
+      "databaseElapsedMs": 6757.2122,
+      "sequenceWaitMs": 98766.4818,
+      "databaseBusyErrors": 0,
+      "authenticationElapsedMs": null
+    }
+  },
+  "limitations": [
+    "WSL1 reported VmHWM=0; this is unavailable data, not zero memory usage",
+    "DB elapsed includes native waits; sequence wait is application queueing, not isolated SQLite lock time",
+    "Authentication aggregate includes credential lookup and signature/challenge verification, not policy evaluation or catalog signing",
+    "Other nginx attempts had an upstream challenge timeout and a startup timeout; successful samples do not erase these failures",
+    "Explicit challenge Content-Length did not establish complete WSL nginx issue resolution",
+    "Different protocol/workload from prior PERF-03; not a before/after improvement claim or a company SLA"
+  ]
+}

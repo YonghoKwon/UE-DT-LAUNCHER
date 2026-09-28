@@ -6,11 +6,9 @@ is suitable for redacted evidence. Windows payload is a local copy of cmd.exe;
 Linux payload is a harmless marker script, not an Unreal package.
 """
 import argparse
-import base64
 import json
 import os
 from pathlib import Path
-import shutil
 import socket
 import subprocess
 import tempfile
@@ -29,6 +27,8 @@ def main():
     parser.add_argument("--root")
     parser.add_argument("--hold", action="store_true")
     parser.add_argument("--agent")
+    parser.add_argument("--nginx", help="Optional isolated Linux nginx executable; no system service changes")
+    parser.add_argument("--benchmark", action="store_true", help="Optional synthetic signed load (requires cryptography)")
     args = parser.parse_args()
     launcher, server = str(Path(args.launcher).resolve()), str(Path(args.server).resolve())
     root = Path(args.root).resolve() if args.root else Path(tempfile.mkdtemp(prefix="uedt-intranet-"))
@@ -59,7 +59,12 @@ def main():
         reservation.bind(("127.0.0.1", 0))
         port = reservation.getsockname()[1]
     origin = f"http://127.0.0.1:{port}"
-    write(root / "server.json", {"root": str(root / "server"), "publicUrl": origin, "listenUrl": origin,
+    backend = origin
+    if args.nginx:
+        with socket.socket() as reservation:
+            reservation.bind(("127.0.0.1", 0))
+            backend = f"http://127.0.0.1:{reservation.getsockname()[1]}"
+    write(root / "server.json", {"root": str(root / "server"), "publicUrl": origin, "listenUrl": backend,
           "signingKeyPath": str(root / "release.pem"), "policyPath": str(root / "policy.json"),
           "authenticationMode": "request-signature-v1"})
     write(root / "policy.json", {"clients": [{"id": "pc-test", "addresses": ["127.0.0.0/8"],
@@ -103,7 +108,41 @@ def main():
     process = subprocess.Popen([server, "serve", "--config", str(root / "server.json")], stdout=log, stderr=log, env=env, creationflags=flags)
     agent_process = None
     agent_log = None
+    nginx_process = None
+    nginx_log = None
     try:
+        if args.nginx:
+            nginx_root = root / "nginx"
+            nginx_root.mkdir()
+            nginx_config = root / "nginx.conf"
+            nginx_config.write_text(f'''pid {root}/nginx.pid;
+error_log {root}/nginx-error.log;
+events {{ worker_connections 256; }}
+http {{
+ access_log off;
+ client_body_temp_path {root}/nginx/body;
+ proxy_temp_path {root}/nginx/proxy;
+ fastcgi_temp_path {root}/nginx/fastcgi;
+ uwsgi_temp_path {root}/nginx/uwsgi;
+ scgi_temp_path {root}/nginx/scgi;
+ server {{
+  listen 127.0.0.1:{port};
+  location ~ ^/(api/v1/(auth/challenge|catalog)|releases/) {{
+   proxy_pass {backend};
+   proxy_set_header Host $http_host;
+   proxy_set_header X-Distribution-Client-IP $remote_addr;
+   proxy_set_header X-Forwarded-For "";
+   proxy_set_header Forwarded "";
+   proxy_set_header X-Original-URI "";
+   proxy_cache off;
+  }}
+  location / {{ return 404; }}
+ }}
+}}
+''', encoding="utf-8")
+            run(str(Path(args.nginx).resolve()), "-t", "-p", nginx_root, "-c", nginx_config)
+            nginx_log = (root / "nginx.log").open("w")
+            nginx_process = subprocess.Popen([str(Path(args.nginx).resolve()), "-p", str(nginx_root), "-c", str(nginx_config), "-g", "daemon off;"], stdout=nginx_log, stderr=nginx_log, env=env)
         for _ in range(100):
             if process.poll() is not None:
                 raise RuntimeError("Distribution server exited before ready")
@@ -112,8 +151,9 @@ def main():
             except urllib.error.HTTPError as error:
                 if error.code == 401:
                     break
-            except urllib.error.URLError:
-                time.sleep(0.1)
+            except (urllib.error.URLError, TimeoutError):
+                pass
+            time.sleep(0.1)
         else:
             raise RuntimeError("Server did not become ready")
         run(launcher, "doctor", "--config", generated, "--online")
@@ -129,7 +169,7 @@ def main():
         if target.read_text() != "2.0.0":
             raise RuntimeError("Repair did not restore the expected contents")
         summary = {"platform": platform, "transport": "HTTP request-signature-v1", "published_processes": True,
-                   "versions_installed_and_launched": 2, "repair": True, "company_or_unreal_validation": False}
+                   "versions_installed_and_launched": 2, "repair": True, "nginx": bool(args.nginx), "company_or_unreal_validation": False}
         if args.agent:
             config["deploymentMode"] = "managed-agent"
             agent_config = client / "agent" / "config" / "launcher.config.json"
@@ -149,6 +189,10 @@ def main():
             write(root / "test-environment.json", {"UE_DT_AGENT_DATA_ROOT": env["UE_DT_AGENT_DATA_ROOT"], "UE_DT_AGENT_ENDPOINT": env["UE_DT_AGENT_ENDPOINT"]})
             run(launcher, "doctor", "--config", client / "general.json", "--online")
             summary["managed_asset_and_doctor"] = True
+        if args.benchmark:
+            from benchmark_intranet_auth import run_load
+            load = run_load(origin, root, lambda path: run(server, "client-key", "add", "--client", "pc-test", "--public-key", path, "--config", root / "server.json"), platform, process.pid)
+            summary["load_failed_requests"] = sum(row["failed_requests"] for row in load["results"])
         if args.hold:
             write(root / "summary.json", summary)
             print(f"READY: {root}", flush=True)
@@ -163,6 +207,10 @@ def main():
             write(root / "summary.json", summary)
             print(f"PASS: {root}", flush=True)
     finally:
+        if nginx_process is not None and nginx_process.poll() is None:
+            nginx_process.terminate(); nginx_process.wait(timeout=10)
+        if nginx_log is not None:
+            nginx_log.close()
         if agent_process is not None and agent_process.poll() is None:
             agent_process.terminate(); agent_process.wait(timeout=10)
         if agent_log is not None:

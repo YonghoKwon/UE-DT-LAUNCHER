@@ -67,7 +67,12 @@ public static class DistributionHttp
                     context.Request.ContentLength is > 0 || context.Request.Headers.ContainsKey("Transfer-Encoding"))
                 { context.Response.StatusCode = 400; return; }
                 if (address is null || !authentication.AllowChallenge(address.ToString())) { context.Response.StatusCode = 429; return; }
-                try { await context.Response.WriteAsJsonAsync(new AuthChallenge(authentication.Issue(context.Request.Query["keyId"].ToString())), JsonFiles.Options, context.RequestAborted); }
+                try
+                {
+                    // This bounded document has a known length; do not introduce a chunked stream
+                    // for the authentication handshake (also easier to diagnose through proxies).
+                    await Results.Bytes(JsonSerializer.SerializeToUtf8Bytes(new AuthChallenge(authentication.Issue(context.Request.Query["keyId"].ToString())), JsonFiles.Options), "application/json").ExecuteAsync(context);
+                }
                 catch (ArgumentException) { context.Response.StatusCode = 400; }
                 return;
             }
@@ -78,6 +83,7 @@ public static class DistributionHttp
             // server's SQL intervals to avoid native busy-poll delays, never caching authorization.
             try
             {
+                using var authMeasurement = DistributionPerformance.MeasureAuthentication();
                 if (signedRequests)
                 {
                     if (context.Request.ContentLength is > 0 || context.Request.Headers.ContainsKey("Transfer-Encoding") ||

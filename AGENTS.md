@@ -1,6 +1,6 @@
 # 작업 지침
 
-점검: 2026-09-28 / 구현 기준 codex/launcher-performance. 저장소 전체에 적용합니다.
+점검: 2026-09-28 / 구현 기준 codex/intranet-request-auth. 저장소 전체에 적용합니다.
 
 ## 문서 관리 계약
 
@@ -38,7 +38,9 @@
 
 - ZIP + 외부 release.json을 비공개 snapshot으로 검사하고 관리자 승인 후 게시합니다. 업로드 프로그램을 서버에서 실행하지 않습니다.
 - .uploading/한 파일만 도착한 상태를 게시하지 않습니다. 동일 릴리스 식별자 덮어쓰기를 허용하지 않습니다.
-- 실제 IP/CIDR + PC별 토큰을 목록·Manifest·이미지·파일·Range 모두에 적용합니다. 공개 정적 경로 우회를 만들지 않습니다.
+- 실제 IP/CIDR + PC 인증키(기존 HTTPS/Bearer는 토큰)를 목록·Manifest·이미지·파일·Range 모두에 적용합니다. 공개 정적 경로 우회를 만들지 않습니다.
+- 요청 서명은 schema 3·별도 .keycred만 사용합니다. 개인키를 GUI에 공유하거나 임의 URL 서명 IPC를 만들지 않습니다. challenge는 monotonic 만료·재시작 무효화, 살아 있는 nonce는 용량 확보를 위해 제거하지 않습니다.
+- Catalog 요청 결속은 실제 성공한 송신 요청과 비교한 후 해석/sequence 저장합니다. nginx 이중 인증과 권한 허용 캐시는 금지합니다. 같은 root의 인증 서버는 하나만 실행합니다.
 - 기존 HTTPS/Bearer를 유지합니다. 사용자 승인한 schema 3 사내 HTTP는 요청 서명·재사용 차단·Catalog 요청 결속을 모두 요구하며 Bearer/무인증으로 후퇴하지 않습니다. Metadata 서명·해시·경로 검사를 완화하지 않습니다. 개인키·토큰·Authorization·Signature·challenge를 로그나 Git에 넣지 않습니다.
 - GUI 프로필은 화면 정책입니다. Agent의 보호된 운영 설정·credential·서버 권한과 분리합니다. 정확한 선택을 다른 버전으로 몰래 대체하지 않습니다.
 - 설치·상태·잠금·PID는 프로젝트/환경/채널/버전/OS별 격리입니다. 기존 설치·사용자 데이터는 승인 없이 삭제하지 않습니다.

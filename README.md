@@ -1,10 +1,10 @@
 # UE-DT Launcher
 
-진행 중: `codex/intranet-request-auth`에서 사내 HTTP 요청 인증·credential 보호·초기 설정을 구현합니다. 단계별 완료/미완료는 [검증 기록](docs/reference/intranet-auth-validation.md)을 확인하세요. HTTP는 암호화되지 않으며 이번 개발은 회사 운영 승인이 아닙니다.
+추가 구현: 사내 HTTP 요청 서명·PC 인증키 보호·Agent 이미지 전달·설정 생성기를 제공합니다. [최초 등록 명령](docs/reference/intranet-auth.md)과 [검증·남은 조건](docs/reference/intranet-auth-validation.md)을 확인하세요. HTTP는 암호화되지 않으며 회사 운영 승인은 별도입니다.
 
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 런처입니다.
 
-문서 점검: **2026-09-28**, 구현 기준: `codex/launcher-performance` (시작점 `39ca4d6`). 로컬 작업 브랜치 기준이며 main 반영·운영 배포 완료를 뜻하지 않습니다.
+문서 점검: **2026-09-28**, 구현 기준: `codex/intranet-request-auth` (시작점 `edcb8de`). 로컬 브랜치 기준이며 main 반영·운영 배포 완료를 뜻하지 않습니다.
 
 ## 프로젝트 목표와 처음 읽을 안내
 
@@ -35,30 +35,32 @@ flowchart LR
 
 ## 현재 구현
 
+최신 인증 작업: Windows/Linux 자동화 각 331개, Python 기존 측정 도구 계약 16개 통과. 실제 GUI 표시·Agent/CLI·HTTP/HTTPS E2E와 1/10/30 연결을 확인했습니다. WSL nginx 간헐 timeout, WSL 메모리 계측 제한, Windows LocalService 및 회사 RHEL/UE 검증은 남아 있습니다. [상세 결과](docs/reference/intranet-auth-validation.md)
+
 | 영역 | 내용 |
 |---|---|
 | 접수 | 업로드 폴더별 ZIP + 외부 release.json, 크기·SHA-256·안전한 ZIP 검사, SQLite 작업 기록 |
 | 게시 | 관리자 승인, 디렉터리 자동 생성, Manifest·서명, 완료 전 비공개, 중단 게시 재개 |
-| 권한 | 실제 IP/CIDR + PC별 토큰, 프로젝트·환경·채널·선택적 버전 제한, 기본 거부 |
+| 권한 | 실제 IP/CIDR + PC 요청 서명(기존 HTTPS는 Bearer), 프로젝트·환경·채널·선택적 버전 제한, 기본 거부 |
 | 전송 | 인증된 목록·Manifest·이미지·파일·Range, 서명·해시 검증, 재시도·이어받기 |
 | 설치 | 정확한 릴리스, 버전별 설치·상태·잠금·PID 분리, transaction 복구·repair·rollback |
 | 일반 화면 | 자동 상태 확인, 상태별 실행 버튼, 친화적 오류·문제 해결, 이미지/fallback |
 | 개발자 화면 | 해당 PC에 허용된 배포 선택, 상세 진행·진단·유지보수 |
 | 운영 | Windows/Linux Agent·IPC·CLI, 진단 내보내기, 무인 서비스 모드, MSI/RPM 제작 구성 |
 
-GUI의 general/developer는 표시 정책이지 다운로드 권한이 아닙니다. 운영은 HTTPS·서명 검증을 사용하고 nginx 뒤 API는 loopback에만 바인딩합니다. 과거 공개 `/catalogs`, `/projects` 경로와 혼합하지 않습니다.
+GUI의 general/developer는 표시 정책이지 다운로드 권한이 아닙니다. 기존 HTTPS/Bearer와 명시적인 schema 3 사내 HTTP/요청 서명을 지원하며, 둘 다 Metadata 서명·해시·권한 검증을 유지합니다. HTTP/Bearer나 무인증으로 자동 후퇴하지 않습니다. nginx 뒤 API는 loopback에만 바인딩하고 공개 정적 경로와 혼합하지 않습니다.
 
 일반 GUI는 자동 점검만 하며 설치는 사용자 클릭 후 수행합니다. 무인 서비스 자동 업데이트와 구분합니다. 관리형 런처 자체 갱신은 MSI/RPM, 게임 콘텐츠 갱신은 Agent 책임입니다.
 
 ## 처음 준비할 것
 
-1. Linux 서버에 DistributionServer·nginx·HTTPS·systemd 설정.
+1. Linux 서버에 DistributionServer·nginx·systemd 설정. 신규 사내 HTTP는 request-signature-v1을 명시합니다.
 2. 서버 서명 개인키와 PC별 IP/배포 권한 등록. 공개키만 PC에 배포.
-3. PC별 토큰 발급 후 해당 PC의 보호된 credential 저장소에 저장.
-4. PC에 런처·Agent 설치, 보호된 운영 설정 작성.
+3. PC별 개인키를 보호 저장하고 공개키만 서버에 등록합니다. 기존 HTTPS/Bearer 환경은 기존 토큰 절차를 유지합니다.
+4. PC에 런처·Agent 설치, sample-config로 보호된 운영 설정을 생성하고 doctor로 확인합니다.
 5. 런처 옆 설정에서 general/developer 화면 선택.
 
-경로·정책·설정 예시는 [통합 운영 가이드](docs/reference/distribution-workflow.md)를 따릅니다. 회사 도메인·인증서·IP·계정은 실제 값으로 설정합니다.
+신규 사내 HTTP 명령은 [요청 서명 안내](docs/reference/intranet-auth.md), 기존 HTTPS/Bearer와 공통 게시 과정은 [통합 운영 가이드](docs/reference/distribution-workflow.md)를 따릅니다. 예시 IP·계정·공개키를 실제 값으로 바꾸세요.
 
 ## 새 버전 배포
 
