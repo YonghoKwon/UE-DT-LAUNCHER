@@ -63,7 +63,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | OPS-08 | 공식 preflight·EXE 선서명·MSI payload gate | 계약 11개·개발 MSI 추출/hash 확인 | 실제 회사 서명 인증서 미확인 | 인증서·설치본 서명 검증 대기 | 50% |
 | OPS-09 | 엄격 runtime 기록·서비스 snapshot/barrier·공통 변경 조정기 | 기존 안전성 Windows/WSL 회귀 각 393개·집계 검사 | 저장 경계 강제 종료 각 36개·health 실패·정확한 서비스 대상·CLI E2E 및 게시본별 GUI 이력 | 이번 portable 실행 중 버튼 차단/수명 확인을 추가. 모든 변경 진입점의 실제 전수 검증과 회사 UE/계정은 남음 | 75% |
 | UI-01 | 포스코DX·반응형·주 버튼 고정·상세 스크롤·제목 배율 | 작은 DIP/200% 잘림·bucket 경계·포커스 회귀 | 사전/ab37 게시본의 1920×1080/100% 일반·개발자 관측 | 최종 동일 게시본의 실제 18개 OS 조합·최악 조건 대기 | 75% |
-| UI-02 | 정확한 모드/선택/runtime·미설치 자동 repair 금지·복원 후 재확인 | 추가 상태 보완 Windows/WSL 각510개·IPC 호환, 고정8ce5060 publish/HTTP·HTTPS E2E 통과 | ab37 portable 설치/수명/정상 복원 이력과 작업 중 게시본 미설치 재연결 통과 구분. 새 후보 portable v1/v2 설치/실행·3파일 해시·v1 보존·실행 중 변경 차단·정상 종료·개발자 손상 복구 확인 | 새 후보 관리형 적용·portable 일반 문제 해결/복원·전체 오류 및 작은 환경 수용 대기 | 75% |
+| UI-02 | 정확한 모드/선택/runtime·미설치 자동 repair 금지·복원 후 재확인 | 추가 상태 보완 Windows/WSL 각510개·IPC 호환, 고정8ce5060 publish/HTTP·HTTPS E2E 통과 | ab37 portable 설치/수명/정상 복원 이력과 작업 중 게시본 미설치 재연결 통과 구분. 새 후보 portable v1/v2 설치/실행·3파일 해시·v1 보존·실행 중 변경 차단·정상 종료·개발자 손상 복구·정상 백업 복원/취소·preview 변경 거부·정상 설치 문제 해결 확인 | 새 후보 관리형 적용·portable 나머지 문제 해결/오류·전체 오류 및 작은 환경 수용 대기 | 75% |
 | UI-03 | 제목 배율·Local Tab·대화창 고대비/focus·실제 framework peer | 관련 headless 72개, 연결된 peer의 이름 변경·byte tick 억제 | 사전 게시본 Windows 글자200%/Tab 관측, 사용자 prefs 원복 확인 | 최종 키보드/OS 고대비 전체 흐름 대기. 내레이터 음성 후속 보류로 75% 유지 | 75% |
 
 근거: [성능 검증 기록](docs/reference/archive/validation/performance-validation.md), [CI 구성](.github/workflows/build.yml), 각 항목의 커밋·미완료 조건. 다른 항목의 기존 기반 기능이나 문서 작성만으로 추가 보완 진척을 자동 가산하지 않았습니다.

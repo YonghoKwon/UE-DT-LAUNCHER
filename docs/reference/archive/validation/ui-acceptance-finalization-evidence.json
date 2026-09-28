@@ -161,14 +161,14 @@
     "sourceCommit": "8ce5060563c6294e55fbbcf086682a84ccef1c98",
     "productFixCommit": "fa87eaa",
     "sourceDirty": false,
-    "nativeGuiApply": "partial-portable-v1-v2-install-run-and-developer-repair-pass",
+    "nativeGuiApply": "partial-portable-update-repair-restore-and-preview-rejection-pass",
     "nativeGeneralStartup": "pass-local-mode-not-installed-latest-v1-install-and-run-button-observed-without-click",
     "fixtures": [
       "accept-portable-02",
       "accept-managed-02"
     ],
     "fixtureState": {
-      "portable": "v1-unchanged-v2-restored-stopped-awaiting-healthy-backup-approval",
+      "portable": "v1-unchanged-v2-healthy-stopped-normal-backup-present-preview-rejection-tested",
       "managed": "uninstalled-v1-published-v2-pending"
     },
     "managedCapabilities": [
@@ -251,12 +251,60 @@
         "runtime": "Quiescent",
         "display": "repair-complete-ready",
         "backupLimit": "pre-repair damaged files are not a normal rollback proof"
+      },
+      {
+        "id": "portable-v2-normal-backup",
+        "result": "pass",
+        "actor": "assistant-after-action-approval",
+        "backupId": "20260928143144",
+        "verifiedFiles": 3,
+        "newApplicationMarker": false
+      },
+      {
+        "id": "portable-v2-restore-cancel",
+        "result": "pass",
+        "backupId": "20260928143144",
+        "protectedSnapshotUnchanged": true,
+        "displayPreserved": "update-available",
+        "defaultFocus": "dialog-cancel",
+        "restoredFocus": "status-check"
+      },
+      {
+        "id": "portable-v2-normal-restore",
+        "result": "pass",
+        "actor": "assistant-after-action-approval",
+        "backupId": "20260928143144",
+        "verifiedFiles": 3,
+        "previousVersionSnapshotUnchanged": true,
+        "newApplicationMarker": false,
+        "runtime": "Quiescent",
+        "display": "ready-launch-enabled-backup-restore-complete"
+      },
+      {
+        "id": "portable-v2-preview-change-rejected",
+        "result": "pass",
+        "actor": "assistant-after-action-approval",
+        "errorCode": "backup-preview-changed",
+        "protectedSnapshotUnchanged": true,
+        "verifiedFiles": 3,
+        "retryRequiresNewConfirmation": true,
+        "cancelledRetryUnchanged": true
+      },
+      {
+        "id": "portable-healthy-troubleshoot-after-reconnect",
+        "result": "pass",
+        "actor": "assistant-read-only-action",
+        "verifiedFiles": 3,
+        "protectedSnapshotUnchanged": true,
+        "applicationMarkerCount": 2,
+        "newApplicationMarker": false,
+        "display": "ready-installation-check-complete",
+        "oldErrorCleared": true
       }
     ]
   },
   "remaining": [
     "new-candidate-managed-and-portable-workflow-reacceptance",
-    "changed-preview-rejection",
     "full-error-and-uninstalled-retry-matrix",
     "all-18-final-os-display-combinations",
     "worst-case-large-text-and-os-contrast",

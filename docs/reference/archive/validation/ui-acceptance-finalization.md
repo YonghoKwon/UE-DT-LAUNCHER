@@ -68,7 +68,25 @@ Agent는 실행하지 않았다. GUI 자체 진단은 화면1920×1080, 작업�
 
 ## 6. 남은 수용과 판정
 
-새 고정 후보는 `8ce5060563c6294e55fbbcf086682a84ccef1c98`(제품 상태 수정 `fa87eaa`)이며 sourceDirty=false이다. Windows/Linux publish 및 새 Linux HTTP 요청 서명+Agent, HTTPS/Bearer+nginx E2E를 다시 통과했다. nginx 기본 로그 경로 경고는 있었으나 해당 합성 E2E는 통과했고 대용량/회사 환경 보장으로 확대하지 않는다. 새 `accept-portable-02`/`accept-managed-02`는 v1 공개·v2 승인 대기·미설치로 준비됐다. 관리형 readiness에서 runtime-supervision-v1/rollback-preview-v1을 확인했다. 새 portable 일반 GUI에서 별도 실행 직전 승인을 받고 v1을 설치·실행했다. 3파일 해시 정상, Running/주 버튼 차단, GUI 종료 후 동일 자식 생존과 다시 연 GUI의 Running 인식을 확인했다. 정확한 합성 시도의 자연 종료 신호 후 Quiescent와 F6의 최신 상태/실행 가능 복귀를 확인했다. 관리형 fixture는 미설치를 유지하며, portable의 v2는 이후 서버 CLI로 공개했고 F6 후 기존1.0.0/최신2.0.0/업데이트 후 실행 안내를 확인했다. 새 실행 직전 승인 후 같은 fixture에서 v2 업데이트 후 실행을 클릭했다. v2 marker/Running과 Manifest3파일 해시 정상, v1-before-v2 전체 snapshot 불변을 확인했다. 살아 있는 v2를 exact로 선택한 개발자 화면에서 실행/업데이트/복구/복원 버튼 비활성 및 v2-running snapshot 불변을 확인한 뒤 정확한 합성 시도에 정상 종료 신호를 보냈다. Quiescent와 F6 후 최신 상태·변경 버튼 재활성화를 확인했다. 이후 다음 복구 시험 준비로 v2의 version.txt만 손상시켰고 변경1/누락0을 확인했으며 v1은 불변이다. 별도 승인 후 개발자 검증/복구를 실제 클릭했고 파일 복구 완료/최신 상태와 3파일 해시 정상, v1 snapshot 불변, 추가 marker 없음/Quiescent를 확인했다. 손상 직전 파일이 백업될 수 있으므로 이 repair의 backup을 정상 복원 근거로 사용하지 않는다. **새 후보의 일반 문제 해결·정상 백업 복원과 관리형 GUI 적용은 아직 미실행**이다.
+새 고정 후보는 `8ce5060563c6294e55fbbcf086682a84ccef1c98`(제품 상태 수정 `fa87eaa`)이며 sourceDirty=false이다. Windows/Linux publish 및 Linux HTTP 요청 서명+Agent, HTTPS/Bearer+nginx E2E를 다시 통과했다. nginx 기본 로그 경로 경고는 있었으나 해당 합성 E2E는 통과했다. 대용량/회사 환경 보장으로 확대하지 않는다.
+
+`accept-portable-02`/`accept-managed-02`는 처음에 v1 공개·v2 승인 대기·미설치로 준비했다. 관리형 readiness에서 runtime-supervision-v1/rollback-preview-v1을 확인했으며 관리형 GUI 적용은 아직 미실행이다. 아래 portable 적용은 각 동작 직전 사용자 승인을 받고 실제 GUI 버튼으로 수행했다.
+
+| 새 후보 portable 사례 | 관측 결과 |
+|---|---|
+| v1 설치·실행 | Manifest 3파일 해시 정상, v1 marker·Running·주 버튼 차단 |
+| GUI 종료·재실행 | 동일 자식 생존과 다시 연 GUI의 Running 인식. 정확한 합성 시도 정상 종료 후 Quiescent, F6 후 실행 가능 |
+| v2 공개·안내 | 서버 CLI 승인 후 기존1.0.0/최신2.0.0/업데이트 후 실행 표시 |
+| v2 업데이트·실행 | 3파일 해시 정상, v2 marker·Running, v1-before-v2 snapshot 불변 |
+| 실행 중 개발자 차단 | 살아 있는 v2를 exact 선택. 실행/업데이트/복구/복원 비활성, 종료 전 v2-running snapshot 불변. 정상 종료 후 Quiescent 및 변경 버튼 재활성 |
+| v2 손상 복구 | version.txt 손상·변경1/누락0 확인 후 복구. 완료/최신 상태, 3파일 해시 정상, v1 불변·추가 실행 없음 |
+| 정상 백업 생성 | 정상 상태에서 별도 승인으로 추가 repair. 백업20260928143144의 3파일 전체 해시 정상. 앞선 손상 repair의 backup과 구분 |
+| 복원 취소 | v2만 재손상 후 확인창 Escape. 보호 snapshot 불변·이전 업데이트 가능 표시 유지·상태 확인 버튼으로 포커스 복귀 |
+| 정상 백업 복원 적용 | 새 승인 후 적용. 3파일 해시 정상, v1 snapshot 불변, 추가 marker 없음·Quiescent. 최신 상태/실행 가능 복귀와 백업 복원 완료 제목 유지 |
+| 변경 preview 거부 | 확인창을 연 뒤 metadata 공백만 변경하고 snapshot 생성. 새 승인 후 적용 요청이 backup-preview-changed로 거부됨. 보호 snapshot·3파일 해시 불변. 다시 시도는 새 확인창을 요구하며 취소 후에도 불변 |
+| 정상 설치 문제 해결 | 서버 중단/F6 후 친화적 오류·지원 ID 확인. 서버 재시작 후 일반 문제 해결 클릭. 설치 상태 점검 완료/최신 상태·오류 해제, 보호 snapshot 불변, marker 수2 유지 |
+
+새 후보의 일반 화면 손상 복구·일부 오류 조합·개발자 실행 확인 전체 흐름·관리형 전체 GUI 적용은 아직 미실행이다. 과거 게시본 결과를 이 표의 성공으로 합산하지 않는다.
 
 | 새 후보 실행 파일 | SHA-256 |
 |---|---|
