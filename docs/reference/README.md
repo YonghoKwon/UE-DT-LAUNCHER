@@ -4,6 +4,8 @@
 
 ## 현재 사용 절차
 
+- [관리형 GUI 안전성 검증](managed-gui-safety-validation.md): shell 없는 미설치 fixture·상태 수정·직접 조작 진행 상태.
+
 - [실행 안전성 후속 검증](runtime-safety-completion-validation.md): 저장 경계·서비스 health·이전 차단·남은 GUI/회사 검증.
 
 - [실행 중 차단·수동 복구](runtime-safety.md), [배포/실행 안전성 검증](deployment-safety-validation.md)

@@ -1,6 +1,6 @@
 # 작업 지침
 
-점검: 2026-09-28 / 구현 기준 codex/runtime-safety-completion. 저장소 전체에 적용합니다.
+점검: 2026-09-28 / 구현 기준 codex/managed-gui-safety-validation. 저장소 전체에 적용합니다.
 
 ## 문서 관리 계약
 
@@ -62,6 +62,8 @@
 ## UI 규칙
 
 - programmatic View와 LauncherVisualTokens·ViewModel을 사용합니다.
+- 관리형 실행 성공을 Ready로 단정하지 않습니다. runtime 관측의 Running/Pending/Unknown/누락은 차단 상태이며, 문제 해결에서 typed runtime 실패를 일반 예외로 잃거나 rollback 제안으로 바꾸지 않습니다.
+- GUI 시험용 앱은 셸 없이 자기 자식·marker만 사용하며 공식 배포물에 포함하지 않습니다. 미설치 GUI 시험을 CLI 선설치로 대체하지 않습니다. 실제 버튼 조작과 단위/CLI 검증을 별도로 기록합니다.
 - 일반 화면은 한 버튼·친화적 오류, Agent 대신 업데이트 서비스로 표기합니다. 기술 예외·내부 경로·비밀정보를 기본 화면에 표시하지 않습니다.
 - 개발자 명령을 보존하되 서버 권한을 확대하지 않습니다. 배포 서버 모드 GUI는 현재 OS용 릴리스를 선택합니다.
 - 이미지 누락·손상·과대 파일은 브랜드 fallback으로 처리합니다. 키보드·focus·스크린리더·DPI를 확인합니다.

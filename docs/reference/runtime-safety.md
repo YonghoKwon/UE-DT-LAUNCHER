@@ -14,6 +14,8 @@
 
 GUI를 닫는 것과 DT 앱을 종료하는 것은 다르다. runtime-host는 일반 자식 프로세스가 모두 종료될 때까지 유지된다. Windows Job과 Linux subreaper는 임의 WMI/D-Bus/systemd broker나 악성 동일 사용자 격리를 보장하지 않는다. 직접 EXE/오래된 바로가기를 통한 실행은 지원 경로 밖이다.
 
+관리형 GUI는 실행 후 runtime 상태를 다시 확인합니다. 정보가 누락되거나 실행 상태가 불명확하면 정상 완료로 표시하지 않습니다. 문제 해결도 실행 상태 차단을 유지하며, 단지 실행 중이라는 이유로 rollback을 제안하지 않습니다. [후속 GUI 검증 범위](managed-gui-safety-validation.md)
+
 ## 확인 → 종료 → 복구
 
 아래 `<config>`는 실제 설정 파일, 버전/프로젝트는 해당 설치와 일치해야 한다. 관리형은 로컬 관리자만 확인 적용 가능하며 portable은 설치 소유자(또는 관리자)만 가능하다.
