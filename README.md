@@ -1,5 +1,7 @@
 # UE-DT Launcher
 
+2차 안전성 작업: `codex/launcher-deployment-safety`에서 MSI 서명 순서와 실행 중 변경 차단을 개선 중입니다. 단계별 상태는 [안전성 검증](docs/reference/deployment-safety-validation.md)을 따릅니다.
+
 추가 구현: 사내 HTTP 요청 서명·PC 인증키 보호·Agent 이미지 전달·설정 생성기를 제공합니다. [최초 등록 명령](docs/reference/intranet-auth.md)과 [검증·남은 조건](docs/reference/intranet-auth-validation.md)을 확인하세요. HTTP는 암호화되지 않으며 회사 운영 승인은 별도입니다.
 
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 런처입니다.

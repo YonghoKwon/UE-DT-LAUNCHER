@@ -61,6 +61,8 @@
 
 ## 작업·검증·커밋
 
+- 공식 MSI는 payload EXE 서명/검증 후 생성한다. 내장 CAB EXE hash/signer 검사 전 artifact를 공개하지 않는다. 실행별 WiX intermediate를 사용하고 stale MSI wildcard를 금지한다.
+
 1. git status와 지침을 확인하고 사용자 변경을 보존합니다. 브랜치·remote를 임의로 교체하지 않습니다.
 2. 의미 단위 구현 후 관련 테스트를 실행합니다. --no-restore 전 restore가 필요합니다.
 3. 기능 변경은 publish된 GUI/Agent/CLI/서버로 실행 검증합니다. Unreal Editor 프로젝트가 아닙니다.

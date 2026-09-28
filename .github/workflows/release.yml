@@ -49,26 +49,18 @@ jobs:
       - name: Build MSI payload
         shell: pwsh
         run: ./scripts/build-windows-installer.ps1 -Version $env:VERSION -OfficialBuild
-      - name: Sign executables and MSI
-        shell: pwsh
-        run: |
-          $files = @(
-            'artifacts/windows-installer/payload/gui/UeDtLauncher.exe',
-            'artifacts/windows-installer/payload/agent/UeDtLauncher.Agent.exe'
-          ) + @(Get-ChildItem artifacts/windows-installer -Filter *.msi | ForEach-Object FullName)
-          ./scripts/sign-windows.ps1 -Files $files -RequireSignature
       - name: Generate SBOM
         shell: pwsh
         run: |
           dotnet tool install --tool-path .tools Microsoft.Sbom.DotNetTool --version 4.1.5
-          ./.tools/sbom-tool generate -b artifacts/windows-installer -bc . -pn UeDtLauncher -pv $env:VERSION -ps UE-DT -nsb https://ue-dt.local/sbom
+          ./.tools/sbom-tool generate -b $env:UE_DT_PACKAGE_DIR -bc . -pn UeDtLauncher -pv $env:VERSION -ps UE-DT -nsb https://ue-dt.local/sbom
       - name: Checksums
         shell: pwsh
-        run: Get-ChildItem artifacts/windows-installer -Recurse -File | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $($_.Path)" } | Set-Content artifacts/windows-installer/SHA256SUMS.txt
+        run: Get-ChildItem $env:UE_DT_PACKAGE_DIR -Recurse -File | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $($_.Path)" } | Set-Content (Join-Path $env:UE_DT_PACKAGE_DIR SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
           name: ue-dt-launcher-windows-${{ env.VERSION }}
-          path: artifacts/windows-installer
+          path: ${{ env.UE_DT_PACKAGE_DIR }}
 
   linux-package:
     needs: verify-signing-gate

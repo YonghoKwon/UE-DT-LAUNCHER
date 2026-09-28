@@ -42,7 +42,9 @@ public class PackagingContractTests
         var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "release.yml"));
         Assert.Contains("WINDOWS_SIGNING_PFX_BASE64", workflow);
         Assert.Contains("RPM_GPG_PRIVATE_KEY", workflow);
-        Assert.Contains("-RequireSignature", workflow);
+        Assert.Contains("-OfficialBuild", workflow);
+        Assert.Contains("UE_DT_PACKAGE_DIR", workflow);
+        Assert.DoesNotContain("Sign executables and MSI", workflow);
         Assert.Contains("rpmsign --addsign", workflow);
     }
 
