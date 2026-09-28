@@ -770,6 +770,7 @@ public sealed partial class MainWindow : Window
     {
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("2.2*,*,*"), ColumnSpacing = 10, MinHeight = 80 };
         var run = Track(PrimaryButton("▶ " + _viewModel.PrimaryActionText, async (_, _) => await ExecutePrimaryActionAsync(), 80));
+        run.Tag = "general-primary-action";
         run.IsEnabled = _viewModel.PrimaryAction != PrimaryActionKind.Disabled && !_running;
         run.HotKey = new KeyGesture(Key.F5);
         grid.Children.Add(run);
@@ -1060,7 +1061,7 @@ public sealed partial class MainWindow : Window
                     repair ? "repair" : "update",
                     c.ProjectId,
                     ReportManagedProgress, selection: requested);
-                if (!response.Success) throw new InvalidOperationException(response.Message);
+                response.ThrowIfFailed();
                 ApplyManagedSelection(c, response, requested);
                 if (launch) _ = await ManagedAppLauncher.LaunchAsync(c);
             }
@@ -1101,7 +1102,7 @@ public sealed partial class MainWindow : Window
                     c.ProjectId,
                     ReportManagedProgress,
                     timeout: TimeSpan.FromMinutes(5), selection: requested);
-                if (!response.Success) throw new InvalidOperationException(response.Message);
+                response.ThrowIfFailed();
                 ApplyManagedSelection(c, response, requested);
                 if (response.ProjectStatus is not null) _viewModel.ApplyProjectStatus(response.ProjectStatus);
                 else _viewModel.GeneralState = ReadInstalledVersion() is null ? GeneralLauncherState.NotInstalled : GeneralLauncherState.Ready;
@@ -1121,6 +1122,8 @@ public sealed partial class MainWindow : Window
                 Build();
                 Progress(100);
                 if (_statusText is not null) _statusText.Text = _installState;
+                if (response.Runtime is { State: not RuntimeState.Quiescent } runtime)
+                    MarkError(new RuntimeBlockedException(runtime), "실행 상태 확인", showDialog: false);
                 return;
             }
             var (missing, changed, total, version) = await Task.Run(async () =>
@@ -1143,6 +1146,8 @@ public sealed partial class MainWindow : Window
             else { _viewModel.GeneralState = GeneralLauncherState.Ready; _installState = "최신 상태"; _installDetail = $"{version} 버전이 설치되어 있습니다."; }
             Build();
             Progress(100); if (_statusText is not null) _statusText.Text = _installState;
+            var portableRuntime = RuntimeStore.Observe(c);
+            if (portableRuntime.State != RuntimeState.Quiescent) MarkError(new RuntimeBlockedException(portableRuntime), "실행 상태 확인", showDialog: false);
         }
         catch (Exception ex) { MarkError(ex, "상태 확인 실패", showDialog: !suppressDialog); }
         finally { _running = false; SetBusy(false); }
@@ -1206,7 +1211,7 @@ public sealed partial class MainWindow : Window
                         config.ProjectId,
                         ReportManagedProgress,
                         timeout: TimeSpan.FromMinutes(10), selection: CurrentReleaseSelection());
-                    if (!response.Success) throw new InvalidOperationException(response.Message);
+                    response.ThrowIfFailed();
                     _viewModel.GeneralState = GeneralLauncherState.Ready;
                     _installState = "복구 완료";
                     _installDetail = "안정적인 이전 버전으로 복구했습니다.";
@@ -1239,7 +1244,7 @@ public sealed partial class MainWindow : Window
             {
                 var response = await new ManagedAgentClient().SendStreamingAsync("rollback", config.ProjectId, ReportManagedProgress, selection: CurrentReleaseSelection());
                 foreach (var progress in response.Progress) ReportManagedProgress(progress);
-                if (!response.Success) throw new InvalidOperationException(response.Message);
+                response.ThrowIfFailed();
                 _installState = "롤백 완료";
                 _installDetail = "관리 Agent가 가장 최근 백업을 복원했습니다.";
                 Build();
@@ -1330,7 +1335,7 @@ public sealed partial class MainWindow : Window
 
     private void SetBusy(bool busy)
     {
-        foreach (var button in _actionButtons) button.IsEnabled = !busy;
+        foreach (var button in _actionButtons) button.IsEnabled = !busy && (!Equals(button.Tag, "general-primary-action") || _viewModel.PrimaryAction != PrimaryActionKind.Disabled);
     }
 
     private void UiProgress(string stage, string message, double? percent)
@@ -1358,15 +1363,16 @@ public sealed partial class MainWindow : Window
     private string FriendlyProgress(string stage, string message) => stage switch { "Catalog" => "배포 정보를 확인하고 있습니다...", "Manifest" => "업데이트 정보를 확인하고 있습니다...", "Plan" => "필요한 파일을 확인하고 있습니다...", "Download" => "필요한 파일을 다운로드하고 있습니다...", "Apply" => "업데이트를 적용하고 있습니다...", "Package" => "패키지를 처리하고 있습니다...", "Launch" => "프로젝트를 실행하고 있습니다...", _ => message };
     private void MarkError(Exception ex, string status = "작업 실패", bool showDialog = true)
     {
-        _installState = "오류";
+        var runtimeBlocked = ex.GetBaseException() as RuntimeBlockedException;
+        _installState = runtimeBlocked is null ? "오류" : runtimeBlocked.Observation.State == RuntimeState.Running ? "실행 중" : "실행 상태 확인 필요";
         _installDetail = FriendlyError(ex);
-        _viewModel.GeneralState = GeneralLauncherState.RecoverableError;
+        _viewModel.GeneralState = runtimeBlocked is null ? GeneralLauncherState.RecoverableError : GeneralLauncherState.RuntimeBlocked;
         _viewModel.WorkflowStage = LauncherWorkflowStage.None;
         Build();
         if (_statusText is not null) _statusText.Text = status;
         AppendLog("오류: " + FriendlyError(ex), true);
         if (IsDeveloper) AppendLog(ex.ToString(), true);
-        else if (showDialog) ErrorDialog(status, FriendlyError(ex));
+        else if (showDialog && runtimeBlocked is null) ErrorDialog(status, FriendlyError(ex));
     }
     private string FriendlyError(Exception ex) => _viewModel.FriendlyError(ex);
     private void UpdateInstallTile() { if (_installStateText is not null) { _installStateText.Text = _installState; _installStateText.Foreground = StatusBrush(_installState); } if (_installDetailText is not null) _installDetailText.Text = _installDetail; }

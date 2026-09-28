@@ -39,3 +39,12 @@
 - Running/Pending/Unknown의 prepare·rollback·recovery 차단 전후 파일/manifest/state/backup/journal hash 보존 회귀 추가.
 - publish Windows Agent에서 실행 중 update/repair 거부 및 파일 불변 확인(`uedt-broker-proof-beyrsvf2`). publish 전체 HTTP E2E의 두 버전 실행·종료/repair 통과(`publish/safety/e2e-win-02`).
 - cmd /c 인수 시험에서 불필요한 옵션 인용을 수정했다. payload stdout은 control channel과 분리하므로 실행 증거는 fixture marker 파일로 확인한다.
+
+## 5. 진입점과 사용자 안내
+
+- 구형 capability가 없는 변경 요청은 client-upgrade-required로 거부한다. status/catalog 등 조회와 IPC v1 framing은 유지하며 구형 응답에 capability를 자동 채우지 않는다.
+- 일반 GUI는 실행 중 안내와 비활성 기본 버튼을 표시한다. 실제 화면 점검에서 SetBusy(false)가 버튼을 다시 활성화하는 문제를 찾아 수정하고 접근성 트리의 disabled 상태까지 재확인했다.
+- publish 일반 GUI 실행 중/종료 후 상태와 개발자 GUI의 기존 명령·버전 표시를 Computer Use로 확인했다(`publish/safety/gui-01`). 앱의 설치/실행 자체는 CLI fixture에서 수행했다.
+- 새 .lnk는 정확한 버전의 사용자 소유 설정을 통해 런처를 실행한다. 기존 .url/.lnk는 덮어쓰거나 삭제하지 않는다. COM .lnk 생성과 설정 pinning 테스트 통과.
+- host control stream은 payload와 분리하고 CLI stderr 상속으로 부모가 payload 종료까지 기다리는 문제를 수정했다. Linux 보존 FD는 close-on-exec로 설정한다.
+- runtime recover는 관리형 관리자/portable 소유자 확인이며 서비스 버전 선택은 --service-selection으로 별도 명시한다. 수동 확인을 OS 종료 증거로 기록하지 않는다.

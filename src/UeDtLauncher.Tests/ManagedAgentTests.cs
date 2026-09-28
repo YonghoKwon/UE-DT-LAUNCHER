@@ -144,6 +144,7 @@ public class ManagedAgentTests
         {
             ProjectId = "project-a",
             StateRootDir = ".state",
+            TargetPlatform = "windows-x64",
             InstallDir = "app",
             LogDir = "logs"
         });

@@ -46,6 +46,11 @@ internal static class NativeProcessFamily
         using var job = CreateJobObject(IntPtr.Zero, null);
         if (job.IsInvalid) ThrowWin32("Create job");
         // Default job limits prohibit breakaway and do NOT kill children on handle close.
+        foreach (var standard in new[] { -10, -11, -12 })
+        {
+            var handle = GetStdHandle(standard);
+            if (handle != IntPtr.Zero && handle != new IntPtr(-1) && !SetHandleInformation(handle, 1, 0)) ThrowWin32("Protect host control streams");
+        }
         var attributes = new SecurityAttributes { Length = Marshal.SizeOf<SecurityAttributes>(), Inherit = 1 };
         using var nul = CreateFile("NUL", 0xc0000000, 3, ref attributes, 3, 0, IntPtr.Zero);
         if (nul.IsInvalid) ThrowWin32("Open null streams");
@@ -87,11 +92,12 @@ internal static class NativeProcessFamily
         var previous = Directory.GetCurrentDirectory();
         using var argv = new NativeStrings(new[] { request.Executable }.Concat(request.Arguments));
         using var environment = new NativeStrings(Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>().Select(e => e.Key + "=" + e.Value));
-        var saved = new[] { dup(0), dup(1), dup(2) }; var nul = open("/dev/null", 2);
+        var saved = new[] { dup(0), dup(1), dup(2) }; var nul = open("/dev/null", 2 | 0x80000);
         var pid = 0;
         try
         {
             if (nul < 0 || saved.Any(fd => fd < 0)) ThrowUnix("Prepare payload streams");
+            foreach (var fd in saved) if (fcntl(fd, 2, 1) != 0) ThrowUnix("Protect host control streams"); // FD_CLOEXEC
             Directory.SetCurrentDirectory(request.WorkingDirectory);
             for (var i = 0; i < 3; i++) if (dup2(nul, i) < 0) ThrowUnix("Isolate payload streams");
             // Null attributes/actions use POSIX defaults; no guessed opaque libc structure sizes.
@@ -154,6 +160,8 @@ internal static class NativeProcessFamily
     [DllImport("kernel32.dll", SetLastError=true)] [return:MarshalAs(UnmanagedType.Bool)] private static extern bool GetExitCodeProcess(SafeFileHandle process, out uint code);
     [DllImport("kernel32.dll", SetLastError=true)] [return:MarshalAs(UnmanagedType.Bool)] private static extern bool TerminateProcess(SafeFileHandle process, uint code);
     [DllImport("kernel32.dll")] private static extern uint WaitForSingleObject(SafeFileHandle handle, uint milliseconds);
+    [DllImport("kernel32.dll")] private static extern IntPtr GetStdHandle(int kind);
+    [DllImport("kernel32.dll", SetLastError=true)] [return:MarshalAs(UnmanagedType.Bool)] private static extern bool SetHandleInformation(IntPtr handle, uint mask, uint flags);
     [DllImport("libc", SetLastError=true)] private static extern int prctl(int option, long value, long a, long b, long c);
     [DllImport("libc", EntryPoint="prctl", SetLastError=true)] private static extern int prctl_get(int option, ref int value, long a, long b, long c);
     [DllImport("libc")] private static extern int getpid();
@@ -162,6 +170,7 @@ internal static class NativeProcessFamily
     [DllImport("libc", SetLastError=true)] private static extern int open(string file, int flags);
     [DllImport("libc", SetLastError=true)] private static extern int dup(int fd);
     [DllImport("libc", SetLastError=true)] private static extern int dup2(int oldFd, int newFd);
+    [DllImport("libc", SetLastError=true)] private static extern int fcntl(int fd, int command, int argument);
     [DllImport("libc")] private static extern int close(int fd);
     [DllImport("libc", CharSet=CharSet.Ansi)] private static extern int posix_spawn(out int pid, string path, IntPtr actions, IntPtr attributes, IntPtr arguments, IntPtr environment);
     [DllImport("libc", SetLastError=true)] private static extern int waitpid(int pid, out int status, int options);

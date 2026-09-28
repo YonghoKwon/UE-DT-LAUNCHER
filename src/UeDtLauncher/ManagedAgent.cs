@@ -59,6 +59,13 @@ public sealed class ManagedAgentRequest
 
 public sealed class ManagedAgentResponse
 {
+    public void ThrowIfFailed()
+    {
+        if (Success) return;
+        if (Runtime is not null) throw new RuntimeBlockedException(Runtime);
+        if (Status == "client-upgrade-required") throw new RuntimeBlockedException(new(RuntimeState.Unknown, Status, "런처와 업데이트 서비스를 함께 업데이트해 주세요."));
+        throw new InvalidOperationException(Message);
+    }
     public int ProtocolVersion { get; set; } = ManagedAgentProtocol.Version;
     public string CorrelationId { get; set; } = string.Empty;
     public bool Success { get; set; }
@@ -251,11 +258,16 @@ public static class PortableMigrationService
             throw new InvalidOperationException("Multi-installation state migration requires a separately reviewed maintenance plan; no automatic runtime adoption is allowed.");
         var sourceRuntime = await JsonFiles.ReadAsync<LauncherConfig>(plan.SourceConfigPath, cancellationToken);
         LauncherPaths.ResolveInPlace(sourceRuntime, plan.SourceConfigPath);
+        var scopedState = Path.GetDirectoryName(sourceRuntime.InstallStatePath)!;
+        if (Directory.Exists(plan.SourceStateRoot) && Directory.EnumerateFiles(plan.SourceStateRoot, "*", SearchOption.AllDirectories)
+            .Any(file => !Path.GetFullPath(file).StartsWith(Path.GetFullPath(scopedState) + Path.DirectorySeparatorChar, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)))
+            throw new InvalidOperationException("State outside the confirmed single installation requires a separate migration plan.");
         using var runtimeLease = InstallationMutationLease.Acquire(sourceRuntime);
         using var destinationGate = SingleInstanceLock.Acquire(Path.Combine(Path.GetDirectoryName(plan.TargetConfigPath)!, "migration.lock"));
         config.InstallDir = LauncherPaths.ResolveConfigRelative(plan.SourceConfigPath, config.InstallDir);
         config.LogDir = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(plan.TargetStateRoot)!, "logs"));
         config.StateRootDir = plan.TargetStateRoot;
+        config.DeploymentMode = "managed-agent";
         foreach (var project in config.Projects)
         {
             if (!string.IsNullOrWhiteSpace(project.InstallPath))
@@ -386,8 +398,8 @@ public sealed class ManagedAgentClient(string? endpoint = null)
             Command = command,
             ProjectId = projectId,
             StreamProgress = true,
-            Selection = selection
-            , ClientCapabilities = [ManagedAgentProtocol.RuntimeCapability]
+            Selection = selection,
+            ClientCapabilities = [ManagedAgentProtocol.RuntimeCapability]
         };
         var validationError = ManagedAgentProtocol.Validate(request);
         if (validationError is not null) throw new InvalidOperationException(validationError);
@@ -456,6 +468,8 @@ public static class ManagedAppLauncher
         LauncherEngine.ValidateManifest(manifest, config);
         var entryPoint = SafePath.ResolveInsideChecked(config.InstallDir, manifest.EntryPoint);
         if (!File.Exists(entryPoint)) throw new FileNotFoundException("Managed application entry point was not found.", entryPoint);
+        if (config.WindowsIntegration.CreateDesktopShortcut || config.WindowsIntegration.CreateStartMenuShortcut || config.WindowsIntegration.RegisterAppEntry)
+            WindowsIntegration.Apply(config, Path.Combine(ManagedLauncherPathLayout.Current().InstallRoot, OperatingSystem.IsWindows() ? "UeDtLauncher.exe" : "UeDtLauncher"));
         return await RuntimeLauncher.LaunchAsync(config, cancellationToken);
     }
 }

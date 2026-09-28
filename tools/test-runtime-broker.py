@@ -49,7 +49,8 @@ def main():
     host = None
 
     def rpc(command, **fields):
-        request = dict(protocolVersion=1, correlationId=uuid.uuid4().hex, command=command, projectId="demo", clientCapabilities=["runtime-supervision-v1"], **fields)
+        request = dict(protocolVersion=1, correlationId=uuid.uuid4().hex, command=command, projectId="demo", clientCapabilities=["runtime-supervision-v1"])
+        request.update(fields)
         if os.name == "nt":
             deadline = time.monotonic() + 5
             while True:
@@ -84,6 +85,8 @@ def main():
         else:
             time.sleep(1)
         assert "runtime-supervision-v1" in rpc("status")["agentCapabilities"]
+        assert rpc("status", clientCapabilities=[])["success"]
+        assert rpc("update", clientCapabilities=[])["status"] == "client-upgrade-required"
         begun = rpc("launch-begin")
         assert begun["success"], begun["message"]
         ticket = begun["runtimeTicket"]

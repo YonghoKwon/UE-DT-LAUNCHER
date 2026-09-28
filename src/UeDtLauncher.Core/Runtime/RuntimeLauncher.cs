@@ -40,7 +40,7 @@ public static class RuntimeLauncher
     private static async Task<Process> StartHostAsync(RuntimeHostSession input, CancellationToken cancellationToken)
     {
         var ticket = input.Ticket;
-        var info = new ProcessStartInfo(ticket.HostExecutable) { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, CreateNoWindow = true };
+        var info = new ProcessStartInfo(ticket.HostExecutable) { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
         info.ArgumentList.Add("runtime-host");
         SanitizeEnvironment(info);
         var process = Process.Start(info) ?? throw new InvalidOperationException("Runtime host did not start; launch state requires inspection.");

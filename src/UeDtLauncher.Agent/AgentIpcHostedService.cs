@@ -328,6 +328,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     if (request.Command == "runtime-inspect") return new() { CorrelationId = request.CorrelationId, Success = true, Runtime = RuntimeStore.Observe(config) };
                     if (request.Command == "runtime-recover")
                     {
+                        if (!peer!.Administrator) throw new UnauthorizedAccessException("Managed runtime recovery requires a local administrator.");
                         var recovered = RuntimeStore.Recover(config, peer!, request.ConfirmStopped);
                         if (request.ServiceVersion is not null)
                         {
@@ -363,7 +364,9 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                         var document = await ManifestDownloader.DownloadAsync(config, http, (stage, message, percent) =>
                             AddProgress(new LauncherProgress(stage, message, percent)), cancellationToken);
                         var projectStatus = await ManagedProjectStatusInspector.InspectAsync(config, document.Manifest, cancellationToken);
-                        return Success(request, identity, "checked", $"Release {document.Manifest.Version} metadata, files and signatures are valid.", progress, projectStatus, config.SelectedRelease);
+                        var checkedResponse = Success(request, identity, "checked", $"Release {document.Manifest.Version} metadata, files and signatures are valid.", progress, projectStatus, config.SelectedRelease);
+                        checkedResponse.Runtime = RuntimeStore.Observe(config);
+                        return checkedResponse;
                     }
                 case "update":
                 case "repair":

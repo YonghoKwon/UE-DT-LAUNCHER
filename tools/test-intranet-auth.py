@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import shutil
 import subprocess
 import tempfile
 import time
@@ -26,6 +27,7 @@ def main():
     parser.add_argument("--server", required=True)
     parser.add_argument("--root")
     parser.add_argument("--hold", action="store_true")
+    parser.add_argument("--hold-runtime", action="store_true", help="Keep a synthetic managed game active briefly for GUI inspection")
     parser.add_argument("--agent")
     parser.add_argument("--nginx", help="Optional isolated Linux nginx executable; no system service changes")
     parser.add_argument("--benchmark", action="store_true", help="Optional synthetic signed load (requires cryptography)")
@@ -84,7 +86,7 @@ def main():
             if os.name == "nt":
                 package.write(Path(os.environ["SystemRoot"]) / "System32" / "cmd.exe", entry)
             else:
-                package.writestr(entry, '#!/bin/sh\nprintf "UE_DT_FAKE_GAME_OK\\n" > runtime-marker.txt\n')
+                package.writestr(entry, '#!/bin/sh\nsleep "${1:-0}"\nprintf "UE_DT_FAKE_GAME_OK\\n" > runtime-marker.txt\n')
             package.writestr("version.txt", version)
             package.writestr("hero.png", png)
         run(launcher, "release-metadata", "--zip", archive, "--project-id", "demo", "--version", version,
@@ -180,13 +182,19 @@ http {{
         summary = {"platform": platform, "transport": "HTTP request-signature-v1", "published_processes": True,
                    "versions_installed_and_launched": 2, "repair": True, "nginx": bool(args.nginx), "company_or_unreal_validation": False}
         if args.agent:
+            # Match real MSI/RPM layout: the trusted host is beside the Agent, not an arbitrary GUI path.
+            composed = client / "agent"
+            composed_launcher = composed / Path(launcher).name
+            composed_agent = composed / Path(args.agent).name
+            shutil.copy2(launcher, composed_launcher); shutil.copy2(Path(args.agent).resolve(), composed_agent)
+            launcher = str(composed_launcher)
             config["deploymentMode"] = "managed-agent"
             agent_config = client / "agent" / "config" / "launcher.config.json"
             agent_config.parent.mkdir(parents=True)
             write(agent_config, config)
             env["UE_DT_AGENT_ENDPOINT"] = "uedt-test-" + root.name if os.name == "nt" else str(root / "agent.sock")
             agent_log = (root / "agent.log").open("w", encoding="utf-8")
-            agent_process = subprocess.Popen([str(Path(args.agent).resolve())], env=env, stdout=agent_log, stderr=agent_log, creationflags=flags)
+            agent_process = subprocess.Popen([str(composed_agent)], env=env, stdout=agent_log, stderr=agent_log, creationflags=flags)
             time.sleep(1)
             run(launcher, "agent", "status")
             run(launcher, "agent", "project-asset", "--project", "demo", "--kind", "hero", "--cache", client / "images")
@@ -198,6 +206,11 @@ http {{
             write(root / "test-environment.json", {"UE_DT_AGENT_DATA_ROOT": env["UE_DT_AGENT_DATA_ROOT"], "UE_DT_AGENT_ENDPOINT": env["UE_DT_AGENT_ENDPOINT"]})
             run(launcher, "doctor", "--config", client / "general.json", "--online")
             summary["managed_asset_and_doctor"] = True
+            if args.hold_runtime:
+                config["launchArguments"] = ["/c", "ping -n 61 127.0.0.1 > nul"] if os.name == "nt" else ["60"]
+                write(agent_config, config)
+                run(launcher, "run", "--config", client / "general.json")
+                summary["managed_runtime_started_for_gui"] = True
         if args.benchmark:
             from benchmark_intranet_auth import run_load
             load = run_load(origin, root, lambda path: run(server, "client-key", "add", "--client", "pc-test", "--public-key", path, "--config", root / "server.json"), platform, process.pid)

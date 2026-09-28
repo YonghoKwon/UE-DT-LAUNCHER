@@ -12,7 +12,8 @@ public enum GeneralLauncherState
     UpdateAvailable,
     Ready,
     Working,
-    RecoverableError
+    RecoverableError,
+    RuntimeBlocked
 }
 
 public enum PrimaryActionKind
@@ -126,7 +127,7 @@ public sealed class LauncherDashboardViewModel : INotifyPropertyChanged
         PrimaryActionKind.UpdateAndLaunch => "업데이트 후 실행",
         PrimaryActionKind.Launch => "실행",
         PrimaryActionKind.RetryCheck => "다시 확인",
-        _ => "상태 확인 중..."
+        _ => GeneralState == GeneralLauncherState.RuntimeBlocked ? "프로그램 종료 후 다시 확인" : "상태 확인 중..."
     };
 
     public void ApplyProjectStatus(ManagedProjectStatus status)
@@ -187,6 +188,8 @@ public sealed class LauncherDashboardViewModel : INotifyPropertyChanged
 
     public string FriendlyError(Exception exception)
     {
+        if (exception.GetBaseException() is RuntimeBlockedException blocked)
+            return blocked.Observation.Code == "client-upgrade-required" ? "런처와 업데이트 서비스를 함께 업데이트해 주세요." : blocked.Observation.Message;
         var message = DiagnosticRedactor.Redact(exception.GetBaseException().Message);
         if (IsDeveloper) return message;
         if (message.Contains("requestedVersion is required", StringComparison.OrdinalIgnoreCase))

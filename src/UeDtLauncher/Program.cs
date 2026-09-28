@@ -209,15 +209,26 @@ public static class Program
             VersionedReleasePaths.Bind(config, new(config.ProjectId!, config.Environment, config.Channel, config.TargetPlatform, version));
         }
         var confirm = Has(args, "--confirm-stopped");
+        var serviceVersion = Has(args, "--service-selection") ? Get(args, "--version") ?? config.SelectedRelease?.Version ?? config.RequestedVersion
+            ?? throw new ArgumentException("Service selection requires --version.") : null;
+        if (serviceVersion is not null) ReleaseSidecar.Segment(serviceVersion);
         if (action == "recover" && confirm == Has(args, "--dry-run")) throw new ArgumentException("Choose --dry-run or explicit --confirm-stopped after closing every application process.");
         RuntimeObservation observation;
         if (config.IsManagedDeployment)
         {
-            var response = await new ManagedAgentClient().SendRuntimeAsync("runtime-" + action, config, confirm: confirm);
+            var response = await new ManagedAgentClient().SendRuntimeAsync("runtime-" + action, config, confirm: confirm, serviceVersion: serviceVersion);
             if (!response.Success || response.Runtime is null) throw new InvalidOperationException(response.Message);
             observation = response.Runtime;
         }
-        else observation = action == "recover" ? RuntimeStore.Recover(config, RuntimeIdentities.Current(), confirm) : RuntimeStore.Observe(config);
+        else
+        {
+            observation = action == "recover" ? RuntimeStore.Recover(config, RuntimeIdentities.Current(), confirm) : RuntimeStore.Observe(config);
+            if (serviceVersion is not null)
+            {
+                if (action != "recover" || !confirm) throw new ArgumentException("Service selection requires explicit stopped confirmation.");
+                RuntimeServiceState.ConfirmSelection(config, RuntimeIdentities.Current(), serviceVersion);
+            }
+        }
         Console.WriteLine(JsonSerializer.Serialize(observation, JsonFiles.Options)); return 0;
     }
 
@@ -777,6 +788,8 @@ public static class Program
         Console.WriteLine("UE-DT-LAUNCHER");
         Console.WriteLine();
         Console.WriteLine("Commands:");
+        Console.WriteLine("  runtime inspect --config <file> [--version <exact version>]");
+        Console.WriteLine("  runtime recover --config <file> --dry-run|--confirm-stopped [--version <exact version>] [--service-selection]");
         Console.WriteLine("  release-metadata --zip <zip> --project-id <id> --version <version> --platform <platform> --entry-point <path> [--payload-root <path>] [--output <release.json>]");
         Console.WriteLine("  gui                 (also: --gui forces GUI; --cli forces CLI -> defaults to 'run')");
         Console.WriteLine("  sample-config --output launcher.config.json [--mode distribution|legacy-catalog] [--force]");

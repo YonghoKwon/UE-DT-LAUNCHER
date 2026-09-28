@@ -192,10 +192,10 @@ public sealed class LauncherEngine : IDisposable
 
     private async Task CompleteRunAsync(LauncherManifest remoteManifest, CancellationToken cancellationToken)
     {
-        if (_config.WindowsIntegration.CreateDesktopShortcut || _config.WindowsIntegration.CreateStartMenuShortcut || _config.WindowsIntegration.RegisterAppEntry)
+        if (!_config.IsManagedDeployment && (_config.WindowsIntegration.CreateDesktopShortcut || _config.WindowsIntegration.CreateStartMenuShortcut || _config.WindowsIntegration.RegisterAppEntry))
         {
             Log("Integration", "Applying Windows integration settings...", 90);
-            WindowsIntegration.Apply(_config, GetEntryPointPath(remoteManifest), Log);
+            WindowsIntegration.Apply(_config, RuntimeLauncher.HostExecutable(), Log);
         }
 
         if (_config.SelfUpdate?.Enabled == true)
@@ -836,6 +836,8 @@ public sealed class LauncherEngine : IDisposable
 
     internal static void ValidateManifest(LauncherManifest manifest, LauncherConfig config)
     {
+        if (string.IsNullOrWhiteSpace(config.CatalogUrl) && config.VersionPolicy == "exact" && !string.IsNullOrWhiteSpace(config.RequestedVersion) && manifest.Version != config.RequestedVersion)
+            throw new InvalidDataException("The direct manifest no longer matches the explicitly selected version.");
         ValidateManifest(manifest);
         if (config.SchemaVersion < 2) return;
         if (!string.IsNullOrWhiteSpace(config.ProjectId) && !manifest.AppId.Equals(config.ProjectId, StringComparison.OrdinalIgnoreCase))

@@ -134,9 +134,11 @@ public static class RuntimeStore
     {
         using var gate = SingleInstanceLock.Acquire(LauncherPaths.UpdateLockPath(config));
         if (config.IsManagedDeployment && !actor.Administrator) throw new UnauthorizedAccessException("Managed runtime recovery requires a local administrator.");
+        if (!config.IsManagedDeployment && !actor.Administrator && RuntimeIdentities.DirectoryOwner(config.InstallDir) != actor.Owner)
+            throw new UnauthorizedAccessException("Portable runtime recovery requires the installation owner.");
         RuntimeRecord? record = null;
         try { record = Read(config); } catch (Exception ex) when (ex is IOException or JsonException or InvalidDataException) { }
-        if (record?.Host is not null && RuntimeIdentities.StillMatches(record.Host)) throw new RuntimeBlockedException(Observe(config));
+        if (record?.State != RuntimeState.Quiescent && record?.Host is not null && RuntimeIdentities.StillMatches(record.Host)) throw new RuntimeBlockedException(Observe(config));
         if (!config.IsManagedDeployment && record?.Requester is not null && record.Requester.Owner != actor.Owner) throw new UnauthorizedAccessException("Runtime belongs to another owner.");
         if (!confirm) return Observe(config);
         // Explicit operator maintenance acknowledgement, NOT OS-proven family termination.
