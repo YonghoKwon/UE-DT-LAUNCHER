@@ -2,7 +2,7 @@
 
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 배포 시스템입니다.
 
-문서 점검: **2026-09-29**, 작업 기준: `codex/ui-acceptance-finalization`, 새 고정 후보 `8ce5060`(상태 수정 `fa87eaa`). 이전 게시본 `ab37fcb`의 실행 증거와 새 후보의 실제 적용 재검증 대기를 구분합니다. 로컬 브랜치 기준이며 main 반영·회사 운영 승인 완료를 뜻하지 않습니다.
+문서 점검: **2026-09-29**, 작업 기준: `codex/real-ue-package-validation`, 새 고정 후보 `8ce5060`(상태 수정 `fa87eaa`). 이전 게시본 `ab37fcb`의 실행 증거와 새 후보의 실제 적용 재검증 대기를 구분합니다. 로컬 브랜치 기준이며 main 반영·회사 운영 승인 완료를 뜻하지 않습니다.
 
 **현재 판단: 합성 앱 기반 배포·설치·실행·복구는 활용 가능한 단계이며, 회사 정식 운영 인수는 미완료입니다.** 현재 수치와 남은 작업은 [개선 진행 현황](IMPROVEMENTS.md), 상세 명령은 [운영 문서 색인](docs/reference/README.md)을 확인하세요.
 
@@ -34,6 +34,8 @@ flowchart LR
 그 외 자료는 [참고 문서 모음](docs/reference/README.md)에 있습니다. 현재 가이드 9개와 색인은 `docs/reference/`, 검증 이력·중복 입문/구 운영 자료는 그 아래 `archive/`에 보존합니다. 아카이브로 옮긴 검증 증거를 폐기한 것은 아닙니다. 과거 서버 절차를 신규 설치 지침으로 사용하지 않습니다.
 
 ## 현재 구현
+
+2026-09-29에는 합성 demo 대신 **실제 ma0t10_dt UE5.3 Windows Development 패키지**로 ZIP/외부 JSON 접수·서명 게시·GUI 설치/실행·런처 종료 후 UE 수명 유지·정상 종료를 확인했습니다. 328개 Manifest 파일 해시가 일치했습니다. 실제 UE 버전 업데이트/복구·Linux/RHEL·회사 서비스 계정은 별도 미검증이며, 설치 경로에 쓰는 CustomLogs는 추가 보완이 필요합니다. [실제 UE 시험·명령·제한](docs/reference/archive/validation/real-ue-package-validation.md)
 
 현재 보완 소스는 **Windows/WSL 각 510개 통과, Release 경고·오류 0**입니다. 변경 없는 소스로 고정한 `8ce5060`의 Windows/Linux publish와 Linux HTTP 요청 서명+Agent·HTTPS/Bearer+nginx E2E도 통과했습니다. 관리형·portable의 정확한 선택/설치/runtime 표시, 최초 연결 실패 재시도와 복원 후 상태 재확인, 제목 글자 배율·작은 화면·포커스를 보완했습니다. Portable은 Agent 없이 `로컬 모드`로 동작하고, 문제 해결은 설치된 손상 대상만 복구하며 미설치 버전을 자동 설치하거나 앱을 실행하지 않습니다.
 

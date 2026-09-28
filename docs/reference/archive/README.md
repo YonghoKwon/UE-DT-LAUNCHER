@@ -6,6 +6,7 @@
 
 | 기록 | 내용 |
 |---|---|
+| [실제 UE 패키지](validation/real-ue-package-validation.md) | ma0t10_dt Windows 패키징·실제 GUI 설치/실행·수명, 보호 경로와 회사 미검증 범위 |
 | [배포 통합](validation/distribution-validation.md) | 초기 ZIP/JSON·권한·Windows/WSL 통합 시험 |
 | [성능](validation/performance-validation.md) | PERF-01~04 측정 방법·결과·지연 미달 |
 | [인증](validation/intranet-auth-validation.md) | 요청 서명·credential·HTTP/HTTPS·환경 제약 |

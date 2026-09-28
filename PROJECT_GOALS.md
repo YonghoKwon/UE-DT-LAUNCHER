@@ -1,6 +1,6 @@
 # 최종 프로젝트 목표 — 회사용 Unreal Engine DT 배포 시스템
 
-갱신: 2026-09-29 / 작업 기준 `codex/ui-acceptance-finalization`. **최상위 목표는 확정**됐습니다. 세부 운영 정책·회사 SLA·출시 일정은 아직 미정이며 아래 결정 표에서 별도로 관리합니다.
+갱신: 2026-09-29 / 작업 기준 `codex/real-ue-package-validation`. **최상위 목표는 확정**됐습니다. 세부 운영 정책·회사 SLA·출시 일정은 아직 미정이며 아래 결정 표에서 별도로 관리합니다.
 
 ## 확정한 최종 목표
 
@@ -13,6 +13,8 @@
 현재 사용 방법은 [기능 지도·명령 순서](docs/reference/feature-workflow.md), 현재 구현은 [README](README.md), 작업 목록은 [IMPROVEMENTS](IMPROVEMENTS.md)가 정본입니다.
 
 ## 현재 위치
+
+2026-09-29 실제 ma0t10_dt Windows Development 패키지의 로컬 접수→승인→GUI 설치/실행→런처 종료 후 수명 유지→정상 종료 증거를 확보했습니다. OPS-01은50%(로컬 증거)이며 G3는 여전히 미완료입니다. 실제 UE 업데이트/복구·Shipping/Linux·회사 TLS/CA/권한/서비스 계정과 데이터 보존은 이 결과로 대체하지 않습니다. [실제 UE 결과](docs/reference/archive/validation/real-ue-package-validation.md)
 
 기본 배포 시스템과 실행 안전성은 구현·합성 검증 단계까지 진행했지만 회사 인수 G1~G6는 아직 완료되지 않았습니다. 현행 가이드는 [운영 문서 색인](docs/reference/README.md), 실행 이력은 [검증 아카이브](docs/reference/archive/README.md), 진행률은 [개선 대장](IMPROVEMENTS.md)에서 관리합니다.
 
