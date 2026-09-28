@@ -44,6 +44,12 @@ public sealed partial class MainWindow
         var button=primary?PrimaryButton(text,action,48):SecondaryButton(text,action,40);
         Identify(button,id,text); if(tracked) Track(button); return button;
     }
+    private T ScaleHeader<T>(T control) where T : TemplatedControl
+    {
+        // String headers use the template's inherited font rather than Label().
+        control.FontSize=LauncherVisualTokens.FontBody*_preferences.TextScale;
+        return control;
+    }
     private Control EnterpriseCard(Control content,double padding=16) => new Border
     {
         Child=content, Padding=new Thickness(padding), Background=SurfaceBrush,
@@ -100,7 +106,9 @@ public sealed partial class MainWindow
                 content.Children.Add(EnterpriseOverview());
                 if(IsDeveloper)
                 {
-                    var more=new Expander { Header="유지보수 및 진단",Content=EnterpriseMaintenance(),IsExpanded=_maintenanceExpanded };
+                    var more=ScaleHeader(new Expander { Header="유지보수 및 진단",Content=EnterpriseMaintenance(),IsExpanded=_maintenanceExpanded });
+                    // Keep template headers in both Tab directions before/after their own content.
+                    KeyboardNavigation.SetTabNavigation(more,KeyboardNavigationMode.Local);
                     more.PropertyChanged+=(_,e)=>{if(e.Property==Expander.IsExpandedProperty)_maintenanceExpanded=more.IsExpanded;};
                     Identify(more,"maintenance","유지보수 및 진단"); content.Children.Add(more);
                     var details=ReleaseInfo(); var logs=EnterpriseLogs();
@@ -110,14 +118,16 @@ public sealed partial class MainWindow
                     }
                     else
                     {
-                        var tabs=Identify(new TabControl {ItemsSource=new[]{new TabItem {Header="배포 정보",Content=details},new TabItem {Header="작업 기록",Content=logs}},SelectedIndex=_detailsTabIndex},"details-tabs","배포 정보와 작업 기록");
+                        var tabs=Identify(new TabControl {ItemsSource=new[]{ScaleHeader(new TabItem {Header="배포 정보",Content=details}),ScaleHeader(new TabItem {Header="작업 기록",Content=logs})},SelectedIndex=_detailsTabIndex},"details-tabs","배포 정보와 작업 기록");
+                        KeyboardNavigation.SetTabNavigation(tabs,KeyboardNavigationMode.Local);
                         tabs.SelectionChanged+=(_,_)=>{if(!_building)_detailsTabIndex=Math.Max(0,tabs.SelectedIndex);};
                         content.Children.Add(tabs);
                     }
                 }
                 else
                 {
-                    var help=new Expander {Header="릴리스 설명 및 도움말",IsExpanded=_helpExpanded,Content=new StackPanel {Spacing=12,Children={Txt(_releaseNotes,14,false),Muted("프로그램이 실행 중이면 정상 종료 후 다시 확인해 주세요. 창을 닫아도 실행 중인 프로그램은 종료되지 않습니다.",14)}}};
+                    var help=ScaleHeader(new Expander {Header="릴리스 설명 및 도움말",IsExpanded=_helpExpanded,Content=new StackPanel {Spacing=12,Children={Txt(_releaseNotes,14,false),Muted("프로그램이 실행 중이면 정상 종료 후 다시 확인해 주세요. 창을 닫아도 실행 중인 프로그램은 종료되지 않습니다.",14)}}});
+                    KeyboardNavigation.SetTabNavigation(help,KeyboardNavigationMode.Local);
                     Identify(help,"release-help","릴리스 설명 및 도움말");
                     help.PropertyChanged+=(_,e)=>{if(e.Property==Expander.IsExpandedProperty)_helpExpanded=help.IsExpanded;};
                     content.Children.Add(EnterpriseCard(help));
@@ -241,11 +251,12 @@ public sealed partial class MainWindow
         if(_announcer?.Parent is Panel oldParent)oldParent.Children.Remove(_announcer);
         _announcer ??= Identify(new TextBlock {Height=1,Opacity=0,IsHitTestVisible=false},"operation-announcement","작업 상태 알림");
         AutomationProperties.SetLiveSetting(_announcer,AutomationLiveSetting.Polite);
-        _statusText.MaxLines=2;
-        panel.Children.Add(_statusText);var detailsPanel=new StackPanel {Spacing=8};var detail=new Grid {ColumnDefinitions=new("*,Auto")};detail.Children.Add(_stageLabel);detail.Children.Add(At(_percentText,1));detailsPanel.Children.Add(detail);detailsPanel.Children.Add(_progress);panel.Children.Add(_announcer);
+        // Bound the title together with the details: two large-text lines must not
+        // consume the remaining project workspace in a short window.
+        var detailsPanel=new StackPanel {Spacing=8};detailsPanel.Children.Add(_statusText);var detail=new Grid {ColumnDefinitions=new("*,Auto")};detail.Children.Add(_stageLabel);detail.Children.Add(At(_percentText,1));detailsPanel.Children.Add(detail);detailsPanel.Children.Add(_progress);panel.Children.Add(_announcer);
         if(CurrentLayoutWidth()<800 && _serviceLabel is not null)detailsPanel.Children.Add(_serviceLabel);
         if(_presentation.SupportId is not null)detailsPanel.Children.Add(Muted("지원 ID: "+_presentation.SupportId,12));
-        _actionDetails=Identify(new ScrollViewer {Content=detailsPanel,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled},"action-details","작업 상세 안내");
+        _actionDetails=Identify(new ScrollViewer {Content=detailsPanel,Focusable=true,IsTabStop=true,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled},"action-details","작업 상세 안내");
         panel.Children.Add(_actionDetails);
         return EnterpriseCard(panel,12);
     }

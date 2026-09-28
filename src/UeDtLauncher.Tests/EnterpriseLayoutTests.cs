@@ -174,16 +174,23 @@ public class EnterpriseLayoutTests
             var model=(LauncherOperationPresentation)typeof(MainWindow).GetField("_presentation",flags)!.GetValue(window)!;
             var refresh=typeof(MainWindow).GetMethod("RefreshPresentation",flags)!;
             var announcer=window.GetLogicalDescendants().OfType<TextBlock>().Single(c=>AutomationProperties.GetAutomationId(c)=="operation-announcement");
-            var peer=new Avalonia.Automation.Peers.TextBlockAutomationPeer(announcer);var changes=0;
-            peer.PropertyChanged+=(_,_)=>changes++;
+            var peer=Avalonia.Automation.Peers.ControlAutomationPeer.CreatePeerForElement(announcer);var changes=0;
+            Assert.Same(peer,Avalonia.Automation.Peers.ControlAutomationPeer.FromElement(announcer));
+            Assert.Equal(AutomationLiveSetting.Polite,peer.GetLiveSetting());
+            peer.PropertyChanged+=(_,e)=>{if(e.Property==AutomationElementIdentifiers.NameProperty)changes++;};
             model.Begin(LauncherUiOperation.Update);model.Stage("Download");refresh.Invoke(window,null);var before=changes;
+            Assert.True(before>0);
             for(var i=0;i<10;i++){model.Title="download "+i;model.Percent=i;refresh.Invoke(window,null);}
             Assert.Equal(before,changes);
             model.ErrorCode="storage-failed";model.Title="새 오류 안내";refresh.Invoke(window,null);
             Assert.Equal("새 오류 안내",peer.GetName());Assert.True(changes>before);
             window.Width=1000;Dispatcher.UIThread.RunJobs();
             Assert.Same(announcer,window.GetLogicalDescendants().OfType<TextBlock>().Single(c=>AutomationProperties.GetAutomationId(c)=="operation-announcement"));
+            Assert.Same(peer,Avalonia.Automation.Peers.ControlAutomationPeer.CreatePeerForElement(announcer));
             Assert.Equal("새 오류 안내",announcer.Text);
+            before=changes;model.Complete("파일 복구 완료");refresh.Invoke(window,null);
+            Assert.Equal("파일 복구 완료",peer.GetName());Assert.True(changes>before);
+            before=changes;refresh.Invoke(window,null);Assert.Equal(before,changes);
         }
         finally {window.Close();}
     }

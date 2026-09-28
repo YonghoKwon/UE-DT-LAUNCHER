@@ -25,10 +25,16 @@ public sealed partial class MainWindow
             foreach(var check in dialog.GetVisualDescendants().OfType<CheckBox>())check.Foreground=Fg();
             foreach(var button in dialog.GetVisualDescendants().OfType<Button>())
             {
+                // Switching accessibility palettes must not blend through a low-contrast color.
+                button.Transitions=null;
                 var primary=button.Classes.Contains("posco-primary");
                 button.Foreground=HighContrast||primary?Brushes.White:Fg();
                 button.Background=HighContrast?Brushes.Black:primary?LauncherVisualTokens.Brush(LauncherVisualTokens.Accent):SurfaceBrush;
-                button.BorderBrush=HighContrast?Brushes.White:LauncherVisualTokens.Border(IsDeveloper);
+                // An OS contrast change does not raise GotFocus again on the focused button.
+                button.BorderBrush=button.IsKeyboardFocusWithin
+                    ? HighContrast?Brushes.Yellow:LauncherVisualTokens.Brush(IsDeveloper?LauncherVisualTokens.PoscoLightBlue:LauncherVisualTokens.Accent)
+                    : HighContrast?Brushes.White:LauncherVisualTokens.Border(IsDeveloper);
+                button.BorderThickness=new Thickness(button.IsKeyboardFocusWithin?3:1);
                 foreach(var text in button.GetVisualDescendants().OfType<TextBlock>())text.Foreground=button.Foreground;
             }
         }
