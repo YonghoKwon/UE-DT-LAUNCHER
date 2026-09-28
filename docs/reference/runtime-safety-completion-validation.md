@@ -36,3 +36,23 @@
 - 최신 Windows broker에서 실행 중 update/repair/rollback 불변 및 재시작 시험: `uedt-broker-proof-fe_8oxh3`. Linux broker `/tmp/uedt-broker-proof-_0jve4d2`는 rollback 추가 이전 실행이다.
 - native 후손 수명 시험: Windows `uedt-runtime-proof-f7p61fgb`, Linux `/tmp/uedt-runtime-proof-oj716xpb` 통과.
 - publish 일반 GUI의 실제 정상 상태 화면은 관측했다. 설치/실행/rollback 버튼 조작은 Computer Use의 action-time 확인 요청 응답 전이므로 아직 수행하지 않았다. 이를 CLI E2E 통과로 대체하지 않는다.
+
+## 5. 통합 상태와 남은 조건
+
+| 검증 | 결과 |
+|---|---|
+| Windows/WSL .NET 전체 | 각 388개 통과, Release build/publish 경고·오류 0 |
+| 기존 계약 | Windows packaging 11개, Python benchmark 계약 16개 통과 |
+| Windows signed HTTP | `publish/safety-completion/e2e-win` 및 최종 `publish/safety-completion/service-e2e-win`: 설치·두 버전 실행·repair·키 폐기, v1 실행 중 v2 선택/실행 거부, 정상 종료 후 명시적 v2 선택·실행 통과 |
+| Linux signed HTTP | `/tmp/uedt-intranet-ph_5lj2s` 및 최종 `/tmp/uedt-intranet-uufkvp33`의 동일 서비스 버전 전환 시험 통과 |
+| Linux HTTPS/Bearer | `/tmp/uedt-distribution-e2e.FoUVjP` 통과. nginx 기본 log 경로 경고는 남았고 임시 config 시험은 성공 |
+| GUI | 일반/개발자 publish 화면·버전·명령 표시와 개발자 상태 확인 조작. 설치/실행/rollback·실행 후 창 종료 직접 시험은 확인 응답 대기 |
+| CI | 두 OS persistence/service/이전/집계 smoke 연결. 원격 실행은 하지 않음 |
+
+재현: `dotnet test src/UeDtLauncher.Tests -c Release`, `python tools/check-improvement-ledger.py`. `.github/workflows/build.yml`에 각 publish 및 실제 시험 명령이 있다. fault harness는 tools에만 있으며 공식 패키지의 project reference/산출물에는 포함하지 않는다.
+
+최종 nullable peer identity 검증도 보강했다. Windows/WSL 전체 388개 재통과 및 재publish CLI에서 null executable을 가진 peer 기록을 Unknown으로 관측했다(`uedt-runtime-validation-5uakzwhm`, `/tmp/uedt-runtime-validation-ydnbnwnv`). Linux 최신 broker는 `/tmp/uedt-broker-proof-9btcoz1b`에서 rollback 포함 차단을 재확인했다. 문서 링크·YAML 문법·28개 진행 대장 집계 검사 통과. GUI 테스트 창·임시 서버/Agent는 종료했으며 확인 후 새 fixture로 직접 조작 시험을 재개할 수 있다.
+
+OPS-09는 75%, OPS-08은 50%를 유지한다. 현재 로컬 자동화/CLI 체크포인트는 통과했지만 GUI 직접 조작 확인과 회사 환경 검증이 남아 **로컬 수용 기준 전체 완료도 아직 선언하지 않는다**. 전체 변경 진입점의 모든 상태 조합을 실제 프로세스로 전수 시험한 것으로 표현하지 않는다. 관리자 권한이 필요한 관리형 복구 성공 경로는 portable 소유자 시험으로 대체하지 않았다.
+
+미포함: 회사 인증서·설치 서비스 계정·실제 UE/RHEL, 전원 장애 내구성 보장, USER-01 데이터 이전, 자동 kill/handoff, SEC-03/04·PERF-03 잔여 해결, push/PR. 테스트 전용 임시 root/키/바이너리/원시 로그는 Git 제외.

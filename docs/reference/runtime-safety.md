@@ -1,6 +1,6 @@
 # 실행 중 변경 차단과 수동 복구
 
-2026-09-28 / `codex/launcher-deployment-safety`. 앱을 자동 종료하거나 다른 버전으로 자동 전환하지 않는 안전성 단계이다. 실제 회사 UE/서비스 계정 검증은 별도이다.
+2026-09-28 / `codex/runtime-safety-completion`. 앱을 자동 종료하거나 다른 버전으로 자동 전환하지 않는 안전성 단계이다. 실제 회사 UE/서비스 계정 검증은 별도이다.
 
 ## 사용자에게 달라지는 점
 
@@ -29,6 +29,7 @@ UeDtLauncher runtime recover --config <config> --version 1.2.0 --dry-run
 UeDtLauncher runtime recover --config <config> --version 1.2.0 --confirm-stopped
 ```
 
+- inspect/dry-run은 파일/폴더를 생성하지 않는다. 누락·중복·손상된 runtime 기록은 Unknown이며 자동 정상화하지 않는다.
 - 살아 있는 확인된 host/payload는 확인 적용으로 지우지 않는다. 자동 kill이나 PID 이름 검색은 없다.
 - 기존 runtime 기록은 보존 사본을 남긴다. 결과는 `operator-confirmed`로 기록하며 OS가 증명한 종료라고 표시하지 않는다.
 - 일반 사용자가 pending 파일·PID 파일을 삭제해서 우회하지 않는다. 관리자 확인 후 기존 UI에서 재시도한다.
@@ -36,7 +37,7 @@ UeDtLauncher runtime recover --config <config> --version 1.2.0 --confirm-stopped
 
 ## 무인 서비스의 버전 선택
 
-`service-run`은 실행 중·불명·활성 버전 변경이면 작업을 중단한다. health 실패 후에도 자동 종료/rollback/restart하지 않고 backup과 `failure.json`을 보존한다. 같은 버전의 정지 상태에서만 기존 설정에 따라 실행할 수 있다.
+`service-run`은 실행 중·불명·활성 버전 변경이면 작업을 중단한다. health 실패 후에도 자동 종료/rollback/restart하지 않고 backup과 `service-state.json`의 점검 상태를 보존한다. 시작 전에 StartupHealthPending을 기록하고 health 성공 저장 후에만 Ready가 된다. pending 상태로 재시작하면 수동 점검을 요구한다. 같은 버전의 정지 상태에서만 기존 설정에 따라 실행할 수 있다.
 
 운영자가 정지와 복구 방안을 확인하고 **서비스의 다음 버전 선택**을 명시할 때:
 
@@ -44,13 +45,13 @@ UeDtLauncher runtime recover --config <config> --version 1.2.0 --confirm-stopped
 UeDtLauncher runtime recover --config <config> --version 1.2.0 --confirm-stopped --service-selection
 ```
 
-이 명령은 버전 파일을 자동 설치하지 않는다. 선택/수동 확인 후 별도 update 또는 service-run을 수행한다. 기존 failure 기록은 acknowledged 사본으로 보존한다. 자동 스케줄·handoff는 OPS-07 및 후속 범위이다.
+이 명령은 버전 파일을 자동 설치하지 않는다. 선택/수동 확인 후 별도 update 또는 service-run을 수행한다. 이전 활성 설치와 새 대상 모두 정지 상태여야 하며 실행 중/불명이면 선택을 변경하지 않는다. 새 snapshot과 수동 확인을 조정기로 처리하고 중간 실패는 NeedsReview로 남긴다. 이전 snapshot 사본과 legacy active.json/failure.json은 보존하며 기존 파일의 자동 통합은 하지 않는다. 자동 스케줄·handoff는 OPS-07 및 후속 범위이다.
 
 ## 기존 설치와 바로가기
 
 - legacy 상태 자동 이전은 정지 확인 전 중단된다. `runtime` 명령은 자동 이전 없이 먼저 점검할 수 있다.
 - `import-install --apply`는 source 상태를 확인한 뒤 staging에 복사하고 기존 대상에 병합/덮어쓰기하지 않는다. 원본과 사용자 파일은 삭제하지 않는다.
-- Agent의 전체 state migration은 확인 가능한 단일 설치만 처리한다. 여러 프로젝트/버전/다른 플랫폼 상태가 섞였으면 별도 이전 계획이 필요하다.
+- `UeDtLauncher.Agent migrate --config <config> --dry-run`은 CanApply=false와 차단 이유를 표시한다. 같은 InstallDir를 공유하는 `--apply`는 단일 설치라도 차단하며 target config/state를 만들지 않는다. 기존 portable 자료를 삭제하거나 이미 공유된 구성을 자동 수정하지 않는다.
 - 새 Windows `.lnk`는 사용자 소유의 정확한 버전 설정으로 런처를 호출한다. 기존 `.url/.lnk`를 자동 교체하지 않으므로 관리자가 사용 여부를 정리한다.
 - 세이브 디렉터리 이동·형식 변환·공유 저장 정책은 구현하지 않았다(USER-01).
 
@@ -63,4 +64,4 @@ UeDtLauncher runtime recover --config <config> --version 1.2.0 --confirm-stopped
 
 첫 명령은 UNSIGNED-DEV이다. 두 번째는 사용 가능한 코드서명 인증서/개인키/EKU와 timestamp 검증이 없으면 실패한다. 공식 EXE 서명 뒤 MSI를 만들고, 내장 EXE hash/signer 검증 후에만 `runs/<실행ID>/release`를 공개한다. `package-result.json`의 정확한 경로를 사용하고 이전 MSI wildcard를 사용하지 않는다. MSI를 실제 설치한 검증은 별도이다.
 
-[검증 기록](deployment-safety-validation.md) / [현재 개선률](../../IMPROVEMENTS.md)
+[후속 검증 기록](runtime-safety-completion-validation.md) / [현재 개선률](../../IMPROVEMENTS.md)

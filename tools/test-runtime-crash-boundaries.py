@@ -1,5 +1,5 @@
 """Kill only an owned test harness at deterministic production-persistence boundaries."""
-import argparse, json, subprocess, tempfile
+import argparse, json, queue, subprocess, tempfile, threading
 from pathlib import Path
 p=argparse.ArgumentParser(); p.add_argument('--harness',required=True); p.add_argument('--launcher',required=True); a=p.parse_args()
 root=Path(tempfile.mkdtemp(prefix='uedt-runtime-crash-')); results=[]
@@ -8,7 +8,9 @@ for operation in ('begin','attach','started','complete','recover','service-start
         case=root/(operation+'-'+boundary)
         proc=subprocess.Popen([str(Path(a.harness).resolve()),str(case),operation,boundary],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding='utf-8')
         try:
-            line=proc.stdout.readline(); assert line,line+proc.stderr.read()
+            lines=queue.Queue()
+            threading.Thread(target=lambda: lines.put(proc.stdout.readline()),daemon=True).start()
+            line=lines.get(timeout=20); assert line,line+proc.stderr.read()
             event=json.loads(line); assert event['ready']
             proc.kill(); proc.wait(timeout=5)
             record=json.loads(Path(event['path']).read_text())

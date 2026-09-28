@@ -38,6 +38,19 @@ public sealed class RuntimeValidationTests : IDisposable
         Assert.Empty(Directory.EnumerateFileSystemEntries(root));
     }
     [Fact]
+    public void IncompletePeerIdentityFailsClosed()
+    {
+        var config=Config;
+        foreach(var field in new[] {"creationId","executable","owner","session"})
+        {
+            RuntimeStore.Write(config,RuntimeTestSupport.Active(config,RuntimeState.Running));
+            var path=RuntimeStore.RecordPath(config);
+            var json=JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            json["requester"]![field]=null; File.WriteAllText(path,json.ToJsonString());
+            Assert.Equal(RuntimeState.Unknown,RuntimeStore.Observe(config).State);
+        }
+    }
+    [Fact]
     public void InvalidSelectionDoesNotTouchRuntime()
     {
         var config=Config;

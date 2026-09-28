@@ -28,6 +28,7 @@ def main():
     parser.add_argument("--root")
     parser.add_argument("--hold", action="store_true")
     parser.add_argument("--hold-runtime", action="store_true", help="Keep a synthetic managed game active briefly for GUI inspection")
+    parser.add_argument("--service-proof", action="store_true", help="Verify explicit versioned portable service selection using synthetic payloads")
     parser.add_argument("--agent")
     parser.add_argument("--nginx", help="Optional isolated Linux nginx executable; no system service changes")
     parser.add_argument("--benchmark", action="store_true", help="Optional synthetic signed load (requires cryptography)")
@@ -181,6 +182,39 @@ http {{
             raise RuntimeError("Repair did not restore the expected contents")
         summary = {"platform": platform, "transport": "HTTP request-signature-v1", "published_processes": True,
                    "versions_installed_and_launched": 2, "repair": True, "nginx": bool(args.nginx), "company_or_unreal_validation": False}
+        if args.service_proof:
+            def wait_runtime(version):
+                path = client / "state" / "demo" / "prod" / "stable" / version / platform / "runtime-state.json"
+                deadline = time.monotonic() + 25
+                while time.monotonic() < deadline:
+                    if json.loads(path.read_text())["state"] == 0: return
+                    time.sleep(.05)
+                raise RuntimeError("Service fixture did not finish naturally")
+            def service_cycle():
+                with (root / ("service-" + config["requestedVersion"] + ".log")).open("w", encoding="utf-8") as output:
+                    result = subprocess.run([launcher, "service", "--once", "--config", str(client / "config.json")], env=env, stdout=output, stderr=output, timeout=30, creationflags=flags)
+                    if result.returncode != 0: raise RuntimeError("Service fixture cycle failed")
+            wait_runtime("2.0.0")
+            original_args = config.get("launchArguments")
+            config["launchArguments"] = ["/c", "ping -n 11 127.0.0.1 > nul"] if os.name == "nt" else ["10"]
+            config["serviceMode"] = dict(autoRestartApp=True, startupGraceSeconds=0)
+            config["requestedVersion"] = "1.0.0"; write(client / "config.json", config)
+            run(launcher, "runtime", "recover", "--config", client / "config.json", "--version", "1.0.0", "--confirm-stopped", "--service-selection")
+            service_cycle()
+            old_runtime = client / "state" / "demo" / "prod" / "stable" / "1.0.0" / platform / "runtime-state.json"
+            assert json.loads(old_runtime.read_text())["state"] == 2
+            service_state = client / "state" / "service" / "demo" / "prod" / "stable" / platform / "service-state.json"
+            before = service_state.read_bytes()
+            config["requestedVersion"] = "2.0.0"; write(client / "config.json", config)
+            run(launcher, "runtime", "recover", "--config", client / "config.json", "--version", "2.0.0", "--confirm-stopped", "--service-selection", expected=1)
+            run(launcher, "service", "--once", "--config", client / "config.json", expected=1)
+            assert before == service_state.read_bytes()
+            wait_runtime("1.0.0")
+            run(launcher, "runtime", "recover", "--config", client / "config.json", "--version", "2.0.0", "--confirm-stopped", "--service-selection")
+            service_cycle(); wait_runtime("2.0.0")
+            assert json.loads(service_state.read_text())["version"] == "2.0.0"
+            config["launchArguments"] = original_args; config.pop("serviceMode"); write(client / "config.json", config)
+            summary["explicit_service_selection_proof"] = True
         if args.agent:
             # Match real MSI/RPM layout: the trusted host is beside the Agent, not an arbitrary GUI path.
             composed = client / "agent"

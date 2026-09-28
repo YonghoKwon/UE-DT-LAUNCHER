@@ -72,7 +72,7 @@ jobs:
       - name: Signed intranet HTTP and managed Agent end to end
         if: runner.os == 'Linux'
         timeout-minutes: 10
-        run: python3 tools/test-intranet-auth.py --server publish/distribution-server/UeDtLauncher.DistributionServer --launcher publish/linux-x64/UeDtLauncher --agent publish/agent-linux-x64/UeDtLauncher.Agent --nginx /usr/sbin/nginx
+        run: python3 tools/test-intranet-auth.py --server publish/distribution-server/UeDtLauncher.DistributionServer --launcher publish/linux-x64/UeDtLauncher --agent publish/agent-linux-x64/UeDtLauncher.Agent --nginx /usr/sbin/nginx --service-proof
         # Functional only; test keys and private roots must never become public CI artifacts.
 
       - name: Runtime descendant and managed broker proof
@@ -91,3 +91,21 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./tools/test-windows-packaging.ps1
+
+      - name: Runtime safety persistence and service proof
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            rid=win-x64; suffix=.exe; py=python
+          else
+            rid=linux-x64; suffix=; py=python3
+          fi
+          dotnet publish tools/RuntimeFaultHarness -c Release -r "$rid" --self-contained true -p:PublishSingleFile=true -o publish/fault-harness
+          "$py" tools/test-runtime-crash-boundaries.py --harness "publish/fault-harness/UeDtLauncher.RuntimeFaultHarness$suffix" --launcher "publish/$rid/UeDtLauncher$suffix"
+          "$py" tools/test-runtime-validation.py --launcher "publish/$rid/UeDtLauncher$suffix"
+          "$py" tools/test-migration-safety.py --launcher "publish/$rid/UeDtLauncher$suffix" --agent "publish/agent-$rid/UeDtLauncher.Agent$suffix"
+          "$py" tools/test-service-runtime.py --launcher "publish/$rid/UeDtLauncher$suffix"
+          "$py" tools/test-agent-service-target.py --agent "publish/agent-$rid/UeDtLauncher.Agent$suffix"
+          "$py" tools/check-improvement-ledger.py
+        # Test-only harness/temporary roots are never release artifacts; no keys or raw logs uploaded.

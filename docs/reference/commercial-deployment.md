@@ -59,12 +59,12 @@ UeDtLauncher diagnostics export --config launcher.config.json
 
 ```text
 UeDtLauncher.Agent migrate --config C:\ue-dt\launcher.config.json
-UeDtLauncher.Agent migrate --config C:\ue-dt\launcher.config.json --apply
+UeDtLauncher.Agent migrate --config C:\ue-dt\launcher.config.json --dry-run
 UeDtLauncher import-install --config C:\ue-dt\launcher.config.json --destination-root C:\ue-dt\apps
 UeDtLauncher import-install --config C:\ue-dt\launcher.config.json --destination-root C:\ue-dt\apps --apply
 ```
 
-`migrate`는 기존 portable 설정·상태를 관리형 위치로 이전하는 경로이며 기본은 계획 출력입니다. `import-install`은 버전 설치 루트로 기존 설치를 검사·복사하는 별도 경로이고 원본을 삭제하지 않습니다. 적용 전 계획과 대상 경로를 확인하고 복사 후 새 설정으로 check/update를 수행합니다. UE 저장 데이터는 실제 저장 위치에 맞춰 별도 백업·이전합니다.
+`migrate`는 현재 계획 출력만 지원합니다. 기존 InstallDir를 공유하는 apply는 소유권 충돌 위험으로 차단되며 config/state를 생성하지 않습니다. 기존 공유 구성이 있다면 자동 이전 대신 별도 정비 계획이 필요합니다. `import-install`은 정지 확인·잠금 후 버전 설치 루트에 검사·복사하는 별도 경로이며 원본을 삭제하지 않습니다. UE 저장 데이터 이전은 USER-01의 별도 정책 대상입니다. [수동 점검](runtime-safety.md)
 
 ## 운영 승인 전 확인
 

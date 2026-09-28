@@ -1,12 +1,12 @@
 # UE-DT Launcher
 
-2차 안전성 구현: MSI payload 선서명·검증과 runtime-host 기반 실행 중 변경 차단을 추가했습니다. [종료 후 재시도·수동 복구](docs/reference/runtime-safety.md), [실제 검증과 남은 조건](docs/reference/deployment-safety-validation.md)을 확인하세요. OPS-08은 50%, OPS-09는 75%이며 회사 운영 승인은 별도입니다.
+2차 후속 안전성 구현: 실행 기록 엄격 검증, 원자적 서비스 상태·health barrier, 정확한 서비스 대상 선택과 위험한 migration 차단을 추가했습니다. [종료 후 재시도·수동 복구](docs/reference/runtime-safety.md), [실제 검증과 남은 조건](docs/reference/deployment-safety-validation.md)을 확인하세요. OPS-08은 50%, OPS-09는 75%이며 회사 운영 승인은 별도입니다.
 
 추가 구현: 사내 HTTP 요청 서명·PC 인증키 보호·Agent 이미지 전달·설정 생성기를 제공합니다. [최초 등록 명령](docs/reference/intranet-auth.md)과 [검증·남은 조건](docs/reference/intranet-auth-validation.md)을 확인하세요. HTTP는 암호화되지 않으며 회사 운영 승인은 별도입니다.
 
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 런처입니다.
 
-문서 점검: **2026-09-28**, 구현 기준: `codex/launcher-deployment-safety` (시작점 `548cab8`). 로컬 브랜치 기준이며 main 반영·운영 배포 완료를 뜻하지 않습니다.
+문서 점검: **2026-09-28**, 구현 기준: `codex/runtime-safety-completion` (시작점 `8eda693`). 로컬 브랜치 기준이며 main 반영·운영 배포 완료를 뜻하지 않습니다.
 
 ## 프로젝트 목표와 처음 읽을 안내
 
@@ -37,7 +37,7 @@ flowchart LR
 
 ## 현재 구현
 
-최신 안전성 작업: Windows/WSL 자동화 각 347개, MSI 실패 gate 계약 11개 통과. publish된 일반/개발자 GUI와 CLI·console Agent, 부모 선종료/자식 유지·host 장애·Agent 재시작을 확인했습니다. GUI에서는 상태 표시를, 실제 설치·실행·repair는 CLI E2E로 확인했습니다. [안전성 결과](docs/reference/deployment-safety-validation.md). 이전 인증 부하/WSL nginx·메모리 제약과 실제 LocalService·회사 RHEL/UE 미검증은 [인증 기록](docs/reference/intranet-auth-validation.md)에 남아 있습니다.
+최신 안전성 작업: Windows/WSL 자동화 각 388개, MSI 실패 gate 계약 11개 통과. publish된 일반/개발자 GUI와 CLI·console Agent, 부모 선종료/자식 유지·host 장애·Agent 재시작을 확인했습니다. GUI에서는 상태 표시를, 실제 설치·실행·repair는 CLI E2E로 확인했습니다. [후속 안전성 결과](docs/reference/runtime-safety-completion-validation.md). 이전 인증 부하/WSL nginx·메모리 제약과 실제 LocalService·회사 RHEL/UE 미검증은 [인증 기록](docs/reference/intranet-auth-validation.md)에 남아 있습니다.
 
 | 영역 | 내용 |
 |---|---|
@@ -58,6 +58,8 @@ GUI의 general/developer는 표시 정책이지 다운로드 권한이 아닙니
 ## 실행 중 변경과 구형 클라이언트
 
 프로그램이 실행 중이면 정상 종료 후 런처에서 다시 확인하세요. GUI를 닫아도 프로그램은 종료되지 않습니다. 추적 불명 상태는 관리자 점검과 명시적 정지 확인이 필요하며 PID 파일 삭제로 우회하지 않습니다. 런처와 Agent를 함께 갱신하세요. 구형 IPC v1의 조회는 유지하지만 실행 추적 capability 없는 변경 요청은 거부합니다. 기존 직접 EXE 바로가기는 관리자가 이전하고, 새 바로가기는 정확한 버전을 선택한 런처를 호출합니다. [상태별 명령](docs/reference/runtime-safety.md)
+
+후속 시험에서 저장 경계 36곳의 프로세스 강제 종료와 service health 500/timeout/연결 실패를 Windows/WSL에서 확인했습니다. GUI 설치·실행·rollback 직접 조작은 action-time 확인 전이라 미검증이며, 회사 서비스 계정·UE/RHEL 검증과 함께 남아 있습니다. 따라서 로컬 수용 기준 전체 완료나 운영 승인을 선언하지 않습니다.
 
 ## 처음 준비할 것
 
@@ -122,7 +124,7 @@ Linux 클라이언트/Agent는 `-r linux-x64`로 생성합니다. 네이티브 �
 - latest는 같은 환경/채널/OS에서 마지막 승인된 판이며 최대 버전 번호가 아닙니다.
 - 신규 프로젝트 게시가 PC 권한을 자동 부여하지 않습니다.
 - cleanup은 임시 작업 폴더 대상이며 공개 버전·참조 원본은 삭제하지 않습니다.
-- 기존 설치 이전은 명시적 import-install입니다. UE 사용자 데이터는 실제 저장 경로에 맞춰 별도 보존합니다.
+- `Agent migrate --apply`의 동일 설치 공유는 현재 안전상 차단합니다. dry-run만 지원하며 소유권 이전은 별도 계획이 필요합니다. 기존 설치의 복사는 명시적 import-install입니다. UE 사용자 데이터는 실제 저장 경로에 맞춰 별도 보존합니다.
 - 회사 백엔드 API는 인터페이스만 있고 현재는 파일 정책 구현입니다.
 - 기설치 앱 원격 삭제·실행 금지는 범위 밖입니다.
 - Agent 설치만으로 정기 업데이트가 시작되지는 않습니다. 현재 managed service-run은 한 회차 실행이며 주기 운영은 추가 설계가 필요합니다.

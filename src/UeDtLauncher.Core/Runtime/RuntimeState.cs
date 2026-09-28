@@ -64,7 +64,7 @@ public static class RuntimeStore
     }
     private static bool ValidIdentity(RuntimeIdentity? identity) => identity is { Pid: > 0 } &&
         !string.IsNullOrWhiteSpace(identity.CreationId) && !string.IsNullOrWhiteSpace(identity.Owner) &&
-        !string.IsNullOrWhiteSpace(identity.Session) && Path.IsPathFullyQualified(identity.Executable);
+        !string.IsNullOrWhiteSpace(identity.Session) && !string.IsNullOrWhiteSpace(identity.Executable) && Path.IsPathFullyQualified(identity.Executable);
     private static bool HashValue(string? value) => value is { Length: 64 } && value.All(Uri.IsHexDigit);
     private static void ValidateRecord(RuntimeRecord value)
     {

@@ -1,6 +1,6 @@
 # 작업 지침
 
-점검: 2026-09-28 / 구현 기준 codex/launcher-deployment-safety. 저장소 전체에 적용합니다.
+점검: 2026-09-28 / 구현 기준 codex/runtime-safety-completion. 저장소 전체에 적용합니다.
 
 ## 문서 관리 계약
 
@@ -47,6 +47,10 @@
 - 일반 GUI는 자동 점검만 합니다. 설치는 사용자 동작, rollback은 확인 후 실행합니다. 무인 서비스와 구분합니다.
 - IPC v1 framing·조회·streaming 의미를 보존합니다. runtime-supervision-v1 capability 없는 변경 요청은 업그레이드 안내로 거부합니다.
 - 실행 시작과 모든 설치 변경은 InstallationMutationLease로 직렬화합니다. Prepare의 복구보다 먼저 검사하고 Running/LaunchPending/Unknown에서는 설치·state·backup·journal을 변경하지 않습니다.
+- runtime 기록의 필수 필드·중복·상태별 관계를 검사합니다. 누락 필드를 enum 기본값 Quiescent로 인정하지 않습니다. inspect/dry-run과 거부된 복구 요청은 파일을 생성/변경하지 않습니다.
+- 서비스 잠금 → 설치 ID 정렬 잠금 순서를 지킵니다. 단일 service snapshot에 시작 전 barrier를 기록하고 health 성공 기록 전에는 안전 상태로 풀지 않습니다. 기존 active/failure 기록은 명시적 확인 전 자동 통합하지 않습니다.
+- 공유 InstallDir의 portable→관리형 migrate apply를 재활성화하지 않습니다. import는 잠금 후 metadata를 다시 읽고 staging을 재검증합니다. 중단 transaction이 있으면 직접 실행하지 않습니다.
+- 테스트 전용 fault harness는 설치/공식 publish graph에 넣지 않습니다. 공개 CLI/환경변수로 장애 주입·가짜 종료·검사 우회를 제공하지 않습니다.
 - 이름/PID만 보고 종료하거나 host 소멸/timeout을 Quiescent로 바꾸지 않습니다. runtime-host가 표준 후손 종료를 확인해야 하며 추적 불가 플랫폼에서 우회 실행하지 않습니다.
 - 관리형 실행 기록은 Agent 소유입니다. 티켓은 private pipe로 전달하고 실제 OS peer/생성 식별자/시도에 결속합니다. GUI에 보호 state 쓰기 권한이나 임의 원격 실행 IPC를 추가하지 않습니다.
 - service-run의 자동 kill·버전 handoff·health 실패 자동 rollback을 금지합니다. 수동 정지 확인은 관리자/portable 소유자 권한과 보존 기록을 요구하며 OS 종료 증거로 표시하지 않습니다.
@@ -73,7 +77,7 @@
 3. 기능 변경은 publish된 GUI/Agent/CLI/서버로 실행 검증합니다. Unreal Editor 프로젝트가 아닙니다.
 4. Windows/WSL 결과를 회사 RHEL/실제 UE 결과로 보고하지 않습니다.
 5. 관련 파일만 git add로 선별 stage하고 staged diff 확인 후 부분별 커밋합니다. git add -A는 사용하지 않습니다.
-6. 최종 git diff --check, 링크, 커밋 범위, worktree를 확인합니다. push/PR은 요청 범위에 따릅니다.
+6. 최종 git diff --check, 링크, 커밋 범위, worktree와 tools/check-improvement-ledger.py의 집계 검사를 확인합니다. push/PR은 요청 범위에 따릅니다.
 
 기본 빌드·테스트 명령은 README를 따릅니다. 문서 전용 수정은 소스·명령·링크 대조와 diff 검사로 검증 가능하며 GUI 실행·전체 테스트를 수행한 것처럼 보고하지 않습니다.
 

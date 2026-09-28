@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import uuid
 
 p = argparse.ArgumentParser()
 p.add_argument('--launcher', required=True)
@@ -35,4 +36,9 @@ bad = command('recover','--confirm-stopped','--service-selection','--version','2
 assert bad.returncode != 0
 assert before == path.read_bytes()
 assert not (state/'update.lock').exists()
+path.write_text(json.dumps(dict(schemaVersion=1,installationId=hashlib.sha256(install.encode()).hexdigest(),state=2,
+    origin='supervised',attemptId=uuid.uuid4().hex,tokenHash='a'*64,manifestHash='b'*64,entryPoint=str(root/'app'/'game'),arguments=[],
+    requester=dict(pid=1,creationId='test',executable=None,owner='test',session='test',administrator=False))))
+null_peer=command('inspect'); assert null_peer.returncode==0,null_peer.stderr
+assert json.loads(null_peer.stdout)['state']==3
 print('PASS: read-only inspect/dry-run, incomplete-record Unknown, rejected selection unchanged: '+str(root))

@@ -4,6 +4,8 @@
 
 ## 현재 사용 절차
 
+- [실행 안전성 후속 검증](runtime-safety-completion-validation.md): 저장 경계·서비스 health·이전 차단·남은 GUI/회사 검증.
+
 - [실행 중 차단·수동 복구](runtime-safety.md), [배포/실행 안전성 검증](deployment-safety-validation.md)
 
 - [사내 HTTP 인증 단계별 검증](intranet-auth-validation.md): 현재 진행 작업과 미완료 조건.

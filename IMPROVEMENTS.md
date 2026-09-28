@@ -1,6 +1,6 @@
 # 개선 진행 현황과 보완 필요 사항
 
-점검: 2026-09-28 / `codex/launcher-deployment-safety`, 기준 `548cab8` 이후 부분 커밋과 [안전성 검증](docs/reference/deployment-safety-validation.md)을 반영했습니다. 현재 구현·이번 검증·회사 미검증을 구분합니다.
+점검: 2026-09-28 / `codex/runtime-safety-completion`, 기준 `8eda693` 이후 부분 커밋과 [후속 검증](docs/reference/runtime-safety-completion-validation.md)을 반영했습니다. 현재 구현·이번 검증·회사 미검증을 구분합니다.
 
 P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선. 우선순위는 제안이며 일정·수치 목표는 미정입니다. 미검증과 미구현을 구분합니다.
 
@@ -46,9 +46,8 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | USER-05 | schema 3 생성기·doctor·설치 예제 확인 | 관련 자동화 통과 | Windows/Linux 생성 설정 연결·실제 MSI/RPM 내용 확인 | 설정 예제 보완 범위 충족, 회사 설치 승인은 별도 | 100% |
 | SEC-03 | 생성 시 ACL/mode/owner·명시적 repair | Windows/WSL 권한 회귀 통과 | uedt 읽기 성공·nobody 거부 확인 | Windows LocalService 실제 실행 미확인 | 75% |
 | SEC-04 | 요청 서명·nonce·Catalog 결속·Agent 이미지 | 변조/replay/만료 갱신 회귀 통과 | Windows GUI/Agent·Linux HTTP/HTTPS 및 부하 실행 | WSL proxy 간헐 timeout·메모리 계측 공백 남음 | 75% |
-
 | OPS-08 | 공식 preflight·EXE 선서명·MSI payload gate | 계약 11개·개발 MSI 추출/hash 확인 | 실제 회사 서명 인증서 미확인 | 인증서·설치본 서명 검증 대기 | 50% |
-| OPS-09 | runtime-host·peer 결속·공통 변경 조정기 | Windows/WSL 회귀 각 347개 | publish 후손 수명·Agent 재시작·host 장애·GUI 안내 확인 | 저장 실패 전 경계·service health 실제 실패·회사 UE/계정 검증 남음 | 75% |
+| OPS-09 | 엄격 runtime 기록·서비스 snapshot/barrier·공통 변경 조정기 | Windows/WSL 회귀 각 388개·집계 검사 | 저장 경계 강제 종료 각 36개·health 실패·정확한 서비스 대상·CLI E2E 확인 | GUI 직접 조작 action-time 확인 및 회사 UE/계정 검증 대기 | 75% |
 
 근거: [성능 검증 기록](docs/reference/performance-validation.md), [CI 구성](.github/workflows/build.yml), 각 항목의 커밋·미완료 조건. 다른 항목의 기존 기반 기능이나 문서 작성만으로 추가 보완 진척을 자동 가산하지 않았습니다.
 
@@ -76,7 +75,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | OPS-06/P1 | 50% | 부분 · 원격 검증 대기 | Linux signed HTTPS E2E가 build.yml에 추가됨. 원격 CI 실행·운영 결과 보관은 미확인 | 실제 PR/배포 CI 성공 확인 및 민감정보 없는 결과 보관 정책 확정 |
 | OPS-07/P1 | 0% | 대기 · 추가 보완 | AgentWorker는 IPC 대기만 하고 service-run은 once=true. CLI는 managed 반복 실행을 거부 | Agent 스케줄러 또는 명시적 외부 스케줄 운영을 확정. 재부팅 후 정기 점검·중복 작업 방지·maintenance window 시험 |
 | OPS-08/P0 | 50% | 부분 · 실제 인증서 대기 | 공식 사전 gate·EXE 선서명·MSI 내장 payload 검증·실행별 WiX intermediate 구현. 계약 11개 및 개발 MSI 추출/hash 비교 통과 | 실제 회사 인증서와 설치된 EXE 서명 검증은 미완료. [기록](docs/reference/deployment-safety-validation.md) |
-| OPS-09/P0 | 75% | 부분 · 추가 장애/실환경 검증 | 이름/PID 종료 제거, Windows Job·Linux subreaper, Agent OS peer·실행 티켓, 전 변경 경로 공통 lease, 구형 위험 요청 차단. 실제 후손/재시작/host 장애·UI 안내 확인 | 저장 실패 모든 경계·service health 실패의 실제 실행, 전체 변경 진입점의 publish 장애 시험, 회사 UE/서비스 계정 검증 미완료. 자동 handoff 제외. [기록](docs/reference/deployment-safety-validation.md) |
+| OPS-09/P0 | 75% | 부분 · GUI/현장 검증 대기 | 누락 기록 fail-closed, 단일 서비스 snapshot·시작 barrier·이전/대상 잠금, 위험 migration apply 차단. Windows/WSL 각 388개와 저장 경계 강제 종료·실제 health 실패·대상 분리·CLI E2E 통과 | GUI 설치/실행/rollback 직접 조작과 GUI 종료 수명 시험은 action-time 확인 대기. 모든 진입점의 모든 상태 조합을 실제 프로세스로 전수 시험한 것은 아님. 회사 UE/계정·원격 CI 미검증. [기록](docs/reference/runtime-safety-completion-validation.md) |
 
 ## 성능·저장 공간
 
@@ -121,7 +120,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 근거 소스: [서버 API](src/UeDtLauncher.DistributionServer/DistributionHttp.cs), [저장 관리](src/UeDtLauncher.DistributionServer/StorageMaintenance.cs), [권한](src/UeDtLauncher.DistributionServer/AccessPolicy.cs), [엔진](src/UeDtLauncher/LauncherEngine.cs), [버전 경로](src/UeDtLauncher.Core/Distribution/VersionedReleasePaths.cs), [CI](.github/workflows/build.yml).
 
-추가 교차 확인: [AgentWorker](src/UeDtLauncher.Agent/Program.cs), [Agent 작업](src/UeDtLauncher.Agent/AgentIpcHostedService.cs), [서명 순서](.github/workflows/release.yml), [MSI CAB](installer/windows/Product.wxs), [RPM 설정](scripts/build-rpm.sh), [credential 저장](src/UeDtLauncher/CommercialSecurity.cs), [프로세스 식별](src/UeDtLauncher/ServiceRunner.cs). 위 항목은 코드에서 확인한 차이이며 이번에 수정한 것은 문서뿐입니다.
+추가 교차 확인: [AgentWorker](src/UeDtLauncher.Agent/Program.cs), [Agent 작업](src/UeDtLauncher.Agent/AgentIpcHostedService.cs), [서명 순서](.github/workflows/release.yml), [MSI CAB](installer/windows/Product.wxs), [RPM 설정](scripts/build-rpm.sh), [credential 저장](src/UeDtLauncher/CommercialSecurity.cs), [프로세스 식별](src/UeDtLauncher/ServiceRunner.cs). 위 링크는 점검 출처입니다. 이후 실제 수정과 검증은 각 항목의 최신 기록을 따르며 과거 문서 전용 점검과 구분합니다.
 
 ## 처리 제안과 상태 관리
 
@@ -130,6 +129,6 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 3. PERF 기준선·OPS-06: 측정 후 개선, 자동 회귀 검증.
 4. USER/UI·API 범위는 [목표 문서](PROJECT_GOALS.md)에서 확정 후 진행.
 
-PERF-01/02/04·USER-05는 100%, PERF-03·SEC-03·SEC-04는 75%, OPS-06·OPS-08은 50%(각 남은 조건 참조)입니다. 나머지 19개는 0%이며 기존 기능 부재를 의미하지 않습니다.
+PERF-01/02/04·USER-05는 100%, PERF-03·SEC-03·SEC-04·OPS-09는 75%, OPS-06·OPS-08은 50%(각 남은 조건 참조)입니다. 나머지 18개는 0%이며 기존 기능 부재를 의미하지 않습니다.
 
 진행률을 변경할 때는 상태·체크포인트·커밋/검증 링크·남은 조건·상단 집계를 함께 갱신합니다. 100% 항목은 완료 이력으로 남기고, 새 미달 조건이나 범위 변경이 확인되면 이유를 기록해 다시 열 수 있습니다. 빌드 성공만으로 완료하지 않습니다.
