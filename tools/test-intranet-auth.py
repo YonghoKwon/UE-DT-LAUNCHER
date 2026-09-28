@@ -20,7 +20,7 @@ import zipfile
 import struct
 import zlib
 import hashlib
-from gui_fixture_evidence import agent_status, snapshot_preferences
+from gui_fixture_evidence import snapshot_preferences, sha256, wait_agent_ready, wait_server_ready, hold_fixture, verify_cohort, FixtureHarnessLock, copy_server_support
 
 
 def main():
@@ -36,20 +36,46 @@ def main():
     parser.add_argument("--nginx", help="Optional isolated Linux nginx executable; no system service changes")
     parser.add_argument("--benchmark", action="store_true", help="Optional synthetic signed load (requires cryptography)")
     parser.add_argument("--defer-v2", action="store_true", help="GUI-only: retain v2 pending manual approval")
+    parser.add_argument("--gui-mode", choices=['managed','portable'], default='managed', help="GUI-only deployment, with a fresh isolated credential/install root")
     args = parser.parse_args()
     if args.defer_v2 and not args.prepare_gui:
         parser.error("--defer-v2 requires --prepare-gui")
-    if args.prepare_gui and (not args.agent or args.service_proof or args.hold_runtime or args.benchmark):
-        parser.error("--prepare-gui requires --agent and cannot combine with runtime/service/load proofs")
+    if args.prepare_gui and (args.service_proof or args.hold_runtime or args.benchmark or args.nginx):
+        parser.error("--prepare-gui cannot combine with runtime/service/load/nginx proofs")
+    if args.prepare_gui and args.gui_mode=='managed' and not args.agent:
+        parser.error("Managed GUI preparation requires --agent")
+    if args.prepare_gui and args.gui_mode=='portable' and args.agent:
+        parser.error("Portable GUI preparation must not start or include an Agent")
+    if args.gui_mode=='portable' and not args.prepare_gui:
+        parser.error("--gui-mode portable requires --prepare-gui")
     launcher, server = str(Path(args.launcher).resolve()), str(Path(args.server).resolve())
     root = Path(args.root).resolve() if args.root else Path(tempfile.mkdtemp(prefix="uedt-intranet-"))
     root.mkdir(parents=True, exist_ok=True)
+    if args.prepare_gui and any(root.iterdir()):
+        raise RuntimeError('GUI fixtures require a new empty root; existing data will not be replaced')
     if (root / "server.json").exists():
         raise RuntimeError("Use a new isolated root; existing fixture will not be replaced")
     if args.prepare_gui: snapshot_preferences(root)
     client = root / "client"
-    (client / "agent").mkdir(parents=True)
-    env = dict(os.environ, UE_DT_AGENT_DATA_ROOT=str(client / "agent"))
+    private_root=client / ('portable-private' if args.prepare_gui and args.gui_mode=='portable' else 'agent')
+    private_root.mkdir(parents=True)
+    env = dict(os.environ, UE_DT_AGENT_DATA_ROOT=str(private_root))
+    # Existing test override changes storage location only. --storage portable below still
+    # exercises current-user credential protection and never touches the user's real keys.
+    if args.prepare_gui:
+        env['UE_DT_AGENT_ENDPOINT']='uedt-test-'+root.name if os.name=='nt' else str(root/'agent.sock')
+    gui_binaries={}
+    gui_support_files={}
+    if args.prepare_gui:
+        for kind, source in [('launcher',launcher),('server',server),('synthetic',args.prepare_gui)]+([('agent',args.agent)] if args.agent else []):
+            destination=(client/('agent' if args.gui_mode=='managed' else 'portable') if kind in ('launcher','agent') else root/'cohort'/kind)/Path(source).name
+            destination.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(Path(source).resolve(),destination)
+            if kind=='server':gui_support_files.update(copy_server_support(source,destination))
+            gui_binaries[kind]=str(destination)
+        launcher=gui_binaries['launcher'];server=gui_binaries['server']
+        args.prepare_gui=gui_binaries['synthetic']
+        if args.agent: args.agent=gui_binaries['agent']
     counter = 0
     flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 
@@ -81,7 +107,8 @@ def main():
           "authenticationMode": "request-signature-v1"})
     write(root / "policy.json", {"clients": [{"id": "pc-test", "addresses": ["127.0.0.0/8"],
           "grants": [{"projectId": "demo", "environment": "prod", "channel": "stable", "versions": []}]}]})
-    run(launcher, "credential", "keygen", "--name", "device", "--key-id", "pc-test-key", "--public-out", root / "device-public.json")
+    credential_storage='portable' if args.prepare_gui and args.gui_mode=='portable' else 'managed'
+    run(launcher, "credential", "keygen", "--name", "device", "--key-id", "pc-test-key", "--public-out", root / "device-public.json", "--storage", credential_storage)
     run(server, "client-key", "add", "--client", "pc-test", "--public-key", root / "device-public.json", "--config", root / "server.json")
     platform = "windows-x64" if os.name == "nt" else "linux-x64"
     entry = "game.exe" if os.name == "nt" else "game.sh"
@@ -108,7 +135,7 @@ def main():
         job = json.loads(run(server, "ingest", upload, "--config", root / "server.json"))
         if job["state"] != "pending":
             raise RuntimeError(f"Expected pending approval, got {job['state']}")
-        if args.defer_v2 and version == "2.0.0": pending_jobs[version] = job["id"]
+        if (args.defer_v2 or args.prepare_gui) and version == "2.0.0": pending_jobs[version] = job["id"]
         else: run(server, "approve", job["id"], "--config", root / "server.json")
     generated = client / "generated.json"
     run(launcher, "sample-config", "--server-url", origin, "--project-id", "demo", "--profile", "developer", "--platform", platform,
@@ -120,6 +147,8 @@ def main():
     config = json.loads(generated.read_text(encoding="utf-8"))
     config.update(versionPolicy="exact", requestedVersion="1.0.0", installDir=str(client / "apps"), stateRootDir=str(client / "state"),
                   launchArguments=["/c", "echo UE_DT_FAKE_GAME_OK>runtime-marker.txt"] if os.name == "nt" else [])
+    harness_lock=FixtureHarnessLock(root) if args.prepare_gui else None
+    if harness_lock is not None:harness_lock.__enter__()
     log = (root / "server.log").open("w", encoding="utf-8")
     process = subprocess.Popen([server, "serve", "--config", str(root / "server.json")], stdout=log, stderr=log, env=env, creationflags=flags)
     agent_process = None
@@ -172,7 +201,8 @@ http {{
             time.sleep(0.1)
         else:
             raise RuntimeError("Server did not become ready")
-        run(launcher, "doctor", "--config", generated, "--online")
+        if not (args.prepare_gui and args.gui_mode=='portable'):
+            run(launcher, "doctor", "--config", generated, "--online")
         if not args.prepare_gui:
             for version in ("1.0.0", "2.0.0"):
                 config["requestedVersion"] = version
@@ -239,7 +269,8 @@ http {{
             composed = client / "agent"
             composed_launcher = composed / Path(launcher).name
             composed_agent = composed / Path(args.agent).name
-            shutil.copy2(launcher, composed_launcher); shutil.copy2(Path(args.agent).resolve(), composed_agent)
+            if Path(launcher).resolve()!=composed_launcher.resolve(): shutil.copy2(launcher, composed_launcher)
+            if Path(args.agent).resolve()!=composed_agent.resolve(): shutil.copy2(Path(args.agent).resolve(), composed_agent)
             launcher = str(composed_launcher)
             config["deploymentMode"] = "managed-agent"
             agent_config = client / "agent" / "config" / "launcher.config.json"
@@ -248,16 +279,18 @@ http {{
             env["UE_DT_AGENT_ENDPOINT"] = "uedt-test-" + root.name if os.name == "nt" else str(root / "agent.sock")
             agent_log = (root / "agent.log").open("w", encoding="utf-8")
             agent_process = subprocess.Popen([str(composed_agent)], env=env, stdout=agent_log, stderr=agent_log, creationflags=flags)
-            deadline = time.monotonic() + 30
-            while True:
-                try:
-                    status = agent_status(env["UE_DT_AGENT_ENDPOINT"])
-                    if not status.get("success") or "runtime-supervision-v1" not in status.get("agentCapabilities", []):
-                        raise RuntimeError("Agent capabilities are not ready")
-                    break
-                except (OSError, RuntimeError, json.JSONDecodeError):
-                    if agent_process.poll() is not None or time.monotonic() >= deadline: raise
-                    time.sleep(.1)
+            if args.prepare_gui: wait_agent_ready(agent_process,env['UE_DT_AGENT_ENDPOINT'])
+            else:
+                from gui_fixture_evidence import agent_status
+                deadline=time.monotonic()+30
+                while True:
+                    try:
+                        status=agent_status(env['UE_DT_AGENT_ENDPOINT'])
+                        if not status.get('success') or 'runtime-supervision-v1' not in status.get('agentCapabilities',[]): raise RuntimeError('Agent capabilities are not ready')
+                        break
+                    except (OSError,RuntimeError,json.JSONDecodeError):
+                        if agent_process.poll() is not None or time.monotonic()>=deadline: raise
+                        time.sleep(.1)
             run(launcher, "agent", "project-asset", "--project", "demo", "--kind", "hero", "--cache", client / "images")
             gui = dict(config, clientProfile="general")
             gui["security"] = dict(config["security"], credentialName="gui-must-not-read-private-key")
@@ -267,20 +300,33 @@ http {{
             write(root / "test-environment.json", {"UE_DT_AGENT_DATA_ROOT": env["UE_DT_AGENT_DATA_ROOT"], "UE_DT_AGENT_ENDPOINT": env["UE_DT_AGENT_ENDPOINT"]})
             run(launcher, "doctor", "--config", client / "general.json", "--online")
             summary["managed_asset_and_doctor"] = True
-            if args.prepare_gui:
-                binaries = {"launcher": str(composed_launcher), "agent": str(composed_agent),
-                            "server": server, "synthetic": str(Path(args.prepare_gui).resolve())}
-                source_diff = subprocess.check_output(["git", "diff", "HEAD", "--", "src", "tools"])
-                write(root / "fixture.json", {"schemaVersion": 1, "id": root.name,
-                      "sourceDiffSha256": hashlib.sha256(source_diff).hexdigest(), "sourceDirty": bool(source_diff),
-                      "sourceHead": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
-                      "binaries": {k: {"path": v, "sha256": hashlib.sha256(Path(v).read_bytes()).hexdigest()}
-                                   for k, v in binaries.items()}, "pendingJobs": pending_jobs})
             if args.hold_runtime:
                 config["launchArguments"] = ["/c", "ping -n 61 127.0.0.1 > nul"] if os.name == "nt" else ["60"]
                 write(agent_config, config)
                 run(launcher, "run", "--config", client / "general.json")
                 summary["managed_runtime_started_for_gui"] = True
+        if args.prepare_gui:
+            if args.gui_mode=='portable':
+                config['deploymentMode']='portable'
+                for profile in ('general','developer'): write(client/(profile+'.json'),dict(config,clientProfile=profile))
+                write(root/'test-environment.json',{'UE_DT_AGENT_DATA_ROOT':env['UE_DT_AGENT_DATA_ROOT'],'UE_DT_AGENT_ENDPOINT':env['UE_DT_AGENT_ENDPOINT']})
+                run(launcher,'credential','status','--name','device','--storage','portable')
+                # No Agent request or managed doctor in this preparation branch.
+                summary['portable_credential_ready']=True
+            control=root/'control';control.mkdir(exist_ok=True)
+            shutil.copy2(root/'policy.json',control/'original-policy.json')
+            shutil.copy2(root/'public.pem',control/'original-public.pem')
+            source_root=Path(__file__).resolve().parent.parent
+            source_diff=subprocess.check_output(['git','diff','HEAD','--','src','tools'],cwd=source_root)
+            untracked=subprocess.check_output(['git','ls-files','--others','--exclude-standard','--','src','tools'],cwd=source_root,text=True).splitlines()
+            source_evidence=source_diff+b''.join(name.encode()+b'\0'+(source_root/name).read_bytes() for name in sorted(untracked) if (source_root/name).is_file())
+            write(root/'fixture.json',{'schemaVersion':2,'id':root.name,'deploymentMode':args.gui_mode,'platform':platform,
+                  'sourceHead':subprocess.check_output(['git','rev-parse','HEAD'],cwd=source_root,text=True).strip(),
+                  'sourceDiffSha256':hashlib.sha256(source_evidence).hexdigest(),'sourceDirty':bool(source_evidence),
+                  'binaries':{kind:{'path':value,'sha256':sha256(value)} for kind,value in gui_binaries.items()},
+                  'supportFiles':gui_support_files,'pendingJobs':pending_jobs})
+            summary['deployment_mode']=args.gui_mode
+            verify_cohort(root);wait_server_ready(process,origin)
         if args.benchmark:
             from benchmark_intranet_auth import run_load
             load = run_load(origin, root, lambda path: run(server, "client-key", "add", "--client", "pc-test", "--public-key", path, "--config", root / "server.json"), platform, process.pid)
@@ -289,16 +335,7 @@ http {{
             write(root / "summary.json", summary)
             print(f"READY: {root}", flush=True)
             if args.prepare_gui:
-                control = root / "control"; control.mkdir(exist_ok=True)
-                while process.poll() is None and not (control / "stop-all").exists():
-                    if (control / "stop-agent").exists() and agent_process.poll() is None:
-                        agent_process.terminate(); agent_process.wait(timeout=10)
-                        (control / "agent-stopped").touch()
-                    if (control / "start-agent").exists() and agent_process.poll() is not None:
-                        (control / "stop-agent").unlink(missing_ok=True)
-                        (control / "start-agent").unlink()
-                        agent_process = subprocess.Popen([str(composed_agent)], env=env, stdout=agent_log, stderr=agent_log, creationflags=flags)
-                    time.sleep(.1)
+                hold_fixture(root,verify_cohort(root),env,process,agent_process,log,agent_log)
             else:
                 process.wait()
         else:
@@ -326,6 +363,7 @@ http {{
             except subprocess.TimeoutExpired:
                 process.kill(); process.wait(timeout=5)
         log.close()
+        if harness_lock is not None:harness_lock.close()
 
 
 if __name__ == "__main__":
