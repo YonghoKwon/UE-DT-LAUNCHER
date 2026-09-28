@@ -19,6 +19,8 @@ import urllib.request
 import zipfile
 import struct
 import zlib
+import hashlib
+from gui_fixture_evidence import agent_status
 
 
 def main():
@@ -33,7 +35,10 @@ def main():
     parser.add_argument("--prepare-gui", help="Test-only synthetic executable; leave installs empty and hold for GUI")
     parser.add_argument("--nginx", help="Optional isolated Linux nginx executable; no system service changes")
     parser.add_argument("--benchmark", action="store_true", help="Optional synthetic signed load (requires cryptography)")
+    parser.add_argument("--defer-v2", action="store_true", help="GUI-only: retain v2 pending manual approval")
     args = parser.parse_args()
+    if args.defer_v2 and not args.prepare_gui:
+        parser.error("--defer-v2 requires --prepare-gui")
     if args.prepare_gui and (not args.agent or args.service_proof or args.hold_runtime or args.benchmark):
         parser.error("--prepare-gui requires --agent and cannot combine with runtime/service/load proofs")
     launcher, server = str(Path(args.launcher).resolve()), str(Path(args.server).resolve())
@@ -82,6 +87,7 @@ def main():
     def png_chunk(kind, data):
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xffffffff)
     png = b"\x89PNG\r\n\x1a\n" + png_chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)) + png_chunk(b"IDAT", zlib.compress(b"\0\x14\x30\x55")) + png_chunk(b"IEND", b"")
+    pending_jobs = {}
     for version in ("1.0.0", "2.0.0"):
         upload = root / "server" / "incoming" / version
         upload.mkdir(parents=True)
@@ -101,7 +107,8 @@ def main():
         job = json.loads(run(server, "ingest", upload, "--config", root / "server.json"))
         if job["state"] != "pending":
             raise RuntimeError(f"Expected pending approval, got {job['state']}")
-        run(server, "approve", job["id"], "--config", root / "server.json")
+        if args.defer_v2 and version == "2.0.0": pending_jobs[version] = job["id"]
+        else: run(server, "approve", job["id"], "--config", root / "server.json")
     generated = client / "generated.json"
     run(launcher, "sample-config", "--server-url", origin, "--project-id", "demo", "--profile", "developer", "--platform", platform,
         "--deployment-mode", "portable", "--credential-name", "device", "--public-key", root / "public.pem", "--output", generated)
@@ -240,8 +247,16 @@ http {{
             env["UE_DT_AGENT_ENDPOINT"] = "uedt-test-" + root.name if os.name == "nt" else str(root / "agent.sock")
             agent_log = (root / "agent.log").open("w", encoding="utf-8")
             agent_process = subprocess.Popen([str(composed_agent)], env=env, stdout=agent_log, stderr=agent_log, creationflags=flags)
-            time.sleep(1)
-            run(launcher, "agent", "status")
+            deadline = time.monotonic() + 30
+            while True:
+                try:
+                    status = agent_status(env["UE_DT_AGENT_ENDPOINT"])
+                    if not status.get("success") or "runtime-supervision-v1" not in status.get("agentCapabilities", []):
+                        raise RuntimeError("Agent capabilities are not ready")
+                    break
+                except (OSError, RuntimeError, json.JSONDecodeError):
+                    if agent_process.poll() is not None or time.monotonic() >= deadline: raise
+                    time.sleep(.1)
             run(launcher, "agent", "project-asset", "--project", "demo", "--kind", "hero", "--cache", client / "images")
             gui = dict(config, clientProfile="general")
             gui["security"] = dict(config["security"], credentialName="gui-must-not-read-private-key")
@@ -251,6 +266,13 @@ http {{
             write(root / "test-environment.json", {"UE_DT_AGENT_DATA_ROOT": env["UE_DT_AGENT_DATA_ROOT"], "UE_DT_AGENT_ENDPOINT": env["UE_DT_AGENT_ENDPOINT"]})
             run(launcher, "doctor", "--config", client / "general.json", "--online")
             summary["managed_asset_and_doctor"] = True
+            if args.prepare_gui:
+                binaries = {"launcher": str(composed_launcher), "agent": str(composed_agent),
+                            "server": server, "synthetic": str(Path(args.prepare_gui).resolve())}
+                write(root / "fixture.json", {"schemaVersion": 1, "id": root.name,
+                      "sourceHead": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+                      "binaries": {k: {"path": v, "sha256": hashlib.sha256(Path(v).read_bytes()).hexdigest()}
+                                   for k, v in binaries.items()}, "pendingJobs": pending_jobs})
             if args.hold_runtime:
                 config["launchArguments"] = ["/c", "ping -n 61 127.0.0.1 > nul"] if os.name == "nt" else ["60"]
                 write(agent_config, config)
