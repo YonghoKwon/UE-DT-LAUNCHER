@@ -30,9 +30,12 @@ def main():
     parser.add_argument("--hold-runtime", action="store_true", help="Keep a synthetic managed game active briefly for GUI inspection")
     parser.add_argument("--service-proof", action="store_true", help="Verify explicit versioned portable service selection using synthetic payloads")
     parser.add_argument("--agent")
+    parser.add_argument("--prepare-gui", help="Test-only synthetic executable; leave installs empty and hold for GUI")
     parser.add_argument("--nginx", help="Optional isolated Linux nginx executable; no system service changes")
     parser.add_argument("--benchmark", action="store_true", help="Optional synthetic signed load (requires cryptography)")
     args = parser.parse_args()
+    if args.prepare_gui and (not args.agent or args.service_proof or args.hold_runtime or args.benchmark):
+        parser.error("--prepare-gui requires --agent and cannot combine with runtime/service/load proofs")
     launcher, server = str(Path(args.launcher).resolve()), str(Path(args.server).resolve())
     root = Path(args.root).resolve() if args.root else Path(tempfile.mkdtemp(prefix="uedt-intranet-"))
     root.mkdir(parents=True, exist_ok=True)
@@ -84,7 +87,9 @@ def main():
         upload.mkdir(parents=True)
         archive = upload / "Package.zip"
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as package:
-            if os.name == "nt":
+            if args.prepare_gui:
+                package.write(Path(args.prepare_gui).resolve(), entry)
+            elif os.name == "nt":
                 package.write(Path(os.environ["SystemRoot"]) / "System32" / "cmd.exe", entry)
             else:
                 package.writestr(entry, '#!/bin/sh\nsleep "${1:-0}"\nprintf "UE_DT_FAKE_GAME_OK\\n" > runtime-marker.txt\n')
@@ -160,26 +165,27 @@ http {{
         else:
             raise RuntimeError("Server did not become ready")
         run(launcher, "doctor", "--config", generated, "--online")
-        for version in ("1.0.0", "2.0.0"):
-            config["requestedVersion"] = version
-            write(client / "config.json", config)
-            run(launcher, "run", "--config", client / "config.json")
-            runtime = client / "state" / "demo" / "prod" / "stable" / version / platform / "runtime-state.json"
-            deadline = time.monotonic() + 15
-            while time.monotonic() < deadline:
-                if runtime.exists() and json.loads(runtime.read_text())["state"] == 0:
-                    break
-                time.sleep(0.05)
-            else:
-                raise RuntimeError("Supervised payload did not complete")
-            marker = client / "apps" / "demo" / "prod" / "stable" / version / platform / "runtime-marker.txt"
-            if not marker.exists() or "UE_DT_FAKE_GAME_OK" not in marker.read_text():
-                raise RuntimeError("Synthetic game execution marker was missing")
-        target = client / "apps" / "demo" / "prod" / "stable" / "2.0.0" / platform / "version.txt"
-        target.write_text("damaged", encoding="utf-8")
-        run(launcher, "run", "--config", client / "config.json", "--repair")
-        if target.read_text() != "2.0.0":
-            raise RuntimeError("Repair did not restore the expected contents")
+        if not args.prepare_gui:
+            for version in ("1.0.0", "2.0.0"):
+                config["requestedVersion"] = version
+                write(client / "config.json", config)
+                run(launcher, "run", "--config", client / "config.json")
+                runtime = client / "state" / "demo" / "prod" / "stable" / version / platform / "runtime-state.json"
+                deadline = time.monotonic() + 15
+                while time.monotonic() < deadline:
+                    if runtime.exists() and json.loads(runtime.read_text())["state"] == 0:
+                        break
+                    time.sleep(0.05)
+                else:
+                    raise RuntimeError("Supervised payload did not complete")
+                marker = client / "apps" / "demo" / "prod" / "stable" / version / platform / "runtime-marker.txt"
+                if not marker.exists() or "UE_DT_FAKE_GAME_OK" not in marker.read_text():
+                    raise RuntimeError("Synthetic game execution marker was missing")
+            target = client / "apps" / "demo" / "prod" / "stable" / "2.0.0" / platform / "version.txt"
+            target.write_text("damaged", encoding="utf-8")
+            run(launcher, "run", "--config", client / "config.json", "--repair")
+            if target.read_text() != "2.0.0":
+                raise RuntimeError("Repair did not restore the expected contents")
         summary = {"platform": platform, "transport": "HTTP request-signature-v1", "published_processes": True,
                    "versions_installed_and_launched": 2, "repair": True, "nginx": bool(args.nginx), "company_or_unreal_validation": False}
         if args.service_proof:
@@ -215,6 +221,11 @@ http {{
             assert json.loads(service_state.read_text())["version"] == "2.0.0"
             config["launchArguments"] = original_args; config.pop("serviceMode"); write(client / "config.json", config)
             summary["explicit_service_selection_proof"] = True
+        if args.prepare_gui:
+            config["launchArguments"] = ["--control-root", str(root / "control")]
+            config["requestedVersion"] = "1.0.0"
+            summary["versions_installed_and_launched"] = 0; summary["repair"] = False
+            summary["gui_prepared_empty"] = True
         if args.agent:
             # Match real MSI/RPM layout: the trusted host is beside the Agent, not an arbitrary GUI path.
             composed = client / "agent"
@@ -249,10 +260,22 @@ http {{
             from benchmark_intranet_auth import run_load
             load = run_load(origin, root, lambda path: run(server, "client-key", "add", "--client", "pc-test", "--public-key", path, "--config", root / "server.json"), platform, process.pid)
             summary["load_failed_requests"] = sum(row["failed_requests"] for row in load["results"])
-        if args.hold:
+        if args.hold or args.prepare_gui:
             write(root / "summary.json", summary)
             print(f"READY: {root}", flush=True)
-            process.wait()
+            if args.prepare_gui:
+                control = root / "control"; control.mkdir(exist_ok=True)
+                while process.poll() is None and not (control / "stop-all").exists():
+                    if (control / "stop-agent").exists() and agent_process.poll() is None:
+                        agent_process.terminate(); agent_process.wait(timeout=10)
+                        (control / "agent-stopped").touch()
+                    if (control / "start-agent").exists() and agent_process.poll() is not None:
+                        (control / "stop-agent").unlink(missing_ok=True)
+                        (control / "start-agent").unlink()
+                        agent_process = subprocess.Popen([str(composed_agent)], env=env, stdout=agent_log, stderr=agent_log, creationflags=flags)
+                    time.sleep(.1)
+            else:
+                process.wait()
         else:
             run(server, "client-key", "revoke", "--key-id", "pc-test-key", "--config", root / "server.json")
             run(launcher, "run", "--config", client / "config.json", expected=1)
