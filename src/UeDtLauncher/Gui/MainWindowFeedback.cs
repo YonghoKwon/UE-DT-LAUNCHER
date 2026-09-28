@@ -31,8 +31,7 @@ public sealed partial class MainWindow
         if(_running)return;
         if(UsesDistributionServer)
         {
-            await RefreshCatalog(false,suppressDialog:true);
-            if(_presentation.ErrorCode is not null || !HasProject)return;
+            if(!await RefreshCatalog(false,suppressDialog:true) || !HasProject)return;
         }
         await RefreshInstallStatusAsync();
     }
@@ -62,9 +61,6 @@ public sealed partial class MainWindow
         var response=await new ManagedAgentClient().SendStreamingAsync("rollback",config.ProjectId,ReportManagedProgress,
             selection:config.SelectedRelease ?? CurrentReleaseSelection(),expectedBackup:preview);
         response.ThrowIfFailed();
-        if(response.ProjectStatus is not null)_viewModel.ApplyProjectStatus(response.ProjectStatus);
-        _installState="백업 복원 완료";
-        _installDetail="선택한 설치를 확인한 백업 시점으로 복원했습니다. 다른 버전 경로로 전환한 것은 아닙니다.";
-        _presentation.Complete("백업 복원 완료");Build();RefreshPresentation();
+        // Completion is presented once, after the shared read-only status recheck.
     }
 }

@@ -30,6 +30,17 @@ internal sealed record LauncherUiOperationResult(LauncherConfig Config, ReleaseS
     ManagedProjectStatus Status, RuntimeObservation? Runtime);
 internal enum LauncherTroubleshootAction { OfferInstall, Complete, Repair }
 
+internal interface ILauncherUiBackend
+{
+    Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext context,LauncherConfig config,Action<LauncherProgress> progress);
+    Task<LauncherUiOperationResult> ExecuteAsync(LauncherUiOperationContext context,LauncherConfig config,bool repair,bool launch,Action<LauncherProgress> progress,FileLogger? logger);
+}
+internal sealed class LauncherUiBackend : ILauncherUiBackend
+{
+    public Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext context,LauncherConfig config,Action<LauncherProgress> progress)=>LauncherUiOperations.CheckAsync(context,config,progress);
+    public Task<LauncherUiOperationResult> ExecuteAsync(LauncherUiOperationContext context,LauncherConfig config,bool repair,bool launch,Action<LauncherProgress> progress,FileLogger? logger)=>LauncherUiOperations.ExecuteAsync(context,config,repair,launch,progress,logger);
+}
+
 internal static class LauncherUiOperations
 {
     internal static LauncherTroubleshootAction TroubleshootAction(ManagedProjectStatus status) =>

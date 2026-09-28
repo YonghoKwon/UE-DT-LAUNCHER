@@ -31,6 +31,8 @@ public sealed partial class MainWindow : Window
     private bool _agentStatusRefreshing;
     private bool _startupInitialized;
     private Exception? _configurationError;
+    private readonly ILauncherUiBackend _uiBackend;
+    private readonly Func<LauncherConfig,string,CancellationToken,Task<CatalogSnapshot>> _catalogLoader;
     private bool _windowMetricsInitialized;
     private readonly bool _allowAutomaticChecks;
     private EventHandler<Avalonia.Platform.PlatformColorValues>? _colorValuesChanged;
@@ -73,8 +75,11 @@ public sealed partial class MainWindow : Window
 
     public MainWindow(LauncherStartupOptions startupOptions) : this(startupOptions, null, null, true) { }
 
-    internal MainWindow(LauncherStartupOptions startupOptions, LauncherDashboardViewModel? model, LauncherUiPreferences? preferences, bool startServices)
+    internal MainWindow(LauncherStartupOptions startupOptions, LauncherDashboardViewModel? model, LauncherUiPreferences? preferences, bool startServices, ILauncherUiBackend? backend=null,
+        Func<LauncherConfig,string,CancellationToken,Task<CatalogSnapshot>>? catalogLoader=null)
     {
+        _uiBackend=backend??new LauncherUiBackend();
+        _catalogLoader=catalogLoader??CatalogSnapshotService.LoadAsync;
         _startupOptions = startupOptions;
         _allowAutomaticChecks = startServices;
         if (model is not null) _viewModel = model;
@@ -134,8 +139,7 @@ public sealed partial class MainWindow : Window
             Build();
             return;
         }
-        await RefreshCatalog(false, suppressDialog: true);
-        if (HasProject && _presentation.ErrorCode is null) await RefreshInstallStatusAsync(suppressDialog: true);
+        if(await RefreshCatalog(false,suppressDialog:true) && HasProject)await RefreshInstallStatusAsync(suppressDialog:true);
     }
 
     private void LoadConfig()
@@ -981,13 +985,12 @@ public sealed partial class MainWindow : Window
                 break;
             case PrimaryActionKind.RetryCheck:
                 await RefreshAgentStatusAsync();
-                await RefreshCatalog(false, suppressDialog: true);
-                await RefreshInstallStatusAsync();
+                if(await RefreshCatalog(false,suppressDialog:true) && HasProject)await RefreshInstallStatusAsync();
                 break;
         }
     }
 
-    private async Task RefreshCatalog(bool rebuild, bool suppressDialog = false)
+    private async Task<bool> RefreshCatalog(bool rebuild, bool suppressDialog = false)
     {
         var ownsBusy = !_running;
         if (ownsBusy) { BeginOperation(LauncherUiOperation.Catalog); _running=true; SetBusy(true); }
@@ -996,15 +999,18 @@ public sealed partial class MainWindow : Window
             _catalogState = "카탈로그 확인 중...";
             if (rebuild) Build();
             var catalogConfig = await RunConfig(false, false);
-            _catalog = await CatalogSnapshotService.LoadAsync(catalogConfig, CurrentPlatform);
+            _catalog = await _catalogLoader(catalogConfig, CurrentPlatform, CancellationToken.None);
+            _presentation.ErrorCode=null;_presentation.SupportId=null;
             _catalogState = _catalog.Status;
             MergeCatalogProjects();
             UpdateReleaseNotes();
+            return true;
         }
         catch (Exception ex)
         {
             _catalogState = "카탈로그 오류";
             MarkError(ex,"카탈로그 확인 실패",showDialog: !suppressDialog);
+            return false;
         }
         finally { if (ownsBusy) { _running=false; SetBusy(false); } if (rebuild) Build(); }
     }
@@ -1084,7 +1090,7 @@ public sealed partial class MainWindow : Window
             BeginOperation(launch?LauncherUiOperation.Launch:repair?LauncherUiOperation.Repair:LauncherUiOperation.Update);
             _viewModel.GeneralState=GeneralLauncherState.Working;Progress(0);ResetSpeedTracking();
             var config=await RunConfig(repair,launch);
-            var result=await LauncherUiOperations.ExecuteAsync(context,config,repair,launch,PostUiProgress,_fileLogger);
+            var result=await _uiBackend.ExecuteAsync(context,config,repair,launch,PostUiProgress,_fileLogger);
             _presentation.Complete(launch?"실행 준비 완료":repair?"파일 복구 완료":"업데이트 확인 완료");
             if(ApplyUiResult(context,result))Build();
         }
@@ -1101,7 +1107,7 @@ public sealed partial class MainWindow : Window
         {
             var context=CaptureUiOperation();
             BeginOperation(LauncherUiOperation.Check);_viewModel.GeneralState=GeneralLauncherState.Checking;Progress(0);
-            var result=await LauncherUiOperations.CheckAsync(context,await RunConfig(false,false),PostUiProgress);
+            var result=await _uiBackend.CheckAsync(context,await RunConfig(false,false),PostUiProgress);
             if(ApplyUiResult(context,result)){_presentation.Complete(_installState);Build();}
         }
         catch(Exception ex){MarkError(ex,"상태 확인 실패",showDialog:!suppressDialog);}
@@ -1120,20 +1126,19 @@ public sealed partial class MainWindow : Window
         {
             if(UsesDistributionServer && _catalog.Releases.Count==0)
             {
-                await RefreshCatalog(false,suppressDialog:true);
-                if(_presentation.ErrorCode is not null || !HasProject)return;
+                if(!await RefreshCatalog(false,suppressDialog:true) || !HasProject)return;
             }
             context=CaptureUiOperation();config=await RunConfig(false,false);
             BeginOperation(LauncherUiOperation.Troubleshoot);_viewModel.GeneralState=GeneralLauncherState.Working;Progress(0);
-            checkedResult=await LauncherUiOperations.CheckAsync(context,config,PostUiProgress);
+            checkedResult=await _uiBackend.CheckAsync(context,config,PostUiProgress);
             ValidateUiResult(context,checkedResult);_viewModel.RequireRuntimeQuiescent(checkedResult.Runtime);
             var action=LauncherUiOperations.TroubleshootAction(checkedResult.Status);
             if(action==LauncherTroubleshootAction.Repair)
             {
                 repairAttempted=true;
-                var repaired=await LauncherUiOperations.ExecuteAsync(context,config,true,false,PostUiProgress,_fileLogger);
+                var repaired=await _uiBackend.ExecuteAsync(context,config,true,false,PostUiProgress,_fileLogger);
                 ValidateUiResult(context,repaired);_viewModel.RequireRuntimeQuiescent(repaired.Runtime);
-                checkedResult=await LauncherUiOperations.CheckAsync(context,config,PostUiProgress);
+                checkedResult=await _uiBackend.CheckAsync(context,config,PostUiProgress);
                 if(checkedResult.Status.UpdateRequired)throw new InvalidDataException("파일 복구 후 검증을 완료하지 못했습니다.");
             }
             if(ApplyUiResult(context,checkedResult))

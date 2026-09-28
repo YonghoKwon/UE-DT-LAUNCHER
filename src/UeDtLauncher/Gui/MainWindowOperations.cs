@@ -41,12 +41,20 @@ public sealed partial class MainWindow
     {
         if(context!=CaptureUiOperation())throw new InvalidDataException("선택한 배포가 변경되었습니다.");
         if(context.Managed)await RestoreManagedPreviewAsync(config,preview);
-        else
+        else await Task.Run(()=>RollbackPreviewService.RestoreExpectedAsync(config,preview.BackupId,preview.MetadataFingerprint));
+        _selectedRuntimeConfig=config;
+        BeginOperation(LauncherUiOperation.Check);
+        SetStatus("백업 복원 완료 · 설치 상태 확인 중");
+        try
         {
-            await Task.Run(()=>RollbackPreviewService.RestoreExpectedAsync(config,preview.BackupId,preview.MetadataFingerprint));
-            _selectedRuntimeConfig=config;
-            _installState="백업 복원 완료";_installDetail="선택한 설치를 확인한 백업 시점으로 복원했습니다.";
+            var result=await _uiBackend.CheckAsync(context,config,PostUiProgress);
+            if(!ApplyUiResult(context,result))return;
             _presentation.Complete("백업 복원 완료");Build();
+        }
+        catch(Exception ex)
+        {
+            _presentation.Retry=CurrentContext(LauncherUiOperation.Check);
+            MarkError(ex,"백업 복원 완료 · 상태 재확인 필요",showDialog:false);
         }
     }
 }
