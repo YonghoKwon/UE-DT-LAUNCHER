@@ -55,7 +55,7 @@ G1~G6의 증거가 확보된 뒤 전사 확대를 승인합니다. 현재 자동
 
 ## 개발·도입 진행 순서
 
-2차 구현: MSI payload 선서명 gate와 runtime-host/설치 변경 조정기를 추가했다. OPS-08은 실제 인증서 미검증으로 50%, OPS-09는 합성 실행 검증 75%이며 후속 저장 경계 강제 종료·health 실패·서비스 대상 구분은 합성 환경에서 검증했다. 일반 GUI 설치/실행·창 종료 수명은 직접 검증했으며, 개발자/복구/rollback 직접 시험·실제 UE/계정 검증은 남는다. [후속 검증](docs/reference/runtime-safety-completion-validation.md)
+2차 구현: MSI payload 선서명 gate와 runtime-host/설치 변경 조정기를 추가했다. OPS-08은 실제 인증서 미검증으로 50%, OPS-09는 합성 실행 검증 75%이며 후속 저장 경계 강제 종료·health 실패·서비스 대상 구분은 합성 환경에서 검증했다. 일반 GUI 설치/실행·창 종료 수명은 직접 검증했으며, 개발자 버전 선택/취소·v2 복구·rollback 적용도 통과했다. 다른 버전 승인 실행·실행 중 GUI 변경 차단·일반 문제 해결 추가 시험과 실제 UE/계정 검증은 남는다. [후속 검증](docs/reference/runtime-safety-completion-validation.md)
 
 관리형 GUI의 실행 후 관측·문제 해결 차단을 추가 보완했다. 일반 GUI의 미설치→실행→창 종료/재실행→자식 정상 종료는 실제 합성 앱으로 통과했다. 일반/개발자 GUI 직접 조작은 자동화나 화면 관측으로 대체하지 않으며, [해당 증거](docs/reference/managed-gui-safety-validation.md)가 확보되기 전 완료로 판단하지 않는다. portable GUI 버전별 rollback도 별도 잔여 조건이다.
 

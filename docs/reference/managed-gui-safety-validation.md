@@ -33,7 +33,7 @@
 1. 일반 첫 설치/실행 및 즉시 실행 중 안내: **통과**.
 2. GUI가 시작한 앱의 자식 유지 중 GUI 종료·재실행, 자연 종료 확인: **통과**.
 3. 실행 중 update/repair/rollback 차단과 보호 파일 hash 불변.
-4. 정상 파일의 repair로 실제 backup 생성 → 테스트 version.txt 손상 → rollback 취소/확인·바이트 복원.
+4. 정상 파일의 repair로 실제 backup 생성 → 테스트 version.txt 손상 → rollback 취소/확인·바이트 복원: **통과**. 손상 파일 GUI repair도 별도로 통과(5절).
 5. 개발자 다른 버전 설치·실행 확인 취소/승인, 일반 문제 해결의 단절/재연결·실행 중 차단.
 
 portable GUI의 버전별 rollback 경로는 별도 보완이 남는다. 회사 UE/RHEL·서비스 계정은 이번 범위 밖이다. OPS-09 75%, OPS-08 50%와 기존 개선 집계를 유지한다.
@@ -46,3 +46,16 @@ portable GUI의 버전별 rollback 경로는 별도 보완이 남는다. 회사 
 - v2 롤백 확인창에서 취소를 눌렀고, 기존 보호 snapshot(`v2-before-dev`)과 파일·상태 hash가 동일했다. runtime은 Quiescent였으며 추가 실행 marker가 생성되지 않았다.
 - 실제 v1 설치/승인 실행·검증/복구·롤백 적용은 Computer Use 실행 직전 확인 요청 응답을 기다린다. 이번에 해당 적용을 수행한 것으로 기록하지 않는다.
 - 현재 v2 최초 설치 backup은 metadata 중심이므로 정상 내용의 복원 증거가 아니다. 다음 단계는 정상 파일에 GUI repair를 수행해 온전한 backup을 만든 뒤 테스트 version.txt만 손상시켜 복구/롤백 적용을 검증하는 것이다.
+
+## 5. 개발자 실제 복구·롤백 적용 통과
+
+- 4절의 대기 이후 사용자가 실제 복구·롤백 적용을 승인하여 같은 격리 fixture에서 이어서 수행했다.
+- exact/2.0.0, runtime Quiescent에서 GUI 검증/복구를 실행했다. 정상 backup `20260928093605`의 모든 파일 SHA-256이 설치 Manifest와 일치하고 addedPaths가 비어 있음을 확인했다. 최초 설치의 빈 backup을 복원 증거로 쓰지 않았다.
+- fixture 제어 도구로 설치된 version.txt만 `fixture-damaged`로 변경했다. GUI rollback 확인창에서 취소 후 `damaged-before-rollback` 보호 snapshot(파일·상태·backup)이 그대로 유지됐다.
+- 확인창을 다시 열고 실제 롤백 실행을 눌렀다. version.txt=2.0.0 및 설치 Manifest의 전체 파일 SHA-256 일치를 확인했다.
+- version.txt를 다시 손상시킨 후 GUI 검증/복구를 눌렀다. 서명된 배포 파일로 복구됐으며 전체 파일 SHA-256 일치, 2.0.0 표시, 최신 상태 100%, runtime Quiescent를 확인했다.
+- 이는 같은 v2 설치의 정상 backup 복원이다. 버전별 경로가 다른 v1로 전환됐다고 표현하지 않는다.
+- 관측된 UI 보완점: 관리형 rollback 확인창의 이전/현재 버전은 `알 수 없음`, 완료 직후 진행 제목은 `준비 완료`로 표시됐다. 바이트 복원은 성공했으며 이 문구 개선은 별도 UI-02 범위다.
+- 제품 코드 변경·전체 자동화 재실행 없이 직접 실행 증거와 문서만 갱신했다. 테스트 GUI·서버·Agent를 종료하며 실제 회사 데이터는 수정하지 않았다.
+
+현재 잔여: v1 승인 설치/실행, 실행 중 GUI update/repair/rollback 차단, 일반 문제 해결의 단절/재연결 직접 시험, portable GUI rollback 경로, 회사 UE/RHEL·설치 서비스 계정. 따라서 OPS-09 전체 75%는 유지한다.
