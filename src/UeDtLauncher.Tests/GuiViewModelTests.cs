@@ -135,8 +135,8 @@ public class GuiViewModelTests
         Assert.Equal(expectedColumns, layout.InfoColumns);
         Assert.Equal(expectedSidebar, layout.ShowSidebar);
         Assert.Equal(expectedTopSelector, layout.ShowTopProjectSelector);
-        Assert.Equal(720, layout.MinWidth);
-        Assert.Equal(500, layout.MinHeight);
+        Assert.Equal(640, layout.MinWidth);
+        Assert.Equal(360, layout.MinHeight);
     }
 
     [Fact]
@@ -144,10 +144,10 @@ public class GuiViewModelTests
     {
         var layout = LauncherLayoutPolicy.For(720, 1, developer: true);
 
-        Assert.True(layout.ShowSidebar);
+        Assert.False(layout.ShowSidebar);
         Assert.False(layout.ShowTopProjectSelector);
-        Assert.Equal(1160, layout.MinWidth);
-        Assert.Equal(124, layout.HeroHeight);
+        Assert.Equal(640, layout.MinWidth);
+        Assert.Equal(108, layout.HeroHeight);
     }
 
     [Fact]

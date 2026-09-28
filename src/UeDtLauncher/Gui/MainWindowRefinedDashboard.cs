@@ -33,6 +33,7 @@ public sealed partial class MainWindow : Window
     private bool _agentStatusRefreshing;
     private bool _startupInitialized;
     private bool _windowMetricsInitialized;
+    private readonly bool _allowAutomaticChecks;
     private int _layoutBucket = -1;
     private int _nextTabIndex;
     private readonly DispatcherTimer _agentStatusTimer = new() { Interval = TimeSpan.FromSeconds(3) };
@@ -55,7 +56,7 @@ public sealed partial class MainWindow : Window
     private double _speedBytesPerSecond;
 
     private string BaseDir => Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
-    private string ConfigPath => ResolvePath(_configPathBox?.Text ?? _startupOptions.ConfigPath);
+    private string ConfigPath => ResolvePath(_configPathBox?.Text ?? _configDraft ?? _startupOptions.ConfigPath);
     private bool IsDeveloper => _viewModel.IsDeveloper;
     private string CurrentPlatform => OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64";
     private ProjectStatePaths SelectedStatePaths =>
@@ -70,26 +71,32 @@ public sealed partial class MainWindow : Window
     {
     }
 
-    public MainWindow(LauncherStartupOptions startupOptions)
+    public MainWindow(LauncherStartupOptions startupOptions) : this(startupOptions, null, null, true) { }
+
+    internal MainWindow(LauncherStartupOptions startupOptions, LauncherDashboardViewModel? model, LauncherUiPreferences? preferences, bool startServices)
     {
         _startupOptions = startupOptions;
+        _allowAutomaticChecks = startServices;
+        if (model is not null) _viewModel = model;
+        _preferences = preferences ?? (startServices ? LauncherUiPreferences.Load() : new());
         InitializeComponent();
-        LoadConfig();
-        try { _fileLogger = new FileLogger(LauncherPaths.ResolveConfigRelative(ConfigPath, _config.LogDir)); } catch { _fileLogger = null; }
+        if (model is null) LoadConfig(); else SelectProject();
+        if (startServices) { try { _fileLogger = new FileLogger(LauncherPaths.ResolveConfigRelative(ConfigPath, _config.LogDir)); } catch { _fileLogger = null; } }
         Build();
         _agentStatusTimer.Tick += async (_, _) => await RefreshAgentStatusAsync();
-        _agentStatusTimer.Start();
+        if (startServices) _agentStatusTimer.Start();
         Closed += (_, _) =>
         {
             _agentStatusTimer.Stop();
             foreach (var bitmap in _projectVisualCache.Values) bitmap.Dispose();
             _projectVisualCache.Clear();
+            _brandLogo?.Dispose();
         };
-        Opened += async (_, _) => await InitializeStartupAsync();
+        if (startServices) Opened += async (_, _) => await InitializeStartupAsync();
         SizeChanged += (_, args) =>
         {
             var nextBucket = GeneralLayoutBucket(args.NewSize.Width);
-            if (!IsDeveloper && _windowMetricsInitialized && nextBucket != _layoutBucket)
+            if (_windowMetricsInitialized && nextBucket != _layoutBucket)
             {
                 _layoutBucket = nextBucket;
                 Build();
@@ -169,7 +176,7 @@ public sealed partial class MainWindow : Window
         var projects = VisibleProjects().ToList();
         _selectedProject = projects.FirstOrDefault(p => string.Equals(p.ProjectId, _config.ProjectId, StringComparison.OrdinalIgnoreCase))
             ?? projects.FirstOrDefault()
-            ?? _config.Projects.First();
+            ?? new ProjectUiConfig { ProjectId = "", DisplayName = "사용 가능한 프로젝트가 없습니다" };
         _config.ProjectId = _selectedProject.ProjectId;
         UpdateReleaseNotes();
     }
@@ -179,39 +186,12 @@ public sealed partial class MainWindow : Window
         return _viewModel.VisibleProjects();
     }
 
-    private void Build()
-    {
-        _actionButtons.Clear(); // controls are recreated below; Track() re-registers them
-        _nextTabIndex = 0;
-        Title = IsDeveloper ? "UE-DT Launcher - Developer" : "UE-DT Launcher";
-        if (!_windowMetricsInitialized)
-        {
-            Width = IsDeveloper ? 1480 : 1280;
-            Height = IsDeveloper ? 920 : 720;
-            _windowMetricsInitialized = true;
-        }
-        var layout = CurrentLayout();
-        MinWidth = layout.MinWidth;
-        MinHeight = layout.MinHeight;
-        _layoutBucket = GeneralLayoutBucket(CurrentLayoutWidth());
-        Background = LauncherVisualTokens.Background(IsDeveloper);
-
-        var root = new Grid
-        {
-            RowDefinitions = new RowDefinitions("Auto,*"),
-            ColumnDefinitions = new ColumnDefinitions(layout.ShowSidebar ? "340,*" : "*"),
-            Background = Background
-        };
-        root.Children.Add(Header());
-        if (layout.ShowSidebar) root.Children.Add(Sidebar());
-        root.Children.Add(MainArea(layout.ShowSidebar ? 1 : 0));
-        Content = root;
-    }
+    private void Build() => BuildEnterprise();
 
     private double CurrentLayoutWidth() => ClientSize.Width > 0 ? ClientSize.Width : Width;
     private int VisibleProjectCount() => _viewModel.ProjectsForProfile().Take(2).Count();
     private LauncherLayoutPolicy CurrentLayout() => LauncherLayoutPolicy.For(CurrentLayoutWidth(), VisibleProjectCount(), IsDeveloper);
-    private static int GeneralLayoutBucket(double width) => width < 760 ? 0 : width < 980 ? 1 : width < 1100 ? 2 : 3;
+    private static int GeneralLayoutBucket(double width) => width < 800 ? 0 : width < 1100 ? 1 : 2;
 
     private Control Header()
     {
@@ -275,7 +255,7 @@ public sealed partial class MainWindow : Window
         }
         if (string.Equals(_agentState, nextState, StringComparison.Ordinal)) return connected;
         _agentState = nextState;
-        await Dispatcher.UIThread.InvokeAsync(Build);
+        await Dispatcher.UIThread.InvokeAsync(() => { if (_serviceLabel is not null) _serviceLabel.Text = nextState; });
         return connected;
     }
 
@@ -343,7 +323,8 @@ public sealed partial class MainWindow : Window
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("82,*"), ColumnSpacing = 8 };
         row.Children.Add(Muted(label, 12));
         var combo = new ComboBox { ItemsSource = list, SelectedItem = list.FirstOrDefault(v => string.Equals(v, selected, StringComparison.OrdinalIgnoreCase)) ?? list.FirstOrDefault(), MinHeight = 32, Background = B(IsDeveloper ? "#0F172A" : "#FFFFFF"), Foreground = Fg() };
-        combo.SelectionChanged += (_, _) => { if (combo.SelectedItem is string v) { apply(v); Build(); } };
+        Identify(combo, "filter-" + label, label); _selectionControls.Add(combo); combo.IsEnabled = !_running;
+        combo.SelectionChanged += (_, _) => { if (!_building && !_running && combo.SelectedItem is string v && !string.Equals(v, selected, StringComparison.OrdinalIgnoreCase)) { apply(v); Build(); } };
         row.Children.Add(At(combo, 1));
         return row;
     }
@@ -358,7 +339,8 @@ public sealed partial class MainWindow : Window
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("82,*"), ColumnSpacing = 8 };
         row.Children.Add(Muted("요청 버전", 12));
         var box = new TextBox { Text = _config.RequestedVersion ?? string.Empty, Watermark = "예: 1.0.3", FontSize = 12, MinHeight = 32, Background = B(IsDeveloper ? "#0F172A" : "#FFFFFF"), Foreground = Fg() };
-        box.TextChanged += (_, _) => { _config.RequestedVersion = string.IsNullOrWhiteSpace(box.Text) ? null : box.Text.Trim(); SelectionChanged(); };
+        Identify(box, "filter-exact-version", "요청 버전"); _selectionControls.Add(box);
+        box.TextChanged += (_, _) => { var value = string.IsNullOrWhiteSpace(box.Text) ? null : box.Text.Trim(); if (_building || _running || value == _config.RequestedVersion) return; _config.RequestedVersion = value; SelectionChanged(); };
         row.Children.Add(At(box, 1));
         return row;
     }
@@ -380,12 +362,13 @@ public sealed partial class MainWindow : Window
         _installState = "확인 필요";
         _installDetail = "배포 선택이 변경되었습니다. 상태 확인을 다시 실행하세요.";
         UpdateReleaseNotes();
-        if (UsesDistributionServer)
+        if (UsesDistributionServer && _allowAutomaticChecks)
             Dispatcher.UIThread.Post(async () => await RefreshInstallStatusAsync(suppressDialog: true));
     }
 
     private void RenderProjects()
     {
+        RenderEnterpriseProjects();
         if (_projectList is null) return;
         _projectList.Children.Clear();
         foreach (var p in VisibleProjects()) _projectList.Children.Add(ProjectCard(p));
@@ -448,10 +431,11 @@ public sealed partial class MainWindow : Window
             MinHeight = 40,
             TabIndex = _nextTabIndex++
         };
-        AutomationProperties.SetName(combo, "프로젝트 선택");
+        Identify(combo, "compact-project", "프로젝트 선택"); _selectionControls.Add(combo);
         combo.SelectionChanged += (_, _) =>
         {
-            if (combo.SelectedIndex < 0 || combo.SelectedIndex >= projects.Count) return;
+            if (_building || _running || combo.SelectedIndex < 0 || combo.SelectedIndex >= projects.Count) return;
+            if (_selectedProject.ProjectId == projects[combo.SelectedIndex].ProjectId) return;
             _selectedProject = projects[combo.SelectedIndex];
             _config.ProjectId = _selectedProject.ProjectId;
             SelectionChanged();
@@ -537,9 +521,9 @@ public sealed partial class MainWindow : Window
     {
         var accents = new[]
         {
-            Color.Parse("#2563EB"),
-            Color.Parse("#0F766E"),
-            Color.Parse("#5B4BDB")
+            LauncherVisualTokens.Accent,
+            LauncherVisualTokens.PoscoLightBlue,
+            LauncherVisualTokens.BrandNavyDeep
         };
         var accent = accents[Math.Clamp(asset.FallbackVariant, 0, accents.Length - 1)];
         var grid = new Grid { ClipToBounds = true };
@@ -570,12 +554,12 @@ public sealed partial class MainWindow : Window
         grid.Children.Add(new TextBlock
         {
             Text = asset.Initials,
-            FontSize = hero ? 88 : 18,
+            FontSize = hero ? 32 : 18,
             FontWeight = FontWeight.Bold,
             Foreground = new SolidColorBrush(Color.FromArgb(hero ? (byte)55 : (byte)220, 255, 255, 255)),
-            HorizontalAlignment = hero ? HorizontalAlignment.Right : HorizontalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = hero ? new Thickness(0, 0, 130, 0) : new Thickness(0)
+            Margin = new Thickness(0)
         });
         return new Border
         {
@@ -1052,7 +1036,7 @@ public sealed partial class MainWindow : Window
         _running = true; _viewModel.GeneralState = GeneralLauncherState.Working; SetBusy(true); _lastRepair = repair; _lastLaunch = launch; Progress(0); ResetSpeedTracking();
         try
         {
-            if (_statusText is not null) _statusText.Text = launch ? "실행 준비 중..." : "업데이트 확인 중...";
+            if (_statusText is not null) SetStatus(launch ? "실행 준비 중..." : "업데이트 확인 중...");
             var c = await RunConfig(repair, launch);
             RuntimeObservation? launchedRuntime = null;
             if (c.IsManagedDeployment)
@@ -1095,7 +1079,7 @@ public sealed partial class MainWindow : Window
             _viewModel.WorkflowStage = LauncherWorkflowStage.Complete;
             _installState = "최신 상태"; _installDetail = "현재 설치된 파일이 최신 배포 정보와 일치합니다.";
             Build(); // refresh the version tile and release info with the new install state
-            Progress(100); if (_statusText is not null) _statusText.Text = launch ? "실행되었습니다." : "최신 상태입니다.";
+            Progress(100); if (_statusText is not null) SetStatus(launch ? "실행되었습니다." : "최신 상태입니다.");
             if (launch && c.IsManagedDeployment && !_viewModel.ApplyRuntimeObservation(launchedRuntime))
                 MarkError(new RuntimeBlockedException(LauncherDashboardViewModel.RequireRuntimeObservation(launchedRuntime)), "실행 상태 확인", showDialog: false);
         }
@@ -1109,7 +1093,7 @@ public sealed partial class MainWindow : Window
         _running = true; _viewModel.GeneralState = GeneralLauncherState.Checking; SetBusy(true); Progress(0);
         try
         {
-            if (_statusText is not null) _statusText.Text = "설치 상태 확인 중..."; Progress(5);
+            if (_statusText is not null) SetStatus("설치 상태 확인 중..."); Progress(5);
             var c = await RunConfig(false, false);
             if (c.IsManagedDeployment)
             {
@@ -1138,7 +1122,7 @@ public sealed partial class MainWindow : Window
                             : "설치된 파일이 최신 배포와 일치합니다.";
                 Build();
                 Progress(100);
-                if (_statusText is not null) _statusText.Text = _installState;
+                if (_statusText is not null) SetStatus(_installState);
                 if (!_viewModel.ApplyRuntimeObservation(response.Runtime))
                     MarkError(new RuntimeBlockedException(LauncherDashboardViewModel.RequireRuntimeObservation(response.Runtime)), "실행 상태 확인", showDialog: false);
                 return;
@@ -1162,7 +1146,7 @@ public sealed partial class MainWindow : Window
             else if (missing > 0 || changed > 0) { _viewModel.GeneralState = GeneralLauncherState.UpdateAvailable; _installState = "업데이트 가능"; _installDetail = $"누락 {missing}개, 변경 {changed}개 파일이 있습니다."; }
             else { _viewModel.GeneralState = GeneralLauncherState.Ready; _installState = "최신 상태"; _installDetail = $"{version} 버전이 설치되어 있습니다."; }
             Build();
-            Progress(100); if (_statusText is not null) _statusText.Text = _installState;
+            Progress(100); if (_statusText is not null) SetStatus(_installState);
             var portableRuntime = RuntimeStore.Observe(c);
             if (portableRuntime.State != RuntimeState.Quiescent) MarkError(new RuntimeBlockedException(portableRuntime), "실행 상태 확인", showDialog: false);
         }
@@ -1291,13 +1275,13 @@ public sealed partial class MainWindow : Window
         _running = true; SetBusy(true); Progress(0);
         try
         {
-            if (_statusText is not null) _statusText.Text = "이전 버전으로 되돌리는 중...";
+            if (_statusText is not null) SetStatus("이전 버전으로 되돌리는 중...");
             await Task.Run(() => BackupManager.RestoreAsync(backupRoot, config.InstallDir, config.InstalledManifestPath, config.InstallStatePath,
                 m => Dispatcher.UIThread.Post(() => AppendLog("롤백: " + m, true))));
             _installState = "롤백 완료"; _installDetail = $"{info?.PreviousVersion ?? "이전"} 버전으로 되돌렸습니다. 상태 확인으로 검증하세요.";
             _fileLogger?.Log("Rollback", $"GUI rollback to backup {Path.GetFileName(backupRoot)} completed.");
             Build();
-            Progress(100); if (_statusText is not null) _statusText.Text = "롤백이 완료되었습니다.";
+            Progress(100); if (_statusText is not null) SetStatus("롤백이 완료되었습니다.");
         }
         catch (Exception ex) { MarkError(ex, "롤백 실패"); }
         finally { _running = false; SetBusy(false); }
@@ -1328,7 +1312,7 @@ public sealed partial class MainWindow : Window
             UpdateSpeed(p.Performance?.NetworkBytes ?? p.BytesDownloaded.Value);
             var overall = Math.Clamp(p.BytesDownloaded.Value / (double)p.TotalBytes.Value * 100, 0, 100);
             var speedText = _speedBytesPerSecond > 0 ? $"{FormatBytes((long)_speedBytesPerSecond)}/s" : "측정 중";
-            if (_statusText is not null) _statusText.Text = $"다운로드 중 · 파일 {p.FileIndex}/{p.FileCount} · {speedText} · 전체 {overall:0}%";
+            if (_statusText is not null) SetStatus($"다운로드 중 · 파일 {p.FileIndex}/{p.FileCount} · {speedText} · 전체 {overall:0}%");
             if (p.Percent.HasValue) Progress(p.Percent.Value);
             return; // byte-level ticks update the status line only, not the log
         }
@@ -1358,13 +1342,25 @@ public sealed partial class MainWindow : Window
 
     private void SetBusy(bool busy)
     {
-        foreach (var button in _actionButtons) button.IsEnabled = !busy && (!Equals(button.Tag, "general-primary-action") || _viewModel.PrimaryAction != PrimaryActionKind.Disabled);
+        foreach (var button in _actionButtons)
+        {
+            var id = AutomationProperties.GetAutomationId(button);
+            var mutation = id is "primary-action" or "update" or "repair" or "rollback" or "cache-clear" or "backup-cleanup";
+            button.IsEnabled = !busy && (!mutation || (HasProject && _viewModel.GeneralState != GeneralLauncherState.RuntimeBlocked)) &&
+                (!Equals(button.Tag, "general-primary-action") || (HasProject && (IsDeveloper || _viewModel.PrimaryAction != PrimaryActionKind.Disabled)));
+            if (_config.IsManagedDeployment && id is "cache-clear" or "backup-cleanup")
+            {
+                button.IsEnabled = false;
+                ToolTip.SetTip(button, "관리형 캐시/백업 정리는 업데이트 서비스의 별도 관리 기능이 필요합니다.");
+            }
+        }
+        foreach (var control in _selectionControls) control.IsEnabled = !busy;
     }
 
     private void UiProgress(string stage, string message, double? percent)
     {
-        _viewModel.ApplyProgressStage(stage);
-        if (_statusText is not null) _statusText.Text = IsDeveloper ? $"{stage}: {message}" : FriendlyProgress(stage, message);
+        _viewModel.ApplyProgressStage(stage); _presentation.Stage(stage);
+        if (_statusText is not null) SetStatus(IsDeveloper ? $"{stage}: {message}" : FriendlyProgress(stage, message));
         if (percent.HasValue) Progress(percent.Value); else Progress(stage switch { "Catalog" => 10, "Manifest" => 20, "Plan" => 35, "Download" => Math.Max(_progress?.Value ?? 0, 45), "Apply" => 85, "Package" => 88, "Launch" => 95, _ => Math.Max(_progress?.Value ?? 0, 5) });
         AppendLog(IsDeveloper ? $"[{stage}] {message}" : FriendlyProgress(stage, message));
     }
@@ -1382,8 +1378,8 @@ public sealed partial class MainWindow : Window
             .GetResult();
     }
 
-    private void Progress(double v) { var c = Math.Clamp(v, 0, 100); if (_progress is not null) _progress.Value = c; if (_percentText is not null) _percentText.Text = $"{c:0}%"; }
-    private string FriendlyProgress(string stage, string message) => stage switch { "Catalog" => "배포 정보를 확인하고 있습니다...", "Manifest" => "업데이트 정보를 확인하고 있습니다...", "Plan" => "필요한 파일을 확인하고 있습니다...", "Download" => "필요한 파일을 다운로드하고 있습니다...", "Apply" => "업데이트를 적용하고 있습니다...", "Package" => "패키지를 처리하고 있습니다...", "Launch" => "프로젝트를 실행하고 있습니다...", _ => message };
+    private void Progress(double v) { _presentation.Percent = Math.Clamp(v, 0, 100); RefreshPresentation(); }
+    private string FriendlyProgress(string stage, string message) => LauncherOperationPresentation.GeneralProgress(stage);
     private void MarkError(Exception ex, string status = "작업 실패", bool showDialog = true)
     {
         var runtimeBlocked = ex.GetBaseException() as RuntimeBlockedException;
@@ -1392,7 +1388,7 @@ public sealed partial class MainWindow : Window
         _viewModel.GeneralState = runtimeBlocked is null ? GeneralLauncherState.RecoverableError : GeneralLauncherState.RuntimeBlocked;
         _viewModel.WorkflowStage = LauncherWorkflowStage.None;
         Build();
-        if (_statusText is not null) _statusText.Text = status;
+        if (_statusText is not null) SetStatus(status);
         AppendLog("오류: " + FriendlyError(ex), true);
         if (IsDeveloper) AppendLog(ex.ToString(), true);
         else if (showDialog && runtimeBlocked is null) ErrorDialog(status, FriendlyError(ex));
@@ -1442,7 +1438,7 @@ public sealed partial class MainWindow : Window
     private void OpenInstallFolder() { var path = _selectedRuntimeConfig?.InstallDir ?? LauncherPaths.ResolveConfigRelative(ConfigPath, _selectedProject.InstallPath ?? _config.InstallDir); Directory.CreateDirectory(path); try { Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true }); } catch (Exception ex) { AppendLog("폴더를 열 수 없습니다: " + FriendlyError(ex), true); } }
     private void ClearCache() { try { var p = SelectedStatePaths.StagingDir; if (Directory.Exists(p)) Directory.Delete(p, true); Directory.CreateDirectory(p); AppendLog("캐시를 정리했습니다.", true); } catch (Exception ex) { AppendLog("캐시 정리 실패: " + FriendlyError(ex), true); } }
     private void CleanupBackups() { try { var p = SelectedStatePaths.BackupDir; BackupManager.Prune(p, _config.MaxBackupCount, m => AppendLog("백업 정리: " + m, true)); AppendLog($"백업을 정리했습니다. 최근 {_config.MaxBackupCount}개는 롤백을 위해 보관합니다.", true); } catch (Exception ex) { AppendLog("백업 정리 실패: " + FriendlyError(ex), true); } }
-    private void ClearLog() { if (_logBox is not null) _logBox.Text = string.Empty; }
+    private void ClearLog() { _presentation.Logs.Clear(); if (_logBox is not null) _logBox.Text = string.Empty; }
     private string SaveLogFile() { var dir = Path.Combine(BaseDir, "logs"); Directory.CreateDirectory(dir); var path = Path.Combine(dir, $"launcher-{DateTime.Now:yyyyMMdd-HHmmss}.log"); File.WriteAllText(path, _logBox?.Text ?? string.Empty); return path; }
     private void ExportLogsZip() { try { SaveLogFile(); var dir = Path.Combine(BaseDir, "logs"); var zip = Path.Combine(BaseDir, $"launcher-logs-{DateTime.Now:yyyyMMdd-HHmmss}.zip"); ZipFile.CreateFromDirectory(dir, zip); AppendLog("로그 ZIP 저장 완료: " + zip, true); } catch (Exception ex) { AppendLog("로그 ZIP 저장 실패: " + FriendlyError(ex), true); } }
     private string StorageSummary() => $"캐시 {FormatBytes(DirSize(SelectedStatePaths.StagingDir))} / 백업 {FormatBytes(DirSize(SelectedStatePaths.BackupDir))}";
@@ -1452,16 +1448,16 @@ public sealed partial class MainWindow : Window
 
     private TextBlock Txt(string text, double size, bool bold) => Label(text, size, Fg(), bold);
     private TextBlock Muted(string text, double size) => Label(text, size, MutedBrush());
-    private TextBlock Label(string text, double size, IBrush color, bool bold = false) => new() { Text = text ?? string.Empty, FontSize = size, Foreground = color, FontWeight = bold ? FontWeight.SemiBold : FontWeight.Normal, TextWrapping = TextWrapping.Wrap };
-    private IBrush Fg() => LauncherVisualTokens.Text(IsDeveloper);
-    private IBrush MutedBrush() => LauncherVisualTokens.MutedText(IsDeveloper);
+    private TextBlock Label(string text, double size, IBrush color, bool bold = false) => new() { Text = text ?? string.Empty, FontSize = size * _preferences.TextScale, Foreground = HighContrast ? Brushes.White : color, FontWeight = bold ? FontWeight.SemiBold : FontWeight.Normal, TextWrapping = TextWrapping.Wrap };
+    private IBrush Fg() => HighContrast ? Brushes.White : LauncherVisualTokens.Text(IsDeveloper);
+    private IBrush MutedBrush() => HighContrast ? Brushes.White : LauncherVisualTokens.MutedText(IsDeveloper);
     private IBrush StatusBrush(string? s) { var v = s ?? string.Empty; if (v.Contains("오류")) return LauncherVisualTokens.Brush(LauncherVisualTokens.Danger); if (v.Contains("업데이트")) return LauncherVisualTokens.Brush(LauncherVisualTokens.Warning); if (v.Contains("설치 필요")) return LauncherVisualTokens.Brush(LauncherVisualTokens.Accent); if (v.Contains("최신") || v.Contains("설치")) return LauncherVisualTokens.Brush(LauncherVisualTokens.Success); return LauncherVisualTokens.Brush(LauncherVisualTokens.Accent); }
     private string ModeStatus() => IsDeveloper ? "개발자 빌드" : "안정 버전";
     private Border Card(Control child, double padding) => new() { Padding = new Thickness(padding), CornerRadius = new CornerRadius(LauncherVisualTokens.RadiusCard), Background = LauncherVisualTokens.Surface(IsDeveloper), BorderBrush = LauncherVisualTokens.Border(IsDeveloper), BorderThickness = new Thickness(1), Child = child };
     private Button PrimaryButton(string text, EventHandler<RoutedEventArgs> handler, double height)
     {
         var button = BaseButton(text, handler, height, Brushes.White);
-        button.Classes.Add("accent");
+        button.Classes.Add("posco-primary");
         button.Background = LauncherVisualTokens.Brush(LauncherVisualTokens.Accent);
         button.BorderBrush = LauncherVisualTokens.Brush(LauncherVisualTokens.Accent);
         button.BorderThickness = new Thickness(1);
@@ -1485,14 +1481,15 @@ public sealed partial class MainWindow : Window
             {
                 Text = text,
                 Foreground = color,
-                FontSize = height >= 100 ? 22 : LauncherVisualTokens.FontBody,
+                FontSize = (height >= 100 ? 22 : LauncherVisualTokens.FontBody) * _preferences.TextScale,
+                TextWrapping = TextWrapping.Wrap,
                 FontWeight = height >= 100 ? FontWeight.SemiBold : FontWeight.Medium,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextAlignment = TextAlignment.Center
             },
-            Height = height,
-            MinWidth = 110,
+            MinHeight = height,
+            MinWidth = 100,
             Padding = new Thickness(14, 0),
             CornerRadius = new CornerRadius(LauncherVisualTokens.RadiusControl),
             HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -1507,7 +1504,7 @@ public sealed partial class MainWindow : Window
                 new BrushTransition { Property = Button.BorderBrushProperty, Duration = LauncherVisualTokens.MotionFast }
             }
         };
-        AutomationProperties.SetName(button, text.TrimStart('▶', '↻', ' '));
+        AutomationProperties.SetName(button, text == "↻" ? "카탈로그 새로고침" : text.TrimStart('▶', ' '));
         button.Click += handler;
         return button;
     }
@@ -1520,13 +1517,15 @@ public sealed partial class MainWindow : Window
 
     private void AppendLog(string msg, bool force = false)
     {
-        _fileLogger?.Log("UI", msg);
+        var safe=DiagnosticRedactor.Redact(msg);
+        _fileLogger?.Log("UI", safe);
+        _presentation.Append($"{DateTime.Now:HH:mm:ss} {safe}");
         if (_logBox is null) return;
-        var text = _logBox.Text ?? string.Empty;
-        text += $"{DateTime.Now:HH:mm:ss} {msg}{Environment.NewLine}";
-        var lines = text.Split(Environment.NewLine);
-        if (lines.Length > MaxLogLines) text = string.Join(Environment.NewLine, lines[^MaxLogLines..]);
-        _logBox.Text = text;
-        _logBox.CaretIndex = _logBox.Text?.Length ?? 0;
+        var caret=_logBox.CaretIndex; var start=_logBox.SelectionStart;var stop=_logBox.SelectionEnd;
+        var reading=_logBox.IsKeyboardFocusWithin || start!=stop;
+        _logBox.Text=_presentation.LogText;
+        if(reading){_logBox.CaretIndex=Math.Min(caret,_logBox.Text.Length);_logBox.SelectionStart=Math.Min(start,_logBox.Text.Length);_logBox.SelectionEnd=Math.Min(stop,_logBox.Text.Length);}
+        else _logBox.CaretIndex=_logBox.Text.Length;
+
     }
 }

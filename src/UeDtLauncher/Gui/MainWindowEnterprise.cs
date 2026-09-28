@@ -1,0 +1,240 @@
+using Avalonia;
+using Avalonia.Automation;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
+
+namespace UeDtLauncher.Gui;
+
+public sealed partial class MainWindow
+{
+    private readonly LauncherOperationPresentation _presentation = new();
+    private LauncherUiPreferences _preferences = new();
+    private readonly List<Control> _selectionControls = [];
+    private TextBlock? _serviceLabel;
+    private TextBlock? _stageLabel;
+    private TextBlock? _announcer;
+    private ListBox? _enterpriseProjects;
+    private ScrollViewer? _enterpriseScroll;
+    private Bitmap? _brandLogo;
+    private bool _building;
+    private string? _configDraft;
+    private string _lastAnnouncement = "";
+    private bool HighContrast => _preferences.HighContrast || PlatformSettings?.GetColorValues().ContrastPreference == ColorContrastPreference.High;
+    private IBrush PageBrush => HighContrast ? Brushes.Black : LauncherVisualTokens.Background(IsDeveloper);
+    private IBrush SurfaceBrush => HighContrast ? Brushes.Black : LauncherVisualTokens.Surface(IsDeveloper);
+    private bool HasProject => _viewModel.ProjectsForProfile().Any(p => p.ProjectId == _selectedProject.ProjectId);
+
+    private T Identify<T>(T control, string id, string name) where T : Control
+    {
+        AutomationProperties.SetAutomationId(control,id); AutomationProperties.SetName(control,name); return control;
+    }
+    private Button EnterpriseButton(string text,string id,EventHandler<Avalonia.Interactivity.RoutedEventArgs> action,bool primary=false,bool tracked=true)
+    {
+        var button=primary?PrimaryButton(text,action,48):SecondaryButton(text,action,40);
+        Identify(button,id,text); if(tracked) Track(button); return button;
+    }
+    private Control EnterpriseCard(Control content,double padding=16) => new Border
+    {
+        Child=content, Padding=new Thickness(padding), Background=SurfaceBrush,
+        BorderBrush=HighContrast?Brushes.White:LauncherVisualTokens.Border(IsDeveloper), BorderThickness=new Thickness(1),
+        CornerRadius=new CornerRadius(LauncherVisualTokens.RadiusCard)
+    };
+    private void BuildEnterprise()
+    {
+        if(_building) return;
+        _building=true;
+        try
+        {
+            var focused=FocusManager?.GetFocusedElement() as Control;
+            var focusId=focused is null?null:AutomationProperties.GetAutomationId(focused);
+            var caret=focused is TextBox tb?tb.CaretIndex:0;
+            var selectionStart=focused is TextBox start?start.SelectionStart:0;
+            var selectionEnd=focused is TextBox end?end.SelectionEnd:0;
+            var offset=_enterpriseScroll?.Offset ?? default;
+            _configDraft=_configPathBox?.Text ?? _configDraft ?? _startupOptions.ConfigPath;
+            _configPathBox=null;
+            _actionButtons.Clear(); _selectionControls.Clear(); _nextTabIndex=0;
+            Title=IsDeveloper?"POSCO DX · DT Launcher — 개발자":"POSCO DX · DT Launcher";
+            RequestedThemeVariant=IsDeveloper||HighContrast?Avalonia.Styling.ThemeVariant.Dark:Avalonia.Styling.ThemeVariant.Light;
+            var screen=Screens.ScreenFromWindow(this) ?? Screens.Primary;
+            var availableWidth=screen?.WorkingArea.Width / (screen?.Scaling ?? 1) ?? 1280;
+            var availableHeight=screen?.WorkingArea.Height / (screen?.Scaling ?? 1) ?? 760;
+            MinWidth=Math.Min(640,availableWidth-32); MinHeight=Math.Min(360,availableHeight-64);
+            if(!_windowMetricsInitialized)
+            {
+                Width=Math.Min(IsDeveloper?1280:1120,availableWidth-32);
+                Height=Math.Min(740,availableHeight-64); _windowMetricsInitialized=true;
+            }
+            var width=CurrentLayoutWidth(); _layoutBucket=GeneralLayoutBucket(width);
+            var wide=width>=1100; var projects=_viewModel.ProjectsForProfile().ToList();
+            var sidebar=wide && (IsDeveloper || projects.Count>1);
+            Background=PageBrush;
+            var root=new Grid { RowDefinitions=new("Auto,*,Auto"), RowSpacing=12, Background=PageBrush, Margin=new Thickness(width<800?12:20) };
+            root.Children.Add(EnterpriseHeader());
+            var work=new Grid { ColumnDefinitions=new(sidebar?"248,*":"*"),ColumnSpacing=20 };
+            if(sidebar)work.Children.Add(EnterpriseProjectList());
+            var content=new StackPanel { Spacing=16 };
+            if(!sidebar && projects.Count>1) content.Children.Add(CompactProjectSelector());
+            if(IsDeveloper) content.Children.Add(EnterpriseFilters());
+            if(!HasProject)
+            {
+                content.Children.Add(EnterpriseCard(new StackPanel {Spacing=12,Children={Txt("사용 가능한 프로젝트가 없습니다",24,true),Muted("이 PC에 허용된 배포를 확인하거나 관리자에게 문의해 주세요.",14),EnterpriseButton("배포 다시 확인","empty-refresh",async (_,_)=>await RefreshCatalog(true))}}));
+            }
+            else
+            {
+                content.Children.Add(EnterpriseOverview());
+                if(IsDeveloper)
+                {
+                    var more=new Expander { Header="유지보수 및 진단",Content=EnterpriseMaintenance() };
+                    Identify(more,"maintenance","유지보수 및 진단"); content.Children.Add(more);
+                    var details=ReleaseInfo(); var logs=EnterpriseLogs();
+                    if(wide)
+                    {
+                        var split=new Grid {ColumnDefinitions=new("*,*"),ColumnSpacing=16}; split.Children.Add(details);split.Children.Add(At(logs,1));content.Children.Add(split);
+                    }
+                    else
+                    {
+                        var tabs=Identify(new TabControl {ItemsSource=new[]{new TabItem {Header="배포 정보",Content=details},new TabItem {Header="작업 기록",Content=logs}}},"details-tabs","배포 정보와 작업 기록");
+                        content.Children.Add(tabs);
+                    }
+                }
+                else content.Children.Add(EnterpriseCard(new Expander {Header="릴리스 설명 및 도움말",Content=new StackPanel {Spacing=12,Children={Txt(_releaseNotes,14,false),Muted("프로그램이 실행 중이면 정상 종료 후 다시 확인해 주세요. 창을 닫아도 실행 중인 프로그램은 종료되지 않습니다.",14)}}}));
+            }
+            _enterpriseScroll=Identify(new ScrollViewer {Content=content,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled},"workspace-scroll","프로젝트 작업 공간");
+            work.Children.Add(At(_enterpriseScroll,sidebar?1:0)); root.Children.Add(AtRow(work,1));
+            root.Children.Add(AtRow(EnterpriseActionBar(),2));
+            Content=root;
+            SetBusy(_running); RefreshPresentation();
+            Dispatcher.UIThread.Post(()=>
+            {
+                if(_enterpriseScroll is not null)_enterpriseScroll.Offset=offset;
+                if(focusId is null)return;
+                var control=this.GetVisualDescendants().OfType<Control>().FirstOrDefault(c=>AutomationProperties.GetAutomationId(c)==focusId && c.IsEffectivelyVisible && c.IsEnabled);
+                control ??= this.GetVisualDescendants().OfType<Control>().FirstOrDefault(c=>AutomationProperties.GetAutomationId(c)=="status-check" && c.IsEnabled);
+                if(control is TextBox box) {box.CaretIndex=Math.Min(caret,box.Text?.Length??0);box.SelectionStart=Math.Min(selectionStart,box.Text?.Length??0);box.SelectionEnd=Math.Min(selectionEnd,box.Text?.Length??0);}
+                control?.Focus(NavigationMethod.Tab);
+            });
+        }
+        finally {_building=false;}
+    }
+    private Control EnterpriseHeader()
+    {
+        _brandLogo ??= new Bitmap(AssetLoader.Open(new Uri("avares://UeDtLauncher/Assets/Branding/posco-dx-korean.png")));
+        var grid=new Grid {ColumnDefinitions=new("Auto,*,Auto"),ColumnSpacing=14};
+        var logo=Identify(new Image {Source=_brandLogo,Width=128,Height=36,Stretch=Stretch.Uniform},"brand-logo","포스코DX");
+        grid.Children.Add(new Border {Background=Brushes.White,Padding=new Thickness(12,8),CornerRadius=new CornerRadius(6),Child=logo});
+        grid.Children.Add(At(new StackPanel {Spacing=2,VerticalAlignment=VerticalAlignment.Center,Children={Txt("DT Launcher",20,true),Muted(IsDeveloper?"개발자 배포 작업 공간":"디지털 트윈 프로그램",12)}},1));
+        _serviceLabel=Identify(Muted(_agentState,12),"service-status","업데이트 서비스 상태");
+        var right=new StackPanel {Orientation=Orientation.Horizontal,Spacing=12,VerticalAlignment=VerticalAlignment.Center};
+        if(CurrentLayoutWidth()>=800)right.Children.Add(_serviceLabel);
+        var settings=EnterpriseButton("설정","settings",(_,_)=>SettingsDialog(IsDeveloper),tracked:false);right.Children.Add(settings);grid.Children.Add(At(right,2));
+        return grid;
+    }
+    private Control EnterpriseProjectList()
+    {
+        var grid=new Grid {RowDefinitions=new("Auto,Auto,*"),RowSpacing=12};
+        var heading=new Grid {ColumnDefinitions=new("*,Auto")};heading.Children.Add(Txt("프로젝트",18,true));
+        heading.Children.Add(At(EnterpriseButton("새로고침","catalog-refresh",async (_,_)=>await RefreshCatalog(true)),1));grid.Children.Add(heading);
+        var search=Identify(new TextBox {Text=_search,Watermark="프로젝트 검색",MinHeight=40,FontSize=14*_preferences.TextScale},"project-search","프로젝트 검색");
+        search.TextChanged+=(_,_)=>{_search=search.Text??"";RenderEnterpriseProjects();};grid.Children.Add(AtRow(search,1));
+        _enterpriseProjects=Identify(new ListBox {Background=Brushes.Transparent,BorderThickness=new Thickness(0),SelectionMode=SelectionMode.Single},"project-list","프로젝트 선택");
+        RenderEnterpriseProjects();
+        _enterpriseProjects.SelectionChanged+=(_,_)=>
+        {
+            if(_building||_running||_enterpriseProjects.SelectedItem is not ListBoxItem {Tag:ProjectUiConfig project})return;
+            if(_selectedProject.ProjectId==project.ProjectId)return;
+            _selectedProject=project;_config.ProjectId=project.ProjectId;SelectionChanged();Build();
+        };
+        _selectionControls.Add(_enterpriseProjects);grid.Children.Add(AtRow(_enterpriseProjects,2));return grid;
+    }
+    private void RenderEnterpriseProjects()
+    {
+        if(_enterpriseProjects is null)return;
+        var previous=_building; _building=true;
+        try
+        {
+            var items=VisibleProjects().Select(p=>Identify(new ListBoxItem {Tag=p,Padding=new Thickness(12),Margin=new Thickness(0,0,0,8),Content=new StackPanel {Spacing=6,Children={Txt(p.DisplayName,15,true),Muted(p.ProjectId,12)}}},"project-"+p.ProjectId,p.DisplayName)).ToList();
+            _enterpriseProjects.ItemsSource=items;
+            _enterpriseProjects.SelectedItem=items.FirstOrDefault(i=>((ProjectUiConfig)i.Tag!).ProjectId==_selectedProject.ProjectId);
+        }
+        finally {_building=previous;}
+    }
+    private Control EnterpriseFilters()
+    {
+        var wrap=new WrapPanel {Orientation=Orientation.Horizontal};
+        foreach(var control in new[]{ComboLine("환경",_config.Environment,["prod","dev"],v=>{_config.Environment=v;SelectionChanged();}),ComboLine("채널",_config.Channel,["stable","beta","dev"],v=>{_config.Channel=v;SelectionChanged();}),ComboLine("버전 정책",_config.VersionPolicy,["latest","exact"],v=>{_config.VersionPolicy=v;SelectionChanged();})})
+        {control.Width=220;control.Margin=new Thickness(0,0,12,8);wrap.Children.Add(control);}
+        if(_config.VersionPolicy=="exact"){var exact=ExactVersionLine();exact.Width=240;exact.Margin=new Thickness(0,0,0,8);wrap.Children.Add(exact);}
+        return EnterpriseCard(wrap,12);
+    }
+    private Control EnterpriseOverview()
+    {
+        var narrow=CurrentLayoutWidth()<800||_preferences.TextScale>1.5;
+        var grid=new Grid {ColumnDefinitions=new(narrow?"*":"*,164"),ColumnSpacing=20};
+        var stack=new StackPanel {Spacing=10};stack.Children.Add(Txt(_selectedProject.DisplayName,24,true));
+        stack.Children.Add(Txt(_installState,16,true));stack.Children.Add(Muted(_installDetail,14));
+        var versions=new WrapPanel {Orientation=Orientation.Horizontal};
+        versions.Children.Add(new StackPanel {Margin=new Thickness(0,0,32,0),Children={Muted("설치 버전",12),Txt(ReadInstalledVersion()??"미설치",16,true)}});
+        versions.Children.Add(new StackPanel {Children={Muted(IsDeveloper?"선택 배포 버전":"최신 배포 버전",12),Txt(LatestCatalogVersion()??"확인 필요",16,true)}});
+        stack.Children.Add(versions);grid.Children.Add(stack);
+        if(!narrow&&!HighContrast)
+        {
+            var visual=ProjectHeroVisual(ProjectVisualResolver.Resolve(_selectedProject,ConfigPath,ProjectVisualKind.Hero)); visual.Height=108;
+            AutomationProperties.SetAccessibilityView(visual,AccessibilityView.Raw);grid.Children.Add(At(visual,1));
+        }
+        return EnterpriseCard(grid,20);
+    }
+    private Control EnterpriseMaintenance()
+    {
+        var wrap=new WrapPanel {Orientation=Orientation.Horizontal};
+        var buttons=new[]{EnterpriseButton("검증/복구","repair",async (_,_)=>await RunAsync(true,false)),EnterpriseButton("백업 복원","rollback",async (_,_)=>await RollbackLatestAsync()),
+            EnterpriseButton("캐시 정리","cache-clear",(_,_)=>ClearCache()),EnterpriseButton("백업 정리","backup-cleanup",(_,_)=>CleanupBackups()),
+            EnterpriseButton("설치 폴더","open-folder",(_,_)=>OpenInstallFolder(),tracked:false),EnterpriseButton("로그 ZIP","export-logs",(_,_)=>ExportLogsZip(),tracked:false)};
+        foreach(var b in buttons){b.Margin=new Thickness(0,8,8,0);wrap.Children.Add(b);}return wrap;
+    }
+    private Control EnterpriseLogs()
+    {
+        _logBox=Identify(new TextBox {Text=_presentation.LogText,IsReadOnly=true,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,MinHeight=180,MaxHeight=360,FontSize=12*_preferences.TextScale,FontFamily=new FontFamily("Cascadia Mono,Consolas"),Foreground=Fg(),Background=SurfaceBrush},"operation-log","작업 기록");
+        return EnterpriseCard(new StackPanel {Spacing=12,Children={Txt("작업 기록",18,true),_logBox}});
+    }
+    private Control EnterpriseActionBar()
+    {
+        var panel=new StackPanel {Spacing=12};var actions=new WrapPanel {Orientation=Orientation.Horizontal};
+        var primary=EnterpriseButton(IsDeveloper?"실행":_viewModel.PrimaryActionText,"primary-action",async (_,_)=>{if(IsDeveloper)await RunAsync(false,true);else await ExecutePrimaryActionAsync();},true);
+        primary.Tag="general-primary-action"; primary.IsEnabled=HasProject&&_viewModel.PrimaryAction!=PrimaryActionKind.Disabled&&!_running;
+        if(IsDeveloper)primary.IsEnabled=HasProject&&!_running;
+        primary.HotKey=new KeyGesture(Key.F5);actions.Children.Add(primary);
+        if(IsDeveloper)actions.Children.Add(EnterpriseButton("업데이트","update",async (_,_)=>await RunAsync(false,false)));
+        var check=EnterpriseButton(_viewModel.GeneralState==GeneralLauncherState.RecoverableError?"문제 해결":"상태 확인","status-check",async (_,_)=>{if(!IsDeveloper&&_viewModel.GeneralState==GeneralLauncherState.RecoverableError)await TroubleshootAsync();else await RefreshInstallStatusAsync();});
+        check.HotKey=new KeyGesture(Key.F6);actions.Children.Add(check);
+        foreach(var item in actions.Children)item.Margin=new Thickness(0,0,8,0);
+        panel.Children.Add(actions);
+        _statusText=Identify(Txt(_presentation.Title,14,true),"operation-status","작업 상태");
+        _percentText=Muted("",12);_stageLabel=Muted("",12);
+        _progress=Identify(new ProgressBar {Minimum=0,Maximum=100,Height=6},"operation-progress","작업 진행률");
+        _announcer=Identify(new TextBlock {Height=1,Opacity=0,IsHitTestVisible=false},"operation-announcement","작업 상태 알림");
+        AutomationProperties.SetLiveSetting(_announcer,AutomationLiveSetting.Polite);
+        panel.Children.Add(_statusText);var detail=new Grid {ColumnDefinitions=new("*,Auto")};detail.Children.Add(_stageLabel);detail.Children.Add(At(_percentText,1));panel.Children.Add(detail);panel.Children.Add(_progress);panel.Children.Add(_announcer);
+        return EnterpriseCard(panel,12);
+    }
+    private void SetStatus(string message)
+    {
+        _presentation.Title=message;RefreshPresentation();
+    }
+    private void RefreshPresentation()
+    {
+        if(_statusText is not null)_statusText.Text=_presentation.Title;
+        if(_percentText is not null)_percentText.Text=_presentation.Percent is { } p?$"{p:0}%":"진행 중";
+        if(_progress is not null){_progress.IsIndeterminate=_presentation.Percent is null;_progress.Value=_presentation.Percent??0;}
+        if(_stageLabel is not null)_stageLabel.Text="현재 단계 · "+_presentation.CurrentStage;
+        var announcement=_presentation.CurrentStage+":"+(_presentation.Percent==100?_presentation.Title:_presentation.ErrorCode);
+        if(_announcer is not null&&announcement!=_lastAnnouncement){_lastAnnouncement=announcement;_announcer.Text=_presentation.Title;}
+    }
+}

@@ -54,16 +54,15 @@ public sealed record LauncherLayoutPolicy(
 {
     public static LauncherLayoutPolicy For(double width, int visibleProjectCount, bool developer)
     {
-        if (developer) return new LauncherLayoutPolicy(4, true, false, 124, 1160, 760);
-        var infoColumns = width < 760 ? 1 : width < 1100 ? 2 : 3;
-        var topSelector = visibleProjectCount > 1 && width < 980;
+        var infoColumns = width < 800 ? 1 : width < 1100 ? 2 : 3;
+        var topSelector = visibleProjectCount > 1 && width < 1100;
         return new LauncherLayoutPolicy(
             infoColumns,
-            visibleProjectCount > 1 && !topSelector,
+            width >= 1100 && (developer || visibleProjectCount > 1),
             topSelector,
-            168,
-            720,
-            500);
+            108,
+            640,
+            360);
     }
 }
 
