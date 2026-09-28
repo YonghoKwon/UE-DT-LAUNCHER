@@ -169,7 +169,7 @@
     ],
     "fixtureState": {
       "portable": "v1-unchanged-v2-healthy-stopped-normal-backup-present-preview-rejection-tested",
-      "managed": "v1-unchanged-v2-healthy-stopped-normal-backup-verified"
+      "managed": "v1-unchanged-v2-stopped-damaged-normal-backup-verified-restore-confirmation-open"
     },
     "managedCapabilities": [
       "runtime-supervision-v1",
@@ -398,6 +398,16 @@
         "backupId": "20260928145009",
         "verifiedFiles": 3,
         "newApplicationMarker": false
+      },
+      {
+        "id": "managed-v2-restore-cancel",
+        "fixture": "accept-managed-02",
+        "result": "pass",
+        "backupId": "20260928145009",
+        "protectedSnapshotUnchanged": true,
+        "displayPreserved": "update-available",
+        "defaultFocus": "dialog-cancel",
+        "restoredFocus": "status-check"
       }
     ]
   },
