@@ -19,9 +19,9 @@ public sealed record LauncherUiPreferences(double TextScale = 1, bool HighContra
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return new(); }
     }
-    public void Save(string? path = null)
+    public Task SaveAsync(string? path = null)
     {
         if (!SupportedScales.Contains(TextScale)) throw new ArgumentOutOfRangeException(nameof(TextScale));
-        JsonFiles.WriteAsync(path ?? DefaultPath, this).GetAwaiter().GetResult();
+        return JsonFiles.WriteAsync(path ?? DefaultPath, this);
     }
 }

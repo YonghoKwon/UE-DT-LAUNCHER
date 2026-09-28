@@ -32,6 +32,7 @@ public sealed partial class MainWindow : Window
     private bool _startupInitialized;
     private bool _windowMetricsInitialized;
     private readonly bool _allowAutomaticChecks;
+    private EventHandler<Avalonia.Platform.PlatformColorValues>? _colorValuesChanged;
     private int _layoutBucket = -1;
     private int _nextTabIndex;
     private readonly DispatcherTimer _agentStatusTimer = new() { Interval = TimeSpan.FromSeconds(3) };
@@ -81,11 +82,17 @@ public sealed partial class MainWindow : Window
         if (model is null) LoadConfig(); else SelectProject();
         if (startServices) { try { _fileLogger = new FileLogger(LauncherPaths.ResolveConfigRelative(ConfigPath, _config.LogDir)); } catch { _fileLogger = null; } }
         Build();
+        if (startServices && PlatformSettings is not null)
+        {
+            _colorValuesChanged = (_, _) => Dispatcher.UIThread.Post(Build);
+            PlatformSettings.ColorValuesChanged += _colorValuesChanged;
+        }
         _agentStatusTimer.Tick += async (_, _) => await RefreshAgentStatusAsync();
         if (startServices) _agentStatusTimer.Start();
         Closed += (_, _) =>
         {
             _agentStatusTimer.Stop();
+            if (_colorValuesChanged is not null && PlatformSettings is not null) PlatformSettings.ColorValuesChanged -= _colorValuesChanged;
             foreach (var bitmap in _projectVisualCache.Values) bitmap.Dispose();
             _projectVisualCache.Clear();
             _brandLogo?.Dispose();
@@ -323,7 +330,7 @@ public sealed partial class MainWindow : Window
         var list = values.ToList();
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("82,*"), ColumnSpacing = 8 };
         row.Children.Add(Muted(label, 12));
-        var combo = new ComboBox { ItemsSource = list, SelectedItem = list.FirstOrDefault(v => string.Equals(v, selected, StringComparison.OrdinalIgnoreCase)) ?? list.FirstOrDefault(), MinHeight = 32, Background = B(IsDeveloper ? "#0F172A" : "#FFFFFF"), Foreground = Fg() };
+        var combo = new ComboBox { ItemsSource = list, SelectedItem = list.FirstOrDefault(v => string.Equals(v, selected, StringComparison.OrdinalIgnoreCase)) ?? list.FirstOrDefault(), FontSize = 14 * _preferences.TextScale, MinHeight = 32, Background = SurfaceBrush, Foreground = Fg() };
         Identify(combo, "filter-" + label, label); _selectionControls.Add(combo); combo.IsEnabled = !_running;
         combo.SelectionChanged += (_, _) => { if (!_building && !_running && combo.SelectedItem is string v && !string.Equals(v, selected, StringComparison.OrdinalIgnoreCase)) { apply(v); Build(); } };
         row.Children.Add(At(combo, 1));
@@ -339,7 +346,7 @@ public sealed partial class MainWindow : Window
         }
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("82,*"), ColumnSpacing = 8 };
         row.Children.Add(Muted("요청 버전", 12));
-        var box = new TextBox { Text = _config.RequestedVersion ?? string.Empty, Watermark = "예: 1.0.3", FontSize = 12, MinHeight = 32, Background = B(IsDeveloper ? "#0F172A" : "#FFFFFF"), Foreground = Fg() };
+        var box = new TextBox { Text = _config.RequestedVersion ?? string.Empty, Watermark = "예: 1.0.3", FontSize = 14 * _preferences.TextScale, MinHeight = 32, Background = SurfaceBrush, Foreground = Fg() };
         Identify(box, "filter-exact-version", "요청 버전"); _selectionControls.Add(box);
         box.TextChanged += (_, _) => { var value = string.IsNullOrWhiteSpace(box.Text) ? null : box.Text.Trim(); if (_building || _running || value == _config.RequestedVersion) return; _config.RequestedVersion = value; SelectionChanged(); };
         row.Children.Add(At(box, 1));
@@ -1285,21 +1292,19 @@ public sealed partial class MainWindow : Window
         finally { _running = false; SetBusy(false); }
     }
 
-    private async Task<bool> ConfirmRollback(string backupName, BackupInfo? info)
+    private Task<bool> ConfirmRollback(string backupName, BackupInfo? info)
     {
-        var dialog = new Window { Title = "이전 버전으로 롤백", Width = 500, Height = 320, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = B(IsDeveloper ? "#0B111A" : "#F5F7FB") };
-        var cancel = SecondaryButton("취소", (_, _) => dialog.Close(false), 42);
-        var ok = PrimaryButton("롤백 실행", (_, _) => dialog.Close(true), 42);
-        dialog.Content = new Border { Padding = new Thickness(22), Child = new StackPanel { Spacing = 12, Children = { Txt("가장 최근 백업으로 되돌릴까요?", 20, true), KeyValue("백업", backupName), KeyValue("되돌릴 버전", info?.PreviousVersion ?? "알 수 없음"), KeyValue("현재(업데이트된) 버전", info?.NewVersion ?? "알 수 없음"), Muted("롤백 후에는 '상태 확인'으로 파일 상태를 검증하는 것을 권장합니다.", 12), new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), ColumnSpacing = 10, Children = { cancel, At(ok, 1) } } } } };
-        return await dialog.ShowDialog<bool>(this);
+        return ShowConfirmationAsync("백업 복원 확인", new StackPanel {Spacing=12,Children={
+            Txt("선택한 설치의 백업 시점으로 복원합니다.",16,true),
+            KeyValue("백업",backupName),KeyValue("현재 버전",info?.NewVersion??"기록 없음"),
+            KeyValue("복원 상태",info?.PreviousVersion??"기록 없음"),
+            Muted("다른 버전의 설치 경로로 전환하는 작업이 아닙니다. 설치 전 상태 백업은 선택 설치 파일을 제거할 수 있습니다.",14)}}, "백업 복원");
     }
-
-    private async Task<bool> ConfirmDevLaunch()
+    private Task<bool> ConfirmDevLaunch()
     {
-        var dialog = new Window { Title = "개발자 배포 실행 확인", Width = 500, Height = 320, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = B("#0B111A") };
-        var cancel = SecondaryButton("취소", (_, _) => dialog.Close(false), 42); var run = PrimaryButton("실행", (_, _) => dialog.Close(true), 42);
-        dialog.Content = new Border { Padding = new Thickness(22), Child = new StackPanel { Spacing = 12, Children = { Txt("선택한 개발자 배포를 실행할까요?", 22, true), KeyValue("프로젝트", _selectedProject.ProjectId), KeyValue("가동/개발", _config.Environment), KeyValue("채널", _config.Channel), KeyValue("버전", _config.VersionPolicy == "exact" ? _config.RequestedVersion ?? "미입력" : "latest"), KeyValue("OS", CurrentPlatform), new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), ColumnSpacing = 10, Children = { cancel, At(run, 1) } } } } };
-        return await dialog.ShowDialog<bool>(this);
+        return ShowConfirmationAsync("개발자 배포 실행 확인",new StackPanel {Spacing=12,Children={
+            KeyValue("프로젝트",_selectedProject.DisplayName),KeyValue("환경",_config.Environment),KeyValue("채널",_config.Channel),
+            KeyValue("버전",_config.VersionPolicy=="exact"?_config.RequestedVersion:"최신 승인 버전"),KeyValue("OS",CurrentPlatform)}}, "선택 버전 실행");
     }
 
     private void EngineProgress(LauncherProgress p)
@@ -1397,52 +1402,30 @@ public sealed partial class MainWindow : Window
     private string FriendlyError(Exception ex) => _viewModel.FriendlyError(ex);
     private void UpdateInstallTile() { if (_installStateText is not null) { _installStateText.Text = _installState; _installStateText.Foreground = StatusBrush(_installState); } if (_installDetailText is not null) _installDetailText.Text = _installDetail; }
 
-    private void ErrorDialog(string title, string message)
-    {
-        var retry = _presentation.Retry;
-        var d = new Window { Title = title, Width = 520, Height = 320, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = B("#F5F7FB") };
-        d.Content = new Border { Padding = new Thickness(22), Child = new StackPanel { Spacing = 12, Children = { Label(title, 22, B("#111827"), true), Label(message, 14, B("#374151")), SecondaryButton("다시 시도", async (_, _) => { d.Close(); if (retry is not null && ReferenceEquals(retry,_presentation.Retry)) await RetryCurrentAsync(); else await RefreshInstallStatusAsync(); }, 42), SecondaryButton("로그 ZIP 저장", (_, _) => ExportLogsZip(), 42), SecondaryButton("닫기", (_, _) => d.Close(), 42) } } };
-        d.Show(this);
-    }
-
-    private void GeneralSettings() { SettingsDialog(false); }
-    private void DeveloperSettings() { SettingsDialog(true); }
-    private void SettingsDialog(bool dev)
-    {
-        var d = new Window { Title = dev ? "개발자 설정" : "설정", Width = dev ? 640 : 520, Height = dev ? 560 : 460, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = B(dev ? "#0B111A" : "#F5F7FB") };
-        var content = new StackPanel { Spacing = 10 };
-        content.Children.Add(Txt(dev ? "개발자 설정" : "런처 설정", 24, true));
-        if (dev)
-        {
-            content.Children.Add(KeyValue("설정 파일", ConfigPath));
-            content.Children.Add(KeyValue("프로젝트", _selectedProject.ProjectId));
-            content.Children.Add(KeyValue("가동/개발", _config.Environment));
-            content.Children.Add(KeyValue("채널", _config.Channel));
-            content.Children.Add(KeyValue("버전", _config.VersionPolicy == "exact" ? _config.RequestedVersion : _config.VersionPolicy));
-        }
-        else
-        {
-            content.Children.Add(KeyValue("프로젝트", _selectedProject.DisplayName));
-            content.Children.Add(KeyValue("배포", "운영 안정화 버전"));
-        }
-        content.Children.Add(KeyValue("OS", CurrentPlatform));
-        content.Children.Add(KeyValue("설치 버전", ReadInstalledVersion() ?? "미설치"));
-        content.Children.Add(KeyValue("캐시/백업", StorageSummary()));
-        content.Children.Add(SecondaryButton("설치 폴더 열기", (_, _) => OpenInstallFolder(), 40));
-        if (dev) content.Children.Add(SecondaryButton("이전 버전으로 롤백", async (_, _) => { d.Close(); await RollbackLatestAsync(); }, 40));
-        content.Children.Add(SecondaryButton("로그 ZIP 저장", (_, _) => ExportLogsZip(), 40));
-        content.Children.Add(SecondaryButton("설정 새로고침", (_, _) => { LoadConfig(); Build(); }, 40));
-        content.Children.Add(SecondaryButton("닫기", (_, _) => d.Close(), 40));
-        d.Content = new Border { Padding = new Thickness(22), Child = content };
-        d.Show(this);
-    }
+    private void ErrorDialog(string title,string message) => ShowEnterpriseError(title,message);
+    private void GeneralSettings() => SettingsDialog(false);
+    private void DeveloperSettings() => SettingsDialog(true);
+    private void SettingsDialog(bool dev) => ShowEnterpriseSettings(dev);
 
     private void OpenInstallFolder() { var path = _selectedRuntimeConfig?.InstallDir ?? LauncherPaths.ResolveConfigRelative(ConfigPath, _selectedProject.InstallPath ?? _config.InstallDir); Directory.CreateDirectory(path); try { Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true }); } catch (Exception ex) { AppendLog("폴더를 열 수 없습니다: " + FriendlyError(ex), true); } }
     private void ClearCache() { try { var p = SelectedStatePaths.StagingDir; if (Directory.Exists(p)) Directory.Delete(p, true); Directory.CreateDirectory(p); AppendLog("캐시를 정리했습니다.", true); } catch (Exception ex) { AppendLog("캐시 정리 실패: " + FriendlyError(ex), true); } }
     private void CleanupBackups() { try { var p = SelectedStatePaths.BackupDir; BackupManager.Prune(p, _config.MaxBackupCount, m => AppendLog("백업 정리: " + m, true)); AppendLog($"백업을 정리했습니다. 최근 {_config.MaxBackupCount}개는 롤백을 위해 보관합니다.", true); } catch (Exception ex) { AppendLog("백업 정리 실패: " + FriendlyError(ex), true); } }
     private void ClearLog() { _presentation.Logs.Clear(); if (_logBox is not null) _logBox.Text = string.Empty; }
-    private string SaveLogFile() { var dir = Path.Combine(BaseDir, "logs"); Directory.CreateDirectory(dir); var path = Path.Combine(dir, $"launcher-{DateTime.Now:yyyyMMdd-HHmmss}.log"); File.WriteAllText(path, _logBox?.Text ?? string.Empty); return path; }
-    private void ExportLogsZip() { try { SaveLogFile(); var dir = Path.Combine(BaseDir, "logs"); var zip = Path.Combine(BaseDir, $"launcher-logs-{DateTime.Now:yyyyMMdd-HHmmss}.zip"); ZipFile.CreateFromDirectory(dir, zip); AppendLog("로그 ZIP 저장 완료: " + zip, true); } catch (Exception ex) { AppendLog("로그 ZIP 저장 실패: " + FriendlyError(ex), true); } }
+    private string SaveLogFile() { var dir = Path.Combine(Path.GetDirectoryName(LauncherUiPreferences.DefaultPath)!, "support", "logs"); Directory.CreateDirectory(dir); var path = Path.Combine(dir, $"launcher-{DateTime.Now:yyyyMMdd-HHmmss}.log"); File.WriteAllText(path, _presentation.LogText); return path; }
+    private void ExportLogsZip()
+    {
+        try
+        {
+            SaveLogFile();
+            var support=Path.Combine(Path.GetDirectoryName(LauncherUiPreferences.DefaultPath)!,"support");
+            var zip=Path.Combine(support,"launcher-logs-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+"-"+Guid.NewGuid().ToString("N")[..8]+".zip");
+            ZipFile.CreateFromDirectory(Path.Combine(support,"logs"),zip);
+            SetStatus("지원 로그 ZIP을 사용자 지원 폴더에 저장했습니다.");
+            AppendLog(IsDeveloper?"지원 로그 저장: "+zip:"지원 로그 ZIP 저장 완료",true);
+        }
+        catch(Exception ex){MarkError(ex,"지원 로그 저장 실패");}
+    }
+
     private string StorageSummary() => $"캐시 {FormatBytes(DirSize(SelectedStatePaths.StagingDir))} / 백업 {FormatBytes(DirSize(SelectedStatePaths.BackupDir))}";
     private static long DirSize(string path) { try { return Directory.Exists(path) ? Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories).Sum(f => new FileInfo(f).Length) : 0; } catch { return 0; } }
     private static string FormatBytes(long b) { string[] u = { "B", "KB", "MB", "GB", "TB" }; double v = b; var i = 0; while (v >= 1024 && i < u.Length - 1) { v /= 1024; i++; } return $"{v:0.##} {u[i]}"; }
@@ -1460,8 +1443,8 @@ public sealed partial class MainWindow : Window
     {
         var button = BaseButton(text, handler, height, Brushes.White);
         button.Classes.Add("posco-primary");
-        button.Background = LauncherVisualTokens.Brush(LauncherVisualTokens.Accent);
-        button.BorderBrush = LauncherVisualTokens.Brush(LauncherVisualTokens.Accent);
+        button.Background = HighContrast ? Brushes.Black : LauncherVisualTokens.Brush(LauncherVisualTokens.Accent);
+        button.BorderBrush = HighContrast ? Brushes.White : LauncherVisualTokens.Brush(LauncherVisualTokens.Accent);
         button.BorderThickness = new Thickness(1);
         return button;
     }
@@ -1469,8 +1452,9 @@ public sealed partial class MainWindow : Window
     private Button SecondaryButton(string text, EventHandler<RoutedEventArgs> handler, double height)
     {
         var button = BaseButton(text, handler, height, Fg());
-        button.Background = LauncherVisualTokens.Surface(IsDeveloper);
-        button.BorderBrush = LauncherVisualTokens.Border(IsDeveloper);
+        button.Classes.Add("posco-secondary");
+        button.Background = SurfaceBrush;
+        button.BorderBrush = HighContrast ? Brushes.White : LauncherVisualTokens.Border(IsDeveloper);
         button.BorderThickness = new Thickness(1);
         return button;
     }
@@ -1507,6 +1491,13 @@ public sealed partial class MainWindow : Window
             }
         };
         AutomationProperties.SetName(button, text == "↻" ? "카탈로그 새로고침" : text.TrimStart('▶', ' '));
+        button.GotFocus += (_, e) =>
+        {
+            if(e.NavigationMethod==NavigationMethod.Pointer)return;
+            button.BorderBrush=HighContrast?Brushes.Yellow:LauncherVisualTokens.Brush(IsDeveloper?LauncherVisualTokens.PoscoLightBlue:LauncherVisualTokens.Accent);
+            button.BorderThickness=new Thickness(3);
+        };
+        button.LostFocus += (_,_)=>{button.BorderBrush=HighContrast?Brushes.White:LauncherVisualTokens.Border(IsDeveloper);button.BorderThickness=new Thickness(1);};
         button.Click += handler;
         return button;
     }

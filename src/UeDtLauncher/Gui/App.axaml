@@ -3,49 +3,39 @@
              x:Class="UeDtLauncher.Gui.App">
   <Application.Styles>
     <FluentTheme />
-
-    <!--
-      FluentTheme can override pointer-over foreground resources inside the Button
-      template. Keep hover/pressed text readable by setting the Button itself and
-      the template/content text presenters explicitly.
-    -->
     <Style Selector="Button">
       <Setter Property="HorizontalContentAlignment" Value="Center" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
-
-    <Style Selector="Button:pointerover">
-      <Setter Property="Foreground" Value="#FFFFFF" />
-      <Setter Property="Background" Value="#2563EB" />
-      <Setter Property="BorderBrush" Value="#2563EB" />
-    </Style>
-
-    <Style Selector="Button:pointerover /template/ ContentPresenter">
+    <Style Selector="Button.posco-primary:pointerover">
+      <Setter Property="Background" Value="#043E62" />
       <Setter Property="Foreground" Value="#FFFFFF" />
     </Style>
-
-    <Style Selector="Button:pointerover TextBlock">
-      <Setter Property="Foreground" Value="#FFFFFF" />
+    <Style Selector="Button.posco-primary:pressed">
+      <Setter Property="Background" Value="#03314D" />
     </Style>
-
-    <Style Selector="Button:pressed">
-      <Setter Property="Foreground" Value="#FFFFFF" />
-      <Setter Property="Background" Value="#1D4ED8" />
-      <Setter Property="BorderBrush" Value="#1D4ED8" />
+    <Style Selector="Button.posco-secondary:pointerover">
+      <Setter Property="BorderBrush" Value="#05507D" />
     </Style>
-
-    <Style Selector="Button:pressed /template/ ContentPresenter">
-      <Setter Property="Foreground" Value="#FFFFFF" />
+    <Style Selector="Button:focus-visible">
+      <Setter Property="BorderBrush" Value="#00A5E5" />
+      <Setter Property="BorderThickness" Value="3" />
     </Style>
-
-    <Style Selector="Button:pressed TextBlock">
+    <Style Selector="Window.high-contrast Button">
+      <Setter Property="Background" Value="#000000" />
       <Setter Property="Foreground" Value="#FFFFFF" />
+      <Setter Property="BorderBrush" Value="#FFFFFF" />
     </Style>
-
-    <Style Selector="Button:disabled">
-      <Setter Property="Foreground" Value="#9CA3AF" />
-      <Setter Property="Background" Value="#E5E7EB" />
-      <Setter Property="BorderBrush" Value="#D1D5DB" />
+    <Style Selector="Window.high-contrast Button:pointerover">
+      <Setter Property="Background" Value="#000000" />
+      <Setter Property="BorderBrush" Value="#FFFF00" />
+    </Style>
+    <Style Selector="Window.high-contrast Button:focus-visible">
+      <Setter Property="BorderBrush" Value="#FFFF00" />
+      <Setter Property="BorderThickness" Value="3" />
+    </Style>
+    <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="#05507D" />
     </Style>
   </Application.Styles>
 </Application>

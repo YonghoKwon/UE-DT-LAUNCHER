@@ -49,7 +49,8 @@ public sealed partial class MainWindow
             ColumnDefinitions = new ColumnDefinitions("120,*"),
             ColumnSpacing = 8
         };
-        grid.Children.Add(Muted(key, 12));
+        var label=Muted(key,12);
+        grid.Children.Add(label);
         var valueBox = new TextBox
         {
             Text = value ?? "-",
@@ -59,9 +60,11 @@ public sealed partial class MainWindow
             Background = Brushes.Transparent,
             Foreground = Fg(),
             FontFamily = new FontFamily("Cascadia Mono,Consolas"),
-            FontSize = 12,
+            FontSize = 12 * _preferences.TextScale,
             MinHeight = 20
         };
+        Identify(valueBox,"detail-"+key,key);
+        Avalonia.Automation.AutomationProperties.SetLabeledBy(valueBox,label);
         Grid.SetColumn(valueBox, 1);
         grid.Children.Add(valueBox);
         return grid;

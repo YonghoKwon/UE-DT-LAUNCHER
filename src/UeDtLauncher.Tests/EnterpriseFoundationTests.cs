@@ -18,12 +18,12 @@ public class EnterpriseFoundationTests
         Assert.Equal("복구 완료",state.Title); Assert.Equal(100d,state.Percent);
         Assert.DoesNotContain("secret",LauncherOperationPresentation.GeneralProgress("secret C:\\internal"));
     }
-    [Fact] public void PreferencesUseOnlySupportedScaleAndPreserveOtherConfigs()
+    [Fact] public async Task PreferencesUseOnlySupportedScaleAndPreserveOtherConfigs()
     {
         var root=Path.Combine(Path.GetTempPath(),"ui-prefs-"+Guid.NewGuid().ToString("N"));
-        try { var path=Path.Combine(root,"ui.json"); new LauncherUiPreferences(1.5,true).Save(path); Assert.Equal(new(1.5,true),LauncherUiPreferences.Load(path));
+        try { var path=Path.Combine(root,"ui.json"); await new LauncherUiPreferences(1.5,true).SaveAsync(path); Assert.Equal(new(1.5,true),LauncherUiPreferences.Load(path));
             File.WriteAllText(path,"invalid"); Assert.Equal(new(),LauncherUiPreferences.Load(path));
-            Assert.Throws<ArgumentOutOfRangeException>(()=>new LauncherUiPreferences(3).Save(path)); }
+            await Assert.ThrowsAsync<ArgumentOutOfRangeException>(()=>new LauncherUiPreferences(3).SaveAsync(path)); }
         finally { if(Directory.Exists(root))Directory.Delete(root,true); }
     }
 }

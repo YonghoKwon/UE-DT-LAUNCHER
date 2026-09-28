@@ -33,7 +33,7 @@ public sealed partial class MainWindow
 
     private T Identify<T>(T control, string id, string name) where T : Control
     {
-        AutomationProperties.SetAutomationId(control,id); AutomationProperties.SetName(control,name); return control;
+        AutomationProperties.SetAutomationId(control,id); AutomationProperties.SetName(control,name); control.TabIndex=SemanticTabIndex(id); return control;
     }
     private Button EnterpriseButton(string text,string id,EventHandler<Avalonia.Interactivity.RoutedEventArgs> action,bool primary=false,bool tracked=true)
     {
@@ -54,6 +54,8 @@ public sealed partial class MainWindow
         {
             var focused=FocusManager?.GetFocusedElement() as Control;
             var focusId=focused is null?null:AutomationProperties.GetAutomationId(focused);
+            if(focused is ListBoxItem && focusId?.StartsWith("project-",StringComparison.Ordinal)==true)
+                focusId="project-"+_selectedProject.ProjectId;
             var caret=focused is TextBox tb?tb.CaretIndex:0;
             var selectionStart=focused is TextBox start?start.SelectionStart:0;
             var selectionEnd=focused is TextBox end?end.SelectionEnd:0;
@@ -76,6 +78,8 @@ public sealed partial class MainWindow
             var wide=width>=1100; var projects=_viewModel.ProjectsForProfile().ToList();
             var sidebar=wide && (IsDeveloper || projects.Count>1);
             Background=PageBrush;
+            Classes.Set("high-contrast",HighContrast);
+            if(!IsDeveloper)_logBox=null;
             var root=new Grid { RowDefinitions=new("Auto,*,Auto"), RowSpacing=12, Background=PageBrush, Margin=new Thickness(width<800?12:20) };
             root.Children.Add(EnterpriseHeader());
             var work=new Grid { ColumnDefinitions=new(sidebar?"248,*":"*"),ColumnSpacing=20 };
@@ -160,7 +164,7 @@ public sealed partial class MainWindow
         var previous=_building; _building=true;
         try
         {
-            var items=VisibleProjects().Select(p=>Identify(new ListBoxItem {Tag=p,Padding=new Thickness(12),Margin=new Thickness(0,0,0,8),Content=new StackPanel {Spacing=6,Children={Txt(p.DisplayName,15,true),Muted(p.ProjectId,12)}}},"project-"+p.ProjectId,p.DisplayName)).ToList();
+            var items=VisibleProjects().Select(p=>Identify(new ListBoxItem {Tag=p,Padding=new Thickness(12),Margin=new Thickness(0,0,0,8),Content=new StackPanel {Spacing=6,Children={Label(p.DisplayName,15,p.ProjectId==_selectedProject.ProjectId?Brushes.White:Fg(),true),Label(p.ProjectId,12,p.ProjectId==_selectedProject.ProjectId?Brushes.White:MutedBrush())}}},"project-"+p.ProjectId,p.DisplayName)).ToList();
             _enterpriseProjects.ItemsSource=items;
             _enterpriseProjects.SelectedItem=items.FirstOrDefault(i=>((ProjectUiConfig)i.Tag!).ProjectId==_selectedProject.ProjectId);
         }
@@ -179,7 +183,10 @@ public sealed partial class MainWindow
         var narrow=CurrentLayoutWidth()<800||_preferences.TextScale>1.5;
         var grid=new Grid {ColumnDefinitions=new(narrow?"*":"*,164"),ColumnSpacing=20};
         var stack=new StackPanel {Spacing=10};stack.Children.Add(Txt(_selectedProject.DisplayName,24,true));
-        stack.Children.Add(Txt(_installState,16,true));stack.Children.Add(Muted(_installDetail,14));
+        var status=new Grid {ColumnDefinitions=new("Auto,*"),ColumnSpacing=8};
+        var icon=LauncherIconFactory.Create(_viewModel.GeneralState==GeneralLauncherState.Ready?LauncherIconKind.Check:_viewModel.GeneralState==GeneralLauncherState.RecoverableError?LauncherIconKind.Warning:LauncherIconKind.Shield,20,Fg());
+        AutomationProperties.SetAccessibilityView(icon,AccessibilityView.Raw);status.Children.Add(icon);status.Children.Add(At(Txt(_installState,16,true),1));
+        stack.Children.Add(status);stack.Children.Add(Muted(_installDetail,14));
         var versions=new WrapPanel {Orientation=Orientation.Horizontal};
         versions.Children.Add(new StackPanel {Margin=new Thickness(0,0,32,0),Children={Muted("설치 버전",12),Txt(ReadInstalledVersion()??"미설치",16,true)}});
         versions.Children.Add(new StackPanel {Children={Muted(IsDeveloper?"선택 배포 버전":"최신 배포 버전",12),Txt(LatestCatalogVersion()??"확인 필요",16,true)}});
@@ -222,6 +229,8 @@ public sealed partial class MainWindow
         _announcer=Identify(new TextBlock {Height=1,Opacity=0,IsHitTestVisible=false},"operation-announcement","작업 상태 알림");
         AutomationProperties.SetLiveSetting(_announcer,AutomationLiveSetting.Polite);
         panel.Children.Add(_statusText);var detail=new Grid {ColumnDefinitions=new("*,Auto")};detail.Children.Add(_stageLabel);detail.Children.Add(At(_percentText,1));panel.Children.Add(detail);panel.Children.Add(_progress);panel.Children.Add(_announcer);
+        if(CurrentLayoutWidth()<800 && _serviceLabel is not null)panel.Children.Add(_serviceLabel);
+        if(_presentation.SupportId is not null)panel.Children.Add(Muted("지원 ID: "+_presentation.SupportId,12));
         return EnterpriseCard(panel,12);
     }
     private void SetStatus(string message)
