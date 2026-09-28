@@ -95,11 +95,17 @@ internal static class ProtectedCredentialFile
         return (unchecked((uint)Marshal.ReadInt32(user, 16)), unchecked((uint)Marshal.ReadInt32(user, 20)));
     }
 
+    [SupportedOSPlatform("linux")]
     private static void EnsureLinuxDirectory(string path, bool managed, uint gid)
     {
         CheckAncestors(path);
         if (Directory.Exists(path)) return;
-        if (!Directory.Exists(Path.GetDirectoryName(path))) throw new DirectoryNotFoundException("Credential parent must be provisioned first.");
+        if (!Directory.Exists(Path.GetDirectoryName(path)))
+        {
+            if (managed) throw new DirectoryNotFoundException("Managed credential parent must be provisioned first.");
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            CheckAncestors(path);
+        }
         if (mkdir(path, managed ? 0x1e8u : 0x1c0u) != 0) ThrowNative(); // 0750 / 0700
         using var handle = Handle(open(path, NoFollow | CloseOnExec | DirectoryFlag, 0));
         if (managed && (fchown(Fd(handle), 0, gid) != 0 || fchmod(Fd(handle), 0x1e8) != 0)) ThrowNative();
@@ -127,7 +133,8 @@ internal static class ProtectedCredentialFile
         CheckAncestors(path);
         var handle = Handle(open(path, NoFollow | CloseOnExec | DirectoryFlag, 0));
         var stat = Stat(Fd(handle));
-        if (stat.Uid != (managed ? 0 : geteuid()) || (stat.Mode & 0x12) != 0)
+        if (stat.Uid != (managed ? 0 : geteuid()) || (stat.Mode & 0x12) != 0 ||
+            (managed && (stat.Gid != LinuxOwner(true).Gid || (stat.Mode & 0xfff) != 0x1e8)))
         { handle.Dispose(); throw new UnauthorizedAccessException("Credential directory ownership/permissions are unsafe."); }
         return handle;
     }
@@ -141,14 +148,14 @@ internal static class ProtectedCredentialFile
         return handle;
     }
 
-    private static (uint Mode, uint Uid, ulong Links) Stat(int fd)
+    private static (uint Mode, uint Uid, uint Gid, ulong Links) Stat(int fd)
     {
         if (RuntimeInformation.ProcessArchitecture != Architecture.X64) throw new PlatformNotSupportedException();
         var buffer = Marshal.AllocHGlobal(256);
         try
         {
             if (fstat(fd, buffer) != 0) ThrowNative();
-            return (unchecked((uint)Marshal.ReadInt32(buffer, 24)), unchecked((uint)Marshal.ReadInt32(buffer, 28)), unchecked((ulong)Marshal.ReadInt64(buffer, 16)));
+            return (unchecked((uint)Marshal.ReadInt32(buffer, 24)), unchecked((uint)Marshal.ReadInt32(buffer, 28)), unchecked((uint)Marshal.ReadInt32(buffer, 32)), unchecked((ulong)Marshal.ReadInt64(buffer, 16)));
         }
         finally { Marshal.FreeHGlobal(buffer); }
     }
@@ -198,7 +205,7 @@ internal static class ProtectedCredentialFile
             new DirectoryInfo(root).Create(acl);
         }
         ValidateWindowsAcl(new DirectoryInfo(root).GetAccessControl(), managed, true);
-        if (File.Exists(path)) { _ = ReadWindows(path, managed); if (!replace) throw new IOException("Credential already exists."); }
+        if (File.Exists(path)) { var previous = ReadWindows(path, managed); CryptographicOperations.ZeroMemory(previous); if (!replace) throw new IOException("Credential already exists."); }
         if (new FileInfo(path).LinkTarget is not null) throw new UnauthorizedAccessException("Credential links are forbidden.");
         var temporary = Path.Combine(root, ".credential-" + Guid.NewGuid().ToString("N"));
         var stored = ProtectedData.Protect(plain, null, DataProtectionScope.LocalMachine);

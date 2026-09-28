@@ -77,6 +77,8 @@ public static class LauncherConfigValidator
                 !Uri.TryCreate(config.DistributionServerUrl, UriKind.Absolute, out var origin) ||
                 origin.Scheme is not ("http" or "https") || origin.AbsolutePath != "/" || origin.Query.Length != 0 || origin.Fragment.Length != 0 || origin.UserInfo.Length != 0)
                 throw new InvalidOperationException("Request signatures require schema 3, a distribution origin, device credential and trusted signed metadata with freshness checks.");
+            if (config.Security.TrustedSigningKeys.Any(key => string.IsNullOrWhiteSpace(key.KeyId) || string.IsNullOrWhiteSpace(key.PublicKeyPath)))
+                throw new InvalidOperationException("Each trusted publication key requires an ID and public-key path.");
         }
         if (config.SchemaVersion < 2) return;
 
@@ -205,9 +207,12 @@ public static class SecureHttpClientFactory
                 return chain.Build(new X509Certificate2(certificate));
             };
         }
+        var bearer = config.Security.AuthenticationMode == "bearer" ? CredentialStore.Read(config.Security.CredentialName) : null;
+        if (config.Security.AuthenticationMode == "bearer" && !string.IsNullOrWhiteSpace(config.Security.CredentialName) && string.IsNullOrWhiteSpace(bearer))
+        { handler.Dispose(); throw new InvalidOperationException("Configured Bearer credential is missing; no unauthenticated fallback is allowed."); }
         HttpMessageHandler authentication = config.Security.AuthenticationMode == "request-signature-v1"
             ? new DeviceSignatureHandler(config, handler)
-            : new BearerCredentialHandler(config, CredentialStore.Read(config.Security.CredentialName), handler);
+            : new BearerCredentialHandler(config, bearer, handler);
         var client = new HttpClient(authentication) { Timeout = TimeSpan.FromSeconds(Math.Max(10, config.HttpTimeoutSeconds)) };
         client.DefaultRequestHeaders.UserAgent.ParseAdd("UE-DT-Launcher/1.0");
         return client;

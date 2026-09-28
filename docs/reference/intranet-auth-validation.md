@@ -38,3 +38,12 @@ HTTP는 암호화된 전송이 아니다. 요청 인증·콘텐츠 무결성과 
 - Computer Use로 일반 GUI의 `업데이트 서비스 정상`, 프로젝트 이미지, 2.0.0 최신 상태와 상태 새로고침 확인. 개발자 GUI의 허용 릴리스 2개와 2.0.0→1.0.0 선택 표시 확인.
 - 화면 확인과 상태 조회는 실제 GUI에서 수행했다. 설치·실행·repair는 publish CLI E2E에서 수행했으며 GUI 실행 버튼을 누른 것으로 기록하지 않는다.
 - 이번 GUI 테스트는 현재 Windows 사용자로 실행한 console Agent이다. 실제 LocalService ACL 격리나 모든 DPI 조합의 검증을 대체하지 않는다.
+
+## 4단계: 초기 설정과 설치 예제
+
+- sample-config 기본을 DistributionServer/schema 3으로 변경. OS·profile·인증·credential·배포 공개키 지정과 명시적 --force만 덮어쓰기 제공. 기존 정적 모드는 --mode legacy-catalog로 보존.
+- --storage portable은 사용자 LocalApplicationData 저장소를 사용하며 관리형 저장소와 분리한다. 로컬 키 삭제는 서버 폐기와 분리한다.
+- doctor는 키 형식/접근과 공개키 파싱을 확인하고 빈 trust 설정·인증 실패·권한 거부·정상 빈 목록을 구분한다.
+- MSI에는 활성 파일이 아닌 launcher.config.example.json만 추가. RPM은 새 distribution-agent-linux 예제를 사용하되 %config(noreplace)는 유지.
+- 설정/진단/패키징 관련 Windows 테스트 13개 통과. publish 생성 설정으로 온라인 doctor 및 전체 CLI E2E 성공(`publish/intranet/e2e-generated-01`). Linux 및 최종 installer artifact 확인은 5단계에서 수행.
+- 자세한 최초 등록/반복 실행 명령은 [사내 HTTP 안내](intranet-auth.md)를 따른다.

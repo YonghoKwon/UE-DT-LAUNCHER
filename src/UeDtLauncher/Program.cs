@@ -125,7 +125,7 @@ public static class Program
             .LogToTrace();
     }
 
-    private static async Task<int> MainAsync(string[] args)
+    internal static async Task<int> MainAsync(string[] args)
     {
         try
         {
@@ -277,9 +277,10 @@ public static class Program
     {
         var action = args.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal)) ?? "status";
         var name = Get(args, "--name") ?? throw new ArgumentException("credential requires --name <credential-name>.");
+        var layout = DeviceCredentials.StorageLayout(Get(args, "--storage") ?? "managed");
         if (action.Equals("status", StringComparison.OrdinalIgnoreCase))
         {
-            var inspection = DeviceCredentials.Inspect(name);
+            var inspection = DeviceCredentials.Inspect(name, layout);
             Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(inspection, JsonFiles.Options));
             return inspection.Ready ? 0 : 1;
         }
@@ -287,7 +288,7 @@ public static class Program
         {
             var output = Path.GetFullPath(Required(args, "--public-out"));
             if (File.Exists(output)) throw new IOException("Public registration file already exists.");
-            var key = DeviceCredentials.Generate(name, Required(args, "--key-id"));
+            var key = DeviceCredentials.Generate(name, Required(args, "--key-id"), layout);
             using var stream = new FileStream(output, FileMode.CreateNew, FileAccess.Write);
             System.Text.Json.JsonSerializer.Serialize(stream, key, JsonFiles.Options);
             Console.WriteLine($"Device key '{key.KeyId}' stored. Only the public registration file was exported.");
@@ -296,13 +297,13 @@ public static class Program
         if (action == "repair-permissions")
         {
             if (args.Contains("--apply") == args.Contains("--dry-run")) throw new ArgumentException("Choose --dry-run or --apply.");
-            Console.WriteLine(DeviceCredentials.RepairPermissions(name, args.Contains("--apply")));
+            Console.WriteLine(DeviceCredentials.RepairPermissions(name, args.Contains("--apply"), layout));
             return 0;
         }
         if (action.Equals("delete", StringComparison.OrdinalIgnoreCase))
         {
-            CredentialStore.Delete(name);
-            Console.WriteLine($"Credential '{name}' was deleted.");
+            DeviceCredentials.Delete(name, layout);
+            Console.WriteLine($"Local credential '{name}' was deleted. Server revocation is a separate administrator operation.");
             return 0;
         }
         if (!action.Equals("set", StringComparison.OrdinalIgnoreCase))
@@ -310,7 +311,7 @@ public static class Program
 
         var token = Environment.GetEnvironmentVariable("UE_DT_CREDENTIAL_TOKEN");
         if (string.IsNullOrWhiteSpace(token)) token = ReadSecretFromConsole("Bearer token: ");
-        CredentialStore.Save(name, token);
+        CredentialStore.Save(name, token, layout);
         Console.WriteLine($"Credential '{name}' was stored. The token value will not be displayed.");
         return 0;
     }
@@ -637,6 +638,21 @@ public static class Program
     private static async Task<int> WriteSampleConfigAsync(string[] args)
     {
         var output = Get(args, "--output") ?? "launcher.config.json";
+        if (File.Exists(output) && !Has(args, "--force")) throw new IOException("Config already exists; use a new output or explicit --force.");
+        var mode = Get(args, "--mode") ?? "distribution";
+        if (mode == "distribution")
+        {
+            var distribution = LauncherConfigurationTemplates.Distribution(new DistributionTemplateOptions(
+                ServerUrl: Get(args, "--server-url") ?? "http://10.20.30.40", ProjectId: Get(args, "--project-id") ?? "ue-dt-simulator",
+                Profile: Get(args, "--profile") ?? "general", Platform: Get(args, "--platform"),
+                DeploymentMode: Get(args, "--deployment-mode") ?? "managed-agent", AuthenticationMode: Get(args, "--auth") ?? "request-signature-v1",
+                CredentialName: Get(args, "--credential-name") ?? "ue-dt-device", SigningKeyId: Get(args, "--signing-key-id") ?? "release-1",
+                PublicKeyPath: Get(args, "--public-key") ?? "release-public.pem"));
+            await JsonFiles.WriteAsync(output, distribution);
+            Console.WriteLine("Distribution config written. Provision the device key and trusted release public key, then run doctor --online. HTTP is not encrypted.");
+            return 0;
+        }
+        if (mode != "legacy-catalog") throw new ArgumentException("--mode must be distribution or legacy-catalog.");
         var config = new LauncherConfig
         {
             SchemaVersion = 2,
@@ -732,7 +748,11 @@ public static class Program
         Console.WriteLine("Commands:");
         Console.WriteLine("  release-metadata --zip <zip> --project-id <id> --version <version> --platform <platform> --entry-point <path> [--payload-root <path>] [--output <release.json>]");
         Console.WriteLine("  gui                 (also: --gui forces GUI; --cli forces CLI -> defaults to 'run')");
-        Console.WriteLine("  sample-config --output launcher.config.json");
+        Console.WriteLine("  sample-config --output launcher.config.json [--mode distribution|legacy-catalog] [--force]");
+        Console.WriteLine("    [--server-url http://10.20.30.40] [--project-id id] [--platform windows-x64|linux-x64] [--profile general|developer]");
+        Console.WriteLine("    [--deployment-mode managed-agent|portable] [--auth request-signature-v1|bearer] [--credential-name name] [--signing-key-id id] [--public-key path]");
+        Console.WriteLine("  credential keygen --name name --key-id pc-key --public-out device-public.json [--storage managed|portable]");
+        Console.WriteLine("  credential repair-permissions --name name --dry-run|--apply [--storage managed|portable]");
         Console.WriteLine("  generate-manifest --package-dir <dir> --base-url <url> --entry-point <relative path> --version <version> [--app-id <id>] --output <manifest.json>");
         Console.WriteLine("  update-catalog --catalog <catalog.json> --project-id <id> --version <version> --environment <prod|dev> --channel <stable|beta|dev> --platform <windows-x64|linux-x64> --manifest-url <url> [--display-name <name>] [--allowed-profiles general,developer] [--notes <text>] [--set-latest] [--remove] [--remove-project-if-empty]");
         Console.WriteLine("  list-releases --catalog <catalog.json> [--project <id>]");

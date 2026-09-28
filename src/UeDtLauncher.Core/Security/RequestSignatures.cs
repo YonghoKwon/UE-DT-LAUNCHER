@@ -89,7 +89,7 @@ public static class RequestSignatures
 
 internal sealed class DeviceSignatureHandler(LauncherConfig config, HttpMessageHandler inner) : DelegatingHandler(inner)
 {
-    private readonly DevicePrivateKey credential = DeviceCredentials.Read(config.Security.CredentialName!);
+    private readonly DevicePrivateKey credential = DeviceCredentials.Read(config.Security.CredentialName!, DeviceCredentials.StorageLayout(config));
     private readonly SemaphoreSlim challengeGate = new(1, 1);
     private string? cachedChallenge;
     private long acquired;

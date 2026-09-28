@@ -10,6 +10,15 @@ public sealed record CredentialInspection(string Type, string? KeyId, bool Ready
 
 public static class DeviceCredentials
 {
+    public static ManagedLauncherPathLayout? StorageLayout(string storage)
+    {
+        if (storage is not ("managed" or "portable")) throw new ArgumentException("--storage must be managed or portable.");
+        if (storage == "managed" || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("UE_DT_AGENT_DATA_ROOT"))) return null;
+        var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UE-DT Launcher");
+        Directory.CreateDirectory(root);
+        return new(root, Path.Combine(root, "config"), Path.Combine(root, "state"), Path.Combine(root, "apps"), Path.Combine(root, "logs"), Path.Combine(root, "credentials"));
+    }
+    internal static ManagedLauncherPathLayout? StorageLayout(LauncherConfig config) => config.SchemaVersion == 3 && !config.IsManagedDeployment ? StorageLayout("portable") : null;
     public static string ValidateIdentifier(string value)
     {
         if (!Regex.IsMatch(value, "\\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\\z", RegexOptions.CultureInvariant))
@@ -84,7 +93,17 @@ public static class DeviceCredentials
     {
         var keyPath = PathFor(name, layout);
         var tokenPath = Path.ChangeExtension(keyPath, ".cred");
+        if (File.Exists(keyPath) && File.Exists(tokenPath)) throw new InvalidOperationException("Name identifies both a key and token; use distinct names before permission repair.");
         var path = File.Exists(keyPath) ? keyPath : tokenPath;
         return ProtectedCredentialFile.RepairLinux(path, IsManaged(layout), apply);
+    }
+
+    public static void Delete(string name, ManagedLauncherPathLayout? layout = null)
+    {
+        var path = PathFor(name, layout);
+        if (!File.Exists(path)) { CredentialStore.Delete(name, layout); return; }
+        if (CredentialStore.Exists(name, layout)) throw new InvalidOperationException("Name identifies both a key and token; use distinct names.");
+        _ = Read(name, layout); // Do not remove a link or a file with unsafe ownership.
+        File.Delete(path);
     }
 }

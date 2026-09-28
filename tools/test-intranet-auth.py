@@ -89,15 +89,16 @@ def main():
         if job["state"] != "pending":
             raise RuntimeError(f"Expected pending approval, got {job['state']}")
         run(server, "approve", job["id"], "--config", root / "server.json")
-    config = {"schemaVersion": 3, "deploymentMode": "portable", "distributionServerUrl": origin,
-              "projectId": "demo", "clientProfile": "developer", "environment": "prod", "channel": "stable",
-              "versionPolicy": "exact", "requestedVersion": "1.0.0", "targetPlatform": platform,
-              "installDir": str(client / "apps"), "stateRootDir": str(client / "state"),
-              "requireSignedManifests": True, "launchAfterUpdate": True,
-              "launchArguments": ["/c", "echo", "UE_DT_FAKE_GAME_OK"] if os.name == "nt" else [],
-              "security": {"authenticationMode": "request-signature-v1", "requireHttps": False,
-              "credentialName": "device", "allowedDownloadHosts": ["127.0.0.1"],
-              "trustedSigningKeys": [{"keyId": "release-1", "publicKeyPath": str(root / "public.pem")}]}}
+    generated = client / "generated.json"
+    run(launcher, "sample-config", "--server-url", origin, "--project-id", "demo", "--profile", "developer", "--platform", platform,
+        "--deployment-mode", "portable", "--credential-name", "device", "--public-key", root / "public.pem", "--output", generated)
+    unchanged = generated.read_bytes()
+    run(launcher, "sample-config", "--output", generated, expected=1)
+    if unchanged != generated.read_bytes():
+        raise RuntimeError("Existing configuration was overwritten")
+    config = json.loads(generated.read_text(encoding="utf-8"))
+    config.update(versionPolicy="exact", requestedVersion="1.0.0", installDir=str(client / "apps"), stateRootDir=str(client / "state"),
+                  launchArguments=["/c", "echo", "UE_DT_FAKE_GAME_OK"] if os.name == "nt" else [])
     log = (root / "server.log").open("w", encoding="utf-8")
     process = subprocess.Popen([server, "serve", "--config", str(root / "server.json")], stdout=log, stderr=log, env=env, creationflags=flags)
     agent_process = None
@@ -115,6 +116,7 @@ def main():
                 time.sleep(0.1)
         else:
             raise RuntimeError("Server did not become ready")
+        run(launcher, "doctor", "--config", generated, "--online")
         for version in ("1.0.0", "2.0.0"):
             config["requestedVersion"] = version
             write(client / "config.json", config)
@@ -155,6 +157,9 @@ def main():
             run(server, "client-key", "revoke", "--key-id", "pc-test-key", "--config", root / "server.json")
             run(launcher, "run", "--config", client / "config.json", expected=1)
             summary["revoked_key_rejected"] = True
+            run(launcher, "credential", "delete", "--name", "device")
+            run(launcher, "credential", "status", "--name", "device", expected=1)
+            summary["local_key_deleted"] = True
             write(root / "summary.json", summary)
             print(f"PASS: {root}", flush=True)
     finally:

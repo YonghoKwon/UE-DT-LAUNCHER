@@ -18,6 +18,7 @@ if ($LASTEXITCODE -ne 0) { throw "GUI publish failed." }
 dotnet publish (Join-Path $repoRoot "src/UeDtLauncher.Agent/UeDtLauncher.Agent.csproj") -c $Configuration -r win-x64 --self-contained true -p:PublishSingleFile=true -p:LauncherVersion=$Version -p:LauncherOfficialBuild=$official -o $agent
 if ($LASTEXITCODE -ne 0) { throw "Agent publish failed." }
 Set-Content -LiteralPath (Join-Path $payload "BUILD-INFO.txt") -Encoding UTF8 -Value $buildInfo
+Copy-Item -LiteralPath (Join-Path $repoRoot "examples/configs/distribution-general-windows.config.json") -Destination (Join-Path $payload "launcher.config.example.json")
 dotnet build (Join-Path $repoRoot "installer/windows/UeDtLauncher.Installer.wixproj") -c $Configuration -p:ProductVersion=$Version -p:PublishRoot=$payload -p:BuildLabel=$label -o $artifacts
 if ($LASTEXITCODE -ne 0) { throw "MSI build failed." }
 Write-Host "Windows installer artifacts: $artifacts"

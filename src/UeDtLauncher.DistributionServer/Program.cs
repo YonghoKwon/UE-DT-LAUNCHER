@@ -6,6 +6,7 @@ var arguments = args.ToList();
 if (arguments.Contains("--help"))
 {
     Console.WriteLine("UeDtLauncher.DistributionServer <serve|watch|ingest directory|list|inspect id|approve id|reject id|retry id|token-issue client|token-revoke client|usage|cleanup [--apply]> --config server.json");
+    Console.WriteLine("client-key add --client id --public-key device-public.json | client-key list | client-key revoke --key-id id; append --config server.json");
     return;
 }
 var configIndex = arguments.IndexOf("--config");

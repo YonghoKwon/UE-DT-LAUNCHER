@@ -24,6 +24,8 @@ public sealed class DeviceCredentialTests
         Assert.Throws<IOException>(() => DeviceCredentials.Generate("device", "replacement", fixture.Layout));
         Assert.Equal(value, DeviceCredentials.Read("device", fixture.Layout));
         Assert.True(DeviceCredentials.Inspect("device", fixture.Layout).Ready);
+        DeviceCredentials.Delete("device", fixture.Layout);
+        Assert.False(DeviceCredentials.Inspect("device", fixture.Layout).Ready);
     }
 
     [Theory]

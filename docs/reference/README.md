@@ -5,6 +5,7 @@
 ## 현재 사용 절차
 
 - [사내 HTTP 인증 단계별 검증](intranet-auth-validation.md): 현재 진행 작업과 미완료 조건.
+- [사내 HTTP 요청 서명 설정](intranet-auth.md): PC 키 등록·설정 생성·Agent 진단의 최초 준비와 반복 운영.
 
 | 문서 | 용도 |
 |---|---|

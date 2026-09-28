@@ -25,6 +25,9 @@
         <Component Id="BuildInfoComponent" Guid="*">
           <File Id="BuildInfo" Source="$(var.PublishRoot)\BUILD-INFO.txt" KeyPath="yes" />
         </Component>
+        <Component Id="ConfigurationExampleComponent" Guid="*">
+          <File Id="ConfigurationExample" Source="$(var.PublishRoot)\launcher.config.example.json" KeyPath="yes" />
+        </Component>
       </Directory>
     </StandardDirectory>
 
@@ -57,6 +60,7 @@
       <ComponentRef Id="LauncherGuiComponent" />
       <ComponentRef Id="LauncherAgentComponent" />
       <ComponentRef Id="BuildInfoComponent" />
+      <ComponentRef Id="ConfigurationExampleComponent" />
       <ComponentRef Id="ConfigFolderComponent" />
       <ComponentRef Id="StateFolderComponent" />
       <ComponentRef Id="AppsFolderComponent" />

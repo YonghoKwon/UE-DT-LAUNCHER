@@ -16,7 +16,7 @@ fi
 cp "$PAYLOAD/gui/UeDtLauncher" "$PAYLOAD/UeDtLauncher"
 cp "$PAYLOAD/agent/UeDtLauncher.Agent" "$PAYLOAD/UeDtLauncher.Agent"
 cp "$ROOT/packaging/linux/ue-dt-launcher-agent.service" "$PAYLOAD/"
-cp "$ROOT/examples/configs/developer-linux-launcher.config.json" "$PAYLOAD/launcher.config.json"
+cp "$ROOT/examples/configs/distribution-agent-linux.config.json" "$PAYLOAD/launcher.config.json"
 tar -C "$OUT" -czf "$OUT/rpmbuild/SOURCES/ue-dt-launcher-$VERSION.tar.gz" "ue-dt-launcher-$VERSION"
 cp "$ROOT/packaging/linux/ue-dt-launcher.spec" "$OUT/rpmbuild/SPECS/"
 rpmbuild --define "_topdir $OUT/rpmbuild" --define "launcher_version $VERSION" -bb "$OUT/rpmbuild/SPECS/ue-dt-launcher.spec"

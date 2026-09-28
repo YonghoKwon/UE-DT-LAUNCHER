@@ -42,7 +42,7 @@ public static class LauncherDoctor
                     return new(DateTimeOffset.UtcNow.ToString("O"), false, typeof(LauncherDoctor).Assembly.GetName().Version?.ToString() ?? "0", Environment.OSVersion.ToString(), checks);
                 }
             }
-            var credential = string.IsNullOrWhiteSpace(config.Security.CredentialName) ? null : DeviceCredentials.Inspect(config.Security.CredentialName);
+            var credential = string.IsNullOrWhiteSpace(config.Security.CredentialName) ? null : DeviceCredentials.Inspect(config.Security.CredentialName, DeviceCredentials.StorageLayout(config));
             var credentialConfigured = credential is null || (credential.Ready && credential.Type == config.Security.AuthenticationMode);
             checks.Add(new DoctorCheck("credential", credentialConfigured,
                 credentialConfigured ? "credential format, ownership and identity access passed" : "credential is missing, inaccessible, unsafe or has the wrong type"));
