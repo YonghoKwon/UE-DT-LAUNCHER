@@ -11,7 +11,7 @@ public static class ServiceRunner
         var exit = 0;
         while (!cancellationToken.IsCancellationRequested)
         {
-            try { await TickAsync(configPath, logger, cancellationToken); }
+            try { await TickAsync(await LauncherPaths.LoadResolvedAsync(configPath, cancellationToken), logger, cancellationToken); }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
             catch (Exception ex) { logger.Log("Service", DiagnosticRedactor.Redact(ex.Message)); Console.WriteLine("[Service] " + DiagnosticRedactor.Redact(ex.Message)); exit = 1; }
             if (once) break;
@@ -20,9 +20,15 @@ public static class ServiceRunner
         return once ? exit : 0;
     }
 
-    private static async Task TickAsync(string path, FileLogger logger, CancellationToken token)
+    public static async Task<int> RunOnceAsync(LauncherConfig config, CancellationToken token)
     {
-        var config = await LauncherPaths.LoadResolvedAsync(path, token);
+        var logger = new FileLogger(config.LogDir);
+        try { await TickAsync(config, logger, token); return 0; }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        { logger.Log("Service", DiagnosticRedactor.Redact(ex.Message)); return 1; }
+    }
+    private static async Task TickAsync(LauncherConfig config, FileLogger logger, CancellationToken token)
+    {
         var service = config.ServiceMode ?? new ServiceModeConfig();
         ValidateServiceConfig(service);
         using var http = SecureHttpClientFactory.Create(config);
@@ -40,6 +46,7 @@ public static class ServiceRunner
             backup = await engine.CommitPreparedAsync(prepared, token);
         }
         if (!service.AutoRestartApp) return;
+        RuntimeServiceState.Starting(config, backup); // Durable barrier before any payload can start.
         try
         {
             // This helper runs as the same service account and owns service runtime state.
@@ -53,6 +60,7 @@ public static class ServiceRunner
                 using var response = await health.GetAsync(service.HealthCheckUrl, token);
                 if (!response.IsSuccessStatusCode) throw new ServiceHealthCheckException("Health check failed; manual recovery is required.");
             }
+            RuntimeServiceState.Healthy(config);
             logger.Log("Service", "Supervised service application started. Active runtimes block installation changes.");
         }
         catch

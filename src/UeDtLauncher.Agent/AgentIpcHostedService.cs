@@ -330,13 +330,9 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     {
                         if (!peer!.Administrator) throw new UnauthorizedAccessException("Managed runtime recovery requires a local administrator.");
                         RuntimeRecoveryRequest.Validate(config, request.ConfirmStopped, request.ServiceVersion);
-                        var recovered = RuntimeStore.Recover(config, peer!, request.ConfirmStopped);
-                        if (request.ServiceVersion is not null)
-                        {
-                            if (!request.ConfirmStopped) throw new InvalidOperationException("Service selection requires explicit stopped confirmation.");
-                            ReleaseSidecar.Segment(request.ServiceVersion);
-                            RuntimeServiceState.ConfirmSelection(config, peer!, request.ServiceVersion);
-                        }
+                        var recovered = request.ServiceVersion is not null
+                            ? RuntimeServiceState.ConfirmSelection(config, peer!, request.ServiceVersion)
+                            : RuntimeStore.Recover(config, peer!, request.ConfirmStopped);
                         return new() { CorrelationId = request.CorrelationId, Success = true, Runtime = recovered };
                     }
                     var launchTicket = request.RuntimeTicket ?? throw new InvalidDataException("Runtime ticket is required.");
@@ -396,7 +392,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                             cancellationToken);
                     return Success(request, identity, "completed", "Rollback completed.", progress);
                 case "service-run":
-                    var serviceExit = await ServiceRunner.RunAsync(configPath, null, once: true, cancellationToken);
+                    var serviceExit = await ServiceRunner.RunOnceAsync(config, cancellationToken);
                     return serviceExit == 0
                         ? Success(request, identity, "completed", "One managed service cycle completed.", progress)
                         : Error(request, "service-failed", "Managed service cycle failed.", identity);

@@ -8,7 +8,7 @@ public sealed class RuntimeStoreTests : IDisposable
     private readonly LauncherConfig config;
     public RuntimeStoreTests()
     {
-        config = new() { InstallDir=Path.Combine(root,"app"), InstallStatePath=Path.Combine(root,"state","install.json"), InstalledManifestPath=Path.Combine(root,"state","manifest.json"), AppPidPath=Path.Combine(root,"state","app.pid"), ProjectId="demo" };
+        config = new() { StateRootDir=Path.Combine(root,"state"), InstallDir=Path.Combine(root,"app"), InstallStatePath=Path.Combine(root,"state","install.json"), InstalledManifestPath=Path.Combine(root,"state","manifest.json"), AppPidPath=Path.Combine(root,"state","app.pid"), ProjectId="demo" };
     }
     [Fact]
     public void FreshInstallIsQuiescent_LegacyIsUnknown_AndLeasePreservesLockInode()

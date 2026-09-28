@@ -82,7 +82,7 @@ public static class RuntimeStore
         if (value.State == RuntimeState.Quiescent && value.Origin == "supervisor-completed") return;
         throw new InvalidDataException("Inconsistent runtime state.");
     }
-    internal static void Write(LauncherConfig config, RuntimeRecord record) => JsonFiles.WriteAsync(RecordPath(config), record).GetAwaiter().GetResult();
+    internal static void Write(LauncherConfig config, RuntimeRecord record) => RuntimeStatePersistence.Write(RecordPath(config), record);
 
     public static RuntimeObservation Observe(LauncherConfig config)
     {
@@ -116,6 +116,12 @@ public static class RuntimeStore
     }
 
     public static RuntimeLaunchTicket Begin(LauncherConfig config, RuntimeIdentity requester, string hostExecutable)
+    {
+        using var lane = RuntimeServiceState.Lock(config);
+        RuntimeServiceState.RequireLaunch(config, false);
+        return BeginUnderServiceLock(config, requester, hostExecutable);
+    }
+    internal static RuntimeLaunchTicket BeginUnderServiceLock(LauncherConfig config, RuntimeIdentity requester, string hostExecutable)
     {
         using var lease = InstallationMutationLease.Acquire(config);
         var manifest = JsonFiles.ReadAsync<LauncherManifest>(config.InstalledManifestPath).GetAwaiter().GetResult();
@@ -180,6 +186,7 @@ public static class RuntimeStore
     {
         ValidateRecoveryOwner(config, actor);
         if (!confirm) return Observe(config);
+        using var lane = RuntimeServiceState.Lock(config);
         using var gate = SingleInstanceLock.Acquire(LauncherPaths.UpdateLockPath(config));
         return RecoverUnderLock(config, actor);
     }
@@ -191,6 +198,14 @@ public static class RuntimeStore
     }
     internal static RuntimeObservation RecoverUnderLock(LauncherConfig config, RuntimeIdentity actor)
     {
+        ValidateRecoveryTarget(config, actor);
+        var path = RecordPath(config);
+        if (File.Exists(path)) File.Copy(path, path + ".before-recovery-" + Guid.NewGuid().ToString("N"), false);
+        Write(config, new() { InstallationId = InstallationId(config), State = RuntimeState.Quiescent, Origin = "operator-confirmed", Requester = actor });
+        return Observe(config);
+    }
+    internal static void ValidateRecoveryTarget(LauncherConfig config, RuntimeIdentity actor)
+    {
         ValidateRecoveryOwner(config, actor);
         RuntimeRecord? record = null;
         try { record = Read(config); } catch (Exception ex) when (ex is IOException or JsonException or InvalidDataException) { }
@@ -199,10 +214,6 @@ public static class RuntimeStore
             throw new RuntimeBlockedException(new(RuntimeState.Running,"payload-still-running","실행 중—프로그램을 종료한 뒤 다시 시도해 주세요."));
         if (!config.IsManagedDeployment && record?.Requester is not null && record.Requester.Owner != actor.Owner) throw new UnauthorizedAccessException("Runtime belongs to another owner.");
         // Explicit operator maintenance acknowledgement, NOT OS-proven family termination.
-        var path = RecordPath(config);
-        if (File.Exists(path)) File.Copy(path, path + ".before-recovery-" + Guid.NewGuid().ToString("N"), false);
-        Write(config, new() { InstallationId = InstallationId(config), State = RuntimeState.Quiescent, Origin = "operator-confirmed", Requester = actor });
-        return Observe(config);
     }
 }
 

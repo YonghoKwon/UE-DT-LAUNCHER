@@ -224,12 +224,8 @@ public static class Program
         }
         else
         {
-            observation = action == "recover" ? RuntimeStore.Recover(config, RuntimeIdentities.Current(), confirm) : RuntimeStore.Observe(config);
-            if (serviceVersion is not null)
-            {
-                if (action != "recover" || !confirm) throw new ArgumentException("Service selection requires explicit stopped confirmation.");
-                RuntimeServiceState.ConfirmSelection(config, RuntimeIdentities.Current(), serviceVersion);
-            }
+            observation = serviceVersion is not null ? RuntimeServiceState.ConfirmSelection(config, RuntimeIdentities.Current(), serviceVersion)
+                : action == "recover" ? RuntimeStore.Recover(config, RuntimeIdentities.Current(), confirm) : RuntimeStore.Observe(config);
         }
         Console.WriteLine(JsonSerializer.Serialize(observation, JsonFiles.Options)); return 0;
     }

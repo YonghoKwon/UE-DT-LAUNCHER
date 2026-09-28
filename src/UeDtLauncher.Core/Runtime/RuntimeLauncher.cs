@@ -33,7 +33,8 @@ public static class RuntimeLauncher
 
     internal static Task<Process> LaunchServiceAsync(LauncherConfig config, CancellationToken cancellationToken)
     {
-        var ticket = RuntimeStore.Begin(config, RuntimeIdentities.Current(), HostExecutable());
+        RuntimeServiceState.RequireLaunch(config, true);
+        var ticket = RuntimeStore.BeginUnderServiceLock(config, RuntimeIdentities.Current(), HostExecutable());
         return StartHostAsync(new(config, ticket, null, config.SelectedRelease), cancellationToken);
     }
 
