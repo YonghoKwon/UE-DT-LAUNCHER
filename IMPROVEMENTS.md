@@ -10,7 +10,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 | 완료 | 부분 진행 | 대기 | 전체 |
 |---:|---:|---:|---:|
-| 3개 | 3개 | 22개 | 28개 |
+| 3개 | 4개 | 21개 | 28개 |
 
 완료를 제외하면 열린 항목은 **25개**입니다. 각 분야 표에서 `진행률`과 `상태`를 먼저 보면 됩니다.
 
@@ -109,7 +109,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | SEC-01/P1 | 0% | 대기 · 추가 보완 | DistributionTokens 발급·PC 단위 전체 폐기, 만료/개별 관리 없음 | 만료·토큰별 폐기·순환·감사 설계. 비밀 노출 없는 교체/만료/폐기 시험 |
 | SEC-02/P1 | 0% | 대기 · 추가 보완 | loopback nginx 신뢰와 직접 사내 IP 전제 | NAT/추가 proxy의 실제 IP 계약·rate limit 검토. 위조 헤더 차단과 회사 망 경로별 검증 |
 | SEC-03/P0 | 50% | 부분 · 계정 실행 확인 대기 | 생성 시 제한 권한·Linux owner 검사·명시적 repair·Windows ACL/DPAPI 구현, Windows/WSL 관련 자동화 각 15개 통과 | 실제 서비스/무관 계정 읽기 분리와 최종 provisioning E2E 남음. [기록](docs/reference/intranet-auth-validation.md) |
-| SEC-04/P0 | 0% | 진행 · 인증 기반 준비 | schema 3·별도 PC 키 credential 기반 마련. HTTP 요청 전송은 아직 차단됨 | 요청 서명·challenge/nonce·Catalog 결속·Agent 이미지 전달·실제 E2E 완료 필요 |
+| SEC-04/P0 | 50% | 부분 · 관리형 GUI 연결 대기 | 요청 서명·challenge/nonce·Catalog 결속·키 등록/폐기 구현, Windows 자동화 및 Windows/Linux publish CLI E2E 통과 | Agent 이미지 전달·nginx 경유·최종 부하/계정 분리 검증 남음. [기록](docs/reference/intranet-auth-validation.md) |
 | EXT-01/P2 | 0% | 대기 · 추가 보완 | IAccessPolicyProvider 파일 구현만 존재 | 회사 API 합의 후 timeout/cache TTL/기본 거부. 장애·취소·오래된 응답에서 권한 확대 없음 |
 | DEV-01/P2 | 0% | 대기 · 추가 보완 | Core 링크 컴파일, MainWindow 동작 코드 잔존 | 기능 변경과 분리한 물리 폴더·ViewModel 정리. API/CLI/IPC 회귀 없음 |
 
@@ -124,6 +124,6 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 3. PERF 기준선·OPS-06: 측정 후 개선, 자동 회귀 검증.
 4. USER/UI·API 범위는 [목표 문서](PROJECT_GOALS.md)에서 확정 후 진행.
 
-PERF-01/02/04는 100%(재현 범위), PERF-03은 75%(수용 기준 미달), OPS-06은 50%(원격 CI 증거 미확인), SEC-03은 50%(서비스 계정 검증 대기)입니다. SEC-04를 포함한 나머지 22개는 0%이며, 기존 기능 부재를 의미하지 않습니다.
+PERF-01/02/04는 100%(재현 범위), PERF-03은 75%(수용 기준 미달), OPS-06·SEC-03·SEC-04는 50%(각 미완료 조건 참조)입니다. 나머지 21개는 0%이며, 기존 기능 부재를 의미하지 않습니다.
 
 진행률을 변경할 때는 상태·체크포인트·커밋/검증 링크·남은 조건·상단 집계를 함께 갱신합니다. 100% 항목은 완료 이력으로 남기고, 새 미달 조건이나 범위 변경이 확인되면 이유를 기록해 다시 열 수 있습니다. 빌드 성공만으로 완료하지 않습니다.

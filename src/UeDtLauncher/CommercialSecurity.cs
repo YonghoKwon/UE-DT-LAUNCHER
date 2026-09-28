@@ -191,8 +191,6 @@ public static class SecureHttpClientFactory
     public static HttpClient Create(LauncherConfig config)
     {
         LauncherConfigValidator.Validate(config);
-        if (config.Security.AuthenticationMode == "request-signature-v1")
-            throw new InvalidOperationException("The request-signature transport must be configured before connecting.");
         var handler = new HttpClientHandler { AllowAutoRedirect = false, AutomaticDecompression = System.Net.DecompressionMethods.All };
         if (!string.IsNullOrWhiteSpace(config.Security.CustomCaCertificatePath))
         {
@@ -207,9 +205,10 @@ public static class SecureHttpClientFactory
                 return chain.Build(new X509Certificate2(certificate));
             };
         }
-        var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(Math.Max(10, config.HttpTimeoutSeconds)) };
-        var token = CredentialStore.Read(config.Security.CredentialName);
-        if (!string.IsNullOrWhiteSpace(token)) client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        HttpMessageHandler authentication = config.Security.AuthenticationMode == "request-signature-v1"
+            ? new DeviceSignatureHandler(config, handler)
+            : new BearerCredentialHandler(config, CredentialStore.Read(config.Security.CredentialName), handler);
+        var client = new HttpClient(authentication) { Timeout = TimeSpan.FromSeconds(Math.Max(10, config.HttpTimeoutSeconds)) };
         client.DefaultRequestHeaders.UserAgent.ParseAdd("UE-DT-Launcher/1.0");
         return client;
     }
@@ -222,6 +221,11 @@ public static class SecureHttpClientFactory
     {
         using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
+        return await ReadBoundedStringAsync(response, maxBytes, cancellationToken);
+    }
+
+    public static async Task<string> ReadBoundedStringAsync(HttpResponseMessage response, int maxBytes, CancellationToken cancellationToken = default)
+    {
         if (response.Content.Headers.ContentLength > maxBytes)
             throw new InvalidDataException($"HTTP metadata exceeds the configured limit: {response.Content.Headers.ContentLength} / {maxBytes} bytes.");
         await using var source = await response.Content.ReadAsStreamAsync(cancellationToken);

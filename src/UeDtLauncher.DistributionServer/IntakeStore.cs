@@ -21,6 +21,7 @@ public sealed class DistributionSettings
     public string PolicyPath { get; set; } = "/etc/ue-dt-distribution/access-policy.json";
     public ZipIntakeLimits Limits { get; set; } = new();
     public int IntakeWorkers { get; set; } = 1;
+    public string AuthenticationMode { get; set; } = "bearer";
 }
 
 public sealed class IntakeStore
@@ -49,13 +50,13 @@ public sealed class IntakeStore
         using var command = db.CreateCommand();
         command.CommandText = "PRAGMA user_version";
         var version = Convert.ToInt32(command.ExecuteScalar());
-        if (version > 2) throw new InvalidDataException("Distribution database schema is newer than this server.");
-        if (version == 2) return;
+        if (version > 3) throw new InvalidDataException("Distribution database schema is newer than this server.");
+        if (version == 3) return;
         // SQLite's backup API captures a consistent image, including committed WAL pages, before any schema change.
         if (existed)
         {
             using var backup = new SqliteConnection(new SqliteConnectionStringBuilder
-            { DataSource = Path.Combine(Root, "distribution.pre-v2-" + DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmssfffffff") + ".db"), Pooling = false }.ToString());
+            { DataSource = Path.Combine(Root, "distribution.pre-v3-" + DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmssfffffff") + ".db"), Pooling = false }.ToString());
             backup.Open(); db.BackupDatabase(backup);
         }
         using var transaction = db.BeginTransaction(); command.Transaction = transaction;
@@ -79,7 +80,8 @@ public sealed class IntakeStore
         command.CommandText = """
             CREATE TABLE IF NOT EXISTS active_work(job TEXT PRIMARY KEY,owner TEXT NOT NULL,scratch TEXT,snapshot TEXT,started_at TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS releases_job_idx ON releases(job);
-            PRAGMA user_version=2;
+            CREATE TABLE IF NOT EXISTS device_keys(key_id TEXT PRIMARY KEY,client TEXT NOT NULL,public_pem TEXT NOT NULL,revoked INTEGER NOT NULL DEFAULT 0);
+            PRAGMA user_version=3;
             """;
         command.ExecuteNonQuery(); transaction.Commit();
     }

@@ -121,6 +121,8 @@ public static partial class DiagnosticRedactor
     {
         if (string.IsNullOrEmpty(value)) return value ?? string.Empty;
         var result = BearerPattern().Replace(value, "$1<redacted>");
+        result = AuthHeaderPattern().Replace(result, "$1<redacted>");
+        result = PrivatePemPattern().Replace(result, "<redacted-private-key>");
         result = UrlUserInfoPattern().Replace(result, "$1<redacted>@");
         result = SensitiveJsonPattern().Replace(result, "$1\"<redacted>\"");
         var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -134,6 +136,10 @@ public static partial class DiagnosticRedactor
     private static partial Regex BearerPattern();
     [GeneratedRegex("(?i)(https?://)[^/@\\s]+@")]
     private static partial Regex UrlUserInfoPattern();
-    [GeneratedRegex("(?i)(\"(?:token|password|passcode|authorization)\"\\s*:\\s*)\"[^\"]*\"")]
+    [GeneratedRegex("(?i)(\"(?:token|password|passcode|authorization|privateKeyPem|challenge|signature|signature-input)\"\\s*:\\s*)\"(?:\\\\.|[^\"\\\\])*\"")]
     private static partial Regex SensitiveJsonPattern();
+    [GeneratedRegex("(?im)((?:signature(?:-input)?|x-ue-dt-challenge)\\s*[:=]\\s*)[^\\r\\n]+")]
+    private static partial Regex AuthHeaderPattern();
+    [GeneratedRegex("-----BEGIN (?:EC )?PRIVATE KEY-----[\\s\\S]*?-----END (?:EC )?PRIVATE KEY-----")]
+    private static partial Regex PrivatePemPattern();
 }

@@ -2,6 +2,8 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
+using System.Security.Cryptography;
+using Microsoft.AspNetCore.Http.Features;
 
 namespace UeDtLauncher.Distribution;
 
@@ -25,10 +27,22 @@ public static class DistributionHttp
             !IPAddress.TryParse(listen.Host, out var ip) || !IPAddress.IsLoopback(ip))
             throw new InvalidDataException("Distribution API must bind to loopback behind nginx.");
         var builder = WebApplication.CreateBuilder();
+        if (store.Settings.AuthenticationMode is not ("bearer" or "request-signature-v1")) throw new InvalidDataException("Unsupported server authentication mode.");
+        var publicUri = new Uri(store.Settings.PublicUrl, UriKind.Absolute);
+        if (publicUri.Scheme is not ("http" or "https") || publicUri.UserInfo.Length != 0 || publicUri.AbsolutePath != "/" || publicUri.Query.Length != 0 || publicUri.Fragment.Length != 0)
+            throw new InvalidDataException("PublicUrl must be a plain HTTP(S) origin.");
+        var signedRequests = store.Settings.AuthenticationMode == "request-signature-v1";
+        builder.Services.AddSingleton<AuthenticationProcessLease>(_ => new(store.Root));
+        builder.Services.AddSingleton<DeviceAuthenticationState>(_ => new(RequestSignatures.Origin(publicUri)));
+        // Never log request targets: the authentication challenge query and headers are not diagnostics.
+        builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
         builder.WebHost.UseUrls(store.Settings.ListenUrl);
         var app = builder.Build();
+        _ = app.Services.GetRequiredService<AuthenticationProcessLease>();
+        var authentication = app.Services.GetRequiredService<DeviceAuthenticationState>();
         var publisher = new ApprovedPublisher(store);
         var tokens = new DistributionTokens(store);
+        var deviceKeys = new DistributionDeviceKeys(store);
         var assets = new PublishedAssetCache();
         var sequenceGate = new SemaphoreSlim(1, 1);
         var databaseGate = store.DatabaseGate;
@@ -43,22 +57,71 @@ public static class DistributionHttp
             // Catalogs contain client-specific grants and a fresh anti-replay sequence, including errors.
             if (context.Request.Path == "/api/v1/catalog") context.Response.Headers.CacheControl = "no-store";
             if (context.Request.Method is not ("GET" or "HEAD")) { context.Response.StatusCode = 405; return; }
-            var authorization = context.Request.Headers.Authorization.ToString();
-            string? clientId;
+            var address = context.Connection.RemoteIpAddress;
+            if (address is not null && IPAddress.IsLoopback(address) && context.Request.Headers.TryGetValue("X-Distribution-Client-IP", out var forwarded))
+                address = forwarded.Count == 1 && IPAddress.TryParse(forwarded[0], out var parsed) ? parsed : null;
+            if (signedRequests && context.Request.Path == "/api/v1/auth/challenge")
+            {
+                context.Response.Headers.CacheControl = "no-store";
+                if (context.Request.Method != "GET" || context.Request.Query.Count != 1 || context.Request.Query["keyId"].Count != 1 ||
+                    context.Request.ContentLength is > 0 || context.Request.Headers.ContainsKey("Transfer-Encoding"))
+                { context.Response.StatusCode = 400; return; }
+                if (address is null || !authentication.AllowChallenge(address.ToString())) { context.Response.StatusCode = 429; return; }
+                try { await context.Response.WriteAsJsonAsync(new AuthChallenge(authentication.Issue(context.Request.Query["keyId"].ToString())), JsonFiles.Options, context.RequestAborted); }
+                catch (ArgumentException) { context.Response.StatusCode = 400; }
+                return;
+            }
+            string? clientId = null;
+            RequestSignatureContext? proof = null;
+            long challengeDeadline = 0;
             // SQLite's rollback journal lets short readers delay writer commit. Coordinate only this
             // server's SQL intervals to avoid native busy-poll delays, never caching authorization.
-            databaseGate.EnterReadLock();
             try
             {
-                clientId = authorization.StartsWith("Bearer ", StringComparison.Ordinal) ? tokens.Authenticate(authorization[7..]) : null;
+                if (signedRequests)
+                {
+                    if (context.Request.ContentLength is > 0 || context.Request.Headers.ContainsKey("Transfer-Encoding") ||
+                        context.Request.Headers.Keys.Any(k => k.StartsWith("If-", StringComparison.OrdinalIgnoreCase)) || context.Request.Headers.ContainsKey("Authorization"))
+                        throw new InvalidDataException("Unsupported signed request.");
+                    static string Header(HttpContext c, string name)
+                    {
+                        var values = c.Request.Headers[name];
+                        return values.Count == 1 && values[0]!.Length <= 2048 ? values[0]! : throw new InvalidDataException("Missing or duplicate authentication header.");
+                    }
+                    var raw = context.Features.Get<IHttpRequestFeature>()?.RawTarget ?? context.Request.Path + context.Request.QueryString;
+                    if (raw.Length > 8192 || !raw.StartsWith('/') || raw.StartsWith("//", StringComparison.Ordinal) || raw.Contains('#')) throw new InvalidDataException("Invalid request target.");
+                    var target = RequestSignatures.Origin(publicUri) + raw;
+                    var challenge = Header(context, RequestSignatures.ChallengeHeader);
+                    var range = context.Request.Headers.ContainsKey("Range") ? Header(context, "Range") : null;
+                    proof = RequestSignatures.Parse(Header(context, "Signature-Input"), context.Request.Method, target, range is not null);
+                    var registered = deviceKeys.Find(proof.KeyId);
+                    if (registered is null || registered.Revoked || !RequestSignatures.Verify(proof, challenge, range, Header(context, "Signature"), registered.PublicKeyPem))
+                    { context.Response.StatusCode = 401; return; }
+                    if (!authentication.TryValidate(challenge, proof.KeyId, out challengeDeadline))
+                    { context.Response.StatusCode = 401; context.Response.Headers["X-UE-DT-Auth-Error"] = "stale-challenge"; return; }
+                    clientId = registered.ClientId;
+                    context.Items["request-proof"] = proof;
+                }
+                else
+                {
+                    if (publicUri.Scheme != "https") { context.Response.StatusCode = 401; context.Response.Headers["X-UE-DT-Auth-Error"] = "https-bearer-required"; return; }
+                    var values = context.Request.Headers.Authorization;
+                    var authorization = values.Count == 1 ? values[0]! : "";
+                    clientId = authorization.StartsWith("Bearer ", StringComparison.Ordinal) ? tokens.Authenticate(authorization[7..]) : null;
+                }
             }
-            finally { databaseGate.ExitReadLock(); }
+            catch (Exception ex) when (ex is InvalidDataException or ArgumentException or FormatException or CryptographicException)
+            { context.Response.StatusCode = 401; return; }
+            catch (SqliteException) { context.Response.StatusCode = 503; return; }
             if (clientId is null) { context.Response.StatusCode = 401; return; }
-            var address = context.Connection.RemoteIpAddress;
-            // Only the local nginx hop can supply the observed client IP. nginx overwrites this header.
-            if (address is not null && IPAddress.IsLoopback(address) &&
-                context.Request.Headers.TryGetValue("X-Distribution-Client-IP", out var forwarded))
-                address = IPAddress.TryParse(forwarded.ToString(), out var parsed) ? parsed : null;
+            bool ConsumeProof()
+            {
+                if (proof is null) return true;
+                var error = authentication.Consume(proof.KeyId, proof.Nonce, challengeDeadline);
+                if (error is null) return true;
+                context.Response.StatusCode = error == "auth-capacity" ? 429 : 401;
+                context.Response.Headers["X-UE-DT-Auth-Error"] = error; return false;
+            }
             try
             {
                 var policy = await provider.LoadCompiledAsync(context.RequestAborted);
@@ -71,10 +134,15 @@ public static class DistributionHttp
                     try { releases = publisher.List(); }
                     finally { databaseGate.ExitReadLock(); }
                     context.Items["allowed"] = releases.Where(r => client.AllowsRelease(r.Metadata)).ToList();
+                    if (!ConsumeProof()) return;
                     await next(); return;
                 }
                 var path = context.Request.Path.Value ?? "";
-                if (path == "/internal/authorize") path = context.Request.Headers["X-Original-URI"].ToString().Split('?')[0];
+                if (path == "/internal/authorize")
+                {
+                    if (signedRequests) { context.Response.StatusCode = 404; return; }
+                    path = context.Request.Headers["X-Original-URI"].ToString().Split('?')[0];
+                }
                 PublishedRelease? release = null;
                 if (TryGetReleaseId(path, out var releaseId))
                 {
@@ -90,6 +158,7 @@ public static class DistributionHttp
                     context.Response.StatusCode = 403; return;
                 }
                 context.Items["release"] = release;
+                if (!ConsumeProof()) return;
                 await next();
             }
             catch (Exception ex) when (ex is IOException or InvalidDataException or FormatException or JsonException or UnauthorizedAccessException)
@@ -130,8 +199,15 @@ public static class DistributionHttp
             foreach (var project in catalog.Projects)
                 foreach (var track in project.Releases.GroupBy(r => (r.Environment, r.Channel, r.Platform))) track.Last().IsLatest = true;
             var payload = JsonSerializer.Serialize(catalog, JsonFiles.Options);
+            CatalogRequestBinding? binding = null;
+            if (context.Items["request-proof"] is RequestSignatureContext proof)
+            {
+                var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
+                var signature = publisher.Sign(Encoding.UTF8.GetString(RequestSignatures.BindingBytes(proof, hash)));
+                binding = new(proof.KeyId, proof.Nonce, proof.Method, proof.TargetUri, hash, signature);
+            }
             return Results.Bytes(JsonSerializer.SerializeToUtf8Bytes(new DistributionEnvelope(
-                Convert.ToBase64String(Encoding.UTF8.GetBytes(payload)), publisher.Sign(payload)), JsonFiles.Options), "application/json");
+                Convert.ToBase64String(Encoding.UTF8.GetBytes(payload)), publisher.Sign(payload), binding), JsonFiles.Options), "application/json");
         });
         app.MapMethods("/internal/authorize", new[] { "GET", "HEAD" }, () => Results.NoContent());
         app.MapMethods("/releases/{project}/{environment}/{channel}/{version}/{platform}/{**path}", new[] { "GET", "HEAD" },

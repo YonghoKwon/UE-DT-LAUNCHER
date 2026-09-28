@@ -1,6 +1,6 @@
 namespace UeDtLauncher;
 
-public sealed record DistributionEnvelope(string Payload, string SignatureDocument);
+public sealed record DistributionEnvelope(string Payload, string SignatureDocument, CatalogRequestBinding? RequestBinding = null);
 
 public static class DistributionEnvelopeVerifier
 {

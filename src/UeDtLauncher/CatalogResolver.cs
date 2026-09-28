@@ -45,17 +45,21 @@ public static class CatalogResolver
         }
 
         LauncherConfigValidator.ValidateUrl(config, new Uri(config.CatalogUrl, UriKind.Absolute), "catalog");
-        var catalogJson = await SecureHttpClientFactory.GetBoundedStringAsync(
-            httpClient,
-            config.CatalogUrl,
-            config.Security.MaxCatalogBytes,
-            cancellationToken);
+        using var response = await httpClient.GetAsync(config.CatalogUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var catalogJson = await SecureHttpClientFactory.ReadBoundedStringAsync(response, config.Security.MaxCatalogBytes, cancellationToken);
 
         bool signatureVerified;
         if (!string.IsNullOrWhiteSpace(config.DistributionServerUrl))
         {
             var envelope = JsonSerializer.Deserialize<DistributionEnvelope>(catalogJson, JsonFiles.Options)
                 ?? throw new InvalidDataException("Missing signed distribution catalog.");
+            if (config.Security.AuthenticationMode == "request-signature-v1")
+            {
+                if (response.RequestMessage is null || !response.RequestMessage.Options.TryGetValue(RequestSignatures.ContextKey, out var expected))
+                    throw new System.Security.Cryptography.CryptographicException("The catalog request was not authenticated by this client.");
+                RequestSignatures.VerifyBinding(envelope, config, expected);
+            }
             catalogJson = DistributionEnvelopeVerifier.Verify(envelope, config);
             signatureVerified = true;
         }
