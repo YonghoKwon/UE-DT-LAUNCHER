@@ -17,3 +17,10 @@
 - Windows publish portable service 실제 health 500·서비스 CLI 강제 종료·payload 자연 종료·barrier 보존·명시적 정지 복구 통과: `uedt-service-proof-zppwk584`.
 - Windows publish console Agent peer/중복/실행 중 변경/재시작/host 장애 통과: `uedt-broker-proof-xve6wsfi`.
 - 서비스 fixture는 loopback schema 1 unsigned 합성 앱이다. 운영 인증 검증은 별도 signed HTTP/HTTPS E2E로 수행한다.
+
+## 3. 이전 차단과 import
+
+- shared-install migration apply는 대상 생성 전 거부. Agent CLI도 예상 거부를 crash report로 저장하지 않는다.
+- import는 source lease 이후 metadata/파일 목록 읽기, staging hash/size 재검증, non-overwrite 공개를 유지한다.
+- Windows/WSL 전체 383개 통과. WSL 최초 실패는 새 dry-run 시험이 root 소유 /tmp를 자기 소유로 가정한 fixture 문제였으며 자기 소유 부모로 수정 후 통과했다. 권한 규칙을 완화하지 않았다.
+- Windows publish CLI/Agent의 dry-run·apply 무변경 거부·정지 확인 후 import·중복 대상 거부 실제 통과: `uedt-migration-proof-590h_xau`.

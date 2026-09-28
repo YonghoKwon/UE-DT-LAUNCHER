@@ -7,13 +7,13 @@ public static class LegacyInstallImport
     {
         var config = await JsonFiles.ReadAsync<LauncherConfig>(configPath, token);
         LauncherPaths.ResolveInPlace(config, configPath);
+        using var sourceLease = apply ? InstallationMutationLease.Acquire(config) : null;
         var manifest = await JsonFiles.ReadAsync<LauncherManifest>(config.InstalledManifestPath, token);
         LauncherEngine.ValidateManifest(manifest, config);
         var selection = new ReleaseSelection(manifest.AppId, config.Environment, config.Channel, manifest.Platform, manifest.Version);
         selection.Validate();
         var destination = SafePath.ResolveInside(Path.GetFullPath(destinationRoot), selection.ReleaseId);
         if (Directory.Exists(destination)) throw new IOException("Import destination already exists.");
-        using var sourceLease = apply ? InstallationMutationLease.Acquire(config) : null;
         var files = Directory.EnumerateFiles(config.InstallDir, "*", SearchOption.AllDirectories).ToList();
         foreach (var file in manifest.Files)
             if (!await Hashing.Sha256MatchesAsync(SafePath.ResolveInsideChecked(config.InstallDir, file.Path), file.Sha256, token))
@@ -30,6 +30,12 @@ public static class LegacyInstallImport
                     var source = SafePath.ResolveInsideChecked(config.InstallDir, relative);
                     var target = SafePath.ResolveInsideChecked(staging, relative);
                     Directory.CreateDirectory(Path.GetDirectoryName(target)!); File.Copy(source, target, false);
+                }
+                foreach (var file in manifest.Files)
+                {
+                    var target = SafePath.ResolveInsideChecked(staging, file.Path);
+                    if (new FileInfo(target).Length != file.Size || !await Hashing.Sha256MatchesAsync(target, file.Sha256, token))
+                        throw new InvalidDataException("Imported staging does not match the locked manifest.");
                 }
                 Directory.Move(staging, destination); // Never merge with a concurrently created installation.
             }

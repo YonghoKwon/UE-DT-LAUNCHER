@@ -219,7 +219,9 @@ public sealed record ManagedMigrationPlan(
     string TargetStateRoot,
     IReadOnlyList<string> ProjectIds,
     bool TargetAlreadyExists,
-    bool Applied = false);
+    bool Applied = false,
+    bool CanApply = false,
+    string BlockingReason = "Shared installation ownership transfer is not supported. Keep the source and request a separate migration plan.");
 
 public static class PortableMigrationService
 {
@@ -246,51 +248,14 @@ public static class PortableMigrationService
             File.Exists(Path.Combine(layout.ConfigRoot, "launcher.config.json")));
     }
 
-    public static async Task ApplyAsync(
-        ManagedMigrationPlan plan,
-        CancellationToken cancellationToken = default)
+    public static Task ApplyAsync(ManagedMigrationPlan plan, CancellationToken cancellationToken = default)
     {
-        if (plan.TargetAlreadyExists || File.Exists(plan.TargetConfigPath))
-            throw new IOException($"Managed config already exists: {plan.TargetConfigPath}");
-
-        var config = await JsonFiles.ReadAsync<LauncherConfig>(plan.SourceConfigPath, cancellationToken);
-        if (!string.IsNullOrWhiteSpace(config.DistributionServerUrl) || config.Projects.Count > 1)
-            throw new InvalidOperationException("Multi-installation state migration requires a separately reviewed maintenance plan; no automatic runtime adoption is allowed.");
-        var sourceRuntime = await JsonFiles.ReadAsync<LauncherConfig>(plan.SourceConfigPath, cancellationToken);
-        LauncherPaths.ResolveInPlace(sourceRuntime, plan.SourceConfigPath);
-        var scopedState = Path.GetDirectoryName(sourceRuntime.InstallStatePath)!;
-        if (Directory.Exists(plan.SourceStateRoot) && Directory.EnumerateFiles(plan.SourceStateRoot, "*", SearchOption.AllDirectories)
-            .Any(file => !Path.GetFullPath(file).StartsWith(Path.GetFullPath(scopedState) + Path.DirectorySeparatorChar, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)))
-            throw new InvalidOperationException("State outside the confirmed single installation requires a separate migration plan.");
-        using var runtimeLease = InstallationMutationLease.Acquire(sourceRuntime);
-        using var destinationGate = SingleInstanceLock.Acquire(Path.Combine(Path.GetDirectoryName(plan.TargetConfigPath)!, "migration.lock"));
-        config.InstallDir = LauncherPaths.ResolveConfigRelative(plan.SourceConfigPath, config.InstallDir);
-        config.LogDir = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(plan.TargetStateRoot)!, "logs"));
-        config.StateRootDir = plan.TargetStateRoot;
-        config.DeploymentMode = "managed-agent";
-        foreach (var project in config.Projects)
-        {
-            if (!string.IsNullOrWhiteSpace(project.InstallPath))
-                project.InstallPath = LauncherPaths.ResolveConfigRelative(plan.SourceConfigPath, project.InstallPath);
-        }
-
-        CopyDirectoryWithoutOverwrite(plan.SourceStateRoot, plan.TargetStateRoot);
-        await JsonFiles.WriteAsync(plan.TargetConfigPath, config, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        // Existing migration reuses InstallDir but creates another runtime/lock authority.
+        // No target directory, state, config or source acknowledgement may be written.
+        throw new InvalidOperationException("Portable-to-managed apply is blocked: shared installation ownership requires a separate migration plan. Use --dry-run for inspection; do not reuse the installation through two configs.");
     }
 
-    private static void CopyDirectoryWithoutOverwrite(string sourceRoot, string targetRoot)
-    {
-        if (!Directory.Exists(sourceRoot)) return;
-        foreach (var sourceFile in Directory.EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories))
-        {
-            if (sourceFile.EndsWith(".lock", StringComparison.OrdinalIgnoreCase)) continue;
-            var relative = Path.GetRelativePath(sourceRoot, sourceFile);
-            var target = SafePath.ResolveInside(targetRoot, relative);
-            if (File.Exists(target)) throw new IOException($"Migration target already contains state file: {relative}");
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.Copy(sourceFile, target, overwrite: false);
-        }
-    }
 }
 
 internal static class ManagedAgentFrameCodec

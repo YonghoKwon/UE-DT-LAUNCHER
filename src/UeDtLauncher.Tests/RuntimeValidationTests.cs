@@ -31,10 +31,11 @@ public sealed class RuntimeValidationTests : IDisposable
     public void DryRunAndRejectedOwnerDoNotCreateDirectories()
     {
         var config=Config;
+        Directory.CreateDirectory(root); // Own the parent; /tmp itself belongs to root on Linux.
         RuntimeStore.Recover(config,RuntimeIdentities.Current(),false);
-        Assert.False(Directory.Exists(root));
+        Assert.Empty(Directory.EnumerateFileSystemEntries(root));
         Assert.Throws<UnauthorizedAccessException>(()=>RuntimeStore.Recover(config,RuntimeIdentities.Current() with { Owner="foreign",Administrator=false },true));
-        Assert.False(Directory.Exists(root));
+        Assert.Empty(Directory.EnumerateFileSystemEntries(root));
     }
     [Fact]
     public void InvalidSelectionDoesNotTouchRuntime()
