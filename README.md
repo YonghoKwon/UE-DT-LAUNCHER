@@ -2,7 +2,7 @@
 
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 배포 시스템입니다.
 
-문서 점검: **2026-09-28**, 기능·검증 기준: `codex/poscodx-ui-accessibility` (디자인·피드백·접근성 부분 커밋). 로컬 브랜치 기준이며 main 반영·회사 운영 승인 완료를 뜻하지 않습니다.
+문서 점검: **2026-09-28**, 기능·검증 기준: `codex/gui-validation-completion` (디자인·피드백·접근성 부분 커밋). 로컬 브랜치 기준이며 main 반영·회사 운영 승인 완료를 뜻하지 않습니다.
 
 **현재 판단: 합성 앱 기반 배포·설치·실행·복구는 활용 가능한 단계이며, 회사 정식 운영 인수는 미완료입니다.** 현재 수치와 남은 작업은 [개선 진행 현황](IMPROVEMENTS.md), 상세 명령은 [운영 문서 색인](docs/reference/README.md)을 확인하세요.
 
@@ -35,11 +35,11 @@ flowchart LR
 
 ## 현재 구현
 
-최신 전체 자동화는 Windows/WSL **각 428개 통과**, Windows Release 경고·오류 0입니다. 포스코DX 일반 라이트/개발자 다크 화면, 사용자별 100~200% 글자·고대비, 작업 의도 유지 재시도, 확인한 backup에 결속된 복원을 추가했습니다. 실제 새 GUI 표시·설정 적용과 Windows/Linux console Agent 복원 시험을 확인했습니다. [새 UI 검증과 미완료 조건](docs/reference/archive/validation/poscodx-ui-accessibility-validation.md)
+최신 전체 자동화는 Windows/WSL **각 441개 통과**, Windows Release 경고·오류 0입니다. 포스코DX 일반 라이트/개발자 다크 화면, 사용자별 100~200% 글자·고대비, 작업 의도 유지 재시도, 확인한 backup에 결속된 복원을 추가했습니다. 실제 1920×1080·100%에서 일반 v1 설치/실행→v2 업데이트, 개발자 손상 복구·정상 백업 복원·변경된 preview 거부를 확인했습니다. 최신 조회 재시도는 재연결 후 미설치 상태로 복귀하고 설치/실행을 하지 않았습니다. IPC 연결 제한은 3초이며 연결 후 작업 제한은 유지합니다. [후속 실제 검증과 남은 조건](docs/reference/archive/validation/gui-validation-completion.md)
 
 기존 GUI 검증 이력에서는 일반 GUI 설치·실행·실행 중 버튼 차단·창 종료/재실행·자식 정상 종료, 개발자 선택/취소·v2 파일 복구·같은 설치의 정상 backup rollback을 실제로 확인했습니다. [GUI 실행 이력](docs/reference/archive/validation/managed-gui-safety-validation.md), [runtime 장애 이력](docs/reference/archive/validation/runtime-safety-completion-validation.md)
 
-개발자 v1 승인 설치/실행, 실행 중 개발자 GUI 변경 차단, 일반 문제 해결의 단절/재연결, portable GUI rollback, 회사 UE/RHEL·설치 서비스 계정 검증은 남았습니다. 실제 OS 해상도/DPI 전체 조합·내레이터 음성과 새 디자인에서의 설치/복원 직접 조작은 별도 검증 항목입니다. 기존 화면의 성공을 새 화면의 전체 성공으로 대신하지 않습니다.
+개발자 v1 승인 설치/실행, 실행 중 개발자 GUI 변경 차단, 일반 문제 해결의 단절/재연결, portable GUI rollback, 회사 UE/RHEL·설치 서비스 계정 검증은 남았습니다. 실제 OS 조합은 2/18개를 확인했고 나머지 배율/해상도·최악 조건·portable GUI 복원 및 개발자 실행 확인 승인 등은 남았습니다. 내레이터 실제 음성은 사용자 선택으로 후속 보류합니다. 기존 화면의 성공을 새 화면의 전체 성공으로 대신하지 않습니다.
 
 | 영역 | 내용 |
 |---|---|

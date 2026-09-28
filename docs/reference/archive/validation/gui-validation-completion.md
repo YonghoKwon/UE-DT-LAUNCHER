@@ -54,3 +54,9 @@
 - 현재 Windows/WSL 전체 자동화 각각 441개, skip 0. Windows Release 경고 0/오류 0. Python fixture 경로/해시·사용자 설정 복원 충돌 검사 2개 통과.
 - WSL HTTP 요청 서명+Agent E2E `/tmp/uedt-intranet-lh82jaag`, HTTPS/Bearer+nginx `/tmp/uedt-distribution-e2e.Z4R33C` 통과(연결 제한 보강 전). 최신 publish로 추가 재시험 결과를 별도로 기록한다.
 - 현재 실제 OS 조합은 1920×1080/100%의 일반·개발자 2개이며, 나머지 16개 조합·최악 조건·portable GUI 실제 적용·개발자 실행 확인 승인 등은 완료로 표시하지 않는다. UI-01/02/03은 75% 유지한다.
+
+## 최종 보관된 독립 회귀 결과
+
+- 최신 Linux publish의 HTTP 요청 서명+Agent E2E PASS: `/tmp/uedt-intranet-4oq6nw__`.
+- 최신 Linux publish의 HTTPS/Bearer+nginx E2E PASS: `/tmp/uedt-distribution-e2e.3hWhkx`. nginx 기본 로그 경로 alert와 별개로 임시 설정 검사·전체 기능 시험은 성공. 실제 회사 RHEL 대용량 결과는 아님.
+- 문서 4종에는 지금까지의 부분 수용과 나머지 조건을 반영한다. 실제 내레이터 청취는 수행하지 않았다. OS 다음 조합 1920×1080/125% 변경 완료 및 원래 설정 값은 사용자 응답 대기이며, 아직 OS 원상 복원 완료로 표시하지 않는다.

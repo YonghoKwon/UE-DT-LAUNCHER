@@ -1,6 +1,6 @@
 # 현재 운영 문서 색인
 
-정리: 2026-09-28 / UI 갱신 기준 `codex/poscodx-ui-accessibility`. 상시 관리 정본은 루트 4개이며, 이 폴더에는 **현재 사용하는 상세 가이드 9개와 이 색인**만 둡니다.
+정리: 2026-09-28 / UI 갱신 기준 `codex/gui-validation-completion`. 상시 관리 정본은 루트 4개이며, 이 폴더에는 **현재 사용하는 상세 가이드 9개와 이 색인**만 둡니다.
 
 | 루트 정본 | 역할 |
 |---|---|
@@ -41,4 +41,4 @@
 - 과거 실행 날짜·수치를 새 문서 점검 날짜나 재시험 결과로 바꾸지 않습니다.
 - 이동 시 Markdown 상대 링크와 코드/스크립트의 문서 경로 참조를 함께 확인합니다.
 - `python tools/check-documentation.py`와 `python tools/check-improvement-ledger.py`로 구조·링크·집계를 검사합니다.
-- 이번 UI 변경은 Windows/WSL 회귀와 실제 Windows 표시/설정을 확인했습니다. [세부 증거·미완료 조건](archive/validation/poscodx-ui-accessibility-validation.md)을 따르며 과거 문서 정리 이력과 구분합니다.
+- 이번 UI 변경은 Windows/WSL 회귀와 실제 Windows 표시/설정을 확인했습니다. [최신 실제 증거·미완료 조건](archive/validation/gui-validation-completion.md)을 따르며 과거 문서 정리 이력과 구분합니다.

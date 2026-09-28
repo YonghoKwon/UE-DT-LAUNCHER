@@ -1,6 +1,6 @@
 # 작업 지침
 
-점검: 2026-09-28 / 구현 기준 codex/poscodx-ui-accessibility. 저장소 전체에 적용합니다.
+점검: 2026-09-28 / 구현 기준 codex/gui-validation-completion. 저장소 전체에 적용합니다.
 
 ## 문서 관리 계약
 
@@ -65,7 +65,11 @@
 - programmatic View와 LauncherVisualTokens·ViewModel을 사용합니다. 현행 레이아웃은 MainWindowEnterprise, 대화창은 MainWindowAccessibility, 피드백은 MainWindowFeedback입니다.
 - 일반은 밝은 POSCO DX 업무 화면, 개발자는 같은 브랜드의 다크 화면을 유지합니다. 공식 로고 원본/출처를 보존하며 임의 CI 재가공을 하지 않습니다.
 - 글자 배율·앱 고대비는 사용자별 ui-preferences.json에만 저장합니다. UI 스레드에서 비동기 파일 저장을 동기 대기하지 않습니다. OS 고대비 요청을 우선합니다.
-- 조회 오류의 재시도를 설치/실행으로 바꾸지 않습니다. 작업·릴리스 snapshot이 달라지면 조회하고 rollback은 새 preview/확인을 받습니다. backup ID/fingerprint를 설치 lease 안에서 재검증합니다.
+- GUI 시험은 새 fixture에 같은 소스의 GUI/Agent/서버/합성 앱을 게시하고 바이너리 hash·HEAD·소스 diff hash를 기록합니다. 기존 fixture와 설치를 덮어쓰지 않습니다.
+- 손상 repair 직전 파일은 손상 상태로 백업될 수 있습니다. 정상 rollback 시험은 repair 성공 후 정상 상태에서 다시 repair하여 최신 backup 전체 hash를 확인합니다.
+- OS 해상도·배율·고대비는 사용자 협업으로 변경/원복하고 앱 진단의 screen/work area·RenderScaling·DIP·글자 배율로 대조합니다. 사용자 prefs는 원본을 보존하고 중간 사용자 변경이 감지되면 복원 덮어쓰기를 거부합니다.
+- PreviousInstallation은 인증된 동일 track의 bounded 설치 기록 표시 힌트입니다. 현재 선택의 IsInstalled/InstalledVersion/HasBackup 의미, 실행 권한·실행 대상·백업 대상을 바꾸지 않습니다.
+- 조회 오류의 재시도를 설치/실행으로 바꾸지 않습니다. IPC 연결 대기와 연결 후 작업 제한을 분리하고 외부 취소를 서비스 장애로 바꾸지 않습니다. 작업·릴리스 snapshot이 달라지면 조회하고 rollback은 새 preview/확인을 받습니다. backup ID/fingerprint를 설치 lease 안에서 재검증합니다.
 - 관리형 정리에 필요한 Agent 명령이 없으면 보호 디렉터리 직접 쓰기로 우회하지 않습니다. 기존 IPC와 신규 rollback-preview-v1 capability를 구분합니다.
 - headless DIP viewport/UIA 이름은 실제 DPI·내레이터 음성 증거가 아닙니다. 실제 GUI 시험은 합성 앱에 한정하고 적용 직전 필요한 확인을 받습니다.
 - 관리형 실행 성공을 Ready로 단정하지 않습니다. runtime 관측의 Running/Pending/Unknown/누락은 차단 상태이며, 문제 해결에서 typed runtime 실패를 일반 예외로 잃거나 rollback 제안으로 바꾸지 않습니다.

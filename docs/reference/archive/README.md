@@ -12,6 +12,7 @@
 | [인증 부하 JSON](validation/intranet-auth-load-results.json) | 위 인증 시험의 구조화 측정 결과 |
 | [배포 서명·runtime 1차](validation/deployment-safety-validation.md) | MSI 순서·native 후손·Agent·변경 차단 |
 | [runtime 후속](validation/runtime-safety-completion-validation.md) | 상태 저장·서비스 전환·장애 주입 |
+| [새 GUI 실제 수용 후속](validation/gui-validation-completion.md) | 이전 설치 표시·정확한 복원·실제 일반 업데이트/개발자 복원·조회 재시도·남은 OS 조합 |
 | [포스코DX UI·접근성](validation/poscodx-ui-accessibility-validation.md) | 새 일반/개발자 화면·작업 피드백·설정/접근성·실제/미검증 구분 |
 | [관리형 GUI](validation/managed-gui-safety-validation.md) | 일반 설치/실행·창 종료, 개발자 선택·취소·복구·rollback 실제 기록 |
 

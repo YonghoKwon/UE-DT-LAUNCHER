@@ -1,6 +1,6 @@
 # 개선 진행 현황과 보완 필요 사항
 
-점검: 2026-09-28 / `codex/poscodx-ui-accessibility`. [포스코DX UI 검증](docs/reference/archive/validation/poscodx-ui-accessibility-validation.md)과 기존 증거를 함께 반영했습니다. UI-01~03의 구현·로컬 실제 실행을 추가했으며 전체 DPI/내레이터/새 화면의 적용 E2E와 회사 인수는 완료하지 않았습니다.
+점검: 2026-09-28 / `codex/gui-validation-completion`. [후속 실제 GUI 검증](docs/reference/archive/validation/gui-validation-completion.md)과 기존 증거를 함께 반영했습니다. UI-01~03의 구현·로컬 실제 실행을 추가했으며 1920×1080/100%의 일반 설치·업데이트와 개발자 복구·복원은 실제 통과했습니다. 전체 DPI/내레이터/portable·최악 조건 E2E와 회사 인수는 아직 미완료입니다.
 
 P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선. 우선순위는 제안이며 일정·수치 목표는 미정입니다. 미검증과 미구현을 구분합니다.
 
@@ -22,7 +22,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | 성능 | PERF-01/02/04 재현 범위 완료 | PERF-03의 10개 연결 지연 기준 미달 유지 |
 | 인증·초기 설정 | USER-05 완료, SEC-03/04 각각 75% | Windows 서비스 계정·WSL proxy/계측 제약·회사 HTTP 위험 수용 |
 | 서명·실행 안전성 | OPS-08 50%, OPS-09 75%; 서명 순서·실행 중 변경 차단·장애 시험 구현 | 실제 인증서/설치본, 회사 계정·UE, 남은 GUI 직접 시험 |
-| 새 UI | 일반 라이트/개발자 다크, 글자·고대비·재시도·backup preview; Windows/WSL 각 428개 통과 | 전체 OS DPI, 내레이터 음성, 새 UI 설치/복원 직접 적용 |
+| 새 UI | Windows/WSL 각 441개, 실제 일반 v1→v2·개발자 repair/backup·preview 거부·조회 재시도 통과 | OS 나머지 16/18 조합·최악 조건, portable/개발자 실행 확인 승인, 내레이터 음성 |
 | GUI 직접 확인 | 일반 설치/실행·창 종료 수명, 개발자 선택/취소·v2 repair·backup rollback 통과 | v1 승인 실행, 실행 중 개발자 변경 차단, 일반 문제 해결 재연결, portable rollback |
 | 운영 인수 | 현재는 제한된 테스트 활용 단계 | MSI/RPM 설치 수명주기·데이터 보존·백업 복원·운영 정책·G1~G6 |
 
@@ -62,8 +62,8 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | SEC-04 | 요청 서명·nonce·Catalog 결속·Agent 이미지 | 변조/replay/만료 갱신 회귀 통과 | Windows GUI/Agent·Linux HTTP/HTTPS 및 부하 실행 | WSL proxy 간헐 timeout·메모리 계측 공백 남음 | 75% |
 | OPS-08 | 공식 preflight·EXE 선서명·MSI payload gate | 계약 11개·개발 MSI 추출/hash 확인 | 실제 회사 서명 인증서 미확인 | 인증서·설치본 서명 검증 대기 | 50% |
 | OPS-09 | 엄격 runtime 기록·서비스 snapshot/barrier·공통 변경 조정기 | Windows/WSL 회귀 각 393개·집계 검사 | 저장 경계 강제 종료 각 36개·health 실패·정확한 서비스 대상·CLI E2E 확인 | 일반 GUI 설치/실행·창 종료 수명 통과. 개발자 선택·v2 복구/rollback 적용 통과. 다른 버전 승인 실행·실행 중 변경 차단·일반 문제 해결 및 회사 UE/계정 검증 대기 | 75% |
-| UI-01 | 포스코DX 공통 토큰·반응형 작업 공간 | 18 viewport/긴 이름·포커스/큰 글자 회귀 | Windows 일반/개발자 실제 표시 | 실제 OS 해상도·DPI 전체 조합 대기 | 75% |
-| UI-02 | 유형별 오류·지원 ID·재시도 의도·backup preview | 오류/재시도/변조 preview 회귀 | Windows/Linux console Agent 실제 복원·GUI 연결 안내 | 새 GUI 설치/재시도/복원 적용 전수 대기 | 75% |
+| UI-01 | 포스코DX·반응형·작업 상세 스크롤 | viewport·실제 bucket 경계 포커스 회귀 | 1920×1080/100% 두 프로필 관측 | 나머지 16개 OS 조합·최악 조건 대기 | 75% |
+| UI-02 | 이전 설치 표시·정확한 복원·연결 3초/작업 제한 분리 | 441개 전체 회귀·기존 IPC 호환 | 일반 설치/업데이트, 개발자 repair/rollback/변조 preview, 무설치 재시도 직접 통과 | portable·작은 환경·나머지 실행 확인 수용 대기 | 75% |
 | UI-03 | Tab·취소 기본 포커스·100~200%·고대비 | 키보드 선택·Escape·focus·viewport 회귀 | 실제 Windows 설정 적용/저장·UIA 이름 확인 | 내레이터 음성·OS 고대비·키보드 전체 흐름 대기 | 75% |
 
 근거: [성능 검증 기록](docs/reference/archive/validation/performance-validation.md), [CI 구성](.github/workflows/build.yml), 각 항목의 커밋·미완료 조건. 다른 항목의 기존 기반 기능이나 문서 작성만으로 추가 보완 진척을 자동 가산하지 않았습니다.
@@ -119,8 +119,8 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 | ID/우선 | 진행률 | 상태 | 현재 상태·영향 | 보완 방향·완료 조건 |
 |---|---:|---|---|---|
-| UI-01/P1 | 75% | 부분 · 전체 DPI 대기 | 포스코DX 일반/개발자 화면, 반응형·고정 작업 영역·브랜드 fallback. 18 DIP viewport와 실제 Windows 표시 확인 | 1280×720/1366×768/1920×1080 및 OS 100/125/150% 전체 조합, 빈 목록·긴 오류/버전 현장 확인. [증거](docs/reference/archive/validation/poscodx-ui-accessibility-validation.md) |
-| UI-02/P1 | 75% | 부분 · GUI 적용 E2E 대기 | typed 오류·지원 ID, 조회 재시도 의도/선택 보존, backup ID/fingerprint·버전 preview, 복원 완료 제목. Windows/Linux 실제 Agent 거부/복원 통과 | 새 GUI의 설치·취소·오류 재시도·backup 변경 후 재확인 직접 조작은 별도 수용 필요 |
+| UI-01/P1 | 75% | 부분 · 전체 DPI 대기 | 포스코DX 일반/개발자 화면, 반응형·고정 작업 영역·브랜드 fallback. 18 DIP viewport와 실제 1920×1080/100% 두 프로필 확인 | 1280×720/1366×768/1920×1080 및 OS 100/125/150% 전체 조합, 빈 목록·긴 오류/버전 현장 확인. [증거](docs/reference/archive/validation/poscodx-ui-accessibility-validation.md) |
+| UI-02/P1 | 75% | 부분 · 잔여 수용 대기 | 일반 v1→v2 업데이트 후 실행, 개발자 v2 손상 복구·정상 backup 복원/취소·preview 변경 거부 실제 통과. 최신 GUI 조회 재시도 시 설치/실행 0건. [증거](docs/reference/archive/validation/gui-validation-completion.md) | portable GUI 적용, 작은 환경 E2E, 개발자 실행 승인·일반 문제 해결의 남은 조합 확인 필요 |
 | UI-03/P2 | 75% | 부분 · 음성/OS 확인 대기 | 키보드 프로젝트·Tab 순서·focus·취소 기본값·Escape·복원, 사용자별 글자/고대비. 실제 200%+앱 고대비 적용·저장 확인 | 실제 내레이터 음성, OS 고대비 전환, 마우스 없는 전체 흐름. UIA tree를 음성 성공으로 간주하지 않음 |
 | UI-04/P2 | 0% | 대기 · 추가 보완 | 트레이·완료 알림은 이전 범위에서 제외 | 필요성 합의 후 opt-in 구현. 닫기/종료 의미·알림 설정 명확화 |
 
