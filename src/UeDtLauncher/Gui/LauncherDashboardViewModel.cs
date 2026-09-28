@@ -208,23 +208,9 @@ public sealed class LauncherDashboardViewModel : INotifyPropertyChanged
 
     public string FriendlyError(Exception exception)
     {
-        if (exception.GetBaseException() is RuntimeBlockedException blocked)
-            return blocked.Observation.Code == "client-upgrade-required" ? "런처와 업데이트 서비스를 함께 업데이트해 주세요." : blocked.Observation.Message;
-        var message = DiagnosticRedactor.Redact(exception.GetBaseException().Message);
-        if (IsDeveloper) return message;
-        if (message.Contains("requestedVersion is required", StringComparison.OrdinalIgnoreCase))
-            return "exact 버전을 사용하려면 요청 버전을 입력해야 합니다.";
-        if (message.Contains("Forbidden", StringComparison.OrdinalIgnoreCase) || message.Contains("401", StringComparison.OrdinalIgnoreCase))
-            return "이 PC의 업데이트 서버 접근 권한을 확인해 주세요.";
-        if (message.Contains("No release", StringComparison.OrdinalIgnoreCase))
-            return "현재 받을 수 있는 배포 버전이 없습니다.";
-        if (message.Contains("No such host", StringComparison.OrdinalIgnoreCase) || message.Contains("actively refused", StringComparison.OrdinalIgnoreCase))
-            return "업데이트 서버에 연결할 수 없습니다. 네트워크를 확인해 주세요.";
-        if (message.Contains("signature", StringComparison.OrdinalIgnoreCase) || message.Contains("certificate", StringComparison.OrdinalIgnoreCase))
-            return "업데이트 보안 검증에 실패했습니다. 관리자에게 문의해 주세요.";
-        return "작업 중 문제가 발생했습니다. 잠시 후 다시 시도하거나 관리자에게 문의하세요.";
+        var error=LauncherUiError.From(exception);
+        return IsDeveloper?DiagnosticRedactor.Redact(exception.Message):error.Message;
     }
-
     public event PropertyChangedEventHandler? PropertyChanged;
 
     private void Set<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)

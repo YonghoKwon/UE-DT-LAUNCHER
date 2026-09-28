@@ -71,7 +71,7 @@ public class GuiViewModelTests
         Assert.False(model.Capabilities.CanRepair);
         Assert.False(model.Capabilities.CanChangeReleaseTrack);
         Assert.False(model.Capabilities.CanViewTechnicalErrors);
-        var friendly = model.FriendlyError(new InvalidOperationException("Bearer super-secret signature failed"));
+        var friendly = model.FriendlyError(new System.Security.Cryptography.CryptographicException("Bearer super-secret signature failed"));
         Assert.DoesNotContain("super-secret", friendly);
         Assert.DoesNotContain("Bearer", friendly);
         Assert.Contains("보안 검증", friendly);

@@ -17,7 +17,7 @@ public static class ManagedAgentProtocol
     public static bool RequiresRuntimeCapability(string command) => command.ToLowerInvariant() is "update" or "repair" or "rollback" or "service-run" or "runtime-recover" || command.StartsWith("launch-", StringComparison.OrdinalIgnoreCase);
 
     public static readonly IReadOnlySet<string> AllowedCommands = new HashSet<string>(
-        ["status", "catalog", "check", "update", "repair", "rollback", "service-run", "diagnostics", "project-asset", "doctor", "launch-begin", "launch-attach", "launch-started", "launch-complete", "runtime-inspect", "runtime-recover"],
+        ["status", "catalog", "check", "update", "repair", "rollback", "rollback-preview", "service-run", "diagnostics", "project-asset", "doctor", "launch-begin", "launch-attach", "launch-started", "launch-complete", "runtime-inspect", "runtime-recover"],
         StringComparer.OrdinalIgnoreCase);
 
     public static string ResolveEndpoint()
@@ -55,6 +55,8 @@ public sealed class ManagedAgentRequest
     public int? PayloadPid { get; set; }
     public bool ConfirmStopped { get; set; }
     public string? ServiceVersion { get; set; }
+    public string? ExpectedBackupId { get; set; }
+    public string? ExpectedBackupFingerprint { get; set; }
 }
 
 public sealed class ManagedAgentResponse
@@ -62,9 +64,9 @@ public sealed class ManagedAgentResponse
     public void ThrowIfFailed()
     {
         if (Success) return;
-        if (Runtime is not null) throw new RuntimeBlockedException(Runtime);
+        if (Runtime is not null) { var blocked=new RuntimeBlockedException(Runtime);blocked.Data["CorrelationId"]=CorrelationId;throw blocked; }
         if (Status == "client-upgrade-required") throw new RuntimeBlockedException(new(RuntimeState.Unknown, Status, "런처와 업데이트 서비스를 함께 업데이트해 주세요."));
-        throw new InvalidOperationException(Message);
+        throw new AgentOperationException(ErrorCode ?? Status,CorrelationId,Message);
     }
     public int ProtocolVersion { get; set; } = ManagedAgentProtocol.Version;
     public string CorrelationId { get; set; } = string.Empty;
@@ -73,6 +75,8 @@ public sealed class ManagedAgentResponse
     public string Message { get; set; } = string.Empty;
     public string AgentVersion { get; set; } = string.Empty;
     public string? ClientIdentity { get; set; }
+    public string? ErrorCode { get; set; }
+    public RollbackPreview? RollbackPreview { get; set; }
     public bool IsFinal { get; set; } = true;
     public List<ManagedAgentProgress> Progress { get; set; } = new();
     public ManagedProjectStatus? ProjectStatus { get; set; }
@@ -354,7 +358,8 @@ public sealed class ManagedAgentClient(string? endpoint = null)
         Action<ManagedAgentProgress> onProgress,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default,
-        ReleaseSelection? selection = null)
+        ReleaseSelection? selection = null,
+        RollbackPreview? expectedBackup = null)
     {
         if (ManagedAgentProtocol.RequiresRuntimeCapability(command)) await RequireCapabilitiesAsync(cancellationToken);
         ArgumentNullException.ThrowIfNull(onProgress);
@@ -364,6 +369,8 @@ public sealed class ManagedAgentClient(string? endpoint = null)
             ProjectId = projectId,
             StreamProgress = true,
             Selection = selection,
+            ExpectedBackupId = expectedBackup?.BackupId,
+            ExpectedBackupFingerprint = expectedBackup?.MetadataFingerprint,
             ClientCapabilities = [ManagedAgentProtocol.RuntimeCapability]
         };
         var validationError = ManagedAgentProtocol.Validate(request);
@@ -398,8 +405,9 @@ public sealed class ManagedAgentClient(string? endpoint = null)
         if (OperatingSystem.IsWindows())
         {
             var pipe = new NamedPipeClientStream(".", _endpoint, PipeDirection.InOut, PipeOptions.Asynchronous);
-            await pipe.ConnectAsync(cancellationToken);
-            return pipe;
+            try { await pipe.ConnectAsync(cancellationToken); return pipe; }
+            catch(IOException ex) {pipe.Dispose();throw new AgentConnectionException(ex);}
+            catch {pipe.Dispose();throw;}
         }
 
         var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
@@ -408,11 +416,12 @@ public sealed class ManagedAgentClient(string? endpoint = null)
             await socket.ConnectAsync(new UnixDomainSocketEndPoint(_endpoint), cancellationToken);
             return new NetworkStream(socket, ownsSocket: true);
         }
-        catch
+        catch(Exception ex) when(ex is SocketException or IOException)
         {
             socket.Dispose();
-            throw;
+            throw new AgentConnectionException(ex);
         }
+        catch { socket.Dispose();throw; }
     }
 
     private async Task RequireCapabilitiesAsync(CancellationToken token)

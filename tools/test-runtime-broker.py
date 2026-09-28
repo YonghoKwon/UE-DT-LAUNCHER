@@ -41,6 +41,9 @@ def main():
     (state / "installed-manifest.json").write_text(json.dumps(manifest))
     backup = state / 'backups' / '20260928000000'; backup.mkdir(parents=True)
     shutil.copy2(app / entry, backup / entry)
+    meta = backup / '.uedt-meta'; meta.mkdir()
+    (meta / 'backup-info.json').write_text(json.dumps(dict(previousVersion='1.0.0',newVersion='1.0.0',createdAtUtc='2026-09-28T00:00:00Z',addedPaths=[])))
+    (meta / 'installed-manifest.json').write_text(json.dumps(manifest))
     canonical = str(app).upper() if os.name == "nt" else str(app)
     (state / "runtime-state.json").write_text(json.dumps({"schemaVersion": 1, "installationId": hashlib.sha256(canonical.encode()).hexdigest(), "state": 0, "origin": "new-install"}))
     endpoint = "uedt-proof-" + uuid.uuid4().hex if os.name == "nt" else str(root / "agent.sock")
@@ -87,6 +90,16 @@ def main():
         else:
             time.sleep(1)
         assert "runtime-supervision-v1" in rpc("status")["agentCapabilities"]
+        if "rollback-preview-v1" in rpc("status")["agentCapabilities"]:
+            preview = rpc("rollback-preview")["rollbackPreview"]
+            assert preview['canRestore'] and preview['restoreVersion']=='1.0.0'
+            (app / entry).write_bytes(b'damaged')
+            mismatch = rpc("rollback",expectedBackupId=preview['backupId'],expectedBackupFingerprint='0'*64)
+            assert not mismatch['success'] and mismatch['errorCode']=='backup-preview-changed'
+            assert (app / entry).read_bytes()==b'damaged'
+            restored = rpc("rollback",expectedBackupId=preview['backupId'],expectedBackupFingerprint=preview['metadataFingerprint'])
+            assert restored['success'],restored
+            assert hashlib.sha256((app / entry).read_bytes()).hexdigest()==manifest['files'][0]['sha256']
         assert rpc("status", clientCapabilities=[])["success"]
         assert rpc("update", clientCapabilities=[])["status"] == "client-upgrade-required"
         begun = rpc("launch-begin")

@@ -172,7 +172,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
             response = Error(request, "invalid-request", ex.Message, identity);
         }
 
-        response.AgentCapabilities = [ManagedAgentProtocol.RuntimeCapability];
+        response.AgentCapabilities = [ManagedAgentProtocol.RuntimeCapability, RollbackPreviewService.Capability];
         await ManagedAgentFrameCodec.WriteAsync(stream, response, cancellationToken);
     }
 
@@ -379,8 +379,26 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     var installed = await JsonFiles.ReadAsync<LauncherManifest>(config.InstalledManifestPath, cancellationToken);
                     var completedStatus = await ManagedProjectStatusInspector.InspectAsync(config, installed, cancellationToken);
                     return Success(request, identity, "completed", config.RepairMode ? "Repair completed." : "Update completed.", progress, completedStatus, config.SelectedRelease);
+                case "rollback-preview":
+                    if (request.Selection is not null) VersionedReleasePaths.Bind(config, request.Selection);
+                    var preview = await RollbackPreviewService.ReadAsync(config, cancellationToken);
+                    return new() { CorrelationId=request.CorrelationId, Success=true, Status="preview", RollbackPreview=preview, SelectedRelease=config.SelectedRelease };
                 case "rollback":
                     if (request.Selection is not null) VersionedReleasePaths.Bind(config, request.Selection);
+                    if (request.ExpectedBackupId is not null || request.ExpectedBackupFingerprint is not null)
+                    {
+                        if (request.ExpectedBackupId is null || request.ExpectedBackupFingerprint is null) throw new InvalidDataException("Both backup expectation fields are required.");
+                        await RollbackPreviewService.RestoreExpectedAsync(config, request.ExpectedBackupId, request.ExpectedBackupFingerprint,
+                            message => AddProgress(new LauncherProgress("Rollback", message, null)), cancellationToken);
+                        ManagedProjectStatus restoredStatus;
+                        if (File.Exists(config.InstalledManifestPath))
+                        {
+                            var restoredManifest=await JsonFiles.ReadAsync<LauncherManifest>(config.InstalledManifestPath,cancellationToken);
+                            restoredStatus=(await ManagedProjectStatusInspector.InspectAsync(config,restoredManifest,cancellationToken)) with { AvailableVersion=null };
+                        }
+                        else restoredStatus=new(false,null,null,true,0,0,BackupManager.List(config.BackupDir).Count>0);
+                        return Success(request, identity, "completed", "Confirmed backup restored.", progress, restoredStatus, config.SelectedRelease);
+                    }
                     var backup = BackupManager.List(config.BackupDir).FirstOrDefault();
                     if (backup.BackupRoot is null) return Error(request, "no-backup", "No rollback backup is available.", identity);
                     await BackupManager.RestoreAsync(
@@ -410,9 +428,11 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Managed Agent command {Command} failed", request.Command);
+            logger.LogError("Managed Agent command {Command} failed. SupportId {CorrelationId}; code {Code}; {Message}", request.Command, request.CorrelationId, LauncherFailure.Code(ex), DiagnosticRedactor.Redact(ex.Message));
             CrashReporter.Report(ex, "agent-command");
-            return Error(request, "failed", DiagnosticRedactor.Redact(ex.Message), identity);
+            var failure=Error(request, "failed", DiagnosticRedactor.Redact(ex.Message), identity);
+            failure.ErrorCode=LauncherFailure.Code(ex);
+            return failure;
         }
         finally
         {
@@ -449,6 +469,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
             CorrelationId = request.CorrelationId,
             Success = true,
             Status = status,
+            ErrorCode = status,
             Message = message,
             AgentVersion = AgentVersion(),
             ClientIdentity = identity,

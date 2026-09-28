@@ -231,8 +231,8 @@ public sealed partial class MainWindow
     private void RefreshPresentation()
     {
         if(_statusText is not null)_statusText.Text=_presentation.Title;
-        if(_percentText is not null)_percentText.Text=_presentation.Percent is { } p?$"{p:0}%":"진행 중";
-        if(_progress is not null){_progress.IsIndeterminate=_presentation.Percent is null;_progress.Value=_presentation.Percent??0;}
+        if(_percentText is not null)_percentText.Text=_presentation.Percent is { } p?$"{p:0}%":_running?"진행 중":"대기";
+        if(_progress is not null){_progress.IsIndeterminate=_presentation.Percent is null && _running;_progress.Value=_presentation.Percent??0;}
         if(_stageLabel is not null)_stageLabel.Text="현재 단계 · "+_presentation.CurrentStage;
         var announcement=_presentation.CurrentStage+":"+(_presentation.Percent==100?_presentation.Title:_presentation.ErrorCode);
         if(_announcer is not null&&announcement!=_lastAnnouncement){_lastAnnouncement=announcement;_announcer.Text=_presentation.Title;}

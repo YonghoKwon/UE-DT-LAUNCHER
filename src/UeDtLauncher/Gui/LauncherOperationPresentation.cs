@@ -2,7 +2,7 @@ using System.Collections.ObjectModel;
 namespace UeDtLauncher.Gui;
 
 public enum LauncherUiOperation { None, Check, Catalog, Update, Repair, Launch, Troubleshoot, Rollback }
-public sealed record LauncherRetryContext(LauncherUiOperation Operation, string ProjectId, string Environment, string Channel, string? Version);
+public sealed record LauncherRetryContext(LauncherUiOperation Operation, string ProjectId, string Environment, string Channel, string? Version, ReleaseSelection? Selection = null);
 
 public sealed class LauncherOperationPresentation
 {
@@ -14,6 +14,8 @@ public sealed class LauncherOperationPresentation
     public string CurrentStage { get; private set; } = "확인";
     public ObservableCollection<string> Logs { get; } = [];
     public LauncherRetryContext? Retry { get; set; }
+    public static LauncherUiOperation RetryOperation(LauncherRetryContext? failed, LauncherRetryContext current) =>
+        failed is null ? LauncherUiOperation.None : failed == current ? failed.Operation : LauncherUiOperation.Check;
     public void Begin(LauncherUiOperation operation)
     {
         Kind = operation; Percent = null; CurrentStage = "확인"; ErrorCode = SupportId = null;
