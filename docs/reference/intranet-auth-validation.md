@@ -27,3 +27,14 @@ HTTP는 암호화된 전송이 아니다. 요청 인증·콘텐츠 무결성과 
 - 입력은 Windows의 로컬 cmd.exe 복사본과 Linux marker script이다. Unreal 패키지 검증이 아니다. 직접 API 검사이며 nginx 검증으로 간주하지 않는다.
 - Windows 증거: `publish/intranet/e2e-win-01/summary.json`; WSL 증거: `/tmp/uedt-intranet-cwrbilji/summary.json`. 키/원시 로그는 커밋하지 않는다.
 - 관리형 GUI 이미지·초기 설정 도구·최종 부하 검증은 다음 단계에 남아 있다.
+
+## 3단계: 관리형 GUI와 Agent 경계
+
+- project-asset은 프로젝트/hero·thumbnail만 입력받아 현재 허용 Catalog에서 이미지를 선택한다. 임의 URL/파일 경로는 받지 않는다.
+- Agent에서 검증한 이미지에 대해 64KiB 청크·1MiB IPC frame·20MiB 이미지 한도, 단일 작업 backpressure, 양쪽 길이/해시 확인을 적용했다.
+- 관리형 GUI 이미지 다운로드 및 doctor는 Agent 경유. 실패 시 GUI credential 직접 접근으로 후퇴하지 않는다. Agent diagnostics의 재귀 IPC 호출도 방지했다.
+- Windows 전체 자동화 **323개 통과**, Release 경고/오류 0. 신규 이미지 검사 8개: 정상 조립, offset/hash/길이/correlation/확장자/용량 거부와 임시 파일 정리.
+- publish GUI·Agent·서버 실행(`publish/intranet/e2e-gui-01`): GUI의 credential 이름을 의도적으로 존재하지 않게 설정했는데도 Agent 경유 이미지와 온라인 doctor 성공.
+- Computer Use로 일반 GUI의 `업데이트 서비스 정상`, 프로젝트 이미지, 2.0.0 최신 상태와 상태 새로고침 확인. 개발자 GUI의 허용 릴리스 2개와 2.0.0→1.0.0 선택 표시 확인.
+- 화면 확인과 상태 조회는 실제 GUI에서 수행했다. 설치·실행·repair는 publish CLI E2E에서 수행했으며 GUI 실행 버튼을 누른 것으로 기록하지 않는다.
+- 이번 GUI 테스트는 현재 Windows 사용자로 실행한 console Agent이다. 실제 LocalService ACL 격리나 모든 DPI 조합의 검증을 대체하지 않는다.

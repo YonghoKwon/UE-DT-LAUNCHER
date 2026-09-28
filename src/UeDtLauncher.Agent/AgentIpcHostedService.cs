@@ -130,6 +130,10 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
             {
                 response = Error(request, "rejected", validationError, identity);
             }
+            else if (request.Command.Equals("project-asset", StringComparison.OrdinalIgnoreCase))
+            {
+                response = await HandleProjectAssetAsync(stream, request, identity, cancellationToken);
+            }
             else if (request.StreamProgress)
             {
                 response = await HandleStreamingRequestAsync(stream, request, identity, cancellationToken);
@@ -145,6 +149,40 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
         }
 
         await ManagedAgentFrameCodec.WriteAsync(stream, response, cancellationToken);
+    }
+
+    private async Task<ManagedAgentResponse> HandleProjectAssetAsync(Stream stream, ManagedAgentRequest request, string? identity, CancellationToken cancellationToken)
+    {
+        if (!await _commandGate.WaitAsync(0, cancellationToken)) return Error(request, "busy", "Another operation is running.", identity);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken); timeout.CancelAfter(TimeSpan.FromMinutes(2));
+        try
+        {
+            var layout = ManagedLauncherPathLayout.Current();
+            var config = await LoadProjectConfigAsync(Path.Combine(layout.ConfigRoot, "launcher.config.json"), request.ProjectId, timeout.Token);
+            using var http = SecureHttpClientFactory.Create(config);
+            var catalog = await CatalogResolver.DownloadCatalogAsync(config, http, cancellationToken: timeout.Token);
+            var project = catalog.Projects.SingleOrDefault(p => p.ProjectId == request.ProjectId);
+            var asset = request.AssetKind == "hero" ? project?.Hero : project?.Thumbnail;
+            var path = await ProjectAssetCache.GetAsync(asset, config, Path.Combine(layout.StateRoot, "project-images"), timeout.Token);
+            if (asset is null || path is null) return Error(request, "no-asset", "Project image is unavailable.", identity);
+            await using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.Asynchronous);
+            var buffer = new byte[64 * 1024]; long offset = 0; int read;
+            while ((read = await input.ReadAsync(buffer, timeout.Token)) != 0)
+            {
+                if (offset + read > asset.Size) throw new InvalidDataException("Cached image changed during transfer.");
+                await ManagedAgentFrameCodec.WriteAsync(stream, new ManagedAgentResponse
+                {
+                    CorrelationId = request.CorrelationId, Success = true, IsFinal = false, Status = "asset-chunk",
+                    AssetChunk = new(offset, asset.Size, asset.Sha256.ToLowerInvariant(), Path.GetExtension(path), buffer.AsSpan(0, read).ToArray())
+                }, timeout.Token);
+                offset += read;
+            }
+            if (offset != asset.Size) throw new InvalidDataException("Incomplete cached image.");
+            return new ManagedAgentResponse { CorrelationId = request.CorrelationId, Success = true, Status = "completed", AgentVersion = AgentVersion() };
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or System.Security.Cryptography.CryptographicException or HttpRequestException or OperationCanceledException or UnauthorizedAccessException)
+        { return Error(request, "asset-unavailable", "Project image is unavailable. A built-in image will be shown.", identity); }
+        finally { _commandGate.Release(); }
     }
 
     private async Task<ManagedAgentResponse> HandleStreamingRequestAsync(
@@ -242,6 +280,9 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
 
             switch (request.Command.ToLowerInvariant())
             {
+                case "doctor":
+                    var report = await LauncherDoctor.RunAsync(configPath, request.OnlineCheck, cancellationToken, agentContext: true);
+                    return new ManagedAgentResponse { CorrelationId = request.CorrelationId, Success = report.Healthy, DoctorReport = report, AgentVersion = AgentVersion() };
                 case "catalog":
                     using (var http = SecureHttpClientFactory.Create(config))
                     {
@@ -294,7 +335,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                         : Error(request, "service-failed", "Managed service cycle failed.", identity);
                 case "diagnostics":
                     var output = Path.Combine(layout.LogRoot, $"agent-diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.zip");
-                    await DiagnosticsExporter.ExportAsync(configPath, output, cancellationToken);
+                    await DiagnosticsExporter.ExportAsync(configPath, output, cancellationToken, agentContext: true);
                     return Success(request, identity, "completed", $"Diagnostics written: {output}", progress);
                 default:
                     return Error(request, "unsupported", "Agent command handler is unavailable.", identity);

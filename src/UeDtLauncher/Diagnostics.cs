@@ -17,7 +17,8 @@ public static class LauncherDoctor
     public static async Task<DoctorReport> RunAsync(
         string configPath,
         bool online,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool agentContext = false)
     {
         var checks = new List<DoctorCheck>();
         LauncherConfig? config = null;
@@ -32,10 +33,28 @@ public static class LauncherDoctor
         }
         if (config is not null)
         {
-            var credentialConfigured = string.IsNullOrWhiteSpace(config.Security.CredentialName) || CredentialStore.Exists(config.Security.CredentialName);
+            if (config.IsManagedDeployment && !agentContext)
+            {
+                try { return await new ManagedAgentClient().DoctorAsync(online, cancellationToken); }
+                catch (Exception ex) when (ex is IOException or OperationCanceledException or InvalidOperationException)
+                {
+                    checks.Add(new("agent", false, "Managed diagnostics require a reachable, current update service."));
+                    return new(DateTimeOffset.UtcNow.ToString("O"), false, typeof(LauncherDoctor).Assembly.GetName().Version?.ToString() ?? "0", Environment.OSVersion.ToString(), checks);
+                }
+            }
+            var credential = string.IsNullOrWhiteSpace(config.Security.CredentialName) ? null : DeviceCredentials.Inspect(config.Security.CredentialName);
+            var credentialConfigured = credential is null || (credential.Ready && credential.Type == config.Security.AuthenticationMode);
             checks.Add(new DoctorCheck("credential", credentialConfigured,
-                credentialConfigured ? "credential reference is available" : "credential reference is missing"));
-            var keysAvailable = config.Security.TrustedSigningKeys.All(key => File.Exists(key.PublicKeyPath));
+                credentialConfigured ? "credential format, ownership and identity access passed" : "credential is missing, inaccessible, unsafe or has the wrong type"));
+            var publicKeys = config.Security.TrustedSigningKeys.Select(key => key.PublicKeyPath).ToList();
+            if (publicKeys.Count == 0 && config.SchemaVersion < 3)
+                publicKeys.AddRange(new[] { config.CatalogPublicKeyPath, config.ManifestPublicKeyPath }.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p!));
+            var keysAvailable = !config.RequireSignedManifests || publicKeys.Count > 0;
+            foreach (var path in publicKeys)
+            {
+                try { using var key = System.Security.Cryptography.ECDsa.Create(); key.ImportFromPem(File.ReadAllText(path)); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or System.Security.Cryptography.CryptographicException) { keysAvailable = false; }
+            }
             checks.Add(new DoctorCheck("signing-keys", keysAvailable,
                 keysAvailable ? "trusted public keys are available" : "one or more trusted public keys are missing"));
             try
@@ -51,13 +70,15 @@ public static class LauncherDoctor
                 try
                 {
                     using var http = SecureHttpClientFactory.Create(config);
-                    await CatalogResolver.ResolveAsync(config, http, cancellationToken: cancellationToken);
+                    var catalog = await CatalogResolver.DownloadCatalogAsync(config, http, cancellationToken: cancellationToken);
                     checks.Add(new DoctorCheck("catalog-online", true, "catalog authentication and signature validation passed"));
+                    checks.Add(new DoctorCheck("authorized-releases", true, catalog.Projects.Any(p => p.Releases.Count > 0) ? "authorized releases are available" : "connection is valid, but no releases are authorized for this PC"));
                 }
-                catch (Exception ex) { checks.Add(new DoctorCheck("catalog-online", false, DiagnosticRedactor.Redact(ex.Message))); }
+                catch (HttpRequestException ex) { checks.Add(new("catalog-online", false, ex.StatusCode == System.Net.HttpStatusCode.Unauthorized ? "authentication failed; check the device key registration/revocation" : ex.StatusCode == System.Net.HttpStatusCode.Forbidden ? "access denied; check the PC address and release policy" : "distribution connection failed")); }
+                catch (Exception ex) { checks.Add(new DoctorCheck("catalog-online", false, ex is System.Security.Cryptography.CryptographicException ? "signed metadata or request binding validation failed" : "distribution metadata validation failed")); }
             }
         }
-        try
+        if (!agentContext) try
         {
             var response = await new ManagedAgentClient().SendAsync("status", timeout: TimeSpan.FromSeconds(1), cancellationToken: cancellationToken);
             checks.Add(new DoctorCheck("agent", response.Success, response.Message));
@@ -77,10 +98,11 @@ public static class DiagnosticsExporter
     public static async Task<string> ExportAsync(
         string configPath,
         string outputPath,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool agentContext = false)
     {
         var config = await LauncherPaths.LoadResolvedAsync(configPath, cancellationToken);
-        var doctor = await LauncherDoctor.RunAsync(configPath, online: false, cancellationToken);
+        var doctor = await LauncherDoctor.RunAsync(configPath, online: false, cancellationToken, agentContext);
         var fullOutput = Path.GetFullPath(outputPath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullOutput)!);
         using var archive = ZipFile.Open(fullOutput, ZipArchiveMode.Create);

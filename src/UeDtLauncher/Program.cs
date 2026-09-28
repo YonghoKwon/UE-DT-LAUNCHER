@@ -251,6 +251,12 @@ public static class Program
         var selection = version is null ? null : new ReleaseSelection(projectId ?? throw new ArgumentException("--project is required"),
             Get(args, "--environment") ?? "prod", Get(args, "--channel") ?? "stable",
             Get(args, "--platform") ?? (OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64"), version);
+        if (command == "project-asset")
+        {
+            var path = await new ManagedAgentClient(endpoint).GetProjectAssetAsync(projectId ?? throw new ArgumentException("--project is required"), Required(args, "--kind"), Required(args, "--cache"));
+            Console.WriteLine(path is null ? "Project image is unavailable." : "Verified project image: " + path);
+            return path is null ? 1 : 0;
+        }
         var response = await new ManagedAgentClient(endpoint).SendStreamingAsync(command, projectId, _ => { }, selection: selection);
         if (selection is not null && response.Success && response.SelectedRelease != selection)
             throw new InvalidDataException("Agent did not confirm the requested release.");

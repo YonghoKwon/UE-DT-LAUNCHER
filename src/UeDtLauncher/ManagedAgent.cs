@@ -15,7 +15,7 @@ public static class ManagedAgentProtocol
     public const string DefaultLinuxSocketPath = "/run/ue-dt-launcher/agent-v1.sock";
 
     public static readonly IReadOnlySet<string> AllowedCommands = new HashSet<string>(
-        ["status", "catalog", "check", "update", "repair", "rollback", "service-run", "diagnostics"],
+        ["status", "catalog", "check", "update", "repair", "rollback", "service-run", "diagnostics", "project-asset", "doctor"],
         StringComparer.OrdinalIgnoreCase);
 
     public static string ResolveEndpoint()
@@ -31,6 +31,9 @@ public static class ManagedAgentProtocol
         if (string.IsNullOrWhiteSpace(request.CorrelationId)) return "correlationId is required.";
         if (!AllowedCommands.Contains(request.Command)) return $"Agent command is not allowed: {request.Command}.";
         if (request.ProjectId is { Length: > 128 }) return "projectId is too long.";
+        if (request.Command.Equals("project-asset", StringComparison.OrdinalIgnoreCase) &&
+            (!request.StreamProgress || string.IsNullOrWhiteSpace(request.ProjectId) || request.AssetKind is not ("hero" or "thumbnail") || request.Selection is not null))
+            return "project-asset requires a project, hero/thumbnail kind and streaming, without release selection.";
         return null;
     }
 }
@@ -43,6 +46,8 @@ public sealed class ManagedAgentRequest
     public string? ProjectId { get; set; }
     public bool StreamProgress { get; set; }
     public ReleaseSelection? Selection { get; set; }
+    public string? AssetKind { get; set; }
+    public bool OnlineCheck { get; set; }
 }
 
 public sealed class ManagedAgentResponse
@@ -59,7 +64,11 @@ public sealed class ManagedAgentResponse
     public ManagedProjectStatus? ProjectStatus { get; set; }
     public ReleaseSelection? SelectedRelease { get; set; }
     public DistributionCatalog? Catalog { get; set; }
+    public ManagedAssetChunk? AssetChunk { get; set; }
+    public DoctorReport? DoctorReport { get; set; }
 }
+
+public sealed record ManagedAssetChunk(long Offset, long TotalBytes, string Sha256, string Extension, byte[] Data);
 
 public sealed record ManagedAgentProgress(
     string Stage, string Message, double? Percent,
@@ -287,6 +296,28 @@ internal static class ManagedAgentFrameCodec
 public sealed class ManagedAgentClient(string? endpoint = null)
 {
     private readonly string _endpoint = endpoint ?? ManagedAgentProtocol.ResolveEndpoint();
+
+    public async Task<DoctorReport> DoctorAsync(bool online, CancellationToken cancellationToken = default)
+    {
+        var request = new ManagedAgentRequest { Command = "doctor", OnlineCheck = online };
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken); timeout.CancelAfter(TimeSpan.FromMinutes(2));
+        await using var stream = await ConnectAsync(timeout.Token);
+        await ManagedAgentFrameCodec.WriteAsync(stream, request, timeout.Token);
+        var response = await ManagedAgentFrameCodec.ReadAsync<ManagedAgentResponse>(stream, timeout.Token);
+        if (response.CorrelationId != request.CorrelationId || response.ProtocolVersion != ManagedAgentProtocol.Version || response.DoctorReport is null)
+            throw new InvalidDataException("Managed diagnostics are unavailable. Check/update the update service.");
+        return response.DoctorReport;
+    }
+
+    public async Task<string?> GetProjectAssetAsync(string projectId, string kind, string cacheRoot, CancellationToken cancellationToken = default)
+    {
+        var request = new ManagedAgentRequest { Command = "project-asset", ProjectId = projectId, AssetKind = kind, StreamProgress = true };
+        var error = ManagedAgentProtocol.Validate(request); if (error is not null) throw new InvalidDataException(error);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken); timeout.CancelAfter(TimeSpan.FromMinutes(2));
+        await using var stream = await ConnectAsync(timeout.Token);
+        await ManagedAgentFrameCodec.WriteAsync(stream, request, timeout.Token);
+        return await ManagedAssetReceiver.ReceiveAsync(stream, request.CorrelationId, cacheRoot, timeout.Token);
+    }
 
     public async Task<ManagedAgentResponse> SendAsync(
         string command,

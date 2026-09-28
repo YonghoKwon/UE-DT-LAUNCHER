@@ -64,8 +64,8 @@ public static class CatalogSnapshotService
 
             allowedProjects.Add(new CatalogProjectOption
             {
-                HeroPath = await ProjectAssetCache.GetAsync(project.Hero, config, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UE-DT Launcher", "images"), cancellationToken),
-                ThumbnailPath = await ProjectAssetCache.GetAsync(project.Thumbnail, config, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UE-DT Launcher", "images"), cancellationToken),
+                HeroPath = await LoadImageAsync(project.ProjectId, "hero", project.Hero, config, cancellationToken),
+                ThumbnailPath = await LoadImageAsync(project.ProjectId, "thumbnail", project.Thumbnail, config, cancellationToken),
                 ProjectId = project.ProjectId,
                 DisplayName = string.IsNullOrWhiteSpace(project.DisplayName) ? project.ProjectId : project.DisplayName,
                 ReleaseCount = releases.Count
@@ -94,6 +94,16 @@ public static class CatalogSnapshotService
                 .ThenByDescending(release => VersionSortKey.Parse(release.Version))
                 .ToList()
         };
+    }
+
+    private static async Task<string?> LoadImageAsync(string projectId, string kind, RemoteProjectAsset? asset, LauncherConfig config, CancellationToken token)
+    {
+        if (asset is null) return null;
+        var cache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UE-DT Launcher", "images");
+        if (!config.IsManagedDeployment) return await ProjectAssetCache.GetAsync(asset, config, cache, token);
+        try { return await new ManagedAgentClient().GetProjectAssetAsync(projectId, kind, cache, token); }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or OperationCanceledException or UnauthorizedAccessException)
+        { return null; } // Never fall back to reading the machine credential in the GUI.
     }
 
     private readonly record struct VersionSortKey(int Major, int Minor, int Patch, string Raw) : IComparable<VersionSortKey>
