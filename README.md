@@ -59,9 +59,9 @@ GUI의 general/developer는 표시 정책이지 다운로드 권한이 아닙니
 
 프로그램이 실행 중이면 정상 종료 후 런처에서 다시 확인하세요. GUI를 닫아도 프로그램은 종료되지 않습니다. 추적 불명 상태는 관리자 점검과 명시적 정지 확인이 필요하며 PID 파일 삭제로 우회하지 않습니다. 런처와 Agent를 함께 갱신하세요. 구형 IPC v1의 조회는 유지하지만 실행 추적 capability 없는 변경 요청은 거부합니다. 기존 직접 EXE 바로가기는 관리자가 이전하고, 새 바로가기는 정확한 버전을 선택한 런처를 호출합니다. [상태별 명령](docs/reference/runtime-safety.md)
 
-후속 시험에서 저장 경계 36곳의 프로세스 강제 종료와 service health 500/timeout/연결 실패를 Windows/WSL에서 확인했습니다. GUI 설치·실행·rollback 직접 조작은 action-time 확인 전이라 미검증이며, 회사 서비스 계정·UE/RHEL 검증과 함께 남아 있습니다. 따라서 로컬 수용 기준 전체 완료나 운영 승인을 선언하지 않습니다.
+후속 시험에서 저장 경계 36곳의 프로세스 강제 종료와 service health 500/timeout/연결 실패를 Windows/WSL에서 확인했습니다. 일반 GUI 설치·실행·실행 중 버튼 차단·GUI 종료/재실행·자식 정상 종료는 직접 검증했습니다. 개발자 선택·복구·rollback 직접 조작과 회사 서비스 계정·UE/RHEL 검증은 남아 있습니다. 따라서 로컬 수용 기준 전체 완료나 운영 승인을 선언하지 않습니다.
 
-관리형 GUI 후속 수정: 실행 후 실제 runtime 상태를 재조회하고, 실행 중/불명 상태에서 문제 해결이 정상 완료나 rollback을 제안하지 않도록 보완했습니다. shell 없는 합성 앱과 미설치 GUI fixture도 마련했습니다. 현재는 화면 관측·자동화까지 확인했으며 직접 설치/실행/rollback은 실행 직전 확인 응답 대기입니다. [GUI 검증 기록](docs/reference/managed-gui-safety-validation.md)
+관리형 GUI 후속 수정: 실행 후 실제 runtime 상태를 재조회하고, 실행 중/불명 상태에서 문제 해결이 정상 완료나 rollback을 제안하지 않도록 보완했습니다. shell 없는 합성 앱과 미설치 GUI fixture도 마련했습니다. 일반 GUI의 실제 설치/실행과 창 종료 수명 시험은 통과했습니다. 개발자·복구·rollback 직접 시험은 별도로 남아 있습니다. [GUI 검증 기록](docs/reference/managed-gui-safety-validation.md)
 
 ## 처음 준비할 것
 

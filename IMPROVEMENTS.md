@@ -47,7 +47,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | SEC-03 | 생성 시 ACL/mode/owner·명시적 repair | Windows/WSL 권한 회귀 통과 | uedt 읽기 성공·nobody 거부 확인 | Windows LocalService 실제 실행 미확인 | 75% |
 | SEC-04 | 요청 서명·nonce·Catalog 결속·Agent 이미지 | 변조/replay/만료 갱신 회귀 통과 | Windows GUI/Agent·Linux HTTP/HTTPS 및 부하 실행 | WSL proxy 간헐 timeout·메모리 계측 공백 남음 | 75% |
 | OPS-08 | 공식 preflight·EXE 선서명·MSI payload gate | 계약 11개·개발 MSI 추출/hash 확인 | 실제 회사 서명 인증서 미확인 | 인증서·설치본 서명 검증 대기 | 50% |
-| OPS-09 | 엄격 runtime 기록·서비스 snapshot/barrier·공통 변경 조정기 | Windows/WSL 회귀 각 393개·집계 검사 | 저장 경계 강제 종료 각 36개·health 실패·정확한 서비스 대상·CLI E2E 확인 | GUI runtime 상태 보완·미설치 fixture 준비. 직접 조작 action-time 확인 및 회사 UE/계정 검증 대기 | 75% |
+| OPS-09 | 엄격 runtime 기록·서비스 snapshot/barrier·공통 변경 조정기 | Windows/WSL 회귀 각 393개·집계 검사 | 저장 경계 강제 종료 각 36개·health 실패·정확한 서비스 대상·CLI E2E 확인 | 일반 GUI 설치/실행·창 종료 수명 통과. 개발자/복구/rollback 직접 시험 및 회사 UE/계정 검증 대기 | 75% |
 
 근거: [성능 검증 기록](docs/reference/performance-validation.md), [CI 구성](.github/workflows/build.yml), 각 항목의 커밋·미완료 조건. 다른 항목의 기존 기반 기능이나 문서 작성만으로 추가 보완 진척을 자동 가산하지 않았습니다.
 
@@ -75,7 +75,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | OPS-06/P1 | 50% | 부분 · 원격 검증 대기 | Linux signed HTTPS E2E가 build.yml에 추가됨. 원격 CI 실행·운영 결과 보관은 미확인 | 실제 PR/배포 CI 성공 확인 및 민감정보 없는 결과 보관 정책 확정 |
 | OPS-07/P1 | 0% | 대기 · 추가 보완 | AgentWorker는 IPC 대기만 하고 service-run은 once=true. CLI는 managed 반복 실행을 거부 | Agent 스케줄러 또는 명시적 외부 스케줄 운영을 확정. 재부팅 후 정기 점검·중복 작업 방지·maintenance window 시험 |
 | OPS-08/P0 | 50% | 부분 · 실제 인증서 대기 | 공식 사전 gate·EXE 선서명·MSI 내장 payload 검증·실행별 WiX intermediate 구현. 계약 11개 및 개발 MSI 추출/hash 비교 통과 | 실제 회사 인증서와 설치된 EXE 서명 검증은 미완료. [기록](docs/reference/deployment-safety-validation.md) |
-| OPS-09/P0 | 75% | 부분 · GUI/현장 검증 대기 | 누락 기록 fail-closed, 단일 서비스 snapshot·시작 barrier·이전/대상 잠금, 위험 migration apply 차단. Windows/WSL 각 393개와 저장 경계 강제 종료·실제 health 실패·대상 분리·CLI E2E 통과 | 실행 직후·문제 해결의 runtime 상태 보완과 미설치 fixture를 추가했다. GUI 설치/실행/rollback 직접 조작과 GUI 종료 수명 시험은 action-time 확인 대기. portable GUI 버전별 rollback 경로도 별도 보완 필요. 모든 진입점의 모든 상태 조합을 실제 프로세스로 전수 시험한 것은 아님. 회사 UE/계정·원격 CI 미검증. [기록](docs/reference/managed-gui-safety-validation.md) |
+| OPS-09/P0 | 75% | 부분 · GUI/현장 검증 대기 | 누락 기록 fail-closed, 단일 서비스 snapshot·시작 barrier·이전/대상 잠금, 위험 migration apply 차단. Windows/WSL 각 393개와 저장 경계 강제 종료·실제 health 실패·대상 분리·CLI E2E 통과 | 실행 직후·문제 해결의 runtime 상태 보완과 미설치 fixture를 추가했다. 일반 GUI 설치/실행·창 종료/재실행·자식 정상 종료는 직접 통과. 개발자 버전 선택·복구/rollback 직접 시험은 남음. portable GUI 버전별 rollback 경로도 별도 보완 필요. 모든 진입점의 모든 상태 조합을 실제 프로세스로 전수 시험한 것은 아님. 회사 UE/계정·원격 CI 미검증. [기록](docs/reference/managed-gui-safety-validation.md) |
 
 ## 성능·저장 공간
 
