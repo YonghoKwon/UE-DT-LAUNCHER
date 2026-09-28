@@ -446,22 +446,87 @@
         "oldErrorCleared": true,
         "serviceConnected": true
       }
-    ]
+    ],
+    "displayEvidence": {
+      "testedDate": "2026-09-28",
+      "reviewedDate": "2026-09-29",
+      "source": "existing native GUI observations and uidisplay records in both fixture client/logs/launcher-20260928.jsonl",
+      "fixtures": [
+        "accept-portable-02",
+        "accept-managed-02"
+      ],
+      "profiles": [
+        "general",
+        "developer"
+      ],
+      "screenPixels": [
+        1920,
+        1080
+      ],
+      "workAreaPixels": [
+        1920,
+        1032
+      ],
+      "renderScaling": 1,
+      "textScale": 1,
+      "highContrast": false,
+      "generalClientDip": [
+        1120,
+        740
+      ],
+      "developerClientDip": [
+        1280,
+        740
+      ]
+    }
   },
   "remaining": [
     "new-candidate-managed-and-portable-workflow-reacceptance",
     "full-error-and-uninstalled-retry-matrix",
-    "all-18-final-os-display-combinations",
-    "worst-case-large-text-and-os-contrast",
     "original-os-settings-and-restoration-confirmation",
     "narrator-listening-deferred",
     "company-ue-rhel-service-account-validation"
   ],
   "progress": {
-    "UI-01": 75,
+    "UI-01": 100,
     "UI-02": 75,
     "UI-03": 75,
     "UI-04": 0
   },
-  "companyProductionApproval": false
+  "companyProductionApproval": false,
+  "progressUpdatedDate": "2026-09-29",
+  "acceptanceScopeChange": {
+    "date": "2026-09-29",
+    "requestedBy": "user",
+    "item": "UI-01",
+    "previousProgress": 75,
+    "previousCriterion": "all-18-os-display-combinations-and-worst-case",
+    "acceptedScope": "1920x1080 only, currently verified OS100/app100/contrast-off general and developer in both deployment modes",
+    "progress": 100,
+    "reason": "user-narrowed-acceptance-with-existing-evidence",
+    "newGuiTestsPerformed": false,
+    "otherItemsAutoCompleted": false,
+    "untestedConditionsAcceptedAsTested": false
+  },
+  "deferredDisplayTests": {
+    "status": "additional-testing-required-not-verified",
+    "resolutions": [
+      [
+        1366,
+        768
+      ],
+      [
+        1280,
+        720
+      ]
+    ],
+    "otherResolutionsAlsoUnverified": true,
+    "osScalingPercent": [
+      125,
+      150
+    ],
+    "applicationTextPercent": 200,
+    "highContrast": true,
+    "previous18CombinationMatrixPreservedInDatedMarkdown": true
+  }
 }
