@@ -11,6 +11,13 @@
 - 실제 publish 일반 GUI에서 Agent 없이 로컬 모드·미설치·최신 v1 표시, apps 폴더 없음 확인. 화면 진단: 1920×1080, 작업영역1920×1032, RenderScaling1, client1120×740, 글자100%, 고대비false.
 - 이 준비 게시본(candidate1)은 부분 구현 중 소스로 만든 preflight이며 최종 수용 게시본 성공으로 간주하지 않는다. 설치 버튼은 아직 누르지 않았다.
 
+## 2. 모드별 상태·문제 해결
+
+- 내부 operation context/result로 정확한 릴리스·모드·runtime을 묶었다. Portable은 로컬 check/engine/runtime만 사용하며 실행 후 Running/Pending/Unknown을 Ready로 덮지 않는다.
+- 미설치/새 버전 문제 해결은 설치 안내로 끝나며 이미 설치된 대상의 손상만 repair한다. 복구 제안/preview도 배포 모드를 유지한다. 개발자 확인창에는 고정한 실제 버전을 표시한다.
+- 설정 파싱/null 구조 오류를 안전한 문구/지원 ID로 표시하고 설정 수정 후 다시 확인을 지원한다. context/정책/null 설정 관련 15개 통과.
+- 통합 소스 Windows 전체 500개 통과, Release 경고/오류0. candidate1 실제 portable 일반 GUI에서 Agent 없이 Catalog/설치 상태 조회·로컬 모드/미설치 확인. 적용 흐름은 최종 후보에서 별도 검증한다.
+
 ## 남은 수용
 
 최종 동일 소스 게시본의 관리형/portable 적용, 오류 조합, 실제18개 OS 조합과 최악 조건을 별도로 확인한다. OS 변경/원복은 사용자 협업, 설치/복원은 실행 직전 확인을 유지한다. 내레이터 실제 음성은 사용자 선택으로 보류하며 UI-03은75%를 유지한다.

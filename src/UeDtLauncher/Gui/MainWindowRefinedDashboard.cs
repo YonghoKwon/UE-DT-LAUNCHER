@@ -30,6 +30,7 @@ public sealed partial class MainWindow : Window
     private string _agentState { get => _viewModel.AgentState; set => _viewModel.AgentState = value; }
     private bool _agentStatusRefreshing;
     private bool _startupInitialized;
+    private Exception? _configurationError;
     private bool _windowMetricsInitialized;
     private readonly bool _allowAutomaticChecks;
     private EventHandler<Avalonia.Platform.PlatformColorValues>? _colorValuesChanged;
@@ -88,7 +89,7 @@ public sealed partial class MainWindow : Window
             PlatformSettings.ColorValuesChanged += _colorValuesChanged;
         }
         _agentStatusTimer.Tick += async (_, _) => await RefreshAgentStatusAsync();
-        if (startServices) _agentStatusTimer.Start();
+        if (startServices && _config.IsManagedDeployment && _configurationError is null) _agentStatusTimer.Start();
         Closed += (_, _) =>
         {
             _agentStatusTimer.Stop();
@@ -114,7 +115,7 @@ public sealed partial class MainWindow : Window
     {
         if (_startupInitialized) return;
         _startupInitialized = true;
-        if (!File.Exists(ConfigPath))
+        if (!File.Exists(ConfigPath) || _configurationError is not null)
         {
             _viewModel.GeneralState = GeneralLauncherState.ConfigurationRequired;
             return;
@@ -134,20 +135,38 @@ public sealed partial class MainWindow : Window
             return;
         }
         await RefreshCatalog(false, suppressDialog: true);
-        if (HasProject) await RefreshInstallStatusAsync(suppressDialog: true);
+        if (HasProject && _presentation.ErrorCode is null) await RefreshInstallStatusAsync(suppressDialog: true);
     }
 
     private void LoadConfig()
     {
+        _configurationError=null;
         _config = new LauncherConfig();
         if (File.Exists(ConfigPath))
         {
-            try { _config = JsonSerializer.Deserialize<LauncherConfig>(File.ReadAllText(ConfigPath), JsonFiles.Options) ?? new LauncherConfig(); }
-            catch (Exception ex) { _installState = "오류"; _installDetail = $"설정 파일 오류: {ex.GetBaseException().Message}"; }
+            try
+            {
+                var parsed=JsonSerializer.Deserialize<LauncherConfig>(File.ReadAllText(ConfigPath),JsonFiles.Options)
+                    ?? throw new ArgumentException("Launcher configuration is empty.");
+                if(parsed.Projects is null || parsed.Security is null || parsed.Performance is null ||
+                    parsed.Projects.Any(p=>p is null || string.IsNullOrWhiteSpace(p.ProjectId) || p.VisibleToProfiles is null || p.VisibleToProfiles.Any(v=>v is null)))
+                    throw new ArgumentException("Launcher display configuration is incomplete.");
+                foreach(var project in parsed.Projects)if(string.IsNullOrWhiteSpace(project.DisplayName))project.DisplayName=project.ProjectId;
+                _config=parsed;
+            }
+            catch (Exception ex)
+            {
+                _configurationError=ex;var error=LauncherUiError.From(new ArgumentException("Invalid launcher configuration.",ex));
+                _installState="설정 확인 필요";_installDetail=error.Message;
+                _viewModel.GeneralState=GeneralLauncherState.ConfigurationRequired;
+                _presentation.Title="런처 설정을 확인해 주세요.";_presentation.ErrorCode="configuration-invalid";_presentation.SupportId=error.SupportId;
+            }
         }
         else
         {
-            _installState = "오류";
+            _configurationError=new FileNotFoundException("Launcher display configuration is missing.");
+            _presentation.Title="런처 설정을 확인해 주세요.";_presentation.ErrorCode="configuration-invalid";_presentation.SupportId=Guid.NewGuid().ToString("N");
+            _installState = "설정 확인 필요";
             _installDetail = IsDeveloper
                 ? $"설정 파일이 없습니다: {ConfigPath}"
                 : "런처 설정이 필요합니다. 관리자에게 문의해 주세요.";
@@ -162,7 +181,7 @@ public sealed partial class MainWindow : Window
             _config.VersionPolicy = "latest";
             _config.RequestedVersion = null;
         }
-        _agentState = LauncherDashboardViewModel.ConnectionLabel(IsDeveloper, ServiceConnectionState.Checking);
+        _agentState = _config.IsManagedDeployment ? LauncherDashboardViewModel.ConnectionLabel(IsDeveloper, ServiceConnectionState.Checking) : "로컬 모드";
 
         if (_config.Projects.Count == 0)
         {
@@ -240,6 +259,7 @@ public sealed partial class MainWindow : Window
 
     private async Task<bool> RefreshAgentStatusAsync()
     {
+        if(!_config.IsManagedDeployment){_agentState="로컬 모드";if(_serviceLabel is not null)_serviceLabel.Text=_agentState;return true;}
         // The v1 agent handles one operation at a time; a separate probe must not label active work disconnected.
         if (_running) return _agentState.StartsWith("연결", StringComparison.Ordinal) || _agentState.EndsWith("정상", StringComparison.Ordinal);
         if (_agentStatusRefreshing) return _agentState.StartsWith("연결", StringComparison.Ordinal) || _agentState.EndsWith("정상", StringComparison.Ordinal);
@@ -719,7 +739,7 @@ public sealed partial class MainWindow : Window
 
     private string? ReadInstalledVersion()
     {
-        if (_config.IsManagedDeployment) return _viewModel.ProjectStatus?.InstalledVersion ?? (!IsDeveloper ? _viewModel.ProjectStatus?.PreviousInstallation?.Release.Version : null);
+        if (_config.IsManagedDeployment || UsesDistributionServer) return _viewModel.ProjectStatus?.InstalledVersion ?? (!IsDeveloper ? _viewModel.ProjectStatus?.PreviousInstallation?.Release.Version : null);
         try
         {
             var statePath = SelectedStatePaths.InstallStatePath;
@@ -942,6 +962,16 @@ public sealed partial class MainWindow : Window
 
     private async Task ExecutePrimaryActionAsync()
     {
+        if(_running)return;
+        if(_configurationError is not null)
+        {
+            _agentStatusTimer.Stop();_selectedRuntimeConfig=null;_viewModel.ProjectStatus=null;_catalog=new();
+            _presentation.ErrorCode=null;_presentation.SupportId=null;_presentation.Retry=null;
+            LoadConfig();Build();
+            if(_configurationError is not null)return;
+            if(_allowAutomaticChecks && _config.IsManagedDeployment)_agentStatusTimer.Start();
+            _startupInitialized=false;await InitializeStartupAsync();return;
+        }
         switch (_viewModel.PrimaryAction)
         {
             case PrimaryActionKind.InstallAndLaunch:
@@ -1045,211 +1075,89 @@ public sealed partial class MainWindow : Window
 
     private async Task RunAsync(bool repair, bool launch, ReleaseSelection? expectedSelection = null)
     {
-        if (_running) return;
-        if (IsDeveloper && launch && !await ConfirmDevLaunch()) return;
-        BeginOperation(launch ? LauncherUiOperation.Launch : repair ? LauncherUiOperation.Repair : LauncherUiOperation.Update);
-        _running = true; _viewModel.GeneralState = GeneralLauncherState.Working; SetBusy(true); Progress(0); ResetSpeedTracking();
+        if(_running)return;
+        _running=true;SetBusy(true);
         try
         {
-            if (_statusText is not null) SetStatus(launch ? "실행 준비 중..." : "업데이트 확인 중...");
-            var c = await RunConfig(repair, launch);
-            if (expectedSelection is not null) { c.VersionPolicy = "exact"; c.RequestedVersion = expectedSelection.Version; }
-            RuntimeObservation? launchedRuntime = null;
-            if (c.IsManagedDeployment)
-            {
-                var requested = expectedSelection ?? CurrentReleaseSelection();
-                var response = await new ManagedAgentClient().SendStreamingAsync(
-                    repair ? "repair" : "update",
-                    c.ProjectId,
-                    ReportManagedProgress, selection: requested);
-                response.ThrowIfFailed();
-                ApplyManagedSelection(c, response, requested);
-                if (response.ProjectStatus is not null) _viewModel.ApplyProjectStatus(response.ProjectStatus);
-                if (launch)
-                {
-                    _ = await ManagedAppLauncher.LaunchAsync(c);
-                    try
-                    {
-                        var observed = await new ManagedAgentClient().SendRuntimeAsync("runtime-inspect", c);
-                        observed.ThrowIfFailed();
-                        launchedRuntime = observed.Runtime;
-                    }
-                    catch (Exception)
-                    {
-                        launchedRuntime = LauncherDashboardViewModel.RequireRuntimeObservation(null);
-                    }
-                }
-            }
-            else
-            {
-                // The whole resolve + update pipeline runs off the UI thread; progress is marshaled back.
-                await Task.Run(async () =>
-                {
-                    using var http = SecureHttpClientFactory.Create(c);
-                    await CatalogResolver.ResolveAsync(c, http, (s, m, p) => Dispatcher.UIThread.Post(() => UiProgress(s, m, p)));
-                    using var engine = new LauncherEngine(c, p => Dispatcher.UIThread.Post(() => EngineProgress(p)), _fileLogger);
-                    await engine.RunAsync();
-                });
-            }
-            _viewModel.GeneralState = GeneralLauncherState.Ready;
-            _viewModel.WorkflowStage = LauncherWorkflowStage.Complete;
-            _installState = "최신 상태"; _installDetail = "현재 설치된 파일이 최신 배포 정보와 일치합니다.";
-            Build(); // refresh the version tile and release info with the new install state
-            _presentation.Complete(launch ? "실행 준비 완료" : repair ? "파일 복구 완료" : "업데이트 확인 완료"); RefreshPresentation();
-            if (launch && c.IsManagedDeployment && !_viewModel.ApplyRuntimeObservation(launchedRuntime))
-                MarkError(new RuntimeBlockedException(LauncherDashboardViewModel.RequireRuntimeObservation(launchedRuntime)), "실행 상태 확인", showDialog: false);
+            var context=CaptureUiOperation(expectedSelection);
+            if(IsDeveloper && launch && !await ConfirmDevLaunch(context))return;
+            BeginOperation(launch?LauncherUiOperation.Launch:repair?LauncherUiOperation.Repair:LauncherUiOperation.Update);
+            _viewModel.GeneralState=GeneralLauncherState.Working;Progress(0);ResetSpeedTracking();
+            var config=await RunConfig(repair,launch);
+            var result=await LauncherUiOperations.ExecuteAsync(context,config,repair,launch,PostUiProgress,_fileLogger);
+            _presentation.Complete(launch?"실행 준비 완료":repair?"파일 복구 완료":"업데이트 확인 완료");
+            if(ApplyUiResult(context,result))Build();
         }
-        catch (Exception ex) { MarkError(ex); }
-        finally { _running = false; SetBusy(false); }
+        catch(Exception ex){MarkError(ex);}
+        finally{_running=false;SetBusy(false);}
     }
 
     private async Task RefreshInstallStatusAsync(bool suppressDialog = false)
     {
-        if (_running) return;
-        if (!HasProject) { await RefreshCatalog(true, suppressDialog: true); return; }
-        BeginOperation(LauncherUiOperation.Check);
-        _running = true; _viewModel.GeneralState = GeneralLauncherState.Checking; SetBusy(true); Progress(0);
+        if(_running)return;
+        if(!HasProject){await RefreshCatalog(true,suppressDialog:true);return;}
+        _running=true;SetBusy(true);
         try
         {
-            if (_statusText is not null) SetStatus("설치 상태 확인 중..."); Progress(5);
-            var c = await RunConfig(false, false);
-            if (c.IsManagedDeployment)
-            {
-                var requested = CurrentReleaseSelection();
-                var response = await new ManagedAgentClient().SendStreamingAsync(
-                    "check",
-                    c.ProjectId,
-                    ReportManagedProgress,
-                    timeout: TimeSpan.FromMinutes(5), selection: requested);
-                response.ThrowIfFailed();
-                ApplyManagedSelection(c, response, requested);
-                if (response.ProjectStatus is not null) _viewModel.ApplyProjectStatus(response.ProjectStatus);
-                else _viewModel.GeneralState = ReadInstalledVersion() is null ? GeneralLauncherState.NotInstalled : GeneralLauncherState.Ready;
-                _installState = _viewModel.GeneralState switch
-                {
-                    GeneralLauncherState.NotInstalled => "설치 필요",
-                    GeneralLauncherState.UpdateAvailable => "업데이트 가능",
-                    _ => "최신 상태"
-                };
-                _installDetail = IsDeveloper
-                    ? response.Message
-                    : response.ProjectStatus is { UpdateRequired: true, IsInstalled: true } status
-                        ? $"새 버전 {status.AvailableVersion}을 설치할 수 있습니다."
-                        : response.ProjectStatus is { IsInstalled: false, PreviousInstallation: { } previous }
-                            ? $"기존 설치 {previous.Release.Version}을 보존하고 새 버전을 설치합니다."
-                        : response.ProjectStatus is { IsInstalled: false }
-                            ? "프로젝트를 처음 설치할 수 있습니다."
-                            : "설치된 파일이 최신 배포와 일치합니다.";
-                Build();
-                _presentation.Complete(_installState); RefreshPresentation();
-                if (!_viewModel.ApplyRuntimeObservation(response.Runtime))
-                    MarkError(new RuntimeBlockedException(LauncherDashboardViewModel.RequireRuntimeObservation(response.Runtime)), "실행 상태 확인", showDialog: false);
-                return;
-            }
-            var (missing, changed, total, version) = await Task.Run(async () =>
-            {
-                using var http = SecureHttpClientFactory.Create(c);
-                await CatalogResolver.ResolveAsync(c, http, (s, m, p) => Dispatcher.UIThread.Post(() => UiProgress(s, m, p)));
-                var manifestDocument = await ManifestDownloader.DownloadAsync(c, http);
-                var manifest = manifestDocument.Manifest;
-                var missingCount = 0; var changedCount = 0;
-                foreach (var file in manifest.Files)
-                {
-                    var installed = SafePath.ResolveInside(c.InstallDir, file.Path);
-                    if (!File.Exists(installed)) { missingCount++; continue; }
-                    if (!await Hashing.Sha256MatchesAsync(installed, file.Sha256)) changedCount++;
-                }
-                return (missingCount, changedCount, manifest.Files.Count, manifest.Version);
-            });
-            if (missing == total) { _viewModel.GeneralState = GeneralLauncherState.NotInstalled; _installState = "설치 필요"; _installDetail = "아직 설치된 파일을 찾지 못했습니다."; }
-            else if (missing > 0 || changed > 0) { _viewModel.GeneralState = GeneralLauncherState.UpdateAvailable; _installState = "업데이트 가능"; _installDetail = $"누락 {missing}개, 변경 {changed}개 파일이 있습니다."; }
-            else { _viewModel.GeneralState = GeneralLauncherState.Ready; _installState = "최신 상태"; _installDetail = $"{version} 버전이 설치되어 있습니다."; }
-            Build();
-            _presentation.Complete(_installState); RefreshPresentation();
-            var portableRuntime = RuntimeStore.Observe(c);
-            if (portableRuntime.State != RuntimeState.Quiescent) MarkError(new RuntimeBlockedException(portableRuntime), "실행 상태 확인", showDialog: false);
+            var context=CaptureUiOperation();
+            BeginOperation(LauncherUiOperation.Check);_viewModel.GeneralState=GeneralLauncherState.Checking;Progress(0);
+            var result=await LauncherUiOperations.CheckAsync(context,await RunConfig(false,false),PostUiProgress);
+            if(ApplyUiResult(context,result)){_presentation.Complete(_installState);Build();}
         }
-        catch (Exception ex) { MarkError(ex, "상태 확인 실패", showDialog: !suppressDialog); }
-        finally { _running = false; SetBusy(false); }
+        catch(Exception ex){MarkError(ex,"상태 확인 실패",showDialog:!suppressDialog);}
+        finally{_running=false;SetBusy(false);}
     }
 
     private async Task TroubleshootAsync()
     {
-        if (_running) return;
-        _running = true;
-        _viewModel.GeneralState = GeneralLauncherState.Working;
-        SetBusy(true);
-        Progress(0);
-        var repairAttempted = false;
-        BeginOperation(LauncherUiOperation.Troubleshoot);
+        if(_running)return;
+        _running=true;SetBusy(true);
+        LauncherUiOperationContext? context=null;
+        LauncherConfig? config=null;
+        LauncherUiOperationResult? checkedResult=null;
+        var repairAttempted=false;
         try
         {
-            var client = new ManagedAgentClient();
-            var service = await client.SendAsync("status", timeout: TimeSpan.FromSeconds(3));
-            service.ThrowIfFailed();
-            if (UsesDistributionServer && _catalog.Releases.Count == 0) await RefreshCatalog(false, suppressDialog: true);
-            var config = await RunConfig(false, false);
-            var check = await client.SendStreamingAsync(
-                "check",
-                config.ProjectId,
-                ReportManagedProgress,
-                timeout: TimeSpan.FromMinutes(5), selection: CurrentReleaseSelection());
-            check.ThrowIfFailed();
-            if (check.ProjectStatus is not null) _viewModel.ApplyProjectStatus(check.ProjectStatus);
-            _viewModel.RequireRuntimeQuiescent(check.Runtime);
-            if (check.ProjectStatus is null) throw new InvalidDataException("설치 상태를 확인할 수 없습니다. 다시 확인해 주세요.");
-
-            if (check.ProjectStatus is { UpdateRequired: true })
+            if(UsesDistributionServer && _catalog.Releases.Count==0)
             {
-                repairAttempted = true;
-                var repair = await client.SendStreamingAsync(
-                    "repair",
-                    config.ProjectId,
-                    ReportManagedProgress, selection: CurrentReleaseSelection());
-                repair.ThrowIfFailed();
-                var verified = await client.SendStreamingAsync(
-                    "check",
-                    config.ProjectId,
-                    ReportManagedProgress,
-                    timeout: TimeSpan.FromMinutes(5), selection: CurrentReleaseSelection());
-                verified.ThrowIfFailed();
-                _viewModel.RequireRuntimeQuiescent(verified.Runtime);
-                if (verified.ProjectStatus is null || verified.ProjectStatus is { UpdateRequired: true })
-                    throw new InvalidOperationException(verified.Message);
-                if (verified.ProjectStatus is not null) _viewModel.ApplyProjectStatus(verified.ProjectStatus);
+                await RefreshCatalog(false,suppressDialog:true);
+                if(_presentation.ErrorCode is not null || !HasProject)return;
             }
-
-            _viewModel.GeneralState = GeneralLauncherState.Ready;
-            _viewModel.WorkflowStage = LauncherWorkflowStage.Complete;
-            _installState = "문제 해결 완료";
-            _installDetail = "프로젝트 파일과 업데이트 서비스를 정상 상태로 복구했습니다.";
-            _presentation.Complete("파일 복구 완료");
-            Build();
+            context=CaptureUiOperation();config=await RunConfig(false,false);
+            BeginOperation(LauncherUiOperation.Troubleshoot);_viewModel.GeneralState=GeneralLauncherState.Working;Progress(0);
+            checkedResult=await LauncherUiOperations.CheckAsync(context,config,PostUiProgress);
+            ValidateUiResult(context,checkedResult);_viewModel.RequireRuntimeQuiescent(checkedResult.Runtime);
+            var action=LauncherUiOperations.TroubleshootAction(checkedResult.Status);
+            if(action==LauncherTroubleshootAction.Repair)
+            {
+                repairAttempted=true;
+                var repaired=await LauncherUiOperations.ExecuteAsync(context,config,true,false,PostUiProgress,_fileLogger);
+                ValidateUiResult(context,repaired);_viewModel.RequireRuntimeQuiescent(repaired.Runtime);
+                checkedResult=await LauncherUiOperations.CheckAsync(context,config,PostUiProgress);
+                if(checkedResult.Status.UpdateRequired)throw new InvalidDataException("파일 복구 후 검증을 완료하지 못했습니다.");
+            }
+            if(ApplyUiResult(context,checkedResult))
+            {
+                _presentation.Complete(action==LauncherTroubleshootAction.OfferInstall?"확인 완료 · 설치/업데이트가 필요합니다.":repairAttempted?"파일 복구 완료":"설치 상태 점검 완료");
+                Build();
+            }
         }
-        catch (Exception ex)
+        catch(Exception ex)
         {
-            var canRollback = LauncherDashboardViewModel.CanOfferRecoveryRollback(repairAttempted, _viewModel.ProjectStatus?.HasBackup == true, ex);
-            if (canRollback)
+            var offer=LauncherDashboardViewModel.CanOfferRecoveryRollback(repairAttempted,checkedResult?.Status.HasBackup==true,ex);
+            if(offer && context is not null && config is not null)
             {
                 try
                 {
-                    var config=await RunConfig(false,false);
-                    var preview=await PreviewManagedRollbackAsync(config);
-                    if(preview is not null && await ConfirmPreviewAsync(preview)) await RestoreManagedPreviewAsync(config,preview);
+                    var preview=context.Managed?await PreviewManagedRollbackAsync(config):await Task.Run(()=>RollbackPreviewService.ReadAsync(config));
+                    if(preview is {CanRestore:true} && await ConfirmPreviewAsync(preview))await RestoreUiPreviewAsync(context,config,preview);
                     else MarkError(ex,"문제 해결 실패");
                 }
                 catch(Exception rollbackError){MarkError(rollbackError,"문제 해결 실패");}
             }
-            else
-            {
-                MarkError(ex, "문제 해결 실패");
-            }
+            else MarkError(ex,"문제 해결 실패");
         }
-        finally
-        {
-            _running = false;
-            SetBusy(false);
-        }
+        finally{_running=false;SetBusy(false);}
     }
 
     private async Task RollbackLatestAsync()
@@ -1258,9 +1166,9 @@ public sealed partial class MainWindow : Window
         _running=true;SetBusy(true);
         try
         {
-            var selection=CurrentReleaseSelection();
-            var config=await RunConfig(false,false);
-            if(selection is not null)VersionedReleasePaths.Bind(config,selection);
+            var context=CaptureUiOperation();
+            var config=await RunConfig(false,false);context.Pin(config);
+            if(context.Selection is not null)VersionedReleasePaths.Bind(config,context.Selection);
             var preview=config.IsManagedDeployment
                 ? await PreviewManagedRollbackAsync(config)
                 : await Task.Run(()=>RollbackPreviewService.ReadAsync(config));
@@ -1268,14 +1176,7 @@ public sealed partial class MainWindow : Window
             {SetStatus("복원할 수 있는 백업 정보를 확인해 주세요.");return;}
             if(!await ConfirmPreviewAsync(preview))return;
             BeginOperation(LauncherUiOperation.Rollback);
-            if(config.IsManagedDeployment)await RestoreManagedPreviewAsync(config,preview);
-            else
-            {
-                await Task.Run(()=>RollbackPreviewService.RestoreExpectedAsync(config,preview.BackupId,preview.MetadataFingerprint));
-                _selectedRuntimeConfig=config;
-                _installState="백업 복원 완료";_installDetail="선택한 설치를 확인한 백업 시점으로 복원했습니다.";
-                _presentation.Complete("백업 복원 완료");Build();
-            }
+            await RestoreUiPreviewAsync(context,config,preview);
         }
         catch(Exception ex){MarkError(ex,"백업 복원 실패");}
         finally{_running=false;SetBusy(false);}
@@ -1289,11 +1190,11 @@ public sealed partial class MainWindow : Window
             KeyValue("복원 상태",info?.PreviousVersion??"기록 없음"),
             Muted("다른 버전의 설치 경로로 전환하는 작업이 아닙니다. 설치 전 상태 백업은 선택 설치 파일을 제거할 수 있습니다.",14)}}, "백업 복원");
     }
-    private Task<bool> ConfirmDevLaunch()
+    private Task<bool> ConfirmDevLaunch(LauncherUiOperationContext context)
     {
         return ShowConfirmationAsync("개발자 배포 실행 확인",new StackPanel {Spacing=12,Children={
-            KeyValue("프로젝트",_selectedProject.DisplayName),KeyValue("환경",_config.Environment),KeyValue("채널",_config.Channel),
-            KeyValue("버전",_config.VersionPolicy=="exact"?_config.RequestedVersion:"최신 승인 버전"),KeyValue("OS",CurrentPlatform)}}, "선택 버전 실행");
+            KeyValue("프로젝트",context.ProjectId),KeyValue("환경",context.Environment),KeyValue("채널",context.Channel),
+            KeyValue("버전",context.Selection?.Version ?? context.RequestedVersion ?? "직접 Manifest"),KeyValue("OS",context.Platform)}}, "선택 버전 실행");
     }
 
     private void EngineProgress(LauncherProgress p)
