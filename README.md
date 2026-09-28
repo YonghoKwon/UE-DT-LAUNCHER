@@ -2,7 +2,7 @@
 
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 배포 시스템입니다.
 
-문서 점검: **2026-09-28**, 기능·검증 기준: `codex/gui-validation-completion` (디자인·피드백·접근성 부분 커밋). 로컬 브랜치 기준이며 main 반영·회사 운영 승인 완료를 뜻하지 않습니다.
+문서 점검: **2026-09-28**, 작업 기준: `codex/ui-acceptance-finalization`, 새 고정 후보 `8ce5060`(상태 수정 `fa87eaa`). 이전 게시본 `ab37fcb`의 실행 증거와 새 후보의 실제 적용 재검증 대기를 구분합니다. 로컬 브랜치 기준이며 main 반영·회사 운영 승인 완료를 뜻하지 않습니다.
 
 **현재 판단: 합성 앱 기반 배포·설치·실행·복구는 활용 가능한 단계이며, 회사 정식 운영 인수는 미완료입니다.** 현재 수치와 남은 작업은 [개선 진행 현황](IMPROVEMENTS.md), 상세 명령은 [운영 문서 색인](docs/reference/README.md)을 확인하세요.
 
@@ -35,11 +35,13 @@ flowchart LR
 
 ## 현재 구현
 
-최신 전체 자동화는 Windows/WSL **각 441개 통과**, Windows Release 경고·오류 0입니다. 포스코DX 일반 라이트/개발자 다크 화면, 사용자별 100~200% 글자·고대비, 작업 의도 유지 재시도, 확인한 backup에 결속된 복원을 추가했습니다. 실제 1920×1080·100%에서 일반 v1 설치/실행→v2 업데이트, 개발자 손상 복구·정상 백업 복원·변경된 preview 거부를 확인했습니다. 최신 조회 재시도는 재연결 후 미설치 상태로 복귀하고 설치/실행을 하지 않았습니다. IPC 연결 제한은 3초이며 연결 후 작업 제한은 유지합니다. [후속 실제 검증과 남은 조건](docs/reference/archive/validation/gui-validation-completion.md)
+현재 보완 소스는 **Windows/WSL 각 510개 통과, Release 경고·오류 0**입니다. 변경 없는 소스로 고정한 `8ce5060`의 Windows/Linux publish와 Linux HTTP 요청 서명+Agent·HTTPS/Bearer+nginx E2E도 통과했습니다. 관리형·portable의 정확한 선택/설치/runtime 표시, 최초 연결 실패 재시도와 복원 후 상태 재확인, 제목 글자 배율·작은 화면·포커스를 보완했습니다. Portable은 Agent 없이 `로컬 모드`로 동작하고, 문제 해결은 설치된 손상 대상만 복구하며 미설치 버전을 자동 설치하거나 앱을 실행하지 않습니다.
+
+이전 게시본에서는 portable v1→v2 설치/실행·v1 보존·창 종료 후 자식 수명·실행 중 변경 버튼 차단·정상 백업 복원을 확인했습니다. 새 후보도 portable v1의 GUI 설치·실행, 3파일 해시, 창 종료/재실행 중 동일 자식 생존과 정상 종료 후 실행 가능 복귀를 확인했습니다. **새 후보의 v2 업데이트·복구·복원 및 관리형 적용은 남았습니다.** 미설치 재연결 첫 클릭 복귀와 설치/실행0건은 작업 중 게시본의 별도 사전 시험입니다. 서로 다른 게시본의 성공을 합산하지 않습니다. [게시본별 실제 증거와 남은 조건](docs/reference/archive/validation/ui-acceptance-finalization.md)
 
 기존 GUI 검증 이력에서는 일반 GUI 설치·실행·실행 중 버튼 차단·창 종료/재실행·자식 정상 종료, 개발자 선택/취소·v2 파일 복구·같은 설치의 정상 backup rollback을 실제로 확인했습니다. [GUI 실행 이력](docs/reference/archive/validation/managed-gui-safety-validation.md), [runtime 장애 이력](docs/reference/archive/validation/runtime-safety-completion-validation.md)
 
-개발자 v1 승인 설치/실행, 실행 중 개발자 GUI 변경 차단, 일반 문제 해결의 단절/재연결, portable GUI rollback, 회사 UE/RHEL·설치 서비스 계정 검증은 남았습니다. 실제 OS 조합은 2/18개를 확인했고 나머지 배율/해상도·최악 조건·portable GUI 복원 및 개발자 실행 확인 승인 등은 남았습니다. 내레이터 실제 음성은 사용자 선택으로 후속 보류합니다. 기존 화면의 성공을 새 화면의 전체 성공으로 대신하지 않습니다.
+**UI-01·02·03은 모두 75% 유지**합니다. 새 최종 게시본의 관리형 전체 적용, portable 복원 취소/적용·preview 변경 거부, 오류 조합, 실제 OS 18개 조합과 최악 조건은 아직 수용 완료가 아닙니다. 과거 1920×1080·100% 두 프로필 확인은 이력이지 새 후보의 18개 결과가 아닙니다. 내레이터 실제 음성은 후속 보류하며, OS 원래 설정/원복도 아직 확인되지 않았습니다. 회사 UE/RHEL·설치 서비스 계정·정식 운영 인수는 별도입니다.
 
 | 영역 | 내용 |
 |---|---|
@@ -55,7 +57,7 @@ flowchart LR
 
 GUI의 general/developer는 표시 정책이지 다운로드 권한이 아닙니다. 기존 HTTPS/Bearer와 명시적인 schema 3 사내 HTTP/요청 서명을 지원하며, 둘 다 Metadata 서명·해시·권한 검증을 유지합니다. HTTP/Bearer나 무인증으로 자동 후퇴하지 않습니다. nginx 뒤 API는 loopback에만 바인딩하고 공개 정적 경로와 혼합하지 않습니다.
 
-일반 GUI는 자동 점검만 하며 설치는 사용자 클릭 후 수행합니다. 무인 서비스 자동 업데이트와 구분합니다. 관리형 런처 자체 갱신은 MSI/RPM, 게임 콘텐츠 갱신은 Agent 책임입니다.
+일반 GUI는 자동 점검만 하며 설치는 사용자 클릭 후 수행합니다. 무인 서비스 자동 업데이트와 구분합니다. 관리형 런처 자체 갱신은 MSI/RPM, 게임 콘텐츠 갱신은 Agent 책임입니다. Portable은 현재 계정의 로컬 엔진과 runtime 기록을 사용하며 Agent 연결을 요구하지 않습니다. 두 모드 모두 실행 중·Pending·Unknown 상태에서는 설치 변경을 차단합니다.
 
 ## 실행 중 변경과 구형 클라이언트
 

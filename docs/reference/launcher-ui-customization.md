@@ -1,6 +1,6 @@
 # GUI 표시 설정·이미지 커스터마이징
 
-> 참고 가이드 / 문서 점검 2026-09-28 / 코드 기준 codex/poscodx-ui-accessibility. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
+> 참고 가이드 / 문서 점검 2026-09-28 / 작업 기준 codex/ui-acceptance-finalization. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
 
 이 문서는 이름·이미지·정렬을 다룹니다. 서버 접근 권한, 서명키, 설치 루트는 Agent 보호 설정과 서버 정책이 담당합니다. [설정 레퍼런스](guide-03-launcher-usage.md)의 설정 선택 순서를 먼저 확인하세요.
 
@@ -52,6 +52,8 @@ PNG, JPG/JPEG, WebP, 파일당 최대 20 MiB를 지원합니다. 확장자·시�
 일반 화면은 밝은 Surface, 개발자는 다크 Surface를 사용하며 POSCO BLUE `#05507D`를 주 버튼에 적용합니다. LIGHT BLUE `#00A5E5`는 흰색 본문 글자의 배경으로 쓰지 않습니다. 공식 로고 파일·출처·SHA-256은 `Assets/Branding/`에서 관리합니다. 앱 구현용 사용과 회사 최종 CI/브랜드 승인 여부는 구분합니다.
 
 글자 크기·앱 고대비는 서버 config에 추가하지 않습니다. Windows `%LOCALAPPDATA%/UE-DT Launcher/ui-preferences.json`, Linux `$XDG_CONFIG_HOME/UE-DT Launcher/ui-preferences.json`(미지정 시 `~/.config`)에 사용자별 저장합니다. 허용 배율은 1/1.25/1.5/2이며 손상 설정은 기본값으로 읽습니다. 키·토큰·Agent 설정과 분리하며 설정 저장은 비동기로 처리합니다.
+
+유지보수·도움말 Expander와 상세·로그 Tab 제목에도 같은 배율을 적용합니다. 큰 글자의 긴 상태/오류는 작업 상세 안에서 스크롤하며 주 버튼 접근을 유지합니다. 실제 OS DPI 시험은 창 크기나 headless DIP 시험과 다르므로 별도 기록합니다. 현재 최종 18개 OS 조합·OS 고대비 수용과 내레이터 음성은 완료되지 않았습니다.
 
 ## 화면과 소스
 

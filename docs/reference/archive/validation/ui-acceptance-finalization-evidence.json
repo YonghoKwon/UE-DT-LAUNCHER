@@ -1,0 +1,230 @@
+{
+  "schemaVersion": 1,
+  "recordedDate": "2026-09-28",
+  "scope": "isolated synthetic Windows GUI acceptance",
+  "candidate": {
+    "sourceCommit": "ab37fcbb68d5fb045d913e77861ead624d1da673",
+    "sourceDirty": false,
+    "sourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "status": "superseded-requires-new-candidate-reacceptance",
+    "fixture": "accept-portable-01",
+    "mode": "portable",
+    "agentStarted": false,
+    "binarySha256": {
+      "launcher": "d104fcb28491e90397def9133e99433d809ec7d1161f9626f3c55c7e15eb0801",
+      "server": "46886ec6dd582934ca3b85777bec2c371afa8d904ec6c9ae7102868b054cde3d",
+      "synthetic": "9c29acfbb5bfa31eee462c53257707cea08ef16a7a24fbde7a121f4c20ca5bfb"
+    }
+  },
+  "display": {
+    "screenPixels": [
+      1920,
+      1080
+    ],
+    "workAreaPixels": [
+      1920,
+      1032
+    ],
+    "renderScaling": 1,
+    "generalClientDip": [
+      1120,
+      740
+    ],
+    "developerClientDip": [
+      1280,
+      740
+    ],
+    "applicationTextScale": 1,
+    "highContrast": false,
+    "originalOsSettingsConfirmed": false,
+    "osRestorationConfirmed": false,
+    "evidence": "application diagnostics plus native GUI screenshot and UIA observations in task transcript"
+  },
+  "cases": [
+    {
+      "id": "portable-v1-install-run",
+      "result": "pass",
+      "actor": "assistant-after-action-approval",
+      "verifiedFiles": 3,
+      "runtime": "Running",
+      "limit": "v1 later timed out naturally; not GUI-close lifetime evidence"
+    },
+    {
+      "id": "portable-v2-update-run",
+      "result": "pass",
+      "actor": "assistant-after-action-approval",
+      "verifiedFiles": 3,
+      "previousVersionSnapshotUnchanged": true
+    },
+    {
+      "id": "portable-v2-gui-close-lifetime",
+      "result": "pass",
+      "sameChildSurvivedGuiCloseAndReopen": true,
+      "afterSyntheticRelease": "Quiescent"
+    },
+    {
+      "id": "portable-running-developer-blocks",
+      "result": "pass",
+      "disabledActions": [
+        "run",
+        "update",
+        "repair",
+        "rollback"
+      ],
+      "protectedSnapshotUnchanged": true,
+      "limit": "UI controls observed; not exhaustive forced mutation requests"
+    },
+    {
+      "id": "portable-server-disconnect",
+      "result": "pass",
+      "friendlyErrorAndSupportIdObserved": true
+    },
+    {
+      "id": "portable-general-troubleshoot-repair",
+      "result": "pass",
+      "actor": "user-interaction-assisted-result-observed",
+      "verifiedFiles": 3,
+      "newApplicationMarker": false
+    },
+    {
+      "id": "portable-normal-backup",
+      "result": "pass",
+      "actor": "assistant-after-action-approval",
+      "backupId": "20260928141004",
+      "verifiedFiles": 3
+    },
+    {
+      "id": "portable-rollback-cancel",
+      "result": "pass",
+      "protectedSnapshotUnchanged": true,
+      "focusRestoredTo": "status-check"
+    },
+    {
+      "id": "portable-rollback-apply",
+      "result": "pass",
+      "actor": "assistant-after-action-approval",
+      "backupId": "20260928141004",
+      "verifiedFiles": 3,
+      "previousVersionSnapshotUnchanged": true,
+      "newApplicationMarker": false,
+      "runtime": "Quiescent"
+    }
+  ],
+  "automation": {
+    "ab37Windows": {
+      "passed": 500,
+      "skipped": 0
+    },
+    "ab37Wsl": {
+      "passed": 500,
+      "skipped": 0
+    },
+    "ab37LinuxHttpRequestSignatureE2e": "pass",
+    "ab37LinuxHttpsBearerNginxE2e": "pass",
+    "fixturePythonTestsPassed": 13,
+    "postCandidateRecoveryFixWindows": {
+      "passed": 510,
+      "skipped": 0,
+      "scope": "source regression, not final GUI acceptance"
+    },
+    "postCandidateRecoveryFixWsl": {
+      "passed": 510,
+      "skipped": 0,
+      "scope": "source regression, not final GUI acceptance"
+    }
+  },
+  "screenshots": {
+    "storage": "native tool images in task transcript; no fabricated local image artifact",
+    "observedViews": [
+      "local-mode-previous-and-latest-version",
+      "running-disabled-primary",
+      "developer-exact-v2-disabled-maintenance",
+      "repair-complete",
+      "exact-backup-confirmation",
+      "cancel-focus-restored",
+      "backup-restore-complete"
+    ]
+  },
+  "postCandidatePreflight": {
+    "fixture": "recovery-preflight-01",
+    "build": "recovery-candidate-01-working-source",
+    "case": "initial-catalog-failure-then-first-troubleshoot-reconnect",
+    "result": "pass",
+    "actor": "assistant-read-only-action",
+    "oldErrorCleared": true,
+    "resultingStatus": "not-installed-latest-v1-install-and-run",
+    "installDirectoryExists": false,
+    "applicationMarkerCount": 0,
+    "finalAcceptance": false
+  },
+  "newFrozenCandidate": {
+    "sourceCommit": "8ce5060563c6294e55fbbcf086682a84ccef1c98",
+    "productFixCommit": "fa87eaa",
+    "sourceDirty": false,
+    "nativeGuiApply": "partial-portable-v1-install-run-pass",
+    "nativeGeneralStartup": "pass-local-mode-not-installed-latest-v1-install-and-run-button-observed-without-click",
+    "fixtures": [
+      "accept-portable-02",
+      "accept-managed-02"
+    ],
+    "fixtureState": {
+      "portable": "v1-installed-stopped-v2-published-awaiting-user-install",
+      "managed": "uninstalled-v1-published-v2-pending"
+    },
+    "managedCapabilities": [
+      "runtime-supervision-v1",
+      "rollback-preview-v1"
+    ],
+    "linuxHttpRequestSignatureAgentE2e": "pass",
+    "linuxHttpsBearerNginxE2e": "pass",
+    "binarySha256": {
+      "windowsLauncher": "2a809f4c6729aff6b60ab4e17c2380d196c4a18ad5069787e2bee9164670a4ab",
+      "windowsServer": "75d9553cc872220fa9aabf9c705b8a3c3536072ad8eb3bb3e976d984f8d0019f",
+      "windowsSynthetic": "997be6f2252b6250c0267c6f29a1086eb0c06998da7b73b85a73d8d265836972",
+      "linuxCli": "87a3ce297960006656653b9b2683b4306f4041d31c8fa759c59124b0590874b8",
+      "linuxAgent": "a840434a7662d92b72834c4e24249b8fdc6b3dadfea6e0edf7b3397072ed3ad9",
+      "linuxServer": "d966b016a56c841bd08d193318cd3ad9be1dc6aba5214b7dc9e81939feb403c8"
+    },
+    "cases": [
+      {
+        "id": "portable-v1-install-run",
+        "result": "pass",
+        "actor": "assistant-after-action-approval",
+        "verifiedFiles": 3,
+        "runtime": "Running"
+      },
+      {
+        "id": "portable-v1-gui-close-lifetime",
+        "result": "pass",
+        "sameChildSurvivedGuiCloseAndReopen": true,
+        "afterSyntheticRelease": "Quiescent",
+        "refreshResult": "ready-launch-enabled"
+      },
+      {
+        "id": "portable-new-release-notice",
+        "result": "pass",
+        "previousVersion": "1.0.0",
+        "latestVersion": "2.0.0",
+        "primaryAction": "update-and-launch",
+        "applied": false
+      }
+    ]
+  },
+  "remaining": [
+    "new-candidate-managed-and-portable-workflow-reacceptance",
+    "changed-preview-rejection",
+    "full-error-and-uninstalled-retry-matrix",
+    "all-18-final-os-display-combinations",
+    "worst-case-large-text-and-os-contrast",
+    "original-os-settings-and-restoration-confirmation",
+    "narrator-listening-deferred",
+    "company-ue-rhel-service-account-validation"
+  ],
+  "progress": {
+    "UI-01": 75,
+    "UI-02": 75,
+    "UI-03": 75,
+    "UI-04": 0
+  },
+  "companyProductionApproval": false
+}

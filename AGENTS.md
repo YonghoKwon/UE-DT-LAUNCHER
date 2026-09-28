@@ -1,6 +1,6 @@
 # 작업 지침
 
-점검: 2026-09-28 / 구현 기준 codex/gui-validation-completion. 저장소 전체에 적용합니다.
+점검: 2026-09-28 / 작업 기준 codex/ui-acceptance-finalization. 저장소 전체에 적용합니다.
 
 ## 문서 관리 계약
 
@@ -66,12 +66,15 @@
 - 일반은 밝은 POSCO DX 업무 화면, 개발자는 같은 브랜드의 다크 화면을 유지합니다. 공식 로고 원본/출처를 보존하며 임의 CI 재가공을 하지 않습니다.
 - 글자 배율·앱 고대비는 사용자별 ui-preferences.json에만 저장합니다. UI 스레드에서 비동기 파일 저장을 동기 대기하지 않습니다. OS 고대비 요청을 우선합니다.
 - GUI 시험은 새 fixture에 같은 소스의 GUI/Agent/서버/합성 앱을 게시하고 바이너리 hash·HEAD·소스 diff hash를 기록합니다. 기존 fixture와 설치를 덮어쓰지 않습니다.
+- 최종 수용은 고정된 같은 게시본 묶음으로 수행합니다. 수정 후에는 영향받는 시험을 새 게시본에서 다시 실행하고 이전 후보 성공을 합산하지 않습니다. Portable fixture는 Agent 없이 별도 credential/설치/state를 사용합니다. 준비·재개·제어 도구에서 게시본 해시와 실제 readiness를 확인합니다.
 - 손상 repair 직전 파일은 손상 상태로 백업될 수 있습니다. 정상 rollback 시험은 repair 성공 후 정상 상태에서 다시 repair하여 최신 backup 전체 hash를 확인합니다.
 - OS 해상도·배율·고대비는 사용자 협업으로 변경/원복하고 앱 진단의 screen/work area·RenderScaling·DIP·글자 배율로 대조합니다. 사용자 prefs는 원본을 보존하고 중간 사용자 변경이 감지되면 복원 덮어쓰기를 거부합니다.
 - PreviousInstallation은 인증된 동일 track의 bounded 설치 기록 표시 힌트입니다. 현재 선택의 IsInstalled/InstalledVersion/HasBackup 의미, 실행 권한·실행 대상·백업 대상을 바꾸지 않습니다.
 - 조회 오류의 재시도를 설치/실행으로 바꾸지 않습니다. IPC 연결 대기와 연결 후 작업 제한을 분리하고 외부 취소를 서비스 장애로 바꾸지 않습니다. 작업·릴리스 snapshot이 달라지면 조회하고 rollback은 새 preview/확인을 받습니다. backup ID/fingerprint를 설치 lease 안에서 재검증합니다.
+- 관리형·portable의 작업 context/result는 같은 모드와 정확한 선택에 결속합니다. Portable은 실제 버전 경로와 로컬 runtime 상태를 표시하고 Agent 상태로 대체하지 않습니다. 문제 해결은 미설치/새 버전을 설치하지 않으며 정상 설치는 점검만, 설치된 손상 대상만 repair합니다. 복원 후 상태 재확인 실패를 복원 실패나 무조건 Ready로 오인하지 않습니다.
 - 관리형 정리에 필요한 Agent 명령이 없으면 보호 디렉터리 직접 쓰기로 우회하지 않습니다. 기존 IPC와 신규 rollback-preview-v1 capability를 구분합니다.
 - headless DIP viewport/UIA 이름은 실제 DPI·내레이터 음성 증거가 아닙니다. 실제 GUI 시험은 합성 앱에 한정하고 적용 직전 필요한 확인을 받습니다.
+- GUI 조작 주체를 구분합니다. 사용자 조작 후 결과만 관측했다면 에이전트가 버튼을 눌렀다고 기록하지 않습니다. 원래 OS 설정/원복을 확인하지 못했다면 미확인으로 남깁니다. UI-01은 최종 게시본의 실제 18개 OS 조합·최악 조건, UI-02는 양 모드의 기능 수용을 통과해야 100%이며 음성 보류 중 UI-03은 75%입니다.
 - 관리형 실행 성공을 Ready로 단정하지 않습니다. runtime 관측의 Running/Pending/Unknown/누락은 차단 상태이며, 문제 해결에서 typed runtime 실패를 일반 예외로 잃거나 rollback 제안으로 바꾸지 않습니다.
 - GUI 시험용 앱은 셸 없이 자기 자식·marker만 사용하며 공식 배포물에 포함하지 않습니다. 미설치 GUI 시험을 CLI 선설치로 대체하지 않습니다. 실제 버튼 조작과 단위/CLI 검증을 별도로 기록합니다. 일반 설치/실행·창 종료 통과를 모든 개발자 경로 통과로 확대하지 않습니다. rollback 증거는 실제 정상 backup과 복원 후 hash로 확인하며, 같은 설치의 backup 복원을 다른 버전 경로로의 전환이라고 표현하지 않습니다.
 - 일반 화면은 한 버튼·친화적 오류, Agent 대신 업데이트 서비스로 표기합니다. 기술 예외·내부 경로·비밀정보를 기본 화면에 표시하지 않습니다.

@@ -1,6 +1,6 @@
 # 개선 진행 현황과 보완 필요 사항
 
-점검: 2026-09-28 / `codex/gui-validation-completion`. [후속 실제 GUI 검증](docs/reference/archive/validation/gui-validation-completion.md)과 기존 증거를 함께 반영했습니다. UI-01~03의 구현·로컬 실제 실행을 추가했으며 1920×1080/100%의 일반 설치·업데이트와 개발자 복구·복원은 실제 통과했습니다. 전체 DPI/내레이터/portable·최악 조건 E2E와 회사 인수는 아직 미완료입니다.
+점검: 2026-09-28 / `codex/ui-acceptance-finalization`. [이번 UI 수용 기록](docs/reference/archive/validation/ui-acceptance-finalization.md)과 과거 게시본의 증거를 구분해 반영했습니다. `ab37fcb`의 portable 설치·업데이트·실행·복구·정상 백업 복원, 추가 상태 결함 보완 소스의 Windows/WSL 각510개와 작업 중 게시본의 미설치 재연결 점검을 확인했습니다. UI-01~03은 75% 유지하며, 새 최종 동일 게시본의 복원·전체 기능·OS 조합·최악 조건과 회사 인수는 미완료입니다. 내레이터 음성은 후속 보류합니다.
 
 P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선. 우선순위는 제안이며 일정·수치 목표는 미정입니다. 미검증과 미구현을 구분합니다.
 
@@ -22,8 +22,8 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | 성능 | PERF-01/02/04 재현 범위 완료 | PERF-03의 10개 연결 지연 기준 미달 유지 |
 | 인증·초기 설정 | USER-05 완료, SEC-03/04 각각 75% | Windows 서비스 계정·WSL proxy/계측 제약·회사 HTTP 위험 수용 |
 | 서명·실행 안전성 | OPS-08 50%, OPS-09 75%; 서명 순서·실행 중 변경 차단·장애 시험 구현 | 실제 인증서/설치본, 회사 계정·UE, 남은 GUI 직접 시험 |
-| 새 UI | Windows/WSL 각 441개, 실제 일반 v1→v2·개발자 repair/backup·preview 거부·조회 재시도 통과 | OS 나머지 16/18 조합·최악 조건, portable/개발자 실행 확인 승인, 내레이터 음성 |
-| GUI 직접 확인 | 일반 설치/실행·창 종료 수명, 개발자 선택/취소·v2 repair·backup rollback 통과 | v1 승인 실행, 실행 중 개발자 변경 차단, 일반 문제 해결 재연결, portable rollback |
+| 새 UI | ab37 각500개·Linux HTTP/HTTPS E2E, 추가 재연결/복원 상태 보완 소스 Windows/WSL 각510개·Release 경고/오류0 | 새 최종 후보 전체 재수용, 실제18개 OS 조합·최악 조건, 내레이터 음성 |
+| GUI 직접 확인 | ab37 portable v1→v2·v1 보존·창 종료 수명·변경 버튼 차단·복구·정상 백업 복원. 새 작업 중 게시본 미설치 재연결 첫 클릭 성공·설치/실행0건 | 새 최종 후보 관리형 전체 적용, portable 복원/preview 거부·오류·작은 환경 수용 |
 | 운영 인수 | 현재는 제한된 테스트 활용 단계 | MSI/RPM 설치 수명주기·데이터 보존·백업 복원·운영 정책·G1~G6 |
 
 가까운 다음 작업은 **남은 로컬 GUI 확인 → 회사 자료/권한이 필요한 검증 준비 → 데이터/운영 정책 확정**입니다. 새 기능을 한꺼번에 추가하거나 인증서·회사 계정 미준비 항목을 완료로 올리지 않습니다. 검증 문서가 archive로 이동해도 위 근거와 진행률은 바뀌지 않습니다.
@@ -61,10 +61,10 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | SEC-03 | 생성 시 ACL/mode/owner·명시적 repair | Windows/WSL 권한 회귀 통과 | uedt 읽기 성공·nobody 거부 확인 | Windows LocalService 실제 실행 미확인 | 75% |
 | SEC-04 | 요청 서명·nonce·Catalog 결속·Agent 이미지 | 변조/replay/만료 갱신 회귀 통과 | Windows GUI/Agent·Linux HTTP/HTTPS 및 부하 실행 | WSL proxy 간헐 timeout·메모리 계측 공백 남음 | 75% |
 | OPS-08 | 공식 preflight·EXE 선서명·MSI payload gate | 계약 11개·개발 MSI 추출/hash 확인 | 실제 회사 서명 인증서 미확인 | 인증서·설치본 서명 검증 대기 | 50% |
-| OPS-09 | 엄격 runtime 기록·서비스 snapshot/barrier·공통 변경 조정기 | Windows/WSL 회귀 각 393개·집계 검사 | 저장 경계 강제 종료 각 36개·health 실패·정확한 서비스 대상·CLI E2E 확인 | 일반 GUI 설치/실행·창 종료 수명 통과. 개발자 선택·v2 복구/rollback 적용 통과. 다른 버전 승인 실행·실행 중 변경 차단·일반 문제 해결 및 회사 UE/계정 검증 대기 | 75% |
-| UI-01 | 포스코DX·반응형·작업 상세 스크롤 | viewport·실제 bucket 경계 포커스 회귀 | 1920×1080/100% 두 프로필 관측 | 나머지 16개 OS 조합·최악 조건 대기 | 75% |
-| UI-02 | 이전 설치 표시·정확한 복원·연결 3초/작업 제한 분리 | 441개 전체 회귀·기존 IPC 호환 | 일반 설치/업데이트, 개발자 repair/rollback/변조 preview, 무설치 재시도 직접 통과 | portable·작은 환경·나머지 실행 확인 수용 대기 | 75% |
-| UI-03 | Tab·취소 기본 포커스·100~200%·고대비 | 키보드 선택·Escape·focus·viewport 회귀 | 실제 Windows 설정 적용/저장·UIA 이름 확인 | 내레이터 음성·OS 고대비·키보드 전체 흐름 대기 | 75% |
+| OPS-09 | 엄격 runtime 기록·서비스 snapshot/barrier·공통 변경 조정기 | 기존 안전성 Windows/WSL 회귀 각 393개·집계 검사 | 저장 경계 강제 종료 각 36개·health 실패·정확한 서비스 대상·CLI E2E 및 게시본별 GUI 이력 | 이번 portable 실행 중 버튼 차단/수명 확인을 추가. 모든 변경 진입점의 실제 전수 검증과 회사 UE/계정은 남음 | 75% |
+| UI-01 | 포스코DX·반응형·주 버튼 고정·상세 스크롤·제목 배율 | 작은 DIP/200% 잘림·bucket 경계·포커스 회귀 | 사전/ab37 게시본의 1920×1080/100% 일반·개발자 관측 | 최종 동일 게시본의 실제 18개 OS 조합·최악 조건 대기 | 75% |
+| UI-02 | 정확한 모드/선택/runtime·미설치 자동 repair 금지·복원 후 재확인 | 추가 상태 보완 Windows/WSL 각510개·IPC 호환, 고정8ce5060 publish/HTTP·HTTPS E2E 통과 | ab37 portable 설치/수명/정상 복원 이력과 작업 중 게시본 미설치 재연결 통과 구분. 새 후보 portable v1 설치/실행·3파일 해시·창 종료 수명/정상 종료 확인 | 새 후보 관리형 적용·portable v2/복원·전체 오류 및 작은 환경 수용 대기 | 75% |
+| UI-03 | 제목 배율·Local Tab·대화창 고대비/focus·실제 framework peer | 관련 headless 72개, 연결된 peer의 이름 변경·byte tick 억제 | 사전 게시본 Windows 글자200%/Tab 관측, 사용자 prefs 원복 확인 | 최종 키보드/OS 고대비 전체 흐름 대기. 내레이터 음성 후속 보류로 75% 유지 | 75% |
 
 근거: [성능 검증 기록](docs/reference/archive/validation/performance-validation.md), [CI 구성](.github/workflows/build.yml), 각 항목의 커밋·미완료 조건. 다른 항목의 기존 기반 기능이나 문서 작성만으로 추가 보완 진척을 자동 가산하지 않았습니다.
 
@@ -92,7 +92,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | OPS-06/P1 | 50% | 부분 · 원격 검증 대기 | Linux signed HTTPS E2E가 build.yml에 추가됨. 원격 CI 실행·운영 결과 보관은 미확인 | 실제 PR/배포 CI 성공 확인 및 민감정보 없는 결과 보관 정책 확정 |
 | OPS-07/P1 | 0% | 대기 · 추가 보완 | AgentWorker는 IPC 대기만 하고 service-run은 once=true. CLI는 managed 반복 실행을 거부 | Agent 스케줄러 또는 명시적 외부 스케줄 운영을 확정. 재부팅 후 정기 점검·중복 작업 방지·maintenance window 시험 |
 | OPS-08/P0 | 50% | 부분 · 실제 인증서 대기 | 공식 사전 gate·EXE 선서명·MSI 내장 payload 검증·실행별 WiX intermediate 구현. 계약 11개 및 개발 MSI 추출/hash 비교 통과 | 실제 회사 인증서와 설치된 EXE 서명 검증은 미완료. [기록](docs/reference/archive/validation/deployment-safety-validation.md) |
-| OPS-09/P0 | 75% | 부분 · GUI/현장 검증 대기 | 누락 기록 fail-closed, 단일 서비스 snapshot·시작 barrier·이전/대상 잠금, 위험 migration apply 차단. Windows/WSL 각 393개와 저장 경계 강제 종료·실제 health 실패·대상 분리·CLI E2E 통과 | 실행 직후·문제 해결의 runtime 상태 보완과 미설치 fixture를 추가했다. 일반 GUI 설치/실행·창 종료/재실행·자식 정상 종료는 직접 통과. 개발자 버전 선택/취소·v2 복구·rollback 적용 통과. v1 승인 실행·실행 중 GUI 변경 차단·일반 문제 해결 직접 시험은 남음. portable GUI 버전별 rollback 경로도 별도 보완 필요. 모든 진입점의 모든 상태 조합을 실제 프로세스로 전수 시험한 것은 아님. 회사 UE/계정·원격 CI 미검증. [기록](docs/reference/archive/validation/managed-gui-safety-validation.md) |
+| OPS-09/P0 | 75% | 부분 · GUI/현장 검증 대기 | 누락 기록 fail-closed, 서비스 snapshot/barrier·이전/대상 잠금, 위험 migration apply 차단. 기존 각 393개·저장 경계 종료·health/대상 분리·CLI E2E 통과. 이번 portable 자식 수명·실행 중 변경 버튼 차단 추가 | 이전 관리형 복구/rollback과 이번 portable 증거는 게시본별 이력. 새 후보 양 모드 전체 GUI 수용, 모든 진입점/상태 조합의 실제 전수 검증과 회사 UE/계정·원격 CI는 미완료. [기존 기록](docs/reference/archive/validation/managed-gui-safety-validation.md), [이번 기록](docs/reference/archive/validation/ui-acceptance-finalization.md) |
 
 ## 성능·저장 공간
 
@@ -119,9 +119,9 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 | ID/우선 | 진행률 | 상태 | 현재 상태·영향 | 보완 방향·완료 조건 |
 |---|---:|---|---|---|
-| UI-01/P1 | 75% | 부분 · 전체 DPI 대기 | 포스코DX 일반/개발자 화면, 반응형·고정 작업 영역·브랜드 fallback. 18 DIP viewport와 실제 1920×1080/100% 두 프로필 확인 | 1280×720/1366×768/1920×1080 및 OS 100/125/150% 전체 조합, 빈 목록·긴 오류/버전 현장 확인. [증거](docs/reference/archive/validation/poscodx-ui-accessibility-validation.md) |
-| UI-02/P1 | 75% | 부분 · 잔여 수용 대기 | 일반 v1→v2 업데이트 후 실행, 개발자 v2 손상 복구·정상 backup 복원/취소·preview 변경 거부 실제 통과. 최신 GUI 조회 재시도 시 설치/실행 0건. [증거](docs/reference/archive/validation/gui-validation-completion.md) | portable GUI 적용, 작은 환경 E2E, 개발자 실행 승인·일반 문제 해결의 남은 조합 확인 필요 |
-| UI-03/P2 | 75% | 부분 · 음성/OS 확인 대기 | 키보드 프로젝트·Tab 순서·focus·취소 기본값·Escape·복원, 사용자별 글자/고대비. 실제 200%+앱 고대비 적용·저장 확인 | 실제 내레이터 음성, OS 고대비 전환, 마우스 없는 전체 흐름. UIA tree를 음성 성공으로 간주하지 않음 |
+| UI-01/P1 | 75% | 부분 · 최종 DPI 수용 대기 | 포스코DX 양 프로필, 반응형·주 버튼 고정·제목 배율. 작은 DIP/200% 오류 영역 결함 수정, 사전/ab37 게시본 1920×1080/100% 관측 | 새 최종 게시본의 1280×720/1366×768/1920×1080 × OS 100/125/150% × 두 프로필 전 18개 및 글자200%/OS 고대비 수용. 원래 OS 설정/원복 미확인. [이번 증거](docs/reference/archive/validation/ui-acceptance-finalization.md) |
+| UI-02/P1 | 75% | 부분 · 새 후보 재검증 대기 | ab37 portable v1→v2·v1 보존·수명·변경 버튼 차단·복구 협업 관측·정상 백업 복원 3파일 해시. 추가 상태 보완 소스 각510개 및 새 작업 중 게시본 미설치 재연결 무설치 확인 | 새 최종 후보 양 모드 전체 기능·오류·복원 취소/적용·preview 거부 및 작은 환경 수용. 이전 게시본 성공 합산 금지. [이번 증거](docs/reference/archive/validation/ui-acceptance-finalization.md) |
+| UI-03/P2 | 75% | 부분 · 음성 보류/OS 대기 | 제목 배율·Tab/focus·대화창 고대비, 연결된 framework peer 이름 변경·byte tick 억제 회귀. 사전 게시본 실제 글자200%/Tab·prefs 원복 확인 | 새 후보 키보드 전체 흐름·OS 고대비 확인. 내레이터 실행/녹음/청취는 후속 보류하며 코드/UIA 통과로 대체하지 않음 |
 | UI-04/P2 | 0% | 대기 · 추가 보완 | 트레이·완료 알림은 이전 범위에서 제외 | 필요성 합의 후 opt-in 구현. 닫기/종료 의미·알림 설정 명확화 |
 
 ## 보안·확장·유지보수

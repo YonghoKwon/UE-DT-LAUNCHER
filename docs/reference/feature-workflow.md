@@ -291,7 +291,7 @@ sudo -u uedt-distribution /opt/ue-dt-distribution/UeDtLauncher.DistributionServe
 
 ```mermaid
 flowchart TD
-    openLauncher["런처 실행"] --> automatic["자동: 서비스·배포·설치 확인"]
+    openLauncher["런처 실행"] --> automatic["자동: 배포·설치 확인 / 관리형은 서비스 확인"]
     automatic --> click["사용자: 상태별 메인 버튼 클릭"]
     click --> verify["배포·권한·서명 재확인"]
     verify --> ready{"파일 준비 필요?"}
@@ -314,7 +314,7 @@ flowchart TD
 | 최신 상태 | 실행 | 배포 확인 경로를 거친 뒤 변경 없으면 실행 |
 | 확인 실패 | 다시 확인 / 문제 해결 | 안내에 따라 연결·파일 상태 점검 |
 
-‘실행’도 네트워크 없이 로컬 파일만 즉시 실행하는 오프라인 기능으로 해석하지 않습니다. 새 버전을 별도 경로로 처음 설치하면 이전 버전이 있어도 선택 대상은 미설치로 표시될 수 있습니다.
+‘실행’도 네트워크 없이 로컬 파일만 즉시 실행하는 오프라인 기능으로 해석하지 않습니다. 인증된 동일 프로젝트/환경/채널/OS의 이전 설치 기록을 확인하면 `기존 설치 버전 / 최신 배포 버전 / 업데이트 후 실행`으로 안내합니다. 이전 기록을 확인하지 못하면 미설치로 표시할 수 있습니다. 새 버전은 별도 경로에 설치하며 이전 설치를 덮어쓰거나 자동 삭제하지 않습니다. Portable은 `로컬 모드`로 표시하고 Agent 없이 현재 계정의 엔진과 runtime을 사용합니다.
 
 개발자는 허용된 프로젝트 → 환경 → 채널 → latest/exact → 버전을 선택하고 실행합니다. Windows GUI는 Windows 배포, Linux CLI는 Linux 배포를 대상으로 설정합니다. 정확한 이전 버전을 별도 설치하는 것과 백업을 복원하는 rollback은 다릅니다.
 
@@ -354,10 +354,13 @@ Linux도 전체 운영 설정과 읽기/설치 권한을 확인합니다. portab
 | 목록에 프로젝트 없음 | 해당 PC의 IP·인증키/토큰·grant 및 OS 확인 | 서버 정책 확인, 런처 상태 재확인 | 허용된 배포만 표시 |
 | 서비스 연결 필요 | Agent 실행·설정·권한 확인 | `agent status` | running |
 | 파일 손상 | 먼저 상태 확인 | GUI 문제 해결 또는 `agent repair --project demo --environment prod --channel stable --version 1.2.0` | 해시 검사·복구 후 정상 |
+| 미설치/아직 받지 않은 새 버전 | 원하는 버전과 설치 안내 확인 | 문제 해결은 조회만 수행. 설치하려면 주 설치/업데이트 버튼 사용 | 동의하지 않은 설치·실행 없음 |
 | 계속 실패 | 복원 가능한 백업 존재 확인 | GUI가 제안한 경우 내용 확인 후 rollback, 없으면 관리자 문의 | 복원 후 상태 확인 |
 | 원인 전달 필요 | 비밀정보 없는 진단 자료 생성 | `diagnostics export --config launcher.config.json --output diagnostics.zip` | 관리자에게 안전하게 전달 |
 
 서버 명령 앞에는 B5의 프로그램 경로·서비스 계정을 붙입니다. PC 명령 앞에는 `UeDtLauncher.exe` 또는 `./UeDtLauncher`를 붙입니다. 일시적 다운로드 오류의 제한된 자동 재시도/Range 기능은 있지만, 프로세스 종료 후 언제나 같은 바이트부터 재개한다고 보장하지 않습니다.
+
+GUI 문제 해결은 관리형/portable 모두 **점검 → 설치된 선택 버전의 손상만 복구 → 재검증** 순서입니다. 정상 설치는 점검만 하며 앱을 자동 실행하지 않습니다. Portable의 파일 복구는 Agent 명령 대신 GUI의 로컬 엔진을 사용합니다. 백업 복원은 별도 설치 버전으로의 전환이 아니며, 확인한 backup이 바뀌면 적용하지 않고 새 확인을 요구합니다.
 
 **실행 중/실행 상태 불명 안내가 나오면:** 앱을 정상 종료 → 상태 다시 확인 순서입니다. GUI를 닫는 것만으로 앱이 종료되지는 않습니다. 기존 PID 기록·host 장애는 관리자에게 `runtime inspect`와 `runtime recover --dry-run` 점검을 요청하세요. 정지 확인 뒤에만 명시적으로 복구합니다. 구형 클라이언트는 런처와 Agent를 함께 갱신해야 변경 요청을 사용할 수 있습니다. [담당자별 정상/차단/수동 복구 명령](runtime-safety.md)
 
