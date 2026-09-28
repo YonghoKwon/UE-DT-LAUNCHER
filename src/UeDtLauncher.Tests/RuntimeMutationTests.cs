@@ -22,7 +22,7 @@ public sealed class RuntimeMutationTests
             await JsonFiles.WriteAsync(config.InstallStatePath,new InstallState { Version="1" });
             await JsonFiles.WriteAsync(config.InstalledManifestPath,new LauncherManifest { Version="1" });
             await JsonFiles.WriteAsync(UpdateTransactionManager.JournalPath(config),new UpdateTransactionJournal { Status=UpdateTransactionStatus.Applying,BackupName="saved" });
-            RuntimeStore.Write(config,new() { InstallationId=RuntimeStore.InstallationId(config),State=state,Host=RuntimeIdentities.Current() });
+            RuntimeStore.Write(config,RuntimeTestSupport.Active(config,state));
             var before = Snapshot(root);
             using var engine = new LauncherEngine(config, null, null, echoToConsole:false);
             await Assert.ThrowsAsync<RuntimeBlockedException>(() => engine.PrepareAsync());

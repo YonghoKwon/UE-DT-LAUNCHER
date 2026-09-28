@@ -42,9 +42,45 @@ public static class RuntimeStore
         var path = RecordPath(config);
         if (!File.Exists(path)) return null;
         if (new FileInfo(path).Length > 64 * 1024) throw new InvalidDataException("Runtime record exceeds limit.");
-        var value = JsonSerializer.Deserialize<RuntimeRecord>(File.ReadAllText(path), JsonFiles.Options) ?? throw new InvalidDataException("Invalid runtime record.");
+        using var document = JsonDocument.Parse(File.ReadAllText(path));
+        RequireFields(document.RootElement, "schemaVersion", "installationId", "state", "origin");
+        var value = document.RootElement.Deserialize<RuntimeRecord>(JsonFiles.Options) ?? throw new InvalidDataException("Invalid runtime record.");
         if (value.SchemaVersion != 1 || value.InstallationId != InstallationId(config) || !Enum.IsDefined(value.State)) throw new InvalidDataException("Runtime record identity mismatch.");
+        ValidateRecord(value);
         return value;
+    }
+    internal static void RequireFields(JsonElement value, params string[] required)
+    {
+        if (value.ValueKind != JsonValueKind.Object) throw new InvalidDataException("State must be an object.");
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var property in value.EnumerateObject())
+        {
+            if (!names.Add(property.Name)) throw new InvalidDataException("Duplicate state field.");
+            if (property.Value.ValueKind == JsonValueKind.Object) RequireFields(property.Value);
+        }
+        foreach (var name in required)
+            if (!value.TryGetProperty(name, out var field) || field.ValueKind == JsonValueKind.Null)
+                throw new InvalidDataException("Required state field is absent.");
+    }
+    private static bool ValidIdentity(RuntimeIdentity? identity) => identity is { Pid: > 0 } &&
+        !string.IsNullOrWhiteSpace(identity.CreationId) && !string.IsNullOrWhiteSpace(identity.Owner) &&
+        !string.IsNullOrWhiteSpace(identity.Session) && Path.IsPathFullyQualified(identity.Executable);
+    private static bool HashValue(string? value) => value is { Length: 64 } && value.All(Uri.IsHexDigit);
+    private static void ValidateRecord(RuntimeRecord value)
+    {
+        if (value.State == RuntimeState.Unknown) return;
+        if (value.State == RuntimeState.Quiescent && value.Origin == "new-install" && value.AttemptId is null && value.Host is null) return;
+        if (value.State == RuntimeState.Quiescent && value.Origin == "operator-confirmed" && ValidIdentity(value.Requester) && value.AttemptId is null && value.Host is null) return;
+        if (!Guid.TryParseExact(value.AttemptId, "N", out _) || !HashValue(value.TokenHash) || !HashValue(value.ManifestHash) ||
+            !ValidIdentity(value.Requester) || string.IsNullOrWhiteSpace(value.EntryPoint) || !Path.IsPathFullyQualified(value.EntryPoint) ||
+            value.Arguments is null || value.Arguments.Any(a => a is null || a.Contains('\0')) ||
+            (value.Host is not null && (!ValidIdentity(value.Host) || value.Host.Owner != value.Requester!.Owner)))
+            throw new InvalidDataException("Incomplete runtime identity.");
+        if (value.State == RuntimeState.LaunchPending && value.Origin == "supervised") return;
+        if (value.Host is null || (value.PayloadIdentity is not null && !ValidIdentity(value.PayloadIdentity))) throw new InvalidDataException("Missing runtime host.");
+        if (value.State == RuntimeState.Running && value.Origin == "supervised") return;
+        if (value.State == RuntimeState.Quiescent && value.Origin == "supervisor-completed") return;
+        throw new InvalidDataException("Inconsistent runtime state.");
     }
     internal static void Write(LauncherConfig config, RuntimeRecord record) => JsonFiles.WriteAsync(RecordPath(config), record).GetAwaiter().GetResult();
 
@@ -142,13 +178,22 @@ public static class RuntimeStore
 
     public static RuntimeObservation Recover(LauncherConfig config, RuntimeIdentity actor, bool confirm)
     {
+        ValidateRecoveryOwner(config, actor);
+        if (!confirm) return Observe(config);
         using var gate = SingleInstanceLock.Acquire(LauncherPaths.UpdateLockPath(config));
+        return RecoverUnderLock(config, actor);
+    }
+    internal static void ValidateRecoveryOwner(LauncherConfig config, RuntimeIdentity actor)
+    {
         if (config.IsManagedDeployment && !actor.Administrator) throw new UnauthorizedAccessException("Managed runtime recovery requires a local administrator.");
         if (!config.IsManagedDeployment && !actor.Administrator && RuntimeIdentities.DirectoryOwner(config.InstallDir) != actor.Owner)
             throw new UnauthorizedAccessException("Portable runtime recovery requires the installation owner.");
+    }
+    internal static RuntimeObservation RecoverUnderLock(LauncherConfig config, RuntimeIdentity actor)
+    {
+        ValidateRecoveryOwner(config, actor);
         RuntimeRecord? record = null;
         try { record = Read(config); } catch (Exception ex) when (ex is IOException or JsonException or InvalidDataException) { }
-        if (!confirm) return Observe(config);
         if (record?.State != RuntimeState.Quiescent && record?.Host is not null && RuntimeIdentities.StillMatches(record.Host)) throw new RuntimeBlockedException(Observe(config));
         if (record?.PayloadIdentity is not null && RuntimeIdentities.StillMatches(record.PayloadIdentity))
             throw new RuntimeBlockedException(new(RuntimeState.Running,"payload-still-running","실행 중—프로그램을 종료한 뒤 다시 시도해 주세요."));

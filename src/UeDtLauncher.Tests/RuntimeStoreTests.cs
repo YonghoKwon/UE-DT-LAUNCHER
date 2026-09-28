@@ -48,7 +48,7 @@ public sealed class RuntimeStoreTests : IDisposable
     {
         using (InstallationMutationLease.Acquire(config)) { }
         var identity = RuntimeIdentities.Current() with { CreationId="not-this-process" };
-        RuntimeStore.Write(config,new() { InstallationId=RuntimeStore.InstallationId(config),State=RuntimeState.Running,Host=identity });
+        RuntimeStore.Write(config,RuntimeTestSupport.Active(config,RuntimeState.Running,identity));
         Assert.Equal(RuntimeState.Unknown,RuntimeStore.Observe(config).State);
         Assert.Throws<RuntimeBlockedException>(()=>InstallationMutationLease.Acquire(config));
         var record=RuntimeStore.Read(config)!; record.PayloadIdentity=RuntimeIdentities.Current(); RuntimeStore.Write(config,record);

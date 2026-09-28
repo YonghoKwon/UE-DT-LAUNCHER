@@ -329,6 +329,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     if (request.Command == "runtime-recover")
                     {
                         if (!peer!.Administrator) throw new UnauthorizedAccessException("Managed runtime recovery requires a local administrator.");
+                        RuntimeRecoveryRequest.Validate(config, request.ConfirmStopped, request.ServiceVersion);
                         var recovered = RuntimeStore.Recover(config, peer!, request.ConfirmStopped);
                         if (request.ServiceVersion is not null)
                         {

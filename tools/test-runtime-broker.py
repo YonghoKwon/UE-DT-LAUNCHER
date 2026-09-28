@@ -40,7 +40,7 @@ def main():
                 "files": [{"path": entry, "size": (app / entry).stat().st_size, "sha256": hashlib.sha256((app / entry).read_bytes()).hexdigest()}]}
     (state / "installed-manifest.json").write_text(json.dumps(manifest))
     canonical = str(app).upper() if os.name == "nt" else str(app)
-    (state / "runtime-state.json").write_text(json.dumps({"schemaVersion": 1, "installationId": hashlib.sha256(canonical.encode()).hexdigest(), "state": 0, "origin": "fixture-confirmed"}))
+    (state / "runtime-state.json").write_text(json.dumps({"schemaVersion": 1, "installationId": hashlib.sha256(canonical.encode()).hexdigest(), "state": 0, "origin": "new-install"}))
     endpoint = "uedt-proof-" + uuid.uuid4().hex if os.name == "nt" else str(root / "agent.sock")
     env = dict(os.environ, UE_DT_AGENT_DATA_ROOT=str(root), UE_DT_AGENT_ENDPOINT=endpoint)
     flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0

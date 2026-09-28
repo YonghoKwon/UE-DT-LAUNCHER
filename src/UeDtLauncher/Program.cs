@@ -213,6 +213,8 @@ public static class Program
             ?? throw new ArgumentException("Service selection requires --version.") : null;
         if (serviceVersion is not null) ReleaseSidecar.Segment(serviceVersion);
         if (action == "recover" && confirm == Has(args, "--dry-run")) throw new ArgumentException("Choose --dry-run or explicit --confirm-stopped after closing every application process.");
+        if (serviceVersion is not null && action != "recover") throw new ArgumentException("Service selection requires recovery.");
+        RuntimeRecoveryRequest.Validate(config, confirm, serviceVersion);
         RuntimeObservation observation;
         if (config.IsManagedDeployment)
         {
