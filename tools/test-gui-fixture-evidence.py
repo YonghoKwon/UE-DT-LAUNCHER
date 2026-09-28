@@ -28,6 +28,28 @@ def control(root,action):
         runpy.run_path(str(TOOLS/'gui-fixture-control.py'),run_name='__main__')
 
 class EvidenceTests(unittest.TestCase):
+    def test_long_labels_are_deterministic_bounded_and_opt_in(self):
+        spec=importlib.util.spec_from_file_location('intranet_long_labels',TOOLS/'test-intranet-auth.py')
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        self.assertEqual([],module.gui_metadata_arguments(False,'1.0.0'))
+        arguments=module.gui_metadata_arguments(True,'1.0.0')
+        self.assertEqual(arguments,module.gui_metadata_arguments(True,'1.0.0'))
+        self.assertEqual('--display-name',arguments[0]);self.assertTrue(40<len(arguments[1])<256)
+        self.assertEqual('--notes',arguments[2]);self.assertTrue(200<len(arguments[3])<2048)
+        self.assertIn('포스코DX',arguments[1]);self.assertIn('1.0.0',arguments[3])
+        self.assertNotEqual(arguments[3],module.gui_metadata_arguments(True,'2.0.0')[3])
+        self.assertEqual(['demo'],[g['projectId'] for g in module.fixture_access_policy()['clients'][0]['grants']])
+        grants=module.fixture_access_policy(True)['clients'][0]['grants']
+        self.assertEqual(['demo','demo-secondary'],[g['projectId'] for g in grants])
+        self.assertEqual(['1.0.0'],grants[1]['versions'])
+
+    def test_long_labels_require_gui_before_any_file_or_process_work(self):
+        spec=importlib.util.spec_from_file_location('intranet_label_guard',TOOLS/'test-intranet-auth.py')
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        with patch.object(sys,'argv',['test-intranet-auth.py','--launcher','unused','--server','unused','--gui-long-labels']),patch.object(module.subprocess,'run') as run,contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as result:module.main()
+            self.assertEqual(2,result.exception.code);run.assert_not_called()
+
     def test_preference_restore_refuses_intervening_change(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary); path=root/'ui.json'; path.write_text('original')

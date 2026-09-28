@@ -22,6 +22,23 @@ import zlib
 import hashlib
 from gui_fixture_evidence import snapshot_preferences, sha256, wait_agent_ready, wait_server_ready, hold_fixture, verify_cohort, FixtureHarnessLock, copy_server_support
 
+GUI_LONG_DISPLAY_NAME = "포스코DX 디지털 트윈 통합 운영 시뮬레이터 — 제철 공정·설비 상태·안전 점검 및 원격 협업 시험 프로젝트"
+GUI_SECONDARY_DISPLAY_NAME = "포스코DX 보조 검증 프로젝트 — 다중 프로젝트 선택 및 작은 화면 키보드 탐색을 위한 합성 시험"
+GUI_LONG_NOTES = (
+    "긴 한글 프로젝트명과 여러 줄 릴리스 설명의 줄바꿈·말줄임·키보드 탐색을 확인하기 위한 결정적 합성 시험 데이터입니다. "
+    "설비 상태와 공정 흐름을 함께 검토하고, 작업자가 선택한 배포 버전의 설치 상태·진행 단계·문제 해결 안내를 작은 화면에서도 구분할 수 있어야 합니다. "
+    "이 프로그램은 실제 회사 설비나 운영 데이터에 연결하지 않으며, 승인된 시험 폴더의 합성 앱과 파일만 사용합니다. "
+    "글자 크기와 운영체제 화면 배율이 커져도 핵심 실행 버튼, 현재 버전, 백업 복원 확인과 취소 동작을 사용할 수 있는지 확인합니다."
+)
+
+def gui_metadata_arguments(long_labels, version):
+    return ['--display-name', GUI_LONG_DISPLAY_NAME, '--notes', '시험 릴리스 '+version+' · '+GUI_LONG_NOTES] if long_labels else []
+
+def fixture_access_policy(long_labels=False):
+    grants=[{'projectId':'demo','environment':'prod','channel':'stable','versions':[]}]
+    if long_labels:grants.append({'projectId':'demo-secondary','environment':'prod','channel':'stable','versions':['1.0.0']})
+    return {'clients':[{'id':'pc-test','addresses':['127.0.0.0/8'],'grants':grants}]}
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -37,7 +54,10 @@ def main():
     parser.add_argument("--benchmark", action="store_true", help="Optional synthetic signed load (requires cryptography)")
     parser.add_argument("--defer-v2", action="store_true", help="GUI-only: retain v2 pending manual approval")
     parser.add_argument("--gui-mode", choices=['managed','portable'], default='managed', help="GUI-only deployment, with a fresh isolated credential/install root")
+    parser.add_argument("--gui-long-labels", action="store_true", help="GUI-only: deterministic long Korean project name and release notes")
     args = parser.parse_args()
+    if args.gui_long_labels and not args.prepare_gui:
+        parser.error("--gui-long-labels requires --prepare-gui")
     if args.defer_v2 and not args.prepare_gui:
         parser.error("--defer-v2 requires --prepare-gui")
     if args.prepare_gui and (args.service_proof or args.hold_runtime or args.benchmark or args.nginx):
@@ -105,8 +125,7 @@ def main():
     write(root / "server.json", {"root": str(root / "server"), "publicUrl": origin, "listenUrl": backend,
           "signingKeyPath": str(root / "release.pem"), "policyPath": str(root / "policy.json"),
           "authenticationMode": "request-signature-v1"})
-    write(root / "policy.json", {"clients": [{"id": "pc-test", "addresses": ["127.0.0.0/8"],
-          "grants": [{"projectId": "demo", "environment": "prod", "channel": "stable", "versions": []}]}]})
+    write(root / "policy.json", fixture_access_policy(args.gui_long_labels))
     credential_storage='portable' if args.prepare_gui and args.gui_mode=='portable' else 'managed'
     run(launcher, "credential", "keygen", "--name", "device", "--key-id", "pc-test-key", "--public-out", root / "device-public.json", "--storage", credential_storage)
     run(server, "client-key", "add", "--client", "pc-test", "--public-key", root / "device-public.json", "--config", root / "server.json")
@@ -131,12 +150,22 @@ def main():
             package.writestr("hero.png", png)
         run(launcher, "release-metadata", "--zip", archive, "--project-id", "demo", "--version", version,
             "--platform", platform, "--entry-point", entry, "--executable-paths", entry,
-            "--hero-path", "hero.png", "--output", upload / "release.json")
+            "--hero-path", "hero.png", "--output", upload / "release.json", *gui_metadata_arguments(args.gui_long_labels, version))
         job = json.loads(run(server, "ingest", upload, "--config", root / "server.json"))
         if job["state"] != "pending":
             raise RuntimeError(f"Expected pending approval, got {job['state']}")
         if (args.defer_v2 or args.prepare_gui) and version == "2.0.0": pending_jobs[version] = job["id"]
         else: run(server, "approve", job["id"], "--config", root / "server.json")
+    if args.gui_long_labels:
+        # View-only stress data: a separately authorized second project, never preinstalled.
+        upload=root/'server'/'incoming'/'demo-secondary-1.0.0';upload.mkdir(parents=True)
+        archive=upload/'Package.zip';shutil.copy2(root/'server'/'incoming'/'1.0.0'/'Package.zip',archive)
+        run(launcher,'release-metadata','--zip',archive,'--project-id','demo-secondary','--version','1.0.0',
+            '--platform',platform,'--entry-point',entry,'--executable-paths',entry,'--hero-path','hero.png',
+            '--display-name',GUI_SECONDARY_DISPLAY_NAME,'--notes','화면 선택·키보드 탐색 전용 합성 데이터. '+GUI_LONG_NOTES,'--output',upload/'release.json')
+        secondary=json.loads(run(server,'ingest',upload,'--config',root/'server.json'))
+        if secondary['state']!='pending':raise RuntimeError('Secondary stress release did not await approval')
+        run(server,'approve',secondary['id'],'--config',root/'server.json')
     generated = client / "generated.json"
     run(launcher, "sample-config", "--server-url", origin, "--project-id", "demo", "--profile", "developer", "--platform", platform,
         "--deployment-mode", "portable", "--credential-name", "device", "--public-key", root / "public.pem", "--output", generated)
@@ -320,12 +349,15 @@ http {{
             source_diff=subprocess.check_output(['git','diff','HEAD','--','src','tools'],cwd=source_root)
             untracked=subprocess.check_output(['git','ls-files','--others','--exclude-standard','--','src','tools'],cwd=source_root,text=True).splitlines()
             source_evidence=source_diff+b''.join(name.encode()+b'\0'+(source_root/name).read_bytes() for name in sorted(untracked) if (source_root/name).is_file())
-            write(root/'fixture.json',{'schemaVersion':2,'id':root.name,'deploymentMode':args.gui_mode,'platform':platform,
+            write(root/'fixture.json',{'schemaVersion':2,'id':root.name,'deploymentMode':args.gui_mode,'platform':platform,'guiLongLabels':args.gui_long_labels,
                   'sourceHead':subprocess.check_output(['git','rev-parse','HEAD'],cwd=source_root,text=True).strip(),
                   'sourceDiffSha256':hashlib.sha256(source_evidence).hexdigest(),'sourceDirty':bool(source_evidence),
                   'binaries':{kind:{'path':value,'sha256':sha256(value)} for kind,value in gui_binaries.items()},
-                  'supportFiles':gui_support_files,'pendingJobs':pending_jobs})
+                  'supportFiles':gui_support_files,'pendingJobs':pending_jobs,
+                  'viewOnlyProjects':['demo-secondary'] if args.gui_long_labels else []})
             summary['deployment_mode']=args.gui_mode
+            summary['gui_long_labels']=args.gui_long_labels
+            summary['view_only_projects']=['demo-secondary'] if args.gui_long_labels else []
             verify_cohort(root);wait_server_ready(process,origin)
         if args.benchmark:
             from benchmark_intranet_auth import run_load
