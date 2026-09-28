@@ -11,8 +11,8 @@ public static class LauncherVisualTokens
     public const double SpaceXl = 24;
     public const double Space2Xl = 32;
 
-    public const double RadiusControl = 10;
-    public const double RadiusCard = 13;
+    public const double RadiusControl = 8;
+    public const double RadiusCard = 10;
     public const double RadiusHero = 16;
 
     public const double FontCaption = 12;
@@ -24,25 +24,26 @@ public static class LauncherVisualTokens
     public static readonly TimeSpan MotionFast = TimeSpan.FromMilliseconds(140);
     public static readonly TimeSpan MotionNormal = TimeSpan.FromMilliseconds(180);
 
-    public static readonly Color LightBackground = Color.Parse("#F6F8FC");
+    public static readonly Color LightBackground = Color.Parse("#F3F6F8");
     public static readonly Color LightSurface = Color.Parse("#FFFFFF");
     public static readonly Color LightSurfaceMuted = Color.Parse("#EEF2F7");
-    public static readonly Color LightBorder = Color.Parse("#DDE3EC");
+    public static readonly Color LightBorder = Color.Parse("#7A8794");
     public static readonly Color LightText = Color.Parse("#172033");
     public static readonly Color LightMutedText = Color.Parse("#667085");
 
     public static readonly Color DarkBackground = Color.Parse("#0B1220");
     public static readonly Color DarkSurface = Color.Parse("#111827");
     public static readonly Color DarkSurfaceRaised = Color.Parse("#172033");
-    public static readonly Color DarkBorder = Color.Parse("#2A3649");
+    public static readonly Color DarkBorder = Color.Parse("#718096");
     public static readonly Color DarkText = Color.Parse("#F8FAFC");
     public static readonly Color DarkMutedText = Color.Parse("#A8B3C5");
 
-    public static readonly Color BrandNavy = Color.Parse("#0F2A56");
+    public static readonly Color BrandNavy = Color.Parse("#05507D");
     public static readonly Color BrandNavyDeep = Color.Parse("#091B39");
-    public static readonly Color Accent = Color.Parse("#2563EB");
-    public static readonly Color AccentHover = Color.Parse("#1D4ED8");
-    public static readonly Color AccentSoft = Color.Parse("#E8F0FF");
+    public static readonly Color Accent = Color.Parse("#05507D");
+    public static readonly Color AccentHover = Color.Parse("#043E62");
+    public static readonly Color AccentSoft = Color.Parse("#E6F1F7");
+    public static readonly Color PoscoLightBlue = Color.Parse("#00A5E5");
 
     public static readonly Color Success = Color.Parse("#166534");
     public static readonly Color SuccessSoft = Color.Parse("#E9F8EE");

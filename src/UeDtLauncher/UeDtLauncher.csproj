@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="UeDtLauncher.Tests" />
+    <AvaloniaResource Include="Assets/Branding/posco-dx-korean.png" />
   </ItemGroup>
 
   <ItemGroup>
