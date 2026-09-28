@@ -96,6 +96,14 @@ def main():
         assert rpc("runtime-inspect")["runtime"]["state"] == 2
         assert not rpc("launch-begin")["success"]
         assert not rpc("launch-complete", runtimeTicket=ticket)["success"]
+        before = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
+                  for folder in (app, state) for p in folder.rglob("*") if p.is_file() and p.name != "update.lock"}
+        for command in ("update", "repair"):
+            response = rpc(command)
+            assert not response["success"], command
+        after = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
+                 for folder in (app, state) for p in folder.rglob("*") if p.is_file() and p.name != "update.lock"}
+        assert before == after, "Running mutation changed protected files"
         output, error = host.communicate(timeout=20)
         assert host.returncode == 0, error
         assert rpc("runtime-inspect")["runtime"]["state"] == 0

@@ -200,6 +200,7 @@ public class ClientPerformanceTests
                 AppPidPath = Path.Combine(Root, "app.pid"), LaunchAfterUpdate = false, MaxRetryCount = 1
             };
             Manifest = new LauncherManifest { AppId = "demo", Version = "2.0.0", Platform = "windows-x64", EntryPoint = "file0.bin", BaseUrl = "https://updates.example.com/files/" };
+            RuntimeTestSupport.Stopped(Config);
             for (var i = 0; i < count; i++)
             {
                 var bytes = Enumerable.Repeat((byte)i, 65536).ToArray();

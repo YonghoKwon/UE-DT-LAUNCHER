@@ -159,6 +159,9 @@ public class ManagedAgentTests
         var plan = await PortableMigrationService.PlanAsync(sourceConfig, layout);
         Assert.False(plan.TargetAlreadyExists);
         Assert.Contains("project-a", plan.ProjectIds);
+        await Assert.ThrowsAsync<RuntimeBlockedException>(() => PortableMigrationService.ApplyAsync(plan));
+        var stopped = await JsonFiles.ReadAsync<LauncherConfig>(sourceConfig);
+        LauncherPaths.ResolveInPlace(stopped, sourceConfig); RuntimeTestSupport.Stopped(stopped);
         await PortableMigrationService.ApplyAsync(plan);
 
         Assert.True(File.Exists(plan.TargetConfigPath));

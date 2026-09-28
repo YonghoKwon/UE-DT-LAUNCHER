@@ -29,3 +29,13 @@
 - RuntimeStore/기존 IPC 관련 Windows 10개, WSL runtime 관련 8개 통과. publish console Agent 등록 시험은 Windows `uedt-broker-proof-m6xd8zgq`, Linux `/tmp/uedt-broker-proof-kt4jq5aq`에서 통과.
 - 같은 사용자라도 Python peer는 host 등록/완료를 위조할 수 없었고, 실행 중 두 번째 launch를 거부했으며 정상 후손 종료 후 Quiescent로 전환했다.
 - Windows LocalService 실제 계정과 전체 변경 경로 연결은 아직 검증되지 않았다. 변경 차단·구형 클라이언트 gate는 다음 단계이다.
+
+## 4. 설치 변경 조정기
+
+- prepare의 첫 파일 변경 전에 lease/Quiescent 검사를 수행하고, transaction 복구·rollback·CLI/GUI/Agent 복원도 같은 조정기를 사용한다. lock 파일 inode를 삭제하지 않는다.
+- 기존 PID/name 기반 종료와 직접 payload 실행 코드를 제거했다. service-run은 활성 버전 변경을 차단하며 health 실패 시 backup을 보존한 manual-recovery 상태를 남긴다.
+- 기존 설치 import는 source 실행 상태를 확인하고 별도 staging에서 복사 후 non-overwrite rename한다. 다중 설치 전체 state migration은 검토 없이 자동 적용하지 않는다.
+- legacy 상태의 자동 이전은 명시적인 정지 확인 전에는 차단한다. 기존 가짜 파일 테스트는 프로세스가 없다는 fixture 사실을 명시했으며 production 검사를 완화하지 않았다.
+- Running/Pending/Unknown의 prepare·rollback·recovery 차단 전후 파일/manifest/state/backup/journal hash 보존 회귀 추가.
+- publish Windows Agent에서 실행 중 update/repair 거부 및 파일 불변 확인(`uedt-broker-proof-beyrsvf2`). publish 전체 HTTP E2E의 두 버전 실행·종료/repair 통과(`publish/safety/e2e-win-02`).
+- cmd /c 인수 시험에서 불필요한 옵션 인용을 수정했다. payload stdout은 control channel과 분리하므로 실행 증거는 fixture marker 파일로 확인한다.

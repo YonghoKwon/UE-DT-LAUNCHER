@@ -279,10 +279,10 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                 ClientIdentity = identity
             };
         }
-        if (request.Command.StartsWith("launch-", StringComparison.Ordinal) || request.Command == "runtime-recover")
+        if (ManagedAgentProtocol.RequiresRuntimeCapability(request.Command))
         {
-            if (peer is null || !request.ClientCapabilities.Contains(ManagedAgentProtocol.RuntimeCapability))
-                return Error(request, "client-upgrade-required", "Verified runtime client identity/capability is required.", identity);
+            if (peer is null || request.ClientCapabilities?.Contains(ManagedAgentProtocol.RuntimeCapability) != true)
+                return Error(request, "client-upgrade-required", "런처와 업데이트 서비스를 함께 업데이트해 주세요.", identity);
         }
         if (!await _commandGate.WaitAsync(0, cancellationToken))
             return Error(request, "busy", "Another managed Agent operation is already running.", identity);
@@ -326,7 +326,17 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                 case "runtime-recover":
                     if (request.Selection is not null) VersionedReleasePaths.Bind(config, request.Selection);
                     if (request.Command == "runtime-inspect") return new() { CorrelationId = request.CorrelationId, Success = true, Runtime = RuntimeStore.Observe(config) };
-                    if (request.Command == "runtime-recover") return new() { CorrelationId = request.CorrelationId, Success = true, Runtime = RuntimeStore.Recover(config, peer!, request.ConfirmStopped) };
+                    if (request.Command == "runtime-recover")
+                    {
+                        var recovered = RuntimeStore.Recover(config, peer!, request.ConfirmStopped);
+                        if (request.ServiceVersion is not null)
+                        {
+                            if (!request.ConfirmStopped) throw new InvalidOperationException("Service selection requires explicit stopped confirmation.");
+                            ReleaseSidecar.Segment(request.ServiceVersion);
+                            RuntimeServiceState.ConfirmSelection(config, peer!, request.ServiceVersion);
+                        }
+                        return new() { CorrelationId = request.CorrelationId, Success = true, Runtime = recovered };
+                    }
                     var launchTicket = request.RuntimeTicket ?? throw new InvalidDataException("Runtime ticket is required.");
                     if (request.Command == "launch-attach")
                     {
@@ -373,16 +383,13 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     if (request.Selection is not null) VersionedReleasePaths.Bind(config, request.Selection);
                     var backup = BackupManager.List(config.BackupDir).FirstOrDefault();
                     if (backup.BackupRoot is null) return Error(request, "no-backup", "No rollback backup is available.", identity);
-                    using (SingleInstanceLock.Acquire(LauncherPaths.UpdateLockPath(config)))
-                    {
-                        await BackupManager.RestoreAsync(
+                    await BackupManager.RestoreAsync(
                             backup.BackupRoot,
                             config.InstallDir,
                             config.InstalledManifestPath,
                             config.InstallStatePath,
                             message => progress.Add(new ManagedAgentProgress("Rollback", DiagnosticRedactor.Redact(message), null)),
                             cancellationToken);
-                    }
                     return Success(request, identity, "completed", "Rollback completed.", progress);
                 case "service-run":
                     var serviceExit = await ServiceRunner.RunAsync(configPath, null, once: true, cancellationToken);
@@ -396,6 +403,10 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                 default:
                     return Error(request, "unsupported", "Agent command handler is unavailable.", identity);
             }
+        }
+        catch (RuntimeBlockedException ex)
+        {
+            return new() { CorrelationId=request.CorrelationId, Success=false, Status=ex.Observation.Code, Message=ex.Observation.Message, Runtime=ex.Observation, AgentVersion=AgentVersion() };
         }
         catch (Exception ex)
         {

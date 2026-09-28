@@ -84,7 +84,7 @@ def main():
             if os.name == "nt":
                 package.write(Path(os.environ["SystemRoot"]) / "System32" / "cmd.exe", entry)
             else:
-                package.writestr(entry, '#!/bin/sh\nprintf "UE_DT_FAKE_GAME_OK\\n"\n')
+                package.writestr(entry, '#!/bin/sh\nprintf "UE_DT_FAKE_GAME_OK\\n" > runtime-marker.txt\n')
             package.writestr("version.txt", version)
             package.writestr("hero.png", png)
         run(launcher, "release-metadata", "--zip", archive, "--project-id", "demo", "--version", version,
@@ -103,7 +103,7 @@ def main():
         raise RuntimeError("Existing configuration was overwritten")
     config = json.loads(generated.read_text(encoding="utf-8"))
     config.update(versionPolicy="exact", requestedVersion="1.0.0", installDir=str(client / "apps"), stateRootDir=str(client / "state"),
-                  launchArguments=["/c", "echo", "UE_DT_FAKE_GAME_OK"] if os.name == "nt" else [])
+                  launchArguments=["/c", "echo UE_DT_FAKE_GAME_OK>runtime-marker.txt"] if os.name == "nt" else [])
     log = (root / "server.log").open("w", encoding="utf-8")
     process = subprocess.Popen([server, "serve", "--config", str(root / "server.json")], stdout=log, stderr=log, env=env, creationflags=flags)
     agent_process = None
@@ -160,8 +160,17 @@ http {{
         for version in ("1.0.0", "2.0.0"):
             config["requestedVersion"] = version
             write(client / "config.json", config)
-            output = run(launcher, "run", "--config", client / "config.json")
-            if "UE_DT_FAKE_GAME_OK" not in output:
+            run(launcher, "run", "--config", client / "config.json")
+            runtime = client / "state" / "demo" / "prod" / "stable" / version / platform / "runtime-state.json"
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline:
+                if runtime.exists() and json.loads(runtime.read_text())["state"] == 0:
+                    break
+                time.sleep(0.05)
+            else:
+                raise RuntimeError("Supervised payload did not complete")
+            marker = client / "apps" / "demo" / "prod" / "stable" / version / platform / "runtime-marker.txt"
+            if not marker.exists() or "UE_DT_FAKE_GAME_OK" not in marker.read_text():
                 raise RuntimeError("Synthetic game execution marker was missing")
         target = client / "apps" / "demo" / "prod" / "stable" / "2.0.0" / platform / "version.txt"
         target.write_text("damaged", encoding="utf-8")

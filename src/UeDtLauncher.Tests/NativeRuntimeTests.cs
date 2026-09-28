@@ -8,7 +8,8 @@ public class NativeRuntimeTests
     [InlineData("", "\"\"")]
     [InlineData("a b", "\"a b\"")]
     [InlineData("a\"b", "\"a\\\"b\"")]
-    [InlineData("x\\", "\"x\\\\\"")]
+    [InlineData("x\\", "x\\")]
+    [InlineData("/c", "/c")]
     public void WindowsArgumentQuotingPreservesBoundaries(string input, string expected) => Assert.Equal(expected, NativeProcessFamily.QuoteWindows(input));
 
     [Fact]

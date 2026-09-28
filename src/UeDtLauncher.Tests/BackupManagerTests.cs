@@ -82,6 +82,7 @@ public class BackupManagerTests : IDisposable
         await JsonFiles.WriteAsync(manifestPath, new LauncherManifest { Version = "2.0.0", EntryPoint = "game.exe" });
         await JsonFiles.WriteAsync(statePath, new InstallState { Version = "2.0.0" });
 
+        RuntimeTestSupport.Stopped(new() { InstallDir=_installDir, InstalledManifestPath=manifestPath, InstallStatePath=statePath });
         await BackupManager.RestoreAsync(backupRoot, _installDir, manifestPath, statePath);
 
         Assert.Equal("v1", await File.ReadAllTextAsync(Path.Combine(_installDir, "game.exe")));
@@ -108,6 +109,7 @@ public class BackupManagerTests : IDisposable
         await JsonFiles.WriteAsync(manifestPath, new LauncherManifest { Version = "1.0.0", EntryPoint = "game.exe" });
         await JsonFiles.WriteAsync(statePath, new InstallState { Version = "1.0.0" });
 
+        RuntimeTestSupport.Stopped(new() { InstallDir=_installDir, InstalledManifestPath=manifestPath, InstallStatePath=statePath });
         await BackupManager.RestoreAsync(backupRoot, _installDir, manifestPath, statePath);
 
         Assert.False(File.Exists(Path.Combine(_installDir, "game.exe")));

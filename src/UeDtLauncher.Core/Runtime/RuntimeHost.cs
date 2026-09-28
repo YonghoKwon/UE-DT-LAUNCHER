@@ -30,16 +30,16 @@ public static class RuntimeHost
                     await Task.Delay(500);
                 }
             }
-            if (session.Config.IsManagedDeployment)
+            if (session.AgentEndpoint is not null)
                 launch = (await Send("launch-attach")).RuntimeLaunch ?? throw new InvalidDataException("Missing authorized launch.");
             else launch = RuntimeStore.Attach(session.Config, session.Ticket, identity, Environment.ProcessPath!);
             var result = NativeProcessFamily.Run(launch, pid =>
             {
-                if (session.Config.IsManagedDeployment) Send("launch-started", pid).GetAwaiter().GetResult();
+                if (session.AgentEndpoint is not null) Send("launch-started", pid).GetAwaiter().GetResult();
                 else RuntimeStore.Report(session.Config, session.Ticket, identity, false, pid);
                 Emit(new { state="started", pid });
             });
-            if (session.Config.IsManagedDeployment) await Send("launch-complete");
+            if (session.AgentEndpoint is not null) await Send("launch-complete");
             else RuntimeStore.Report(session.Config, session.Ticket, identity, true);
             Emit(new { state="completed", result }); return 0;
         }

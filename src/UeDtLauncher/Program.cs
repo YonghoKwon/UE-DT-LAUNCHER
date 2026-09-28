@@ -198,7 +198,10 @@ public static class Program
     {
         var action = args.FirstOrDefault() ?? "inspect";
         if (action is not ("inspect" or "recover")) throw new ArgumentException("runtime supports inspect or recover.");
-        var config = await LauncherPaths.LoadResolvedAsync(Required(args, "--config"));
+        var configPath = Required(args, "--config");
+        var config = await JsonFiles.ReadAsync<LauncherConfig>(configPath);
+        LauncherPaths.ResolveInPlace(config, configPath);
+        LauncherConfigValidator.Validate(config);
         if (!string.IsNullOrWhiteSpace(config.DistributionServerUrl))
         {
             var version = Get(args, "--version") ?? (config.VersionPolicy == "exact" ? config.RequestedVersion : null)
@@ -509,7 +512,6 @@ public static class Program
         }
 
         var fileLogger = new FileLogger(config.LogDir);
-        using var instanceLock = SingleInstanceLock.Acquire(LauncherPaths.UpdateLockPath(config));
         Console.WriteLine($"Rolling back using backup {Path.GetFileName(selected.BackupRoot)}...");
         await BackupManager.RestoreAsync(selected.BackupRoot, config.InstallDir, config.InstalledManifestPath, config.InstallStatePath, message =>
         {

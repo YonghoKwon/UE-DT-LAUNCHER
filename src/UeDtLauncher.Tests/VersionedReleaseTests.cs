@@ -44,6 +44,8 @@ public class VersionedReleaseTests
             var before = await Hashing.Sha256FileAsync(Path.Combine(config.InstallDir, "game.exe"));
             var plan = await LegacyInstallImport.RunAsync(configPath, Path.Combine(root, "new"), false);
             Assert.False(Directory.Exists(plan.Destination));
+            await Assert.ThrowsAsync<RuntimeBlockedException>(() => LegacyInstallImport.RunAsync(configPath, Path.Combine(root, "new"), true));
+            RuntimeTestSupport.Stopped(config);
             var applied = await LegacyInstallImport.RunAsync(configPath, Path.Combine(root, "new"), true);
             Assert.True(applied.Applied);
             Assert.Equal(before, await Hashing.Sha256FileAsync(Path.Combine(applied.Destination, "game.exe")));

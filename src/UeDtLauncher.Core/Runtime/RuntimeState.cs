@@ -150,12 +150,20 @@ public static class RuntimeStore
 public sealed class InstallationMutationLease : IDisposable
 {
     private readonly SingleInstanceLock gate;
-    private InstallationMutationLease(SingleInstanceLock gate) => this.gate = gate;
+    private readonly string installationId;
+    private bool disposed;
+    private InstallationMutationLease(SingleInstanceLock gate, string installationId) { this.gate = gate; this.installationId = installationId; }
     public static InstallationMutationLease Acquire(LauncherConfig config)
     {
         var gate = SingleInstanceLock.Acquire(LauncherPaths.UpdateLockPath(config));
-        try { RuntimeStore.RequireQuiescent(config); RuntimeStore.Initialize(config); return new(gate); }
+        try { RuntimeStore.RequireQuiescent(config); RuntimeStore.Initialize(config); return new(gate, RuntimeStore.InstallationId(config)); }
         catch { gate.Dispose(); throw; }
     }
-    public void Dispose() => gate.Dispose();
+    internal void Validate(LauncherConfig config)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        if (installationId != RuntimeStore.InstallationId(config)) throw new InvalidOperationException("Mutation lease belongs to another installation.");
+        RuntimeStore.RequireQuiescent(config);
+    }
+    public void Dispose() { if (!disposed) { disposed=true; gate.Dispose(); } }
 }

@@ -2,7 +2,8 @@ namespace UeDtLauncher;
 
 internal sealed class PreparedLauncherUpdate : IDisposable
 {
-    private readonly SingleInstanceLock _instanceLock;
+    private readonly InstallationMutationLease _instanceLock;
+    internal InstallationMutationLease Lease => _instanceLock;
     private bool _disposed;
 
     internal PreparedLauncherUpdate(
@@ -14,7 +15,7 @@ internal sealed class PreparedLauncherUpdate : IDisposable
         PreparedPackages packages,
         IReadOnlyDictionary<string, string> packageHashes,
         bool packagePreparationRequested,
-        SingleInstanceLock instanceLock)
+        InstallationMutationLease instanceLock)
     {
         RemoteManifest = remoteManifest;
         ManifestJson = manifestJson;

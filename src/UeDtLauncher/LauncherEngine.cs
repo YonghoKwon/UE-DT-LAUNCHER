@@ -50,16 +50,20 @@ public sealed class LauncherEngine : IDisposable
 
     public async Task RunAsync(CancellationToken cancellationToken = default)
     {
-        using var prepared = await PrepareAsync(cancellationToken);
-        _ = await CommitPreparedAsync(prepared, cancellationToken);
-        await CompleteRunAsync(prepared.RemoteManifest, cancellationToken);
+        LauncherManifest manifest;
+        using (var prepared = await PrepareAsync(cancellationToken))
+        {
+            _ = await CommitPreparedAsync(prepared, cancellationToken);
+            manifest = prepared.RemoteManifest;
+        }
+        await CompleteRunAsync(manifest, cancellationToken);
     }
 
     internal async Task<PreparedLauncherUpdate> PrepareAsync(CancellationToken cancellationToken = default)
     {
         _performance = new ClientPerformanceCounters();
         _performanceReported = false;
-        var instanceLock = SingleInstanceLock.Acquire(LauncherPaths.UpdateLockPath(_config));
+        var instanceLock = InstallationMutationLease.Acquire(_config);
         try
         {
             var targetExisted = Directory.Exists(_config.InstallDir) || File.Exists(_config.InstallStatePath);
@@ -69,7 +73,7 @@ public sealed class LauncherEngine : IDisposable
             await UpdateTransactionManager.RecoverIfNeededAsync(
                 _config,
                 message => Log("Recovery", message),
-                cancellationToken);
+                cancellationToken, instanceLock);
 
             Log("Manifest", "Downloading remote manifest...", 5);
             var manifestDocument = await ManifestDownloader.DownloadAsync(
@@ -139,6 +143,7 @@ public sealed class LauncherEngine : IDisposable
         CancellationToken cancellationToken)
     {
         prepared.ThrowIfDisposed();
+        prepared.Lease.Validate(_config);
         if (!prepared.HasLiveChanges)
         {
             Log("Plan", "Already up to date.", 70);
@@ -161,7 +166,7 @@ public sealed class LauncherEngine : IDisposable
             prepared.Packages.Files,
             prepared.LocalManifest,
             prepared.RemoteManifest,
-            cancellationToken);
+            cancellationToken, prepared.Lease);
         try
         {
             Log("Manifest", "Writing installed manifest...", 80);
@@ -185,18 +190,6 @@ public sealed class LauncherEngine : IDisposable
         return transaction.BackupRoot;
     }
 
-    internal void LaunchPrepared(PreparedLauncherUpdate prepared)
-    {
-        prepared.ThrowIfDisposed();
-        Launch(prepared.RemoteManifest);
-    }
-
-    internal void LaunchPrevious(PreparedLauncherUpdate prepared)
-    {
-        prepared.ThrowIfDisposed();
-        Launch(prepared.LocalManifest ?? prepared.RemoteManifest);
-    }
-
     private async Task CompleteRunAsync(LauncherManifest remoteManifest, CancellationToken cancellationToken)
     {
         if (_config.WindowsIntegration.CreateDesktopShortcut || _config.WindowsIntegration.CreateStartMenuShortcut || _config.WindowsIntegration.RegisterAppEntry)
@@ -214,7 +207,7 @@ public sealed class LauncherEngine : IDisposable
         if (_config.LaunchAfterUpdate)
         {
             Log("Launch", "Launching application...", 98);
-            Launch(remoteManifest);
+            _ = await RuntimeLauncher.LaunchAsync(_config, cancellationToken);
             Log("Complete", "Application launched.", 100);
         }
         else
@@ -579,7 +572,8 @@ public sealed class LauncherEngine : IDisposable
         IReadOnlyCollection<PreparedPackageFile> packageFiles,
         LauncherManifest? localManifest,
         LauncherManifest remoteManifest,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        InstallationMutationLease lease)
     {
         var backupRoot = BackupManager.CreateBackupRoot(_config.BackupDir);
         var addedPaths = plan.DownloadOrRepair
@@ -595,7 +589,7 @@ public sealed class LauncherEngine : IDisposable
             localManifest?.Version,
             remoteManifest.Version,
             addedPaths,
-            cancellationToken);
+            cancellationToken, lease);
 
         try
         {
@@ -816,33 +810,6 @@ public sealed class LauncherEngine : IDisposable
         catch (Exception ex)
         {
             Console.WriteLine($"Failed to set executable bit for {path}: {ex.Message}");
-        }
-    }
-
-    private void Launch(LauncherManifest manifest)
-    {
-        var entryPoint = GetEntryPointPath(manifest);
-        if (!File.Exists(entryPoint)) throw new FileNotFoundException("Entry point was not found after update.", entryPoint);
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = entryPoint,
-            WorkingDirectory = Path.GetDirectoryName(entryPoint) ?? _config.InstallDir,
-            UseShellExecute = false
-        };
-        foreach (var arg in _config.LaunchArguments ?? Array.Empty<string>()) startInfo.ArgumentList.Add(arg);
-        var process = Process.Start(startInfo);
-        if (process is not null) WriteAppPidFile(process.Id, entryPoint);
-    }
-
-    private void WriteAppPidFile(int pid, string entryPoint)
-    {
-        try
-        {
-            JsonFiles.WriteAsync(_config.AppPidPath, new AppPidInfo { Pid = pid, EntryPoint = entryPoint }).GetAwaiter().GetResult();
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            Log("Launch", $"Could not write app pid file ({_config.AppPidPath}): {ex.Message}");
         }
     }
 

@@ -138,6 +138,14 @@ public static partial class LauncherPaths
             return;
         }
 
+        var needed = (File.Exists(legacy.InstalledManifestPath) && !File.Exists(config.InstalledManifestPath) && !SamePath(legacy.InstalledManifestPath, config.InstalledManifestPath)) ||
+            (File.Exists(legacy.InstallStatePath) && !File.Exists(config.InstallStatePath) && !SamePath(legacy.InstallStatePath, config.InstallStatePath)) ||
+            (Directory.Exists(legacy.BackupDir) && !SamePath(legacy.BackupDir, config.BackupDir) && (!Directory.Exists(config.BackupDir) || !Directory.EnumerateFileSystemEntries(config.BackupDir).Any()));
+        if (!needed) return;
+        // Legacy state is never silently adopted as proof of process quiescence.
+        if (!File.Exists(RuntimeStore.RecordPath(config))) throw new RuntimeBlockedException(new(RuntimeState.Unknown,"legacy-runtime","기존 설치 상태 이전 전에 runtime recover 점검이 필요합니다."));
+        using var lease = InstallationMutationLease.Acquire(config);
+
         CopyFileIfTargetMissing(legacy.InstalledManifestPath, config.InstalledManifestPath);
         CopyFileIfTargetMissing(legacy.InstallStatePath, config.InstallStatePath);
         CopyDirectoryIfTargetEmpty(legacy.BackupDir, config.BackupDir);

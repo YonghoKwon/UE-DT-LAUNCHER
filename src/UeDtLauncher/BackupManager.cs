@@ -106,6 +106,16 @@ public static class BackupManager
     public static async Task RestoreAsync(string backupRoot, string installDir, string installedManifestPath, string installStatePath, Action<string>? log = null, CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(backupRoot)) throw new DirectoryNotFoundException($"Backup directory does not exist: {backupRoot}");
+        var config = new LauncherConfig { InstallDir=installDir, InstalledManifestPath=installedManifestPath, InstallStatePath=installStatePath, AppPidPath=Path.Combine(Path.GetDirectoryName(Path.GetFullPath(installStatePath))!,"app.pid") };
+        using var lease = InstallationMutationLease.Acquire(config);
+        await RestoreUnderLeaseAsync(backupRoot, config, lease, log, cancellationToken);
+    }
+
+    internal static async Task RestoreUnderLeaseAsync(string backupRoot, LauncherConfig config, InstallationMutationLease lease, Action<string>? log = null, CancellationToken cancellationToken = default)
+    {
+        lease.Validate(config);
+        var installDir=config.InstallDir; var installedManifestPath=config.InstalledManifestPath; var installStatePath=config.InstallStatePath;
+        if (!Directory.Exists(backupRoot)) throw new DirectoryNotFoundException($"Backup directory does not exist: {backupRoot}");
 
         var metaDir = Path.Combine(backupRoot, MetaDirName);
         var infoPath = Path.Combine(metaDir, InfoFileName);

@@ -30,6 +30,7 @@ internal static class NativeProcessFamily
 
     internal static string QuoteWindows(string argument)
     {
+        if (argument.Length > 0 && !argument.Any(c => char.IsWhiteSpace(c) || c == '"')) return argument;
         var output = new StringBuilder("\""); var slashes = 0;
         foreach (var c in argument)
         {

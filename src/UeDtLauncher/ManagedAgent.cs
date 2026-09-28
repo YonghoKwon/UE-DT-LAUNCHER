@@ -14,6 +14,7 @@ public static class ManagedAgentProtocol
     public const string DefaultWindowsPipeName = "UeDtLauncher.Agent.v1";
     public const string DefaultLinuxSocketPath = "/run/ue-dt-launcher/agent-v1.sock";
     public const string RuntimeCapability = "runtime-supervision-v1";
+    public static bool RequiresRuntimeCapability(string command) => command.ToLowerInvariant() is "update" or "repair" or "rollback" or "service-run" or "runtime-recover" || command.StartsWith("launch-", StringComparison.OrdinalIgnoreCase);
 
     public static readonly IReadOnlySet<string> AllowedCommands = new HashSet<string>(
         ["status", "catalog", "check", "update", "repair", "rollback", "service-run", "diagnostics", "project-asset", "doctor", "launch-begin", "launch-attach", "launch-started", "launch-complete", "runtime-inspect", "runtime-recover"],
@@ -53,6 +54,7 @@ public sealed class ManagedAgentRequest
     public RuntimeLaunchTicket? RuntimeTicket { get; set; }
     public int? PayloadPid { get; set; }
     public bool ConfirmStopped { get; set; }
+    public string? ServiceVersion { get; set; }
 }
 
 public sealed class ManagedAgentResponse
@@ -245,6 +247,12 @@ public static class PortableMigrationService
             throw new IOException($"Managed config already exists: {plan.TargetConfigPath}");
 
         var config = await JsonFiles.ReadAsync<LauncherConfig>(plan.SourceConfigPath, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(config.DistributionServerUrl) || config.Projects.Count > 1)
+            throw new InvalidOperationException("Multi-installation state migration requires a separately reviewed maintenance plan; no automatic runtime adoption is allowed.");
+        var sourceRuntime = await JsonFiles.ReadAsync<LauncherConfig>(plan.SourceConfigPath, cancellationToken);
+        LauncherPaths.ResolveInPlace(sourceRuntime, plan.SourceConfigPath);
+        using var runtimeLease = InstallationMutationLease.Acquire(sourceRuntime);
+        using var destinationGate = SingleInstanceLock.Acquire(Path.Combine(Path.GetDirectoryName(plan.TargetConfigPath)!, "migration.lock"));
         config.InstallDir = LauncherPaths.ResolveConfigRelative(plan.SourceConfigPath, config.InstallDir);
         config.LogDir = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(plan.TargetStateRoot)!, "logs"));
         config.StateRootDir = plan.TargetStateRoot;
@@ -263,6 +271,7 @@ public static class PortableMigrationService
         if (!Directory.Exists(sourceRoot)) return;
         foreach (var sourceFile in Directory.EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories))
         {
+            if (sourceFile.EndsWith(".lock", StringComparison.OrdinalIgnoreCase)) continue;
             var relative = Path.GetRelativePath(sourceRoot, sourceFile);
             var target = SafePath.ResolveInside(targetRoot, relative);
             if (File.Exists(target)) throw new IOException($"Migration target already contains state file: {relative}");
@@ -306,16 +315,16 @@ public sealed class ManagedAgentClient(string? endpoint = null)
 {
     private readonly string _endpoint = endpoint ?? ManagedAgentProtocol.ResolveEndpoint();
 
-    public async Task<ManagedAgentResponse> SendRuntimeAsync(string command, LauncherConfig config, RuntimeLaunchTicket? ticket = null, int? payloadPid = null, bool confirm = false, CancellationToken cancellationToken = default)
+    public async Task<ManagedAgentResponse> SendRuntimeAsync(string command, LauncherConfig config, RuntimeLaunchTicket? ticket = null, int? payloadPid = null, bool confirm = false, CancellationToken cancellationToken = default, string? serviceVersion = null)
     {
         var request = new ManagedAgentRequest { Command = command, ProjectId = config.ProjectId, Selection = config.SelectedRelease,
-            ClientCapabilities = [ManagedAgentProtocol.RuntimeCapability], RuntimeTicket = ticket, PayloadPid = payloadPid, ConfirmStopped = confirm };
+            ClientCapabilities = [ManagedAgentProtocol.RuntimeCapability], RuntimeTicket = ticket, PayloadPid = payloadPid, ConfirmStopped = confirm, ServiceVersion = serviceVersion };
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken); timeout.CancelAfter(TimeSpan.FromSeconds(15));
         await using var stream = await ConnectAsync(timeout.Token);
         await ManagedAgentFrameCodec.WriteAsync(stream, request, timeout.Token);
         var response = await ManagedAgentFrameCodec.ReadAsync<ManagedAgentResponse>(stream, timeout.Token);
         if (response.ProtocolVersion != 1 || response.CorrelationId != request.CorrelationId) throw new InvalidDataException("Runtime IPC response mismatch.");
-        if (!response.AgentCapabilities.Contains(ManagedAgentProtocol.RuntimeCapability)) throw new InvalidOperationException("Update service upgrade required for supervised runtime.");
+        if (response.AgentCapabilities?.Contains(ManagedAgentProtocol.RuntimeCapability) != true) throw new RuntimeBlockedException(new(RuntimeState.Unknown,"client-upgrade-required","런처와 업데이트 서비스를 함께 업데이트해 주세요."));
         return response;
     }
 
@@ -347,6 +356,7 @@ public sealed class ManagedAgentClient(string? endpoint = null)
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default)
     {
+        if (ManagedAgentProtocol.RequiresRuntimeCapability(command)) await RequireCapabilitiesAsync(cancellationToken);
         var request = new ManagedAgentRequest { Command = command, ProjectId = projectId, ClientCapabilities = [ManagedAgentProtocol.RuntimeCapability] };
         var validationError = ManagedAgentProtocol.Validate(request);
         if (validationError is not null) throw new InvalidOperationException(validationError);
@@ -369,6 +379,7 @@ public sealed class ManagedAgentClient(string? endpoint = null)
         CancellationToken cancellationToken = default,
         ReleaseSelection? selection = null)
     {
+        if (ManagedAgentProtocol.RequiresRuntimeCapability(command)) await RequireCapabilitiesAsync(cancellationToken);
         ArgumentNullException.ThrowIfNull(onProgress);
         var request = new ManagedAgentRequest
         {
@@ -425,6 +436,13 @@ public sealed class ManagedAgentClient(string? endpoint = null)
             socket.Dispose();
             throw;
         }
+    }
+
+    private async Task RequireCapabilitiesAsync(CancellationToken token)
+    {
+        var status = await SendAsync("status", cancellationToken: token);
+        if (status.AgentCapabilities?.Contains(ManagedAgentProtocol.RuntimeCapability) != true)
+            throw new RuntimeBlockedException(new(RuntimeState.Unknown,"client-upgrade-required","런처와 업데이트 서비스를 함께 업데이트해 주세요."));
     }
 }
 

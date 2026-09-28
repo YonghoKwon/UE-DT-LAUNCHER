@@ -24,10 +24,22 @@ public static class RuntimeLauncher
             if (!response.Success || response.RuntimeTicket is null) throw new RuntimeBlockedException(response.Runtime ?? new(RuntimeState.Unknown, response.Status, response.Message));
             ticket = response.RuntimeTicket;
             if (config.SelectedRelease is not null && config.SelectedRelease != response.SelectedRelease) throw new InvalidDataException("Runtime release selection mismatch.");
-            if (!SafePath.FileSystemComparer.Equals(ticket.HostExecutable, HostExecutable())) throw new InvalidDataException("Runtime host must use the installed launcher beside the Agent.");
+            var installedHost = Path.Combine(ManagedLauncherPathLayout.Current().InstallRoot, OperatingSystem.IsWindows() ? "UeDtLauncher.exe" : "UeDtLauncher");
+            if (!SafePath.FileSystemComparer.Equals(ticket.HostExecutable, Path.GetFullPath(installedHost))) throw new InvalidDataException("Runtime host must use the installed launcher beside the Agent.");
         }
         else ticket = RuntimeStore.Begin(config, RuntimeIdentities.Current(), HostExecutable());
-        var input = new RuntimeHostSession(config, ticket, config.IsManagedDeployment ? ManagedAgentProtocol.ResolveEndpoint() : null, config.SelectedRelease);
+        return await StartHostAsync(new RuntimeHostSession(config, ticket, config.IsManagedDeployment ? ManagedAgentProtocol.ResolveEndpoint() : null, config.SelectedRelease), cancellationToken);
+    }
+
+    internal static Task<Process> LaunchServiceAsync(LauncherConfig config, CancellationToken cancellationToken)
+    {
+        var ticket = RuntimeStore.Begin(config, RuntimeIdentities.Current(), HostExecutable());
+        return StartHostAsync(new(config, ticket, null, config.SelectedRelease), cancellationToken);
+    }
+
+    private static async Task<Process> StartHostAsync(RuntimeHostSession input, CancellationToken cancellationToken)
+    {
+        var ticket = input.Ticket;
         var info = new ProcessStartInfo(ticket.HostExecutable) { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, CreateNoWindow = true };
         info.ArgumentList.Add("runtime-host");
         SanitizeEnvironment(info);

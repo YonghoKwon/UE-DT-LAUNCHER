@@ -22,11 +22,13 @@ public sealed class UpdateTransactionJournal
 internal sealed class UpdateTransactionContext
 {
     private readonly LauncherConfig _config;
+    private readonly InstallationMutationLease? _lease;
 
-    internal UpdateTransactionContext(LauncherConfig config, UpdateTransactionJournal journal)
+    internal UpdateTransactionContext(LauncherConfig config, UpdateTransactionJournal journal, InstallationMutationLease? lease = null)
     {
         _config = config;
         Journal = journal;
+        _lease = lease;
     }
 
     internal UpdateTransactionJournal Journal { get; }
@@ -34,13 +36,13 @@ internal sealed class UpdateTransactionContext
     internal string BackupRoot => UpdateTransactionManager.ResolveBackupRoot(_config, Journal);
 
     internal Task MarkApplyingAsync(CancellationToken cancellationToken) =>
-        UpdateTransactionManager.SetStatusAsync(_config, Journal, UpdateTransactionStatus.Applying, cancellationToken);
+        UpdateTransactionManager.SetStatusAsync(_config, Journal, UpdateTransactionStatus.Applying, cancellationToken, _lease);
 
     internal Task CommitAsync(CancellationToken cancellationToken) =>
-        UpdateTransactionManager.CommitAsync(_config, Journal, cancellationToken);
+        UpdateTransactionManager.CommitAsync(_config, Journal, cancellationToken, _lease);
 
     internal Task RollbackAsync(Action<string>? log = null, CancellationToken cancellationToken = default) =>
-        UpdateTransactionManager.RollbackAsync(_config, Journal, log, cancellationToken);
+        UpdateTransactionManager.RollbackAsync(_config, Journal, log, cancellationToken, _lease);
 }
 
 internal static class UpdateTransactionManager
@@ -57,8 +59,11 @@ internal static class UpdateTransactionManager
         string? previousVersion,
         string newVersion,
         IEnumerable<string> addedPaths,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        InstallationMutationLease? lease = null)
     {
+        using var owned = lease is null ? InstallationMutationLease.Acquire(config) : null;
+        (lease ?? owned!).Validate(config);
         var journal = new UpdateTransactionJournal
         {
             Status = UpdateTransactionStatus.Prepared,
@@ -68,19 +73,22 @@ internal static class UpdateTransactionManager
             AddedPaths = addedPaths.Distinct(PathComparer).ToList()
         };
         await JsonFiles.WriteAsync(JournalPath(config), journal, cancellationToken);
-        return new UpdateTransactionContext(config, journal);
+        return new UpdateTransactionContext(config, journal, lease);
     }
 
     internal static async Task RecoverIfNeededAsync(
         LauncherConfig config,
         Action<string>? log = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        InstallationMutationLease? lease = null)
     {
         var journalPath = JournalPath(config);
         if (!File.Exists(journalPath))
         {
             return;
         }
+        using var owned = lease is null ? InstallationMutationLease.Acquire(config) : null;
+        lease ??= owned!; lease.Validate(config);
 
         var journal = await JsonFiles.ReadAsync<UpdateTransactionJournal>(journalPath, cancellationToken);
         switch (journal.Status)
@@ -92,7 +100,7 @@ internal static class UpdateTransactionManager
                 break;
             case UpdateTransactionStatus.Applying:
                 log?.Invoke($"Recovering interrupted update transaction {journal.TransactionId}.");
-                await RollbackAsync(config, journal, log, cancellationToken);
+                await RollbackAsync(config, journal, log, cancellationToken, lease);
                 break;
             case UpdateTransactionStatus.Committed:
             case UpdateTransactionStatus.RolledBack:
@@ -107,8 +115,11 @@ internal static class UpdateTransactionManager
         LauncherConfig config,
         UpdateTransactionJournal journal,
         UpdateTransactionStatus status,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        InstallationMutationLease? lease = null)
     {
+        using var owned = lease is null ? InstallationMutationLease.Acquire(config) : null;
+        (lease ?? owned!).Validate(config);
         journal.Status = status;
         await JsonFiles.WriteAsync(JournalPath(config), journal, cancellationToken);
     }
@@ -116,9 +127,12 @@ internal static class UpdateTransactionManager
     internal static async Task CommitAsync(
         LauncherConfig config,
         UpdateTransactionJournal journal,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        InstallationMutationLease? lease = null)
     {
-        await SetStatusAsync(config, journal, UpdateTransactionStatus.Committed, cancellationToken);
+        using var owned = lease is null ? InstallationMutationLease.Acquire(config) : null;
+        lease ??= owned!; lease.Validate(config);
+        await SetStatusAsync(config, journal, UpdateTransactionStatus.Committed, cancellationToken, lease);
         DeleteJournal(JournalPath(config));
     }
 
@@ -126,8 +140,11 @@ internal static class UpdateTransactionManager
         LauncherConfig config,
         UpdateTransactionJournal journal,
         Action<string>? log = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        InstallationMutationLease? lease = null)
     {
+        using var owned = lease is null ? InstallationMutationLease.Acquire(config) : null;
+        lease ??= owned!; lease.Validate(config);
         if (journal.Status == UpdateTransactionStatus.Prepared)
         {
             DeletePreparedBackup(config, journal, log);
@@ -136,14 +153,8 @@ internal static class UpdateTransactionManager
         }
 
         var backupRoot = ResolveBackupRoot(config, journal);
-        await BackupManager.RestoreAsync(
-            backupRoot,
-            config.InstallDir,
-            config.InstalledManifestPath,
-            config.InstallStatePath,
-            log,
-            cancellationToken);
-        await SetStatusAsync(config, journal, UpdateTransactionStatus.RolledBack, cancellationToken);
+        await BackupManager.RestoreUnderLeaseAsync(backupRoot, config, lease, log, cancellationToken);
+        await SetStatusAsync(config, journal, UpdateTransactionStatus.RolledBack, cancellationToken, lease);
         DeleteJournal(JournalPath(config));
     }
 
