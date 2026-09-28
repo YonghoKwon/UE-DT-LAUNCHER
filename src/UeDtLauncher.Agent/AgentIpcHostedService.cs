@@ -5,6 +5,7 @@ using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text.Json;
 using System.Threading.Channels;
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -80,11 +81,19 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
     }
 
     [SupportedOSPlatform("windows")]
-    private static string? TryGetClientIdentity(NamedPipeServerStream pipe)
+    private static RuntimeIdentity? TryGetClientIdentity(NamedPipeServerStream pipe)
     {
-        try { return pipe.GetImpersonationUserName(); }
+        try { return GetNamedPipeClientProcessId(pipe.SafePipeHandle, out var pid) ? RuntimeIdentities.Read(checked((int)pid)) : null; }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException) { return null; }
     }
+
+    [DllImport("kernel32.dll", SetLastError=true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetNamedPipeClientProcessId(Microsoft.Win32.SafeHandles.SafePipeHandle pipe, out uint pid);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct UnixPeerCredentials { public int Pid; public uint Uid, Gid; }
+    [DllImport("libc", SetLastError=true)]
+    private static extern int getsockopt(int socket, int level, int option, out UnixPeerCredentials credentials, ref uint size);
 
     [SupportedOSPlatform("linux")]
     [SupportedOSPlatform("macos")]
@@ -109,7 +118,21 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                 try { client = await listener.AcceptAsync(stoppingToken); }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
                 await using var stream = new NetworkStream(client, ownsSocket: true);
-                await HandleClientAsync(stream, "local-socket-user", stoppingToken);
+                RuntimeIdentity? peer = null;
+                if (OperatingSystem.IsLinux())
+                {
+                    try
+                    {
+                        uint size = (uint)Marshal.SizeOf<UnixPeerCredentials>();
+                        if (getsockopt(checked((int)client.SafeHandle.DangerousGetHandle()), 1, 17, out var credentials, ref size) == 0 && size == 12)
+                        {
+                            var observed = RuntimeIdentities.Read(credentials.Pid);
+                            if (observed.Owner == credentials.Uid.ToString()) peer = observed;
+                        }
+                    }
+                    catch (Exception ex) when (ex is SocketException or IOException or UnauthorizedAccessException) { }
+                }
+                await HandleClientAsync(stream, peer, stoppingToken);
             }
         }
         finally
@@ -118,8 +141,9 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
         }
     }
 
-    private async Task HandleClientAsync(Stream stream, string? identity, CancellationToken cancellationToken)
+    private async Task HandleClientAsync(Stream stream, RuntimeIdentity? peer, CancellationToken cancellationToken)
     {
+        var identity = peer?.Owner;
         ManagedAgentRequest? request = null;
         ManagedAgentResponse response;
         try
@@ -136,11 +160,11 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
             }
             else if (request.StreamProgress)
             {
-                response = await HandleStreamingRequestAsync(stream, request, identity, cancellationToken);
+                response = await HandleStreamingRequestAsync(stream, request, peer, cancellationToken);
             }
             else
             {
-                response = await HandleValidatedRequestAsync(request, identity, cancellationToken);
+                response = await HandleValidatedRequestAsync(request, peer, cancellationToken);
             }
         }
         catch (Exception ex) when (ex is InvalidDataException or JsonException or InvalidOperationException)
@@ -148,6 +172,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
             response = Error(request, "invalid-request", ex.Message, identity);
         }
 
+        response.AgentCapabilities = [ManagedAgentProtocol.RuntimeCapability];
         await ManagedAgentFrameCodec.WriteAsync(stream, response, cancellationToken);
     }
 
@@ -191,7 +216,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
     private async Task<ManagedAgentResponse> HandleStreamingRequestAsync(
         Stream stream,
         ManagedAgentRequest request,
-        string? identity,
+        RuntimeIdentity? peer,
         CancellationToken cancellationToken)
     {
         var channel = Channel.CreateUnbounded<ManagedAgentProgress>(new UnboundedChannelOptions
@@ -219,7 +244,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
         {
             var response = await HandleValidatedRequestAsync(
                 request,
-                identity,
+                peer,
                 cancellationToken,
                 progress => channel.Writer.TryWrite(progress));
             channel.Writer.TryComplete();
@@ -237,10 +262,11 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
 
     private async Task<ManagedAgentResponse> HandleValidatedRequestAsync(
         ManagedAgentRequest request,
-        string? identity,
+        RuntimeIdentity? peer,
         CancellationToken cancellationToken,
         Action<ManagedAgentProgress>? progressSink = null)
     {
+        var identity = peer?.Owner;
         if (request.Command.Equals("status", StringComparison.OrdinalIgnoreCase))
         {
             return new ManagedAgentResponse
@@ -252,6 +278,11 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                 AgentVersion = AgentVersion(),
                 ClientIdentity = identity
             };
+        }
+        if (request.Command.StartsWith("launch-", StringComparison.Ordinal) || request.Command == "runtime-recover")
+        {
+            if (peer is null || !request.ClientCapabilities.Contains(ManagedAgentProtocol.RuntimeCapability))
+                return Error(request, "client-upgrade-required", "Verified runtime client identity/capability is required.", identity);
         }
         if (!await _commandGate.WaitAsync(0, cancellationToken))
             return Error(request, "busy", "Another managed Agent operation is already running.", identity);
@@ -283,6 +314,28 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
 
             switch (request.Command.ToLowerInvariant())
             {
+                case "launch-begin":
+                    using (var http = SecureHttpClientFactory.Create(config)) await CatalogResolver.ResolveAsync(config, http, cancellationToken: cancellationToken);
+                    var hostPath = Path.Combine(Path.GetDirectoryName(Environment.ProcessPath!)!, OperatingSystem.IsWindows() ? "UeDtLauncher.exe" : "UeDtLauncher");
+                    var ticket = RuntimeStore.Begin(config, peer!, hostPath);
+                    return new() { CorrelationId = request.CorrelationId, Success = true, RuntimeTicket = ticket, SelectedRelease = config.SelectedRelease };
+                case "launch-attach":
+                case "launch-started":
+                case "launch-complete":
+                case "runtime-inspect":
+                case "runtime-recover":
+                    if (request.Selection is not null) VersionedReleasePaths.Bind(config, request.Selection);
+                    if (request.Command == "runtime-inspect") return new() { CorrelationId = request.CorrelationId, Success = true, Runtime = RuntimeStore.Observe(config) };
+                    if (request.Command == "runtime-recover") return new() { CorrelationId = request.CorrelationId, Success = true, Runtime = RuntimeStore.Recover(config, peer!, request.ConfirmStopped) };
+                    var launchTicket = request.RuntimeTicket ?? throw new InvalidDataException("Runtime ticket is required.");
+                    if (request.Command == "launch-attach")
+                    {
+                        var expectedHost = Path.Combine(Path.GetDirectoryName(Environment.ProcessPath!)!, OperatingSystem.IsWindows() ? "UeDtLauncher.exe" : "UeDtLauncher");
+                        var launch = RuntimeStore.Attach(config, launchTicket, peer!, expectedHost);
+                        return new() { CorrelationId = request.CorrelationId, Success = true, RuntimeLaunch = launch };
+                    }
+                    RuntimeStore.Report(config, launchTicket, peer!, request.Command == "launch-complete", request.PayloadPid);
+                    return new() { CorrelationId = request.CorrelationId, Success = true, Runtime = RuntimeStore.Observe(config) };
                 case "doctor":
                     var report = await LauncherDoctor.RunAsync(configPath, request.OnlineCheck, cancellationToken, agentContext: true);
                     return new ManagedAgentResponse { CorrelationId = request.CorrelationId, Success = report.Healthy, DoctorReport = report, AgentVersion = AgentVersion() };

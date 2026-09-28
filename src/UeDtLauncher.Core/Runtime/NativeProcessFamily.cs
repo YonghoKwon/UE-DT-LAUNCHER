@@ -11,6 +11,15 @@ public sealed record RuntimeFamilyResult(int RootPid, int RootExitCode, int Reap
 /// <summary>Dedicated runtime-host only. Never mix this Linux wait loop with managed child-process APIs.</summary>
 internal static class NativeProcessFamily
 {
+    internal static void PrepareHost()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        if (!OperatingSystem.IsLinux() || RuntimeInformation.ProcessArchitecture != Architecture.X64) throw new PlatformNotSupportedException("Linux runtime supervision requires x64.");
+        if (prctl(36, 1, 0, 0, 0) != 0) ThrowUnix("Enable child subreaper");
+        int enabled = 0;
+        if (prctl_get(37, ref enabled, 0, 0, 0) != 0 || enabled != 1) throw new PlatformNotSupportedException("Child subreaper capability is unavailable.");
+        if (getsid(0) != getpid() && setsid() < 0) ThrowUnix("Detach runtime session");
+    }
     internal static RuntimeFamilyResult Run(RuntimeHostRequest request, Action<int> started)
     {
         if (!Path.IsPathFullyQualified(request.Executable) || !File.Exists(request.Executable) || !Path.IsPathFullyQualified(request.WorkingDirectory) ||
@@ -73,11 +82,7 @@ internal static class NativeProcessFamily
 
     private static RuntimeFamilyResult RunLinux(RuntimeHostRequest request, Action<int> started)
     {
-        if (RuntimeInformation.ProcessArchitecture != Architecture.X64) throw new PlatformNotSupportedException("Linux runtime supervision requires x64.");
-        if (prctl(36, 1, 0, 0, 0) != 0) ThrowUnix("Enable child subreaper");
-        int enabled = 0;
-        if (prctl_get(37, ref enabled, 0, 0, 0) != 0 || enabled != 1) throw new PlatformNotSupportedException("Child subreaper capability is unavailable.");
-        if (getsid(0) != getpid() && setsid() < 0) ThrowUnix("Detach runtime session");
+        PrepareHost();
         var previous = Directory.GetCurrentDirectory();
         using var argv = new NativeStrings(new[] { request.Executable }.Concat(request.Arguments));
         using var environment = new NativeStrings(Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>().Select(e => e.Key + "=" + e.Value));

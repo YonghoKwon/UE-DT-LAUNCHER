@@ -10,7 +10,7 @@ public static class Program
 {
     private static readonly string[] KnownSubcommands =
     {
-        "run", "service", "rollback", "generate-manifest", "update-catalog", "release-metadata", "import-install",
+        "run", "service", "rollback", "runtime", "generate-manifest", "update-catalog", "release-metadata", "import-install",
         "list-releases", "generate-nginx-acl", "sign-manifest", "generate-signing-key", "sample-config", "publish-release", "doctor", "diagnostics", "agent", "credential"
     };
 
@@ -18,6 +18,7 @@ public static class Program
     public static int Main(string[] args)
     {
         if (args.SequenceEqual(new[] { "runtime-host", "--capability-probe" })) return RuntimeHost.RunProbe();
+        if (args.SequenceEqual(new[] { "runtime-host" })) return RuntimeHost.RunSessionAsync().GetAwaiter().GetResult();
         CrashReporter.Install(Path.Combine(AppContext.BaseDirectory, "logs"));
         if (args.Length == 1 && args[0].Equals("--version", StringComparison.OrdinalIgnoreCase))
         {
@@ -142,6 +143,7 @@ public static class Program
                 "release-metadata" => await GenerateSidecarAsync(args.Skip(1).ToArray()),
                 "import-install" => await ImportInstallAsync(args.Skip(1).ToArray()),
                 "run" => await RunLauncherAsync(args.Skip(1).ToArray()),
+                "runtime" => await RunRuntimeCommandAsync(args.Skip(1).ToArray()),
                 "service" => await RunServiceAsync(args.Skip(1).ToArray()),
                 "rollback" => await RollbackAsync(args.Skip(1).ToArray()),
                 "generate-manifest" => await GenerateManifestAsync(args.Skip(1).ToArray()),
@@ -192,6 +194,30 @@ public static class Program
         return 0;
     }
 
+    private static async Task<int> RunRuntimeCommandAsync(string[] args)
+    {
+        var action = args.FirstOrDefault() ?? "inspect";
+        if (action is not ("inspect" or "recover")) throw new ArgumentException("runtime supports inspect or recover.");
+        var config = await LauncherPaths.LoadResolvedAsync(Required(args, "--config"));
+        if (!string.IsNullOrWhiteSpace(config.DistributionServerUrl))
+        {
+            var version = Get(args, "--version") ?? (config.VersionPolicy == "exact" ? config.RequestedVersion : null)
+                ?? throw new ArgumentException("Runtime inspection/recovery requires an exact --version.");
+            VersionedReleasePaths.Bind(config, new(config.ProjectId!, config.Environment, config.Channel, config.TargetPlatform, version));
+        }
+        var confirm = Has(args, "--confirm-stopped");
+        if (action == "recover" && confirm == Has(args, "--dry-run")) throw new ArgumentException("Choose --dry-run or explicit --confirm-stopped after closing every application process.");
+        RuntimeObservation observation;
+        if (config.IsManagedDeployment)
+        {
+            var response = await new ManagedAgentClient().SendRuntimeAsync("runtime-" + action, config, confirm: confirm);
+            if (!response.Success || response.Runtime is null) throw new InvalidOperationException(response.Message);
+            observation = response.Runtime;
+        }
+        else observation = action == "recover" ? RuntimeStore.Recover(config, RuntimeIdentities.Current(), confirm) : RuntimeStore.Observe(config);
+        Console.WriteLine(JsonSerializer.Serialize(observation, JsonFiles.Options)); return 0;
+    }
+
     private static async Task<int> ImportInstallAsync(string[] args)
     {
         var plan = await LegacyInstallImport.RunAsync(Required(args, "--config"), Required(args, "--destination-root"), Has(args, "--apply"));
@@ -213,9 +239,11 @@ public static class Program
             ReleaseSelection? selection = null;
             if (!string.IsNullOrWhiteSpace(config.DistributionServerUrl))
             {
-                using var http = SecureHttpClientFactory.Create(config);
-                await CatalogResolver.ResolveAsync(config, http);
-                selection = config.SelectedRelease;
+                var catalogResponse = await new ManagedAgentClient().SendStreamingAsync("catalog", config.ProjectId, _ => { });
+                if (!catalogResponse.Success || catalogResponse.Catalog is null) throw new InvalidOperationException("업데이트 서비스에서 배포 목록을 가져오지 못했습니다.");
+                var release = CatalogResolver.SelectRelease(catalogResponse.Catalog, config);
+                selection = new ReleaseSelection(config.ProjectId!, release.Environment, release.Channel, release.Platform, release.Version);
+                VersionedReleasePaths.Bind(config, selection);
             }
             var managedResponse = await new ManagedAgentClient().SendStreamingAsync(repair ? "repair" : "update", config.ProjectId,
                 progress => Console.WriteLine($"[{progress.Stage}] {progress.Message}"), selection: selection);

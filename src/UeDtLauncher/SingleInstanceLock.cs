@@ -25,7 +25,7 @@ public sealed class SingleInstanceLock : IDisposable
         {
             var directory = Path.GetDirectoryName(Path.GetFullPath(lockPath));
             if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
-            var stream = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, bufferSize: 1, FileOptions.DeleteOnClose);
+            var stream = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, bufferSize: 1, FileOptions.None);
             acquired = new SingleInstanceLock(stream);
             return true;
         }

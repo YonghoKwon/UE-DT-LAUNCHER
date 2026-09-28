@@ -21,3 +21,11 @@
 - 단위 검사 5개 통과. publish Windows 실제 3개 case(direct, 부모 선종료/자식 유지, host crash 후 자식 생존) 통과: `publish/safety/proof-win-01`.
 - publish WSL 실제 4개 case(위 3개 + double-fork/setsid 손자 유지) 통과: `/tmp/uedt-runtime-proof-a_c5rcvo`.
 - 임의 외부 broker/WMI/D-Bus/systemd spawn은 보장 범위 밖이다. 이 결과는 실행 수명 primitive 증거이며 Agent 등록/설치 변경 차단 완료가 아니다.
+
+## 3. Agent 실행 등록
+
+- OS peer PID/owner/creation identity를 사용하고 설치·시도·token hash·동일 runtime-host를 결속했다. Windows enabled administrator 그룹은 deny-only를 제외하고 검사한다. Linux는 native SO_PEERCRED를 사용한다.
+- 관리형 CLI의 Catalog 선택을 Agent로 이동했다. GUI/CLI가 PID를 보호 상태에 직접 쓰지 않으며 티켓은 private stdin pipe로 전달한다.
+- RuntimeStore/기존 IPC 관련 Windows 10개, WSL runtime 관련 8개 통과. publish console Agent 등록 시험은 Windows `uedt-broker-proof-m6xd8zgq`, Linux `/tmp/uedt-broker-proof-kt4jq5aq`에서 통과.
+- 같은 사용자라도 Python peer는 host 등록/완료를 위조할 수 없었고, 실행 중 두 번째 launch를 거부했으며 정상 후손 종료 후 Quiescent로 전환했다.
+- Windows LocalService 실제 계정과 전체 변경 경로 연결은 아직 검증되지 않았다. 변경 차단·구형 클라이언트 gate는 다음 단계이다.

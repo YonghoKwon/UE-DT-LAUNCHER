@@ -13,9 +13,10 @@ public static class ManagedAgentProtocol
     public const int MaxFrameBytes = 1024 * 1024;
     public const string DefaultWindowsPipeName = "UeDtLauncher.Agent.v1";
     public const string DefaultLinuxSocketPath = "/run/ue-dt-launcher/agent-v1.sock";
+    public const string RuntimeCapability = "runtime-supervision-v1";
 
     public static readonly IReadOnlySet<string> AllowedCommands = new HashSet<string>(
-        ["status", "catalog", "check", "update", "repair", "rollback", "service-run", "diagnostics", "project-asset", "doctor"],
+        ["status", "catalog", "check", "update", "repair", "rollback", "service-run", "diagnostics", "project-asset", "doctor", "launch-begin", "launch-attach", "launch-started", "launch-complete", "runtime-inspect", "runtime-recover"],
         StringComparer.OrdinalIgnoreCase);
 
     public static string ResolveEndpoint()
@@ -48,6 +49,10 @@ public sealed class ManagedAgentRequest
     public ReleaseSelection? Selection { get; set; }
     public string? AssetKind { get; set; }
     public bool OnlineCheck { get; set; }
+    public List<string> ClientCapabilities { get; set; } = [];
+    public RuntimeLaunchTicket? RuntimeTicket { get; set; }
+    public int? PayloadPid { get; set; }
+    public bool ConfirmStopped { get; set; }
 }
 
 public sealed class ManagedAgentResponse
@@ -66,6 +71,10 @@ public sealed class ManagedAgentResponse
     public DistributionCatalog? Catalog { get; set; }
     public ManagedAssetChunk? AssetChunk { get; set; }
     public DoctorReport? DoctorReport { get; set; }
+    public List<string> AgentCapabilities { get; set; } = [];
+    public RuntimeLaunchTicket? RuntimeTicket { get; set; }
+    public RuntimeHostRequest? RuntimeLaunch { get; set; }
+    public RuntimeObservation? Runtime { get; set; }
 }
 
 public sealed record ManagedAssetChunk(long Offset, long TotalBytes, string Sha256, string Extension, byte[] Data);
@@ -297,6 +306,19 @@ public sealed class ManagedAgentClient(string? endpoint = null)
 {
     private readonly string _endpoint = endpoint ?? ManagedAgentProtocol.ResolveEndpoint();
 
+    public async Task<ManagedAgentResponse> SendRuntimeAsync(string command, LauncherConfig config, RuntimeLaunchTicket? ticket = null, int? payloadPid = null, bool confirm = false, CancellationToken cancellationToken = default)
+    {
+        var request = new ManagedAgentRequest { Command = command, ProjectId = config.ProjectId, Selection = config.SelectedRelease,
+            ClientCapabilities = [ManagedAgentProtocol.RuntimeCapability], RuntimeTicket = ticket, PayloadPid = payloadPid, ConfirmStopped = confirm };
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken); timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        await using var stream = await ConnectAsync(timeout.Token);
+        await ManagedAgentFrameCodec.WriteAsync(stream, request, timeout.Token);
+        var response = await ManagedAgentFrameCodec.ReadAsync<ManagedAgentResponse>(stream, timeout.Token);
+        if (response.ProtocolVersion != 1 || response.CorrelationId != request.CorrelationId) throw new InvalidDataException("Runtime IPC response mismatch.");
+        if (!response.AgentCapabilities.Contains(ManagedAgentProtocol.RuntimeCapability)) throw new InvalidOperationException("Update service upgrade required for supervised runtime.");
+        return response;
+    }
+
     public async Task<DoctorReport> DoctorAsync(bool online, CancellationToken cancellationToken = default)
     {
         var request = new ManagedAgentRequest { Command = "doctor", OnlineCheck = online };
@@ -325,7 +347,7 @@ public sealed class ManagedAgentClient(string? endpoint = null)
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default)
     {
-        var request = new ManagedAgentRequest { Command = command, ProjectId = projectId };
+        var request = new ManagedAgentRequest { Command = command, ProjectId = projectId, ClientCapabilities = [ManagedAgentProtocol.RuntimeCapability] };
         var validationError = ManagedAgentProtocol.Validate(request);
         if (validationError is not null) throw new InvalidOperationException(validationError);
 
@@ -354,6 +376,7 @@ public sealed class ManagedAgentClient(string? endpoint = null)
             ProjectId = projectId,
             StreamProgress = true,
             Selection = selection
+            , ClientCapabilities = [ManagedAgentProtocol.RuntimeCapability]
         };
         var validationError = ManagedAgentProtocol.Validate(request);
         if (validationError is not null) throw new InvalidOperationException(validationError);
@@ -415,15 +438,6 @@ public static class ManagedAppLauncher
         LauncherEngine.ValidateManifest(manifest, config);
         var entryPoint = SafePath.ResolveInsideChecked(config.InstallDir, manifest.EntryPoint);
         if (!File.Exists(entryPoint)) throw new FileNotFoundException("Managed application entry point was not found.", entryPoint);
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = entryPoint,
-            WorkingDirectory = Path.GetDirectoryName(entryPoint) ?? config.InstallDir,
-            UseShellExecute = false
-        };
-        foreach (var argument in config.LaunchArguments ?? Array.Empty<string>()) startInfo.ArgumentList.Add(argument);
-        var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Managed application process did not start.");
-        await JsonFiles.WriteAsync(config.AppPidPath, new AppPidInfo { Pid = process.Id, EntryPoint = entryPoint }, cancellationToken);
-        return process;
+        return await RuntimeLauncher.LaunchAsync(config, cancellationToken);
     }
 }
