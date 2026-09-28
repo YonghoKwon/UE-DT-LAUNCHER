@@ -19,3 +19,10 @@
 ## 남은 수용
 
 실제 GUI 적용 직전 승인과 사용자 협업 OS 변경이 필요하다. 실제 내레이터 음성은 사용자 선택으로 후속 보류한다. 단계별 결과를 추가하며 코드·자동화·GUI·실제 OS 결과를 서로 대신하지 않는다.
+
+## 3. 접근성 표시 상태
+
+- 알림 컨트롤을 재사용하고 단계/완료/실패 의미가 바뀔 때만 Text를 바꾼다. 오류 제목을 먼저 확정하며 byte tick은 같은 알림을 반복하지 않는다. 기본 Avalonia peer 경로를 사용한다.
+- 1100 DIP 경계를 실제로 넘는 검색/포커스 회귀와 peer 이름 이벤트/재구성 보존 시험 통과. 관련 화면 테스트 27개, Windows 전체 437개 통과, Release 경고/오류 0.
+- 열린 dialog 고대비 갱신, 안전한 focus fallback, 도움말 ID, 작업 상세 영역의 제한된 스크롤, 비민감 UiDisplay 로컬 진단 추가.
+- 사용자 설정 변경 후 baseline-01 실제 일반 GUI에서 screenPixels 1920×1080, workingPixels 1920×1032, RenderScaling=1, clientDip=1120×740, textScale=1, highContrast=false 관측. v1만 공개된 미설치 화면 정상. 설치 적용 승인 대기.

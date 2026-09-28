@@ -136,8 +136,34 @@ public class EnterpriseLayoutTests
         {
             var box=window.GetVisualDescendants().OfType<TextBox>().Single(c=>AutomationProperties.GetAutomationId(c)=="project-search");
             box.Text="디지털";box.Focus();box.CaretIndex=2;
-            window.Width=1200;Dispatcher.UIThread.RunJobs();
-            Assert.Equal("디지털",box.Text);Assert.True(box.IsFocused);Assert.Equal(2,box.CaretIndex);
+            window.Width=1000;Dispatcher.UIThread.RunJobs();
+            Assert.Equal("status-check",AutomationProperties.GetAutomationId((Control)window.FocusManager!.GetFocusedElement()!));
+            window.Width=1280;Dispatcher.UIThread.RunJobs();
+            var restored=window.GetVisualDescendants().OfType<TextBox>().Single(c=>AutomationProperties.GetAutomationId(c)=="project-search");
+            Assert.Equal("디지털",restored.Text);
+        }
+        finally {window.Close();}
+    }
+    [AvaloniaFact]
+    public void AnnouncementRetainsPeerAndDoesNotRepeatByteTicks()
+    {
+        var window=Create(true);window.Show();window.Width=1280;Dispatcher.UIThread.RunJobs();
+        try
+        {
+            var flags=System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Instance;
+            var model=(LauncherOperationPresentation)typeof(MainWindow).GetField("_presentation",flags)!.GetValue(window)!;
+            var refresh=typeof(MainWindow).GetMethod("RefreshPresentation",flags)!;
+            var announcer=window.GetLogicalDescendants().OfType<TextBlock>().Single(c=>AutomationProperties.GetAutomationId(c)=="operation-announcement");
+            var peer=new Avalonia.Automation.Peers.TextBlockAutomationPeer(announcer);var changes=0;
+            peer.PropertyChanged+=(_,_)=>changes++;
+            model.Begin(LauncherUiOperation.Update);model.Stage("Download");refresh.Invoke(window,null);var before=changes;
+            for(var i=0;i<10;i++){model.Title="download "+i;model.Percent=i;refresh.Invoke(window,null);}
+            Assert.Equal(before,changes);
+            model.ErrorCode="storage-failed";model.Title="새 오류 안내";refresh.Invoke(window,null);
+            Assert.Equal("새 오류 안내",peer.GetName());Assert.True(changes>before);
+            window.Width=1000;Dispatcher.UIThread.RunJobs();
+            Assert.Same(announcer,window.GetLogicalDescendants().OfType<TextBlock>().Single(c=>AutomationProperties.GetAutomationId(c)=="operation-announcement"));
+            Assert.Equal("새 오류 안내",announcer.Text);
         }
         finally {window.Close();}
     }

@@ -11,6 +11,19 @@ using Avalonia.VisualTree;
 namespace UeDtLauncher.Gui;
 public sealed partial class MainWindow
 {
+    private readonly List<Window> _openDialogs=[];
+    private void RefreshOpenDialogs()
+    {
+        foreach(var dialog in _openDialogs)
+        {
+            dialog.Background=PageBrush;
+            dialog.RequestedThemeVariant=RequestedThemeVariant;
+            dialog.Classes.Set("high-contrast",HighContrast);
+            foreach(var text in dialog.GetVisualDescendants().OfType<TextBlock>())text.Foreground=Fg();
+            foreach(var button in dialog.GetVisualDescendants().OfType<Button>())
+            {button.Foreground=HighContrast?Brushes.White:Fg();button.Background=HighContrast?Brushes.Black:SurfaceBrush;}
+        }
+    }
     private Window AccessibleDialog(string title,Control body,Button cancel,params Button[] actions)
     {
         var origin=FocusManager?.GetFocusedElement() as Control;
@@ -21,6 +34,7 @@ public sealed partial class MainWindow
         var dialog=new Window {Title=title,Width=Math.Min(640,maxWidth),Height=Math.Min(540,maxHeight),MinWidth=Math.Min(360,maxWidth),MinHeight=Math.Min(240,maxHeight),
             WindowStartupLocation=WindowStartupLocation.CenterOwner,Background=PageBrush,RequestedThemeVariant=RequestedThemeVariant};
         if(HighContrast)dialog.Classes.Add("high-contrast");
+        _openDialogs.Add(dialog);
         cancel.IsCancel=true; cancel.IsDefault=false; foreach(var button in actions)button.IsDefault=false;
         var root=new Grid {RowDefinitions=new("Auto,*,Auto"),RowSpacing=16,Margin=new Thickness(20)};
         KeyboardNavigation.SetTabNavigation(root,KeyboardNavigationMode.Cycle);
@@ -31,11 +45,7 @@ public sealed partial class MainWindow
         foreach(var button in new[]{cancel}.Concat(actions)){button.Margin=new Thickness(8,4,0,0);footer.Children.Add(button);}
         root.Children.Add(AtRow(footer,2));dialog.Content=root;
         dialog.Opened+=(_,_)=>Dispatcher.UIThread.Post(()=>cancel.Focus(NavigationMethod.Tab));
-        dialog.Closed+=(_,_)=>Dispatcher.UIThread.Post(()=>
-        {
-            var target=this.GetVisualDescendants().OfType<Control>().FirstOrDefault(c=>AutomationProperties.GetAutomationId(c)==originId&&c.IsEnabled&&c.IsEffectivelyVisible);
-            target?.Focus(NavigationMethod.Tab);
-        });
+        dialog.Closed+=(_,_)=>{_openDialogs.Remove(dialog);Dispatcher.UIThread.Post(()=>FindFocusTarget(originId)?.Focus(NavigationMethod.Tab));};
         return dialog;
     }
     private async Task<bool> ShowConfirmationAsync(string title,Control body,string actionLabel)
@@ -61,7 +71,7 @@ public sealed partial class MainWindow
             var index=Math.Clamp(scale.SelectedIndex,0,3);
             var value=new LauncherUiPreferences(LauncherUiPreferences.SupportedScales[index],contrast.IsChecked==true);
             if(sender is Button source)source.IsEnabled=false;
-            try {await value.SaveAsync();_preferences=value;dialog!.Close();Build();}
+            try {await value.SaveAsync();_preferences=value;dialog!.Close();Build();RefreshOpenDialogs();RecordDisplayDiagnostic();}
             catch(Exception ex){MarkError(ex,"화면 설정 저장 실패");}
             finally {if(sender is Button sourceButton)sourceButton.IsEnabled=true;}
         },40),"dialog-confirm","화면 설정 적용");
@@ -82,6 +92,6 @@ public sealed partial class MainWindow
         "filter-환경"=>30,"filter-채널"=>31,"filter-버전 정책"=>32,"filter-exact-version" or "filter-요청 버전"=>33,
         "primary-action"=>40,"update"=>41,"status-check"=>42,"maintenance"=>50,"repair"=>51,"rollback"=>52,
         "cache-clear"=>53,"backup-cleanup"=>54,"open-folder"=>55,"export-logs"=>56,"details-tabs"=>60,
-        "operation-log"=>80,"settings"=>90,_=>70
+        "release-help"=>50,"retry-operation"=>43,"action-details"=>44,"operation-log"=>80,"settings"=>90,_=>70
     };
 }

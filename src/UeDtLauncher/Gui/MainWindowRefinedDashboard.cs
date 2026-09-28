@@ -84,7 +84,7 @@ public sealed partial class MainWindow : Window
         Build();
         if (startServices && PlatformSettings is not null)
         {
-            _colorValuesChanged = (_, _) => Dispatcher.UIThread.Post(Build);
+            _colorValuesChanged = (_, _) => Dispatcher.UIThread.Post(()=>{Build();RefreshOpenDialogs();RecordDisplayDiagnostic();});
             PlatformSettings.ColorValuesChanged += _colorValuesChanged;
         }
         _agentStatusTimer.Tick += async (_, _) => await RefreshAgentStatusAsync();
@@ -97,9 +97,10 @@ public sealed partial class MainWindow : Window
             _projectVisualCache.Clear();
             _brandLogo?.Dispose();
         };
-        if (startServices) Opened += async (_, _) => await InitializeStartupAsync();
+        if (startServices) Opened += async (_, _) => {RecordDisplayDiagnostic();await InitializeStartupAsync();};
         SizeChanged += (_, args) =>
         {
+            UpdateActionDetailsLimit(); RecordDisplayDiagnostic();
             var nextBucket = GeneralLayoutBucket(args.NewSize.Width);
             if (_windowMetricsInitialized && nextBucket != _layoutBucket)
             {
@@ -1375,6 +1376,7 @@ public sealed partial class MainWindow : Window
     private void MarkError(Exception ex, string status = "작업 실패", bool showDialog = true)
     {
         var uiError = LauncherUiError.From(ex);
+        _presentation.Title=status;
         _presentation.ErrorCode=uiError.Code; _presentation.SupportId=uiError.SupportId;
         var runtimeBlocked = ex.GetBaseException() as RuntimeBlockedException;
         _installState = runtimeBlocked is null ? "오류" : runtimeBlocked.Observation.State == RuntimeState.Running ? "실행 중" : "실행 상태 확인 필요";

@@ -12,6 +12,15 @@ public sealed class LauncherOperationPresentation
     public string? ErrorCode { get; set; }
     public string? SupportId { get; set; }
     public string CurrentStage { get; private set; } = "확인";
+    public string Announcement => ErrorCode is not null || Percent == 100 || Kind == LauncherUiOperation.None
+        ? Title : CurrentStage switch
+        {
+            "파일 준비" => "필요한 파일을 준비하고 있습니다.",
+            "적용" => "프로그램 파일을 적용하고 있습니다.",
+            "복구" => "파일을 복구하고 있습니다.",
+            "실행" => "프로그램을 실행하고 있습니다.",
+            _ => "배포와 설치 상태를 확인하고 있습니다."
+        };
     public ObservableCollection<string> Logs { get; } = [];
     public LauncherRetryContext? Retry { get; set; }
     public static LauncherUiOperation RetryOperation(LauncherRetryContext? failed, LauncherRetryContext current) =>

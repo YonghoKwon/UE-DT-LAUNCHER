@@ -25,7 +25,8 @@ public sealed partial class MainWindow
     private Bitmap? _brandLogo;
     private bool _building;
     private string? _configDraft;
-    private string _lastAnnouncement = "";
+    private ScrollViewer? _actionDetails;
+    private string? _lastDisplayDiagnostic;
     private bool _maintenanceExpanded;
     private bool _helpExpanded;
     private int _detailsTabIndex;
@@ -117,6 +118,7 @@ public sealed partial class MainWindow
                 else
                 {
                     var help=new Expander {Header="릴리스 설명 및 도움말",IsExpanded=_helpExpanded,Content=new StackPanel {Spacing=12,Children={Txt(_releaseNotes,14,false),Muted("프로그램이 실행 중이면 정상 종료 후 다시 확인해 주세요. 창을 닫아도 실행 중인 프로그램은 종료되지 않습니다.",14)}}};
+                    Identify(help,"release-help","릴리스 설명 및 도움말");
                     help.PropertyChanged+=(_,e)=>{if(e.Property==Expander.IsExpandedProperty)_helpExpanded=help.IsExpanded;};
                     content.Children.Add(EnterpriseCard(help));
                 }
@@ -125,13 +127,12 @@ public sealed partial class MainWindow
             work.Children.Add(At(_enterpriseScroll,sidebar?1:0)); root.Children.Add(AtRow(work,1));
             root.Children.Add(AtRow(EnterpriseActionBar(),2));
             Content=root;
-            SetBusy(_running); RefreshPresentation();
+            UpdateActionDetailsLimit(); SetBusy(_running); RefreshPresentation();
             Dispatcher.UIThread.Post(()=>
             {
                 if(_enterpriseScroll is not null)_enterpriseScroll.Offset=offset;
                 if(focusId is null)return;
-                var control=this.GetVisualDescendants().OfType<Control>().FirstOrDefault(c=>AutomationProperties.GetAutomationId(c)==focusId && c.IsEffectivelyVisible && c.IsEnabled);
-                control ??= this.GetVisualDescendants().OfType<Control>().FirstOrDefault(c=>AutomationProperties.GetAutomationId(c)=="status-check" && c.IsEnabled);
+                var control=FindFocusTarget(focusId);
                 if(control is TextBox box) {box.CaretIndex=Math.Min(caret,box.Text?.Length??0);box.SelectionStart=Math.Min(selectionStart,box.Text?.Length??0);box.SelectionEnd=Math.Min(selectionEnd,box.Text?.Length??0);}
                 control?.Focus(NavigationMethod.Tab);
             });
@@ -237,12 +238,40 @@ public sealed partial class MainWindow
         _statusText=Identify(Txt(_presentation.Title,14,true),"operation-status","작업 상태");
         _percentText=Muted("",12);_stageLabel=Muted("",12);
         _progress=Identify(new ProgressBar {Minimum=0,Maximum=100,Height=6},"operation-progress","작업 진행률");
-        _announcer=Identify(new TextBlock {Height=1,Opacity=0,IsHitTestVisible=false},"operation-announcement","작업 상태 알림");
+        if(_announcer?.Parent is Panel oldParent)oldParent.Children.Remove(_announcer);
+        _announcer ??= Identify(new TextBlock {Height=1,Opacity=0,IsHitTestVisible=false},"operation-announcement","작업 상태 알림");
         AutomationProperties.SetLiveSetting(_announcer,AutomationLiveSetting.Polite);
-        panel.Children.Add(_statusText);var detail=new Grid {ColumnDefinitions=new("*,Auto")};detail.Children.Add(_stageLabel);detail.Children.Add(At(_percentText,1));panel.Children.Add(detail);panel.Children.Add(_progress);panel.Children.Add(_announcer);
-        if(CurrentLayoutWidth()<800 && _serviceLabel is not null)panel.Children.Add(_serviceLabel);
-        if(_presentation.SupportId is not null)panel.Children.Add(Muted("지원 ID: "+_presentation.SupportId,12));
+        _statusText.MaxLines=2;
+        panel.Children.Add(_statusText);var detailsPanel=new StackPanel {Spacing=8};var detail=new Grid {ColumnDefinitions=new("*,Auto")};detail.Children.Add(_stageLabel);detail.Children.Add(At(_percentText,1));detailsPanel.Children.Add(detail);detailsPanel.Children.Add(_progress);panel.Children.Add(_announcer);
+        if(CurrentLayoutWidth()<800 && _serviceLabel is not null)detailsPanel.Children.Add(_serviceLabel);
+        if(_presentation.SupportId is not null)detailsPanel.Children.Add(Muted("지원 ID: "+_presentation.SupportId,12));
+        _actionDetails=Identify(new ScrollViewer {Content=detailsPanel,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled},"action-details","작업 상세 안내");
+        panel.Children.Add(_actionDetails);
         return EnterpriseCard(panel,12);
+    }
+    private void UpdateActionDetailsLimit()
+    {
+        if(_actionDetails is not null)_actionDetails.MaxHeight=Math.Max(48,Math.Min(140,ClientSize.Height*0.18));
+    }
+    private Control? FindFocusTarget(string? id)
+    {
+        var controls=this.GetVisualDescendants().OfType<Control>().Where(c=>c.IsEffectivelyVisible&&c.IsEnabled&&c.Focusable).ToList();
+        foreach(var candidate in new[]{id,"project-list","compact-project","status-check","settings"})
+        {
+            if(candidate is null)continue;
+            var found=controls.FirstOrDefault(c=>AutomationProperties.GetAutomationId(c)==candidate);
+            if(found is not null)return found;
+        }
+        return null;
+    }
+    private void RecordDisplayDiagnostic()
+    {
+        var screen=Screens.ScreenFromWindow(this)??Screens.Primary;
+        var value=System.Text.Json.JsonSerializer.Serialize(new {profile=_config.ClientProfile,screenPixels=screen?.Bounds.ToString(),
+            workingPixels=screen?.WorkingArea.ToString(),renderScaling=RenderScaling,clientDip=ClientSize.ToString(),
+            textScale=_preferences.TextScale,highContrast=HighContrast});
+        if(value==_lastDisplayDiagnostic)return;
+        _lastDisplayDiagnostic=value;_fileLogger?.Log("UiDisplay",value);
     }
     private void SetStatus(string message)
     {
@@ -254,7 +283,6 @@ public sealed partial class MainWindow
         if(_percentText is not null)_percentText.Text=_presentation.Percent is { } p?$"{p:0}%":_running?"진행 중":"대기";
         if(_progress is not null){_progress.IsIndeterminate=_presentation.Percent is null && _running;_progress.Value=_presentation.Percent??0;}
         if(_stageLabel is not null)_stageLabel.Text="현재 단계 · "+_presentation.CurrentStage;
-        var announcement=_presentation.CurrentStage+":"+(_presentation.Percent==100?_presentation.Title:_presentation.ErrorCode);
-        if(_announcer is not null&&announcement!=_lastAnnouncement){_lastAnnouncement=announcement;_announcer.Text=_presentation.Title;}
+        if(_announcer is not null && _announcer.Text!=_presentation.Announcement)_announcer.Text=_presentation.Announcement;
     }
 }
