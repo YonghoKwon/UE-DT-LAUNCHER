@@ -1,6 +1,6 @@
 # 개선 진행 현황과 보완 필요 사항
 
-점검: 2026-09-28 / `codex/managed-gui-safety-validation`, 기준 `28c4019` 이후 부분 커밋과 [관리형 GUI 검증](docs/reference/managed-gui-safety-validation.md)을 반영했습니다. 현재 구현·이번 검증·회사 미검증을 구분합니다.
+점검: 2026-09-28 / `codex/managed-gui-safety-validation`, 기준 `28c4019` 이후 부분 커밋과 [관리형 GUI 검증](docs/reference/archive/validation/managed-gui-safety-validation.md)을 반영했습니다. 현재 구현·누적 검증·회사 미검증을 구분합니다. 이번 문서 정리는 기능 기준 `0d12957`의 증거를 재분류했으며 신규 실행 시험이나 진행률 상향은 없습니다.
 
 P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선. 우선순위는 제안이며 일정·수치 목표는 미정입니다. 미검증과 미구현을 구분합니다.
 
@@ -13,6 +13,19 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | 4개 | 6개 | 18개 | 28개 |
 
 완료를 제외하면 열린 항목은 **24개**입니다. 각 분야 표에서 `진행률`과 `상태`를 먼저 보면 됩니다.
+
+### 현재 진행 상태 요약
+
+| 구분 | 확인된 상태 | 아직 남은 조건 |
+|---|---|---|
+| 기본 배포 흐름 | ZIP+외부 JSON → 검사/승인 → 권한 확인 → 설치/실행·repair 구현, 합성 E2E 통과 | 실제 회사 UE·RHEL·규모별 인수 |
+| 성능 | PERF-01/02/04 재현 범위 완료 | PERF-03의 10개 연결 지연 기준 미달 유지 |
+| 인증·초기 설정 | USER-05 완료, SEC-03/04 각각 75% | Windows 서비스 계정·WSL proxy/계측 제약·회사 HTTP 위험 수용 |
+| 서명·실행 안전성 | OPS-08 50%, OPS-09 75%; 서명 순서·실행 중 변경 차단·장애 시험 구현 | 실제 인증서/설치본, 회사 계정·UE, 남은 GUI 직접 시험 |
+| GUI 직접 확인 | 일반 설치/실행·창 종료 수명, 개발자 선택/취소·v2 repair·backup rollback 통과 | v1 승인 실행, 실행 중 개발자 변경 차단, 일반 문제 해결 재연결, portable rollback |
+| 운영 인수 | 현재는 제한된 테스트 활용 단계 | MSI/RPM 설치 수명주기·데이터 보존·백업 복원·운영 정책·G1~G6 |
+
+가까운 다음 작업은 **남은 로컬 GUI 확인 → 회사 자료/권한이 필요한 검증 준비 → 데이터/운영 정책 확정**입니다. 새 기능을 한꺼번에 추가하거나 인증서·회사 계정 미준비 항목을 완료로 올리지 않습니다. 검증 문서가 archive로 이동해도 위 근거와 진행률은 바뀌지 않습니다.
 
 ### 퍼센트의 의미
 
@@ -49,7 +62,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | OPS-08 | 공식 preflight·EXE 선서명·MSI payload gate | 계약 11개·개발 MSI 추출/hash 확인 | 실제 회사 서명 인증서 미확인 | 인증서·설치본 서명 검증 대기 | 50% |
 | OPS-09 | 엄격 runtime 기록·서비스 snapshot/barrier·공통 변경 조정기 | Windows/WSL 회귀 각 393개·집계 검사 | 저장 경계 강제 종료 각 36개·health 실패·정확한 서비스 대상·CLI E2E 확인 | 일반 GUI 설치/실행·창 종료 수명 통과. 개발자 선택·v2 복구/rollback 적용 통과. 다른 버전 승인 실행·실행 중 변경 차단·일반 문제 해결 및 회사 UE/계정 검증 대기 | 75% |
 
-근거: [성능 검증 기록](docs/reference/performance-validation.md), [CI 구성](.github/workflows/build.yml), 각 항목의 커밋·미완료 조건. 다른 항목의 기존 기반 기능이나 문서 작성만으로 추가 보완 진척을 자동 가산하지 않았습니다.
+근거: [성능 검증 기록](docs/reference/archive/validation/performance-validation.md), [CI 구성](.github/workflows/build.yml), 각 항목의 커밋·미완료 조건. 다른 항목의 기존 기반 기능이나 문서 작성만으로 추가 보완 진척을 자동 가산하지 않았습니다.
 
 ## 확정 목표에 따른 진행 순서
 
@@ -67,15 +80,15 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 | ID/우선 | 진행률 | 상태 | 현재 근거·영향 | 보완 방향·완료 조건 |
 |---|---:|---|---|---|
-| OPS-01/P0 | 0% | 대기 · 추가 보완 | [기록](docs/reference/distribution-validation.md)은 WSL·테스트 프로그램, 실제 RHEL/UE 미검증 | 실제 회사 TLS/CA·IP·대형 UE Windows/Linux 패키지로 접수→설치→실행→복구 증거 확보 |
+| OPS-01/P0 | 0% | 대기 · 추가 보완 | [기록](docs/reference/archive/validation/distribution-validation.md)은 WSL·테스트 프로그램, 실제 RHEL/UE 미검증 | 실제 회사 TLS/CA·IP·대형 UE Windows/Linux 패키지로 접수→설치→실행→복구 증거 확보 |
 | OPS-02/P0 | 0% | 대기 · 추가 보완 | MSI/RPM 구성은 있으나 이번 통합의 실기기 수명주기 미검증 | 설치/upgrade/repair/uninstall, 서비스 자동 시작·credential ACL·데이터 보존, 코드서명 gate 검증 |
 | OPS-03/P1 | 0% | 대기 · 추가 보완 | DistributionHttp의 track.Last()가 latest. 과거판 승인 시 역행 가능 | 승인과 운영 승격 분리·변경 이력. 과거판 등록 시 latest 유지 및 명시적 변경 테스트 |
 | OPS-04/P1 | 0% | 대기 · 추가 보완 | StorageMaintenance는 scratch만 정리, 공개판·snapshot 누적 | 보관 기간/용량·참조 보호·dry-run·감사 정리. 사용 중 자료 보존 검증 |
 | OPS-05/P1 | 0% | 대기 · 추가 보완 | 수동 백업·복원, catalog sequence 역행 위험 | 일관된 백업/복원 도구·sequence 보호·복구 훈련. 기존 PC 검증 성공, RPO/RTO 별도 합의 |
 | OPS-06/P1 | 50% | 부분 · 원격 검증 대기 | Linux signed HTTPS E2E가 build.yml에 추가됨. 원격 CI 실행·운영 결과 보관은 미확인 | 실제 PR/배포 CI 성공 확인 및 민감정보 없는 결과 보관 정책 확정 |
 | OPS-07/P1 | 0% | 대기 · 추가 보완 | AgentWorker는 IPC 대기만 하고 service-run은 once=true. CLI는 managed 반복 실행을 거부 | Agent 스케줄러 또는 명시적 외부 스케줄 운영을 확정. 재부팅 후 정기 점검·중복 작업 방지·maintenance window 시험 |
-| OPS-08/P0 | 50% | 부분 · 실제 인증서 대기 | 공식 사전 gate·EXE 선서명·MSI 내장 payload 검증·실행별 WiX intermediate 구현. 계약 11개 및 개발 MSI 추출/hash 비교 통과 | 실제 회사 인증서와 설치된 EXE 서명 검증은 미완료. [기록](docs/reference/deployment-safety-validation.md) |
-| OPS-09/P0 | 75% | 부분 · GUI/현장 검증 대기 | 누락 기록 fail-closed, 단일 서비스 snapshot·시작 barrier·이전/대상 잠금, 위험 migration apply 차단. Windows/WSL 각 393개와 저장 경계 강제 종료·실제 health 실패·대상 분리·CLI E2E 통과 | 실행 직후·문제 해결의 runtime 상태 보완과 미설치 fixture를 추가했다. 일반 GUI 설치/실행·창 종료/재실행·자식 정상 종료는 직접 통과. 개발자 버전 선택/취소·v2 복구·rollback 적용 통과. v1 승인 실행·실행 중 GUI 변경 차단·일반 문제 해결 직접 시험은 남음. portable GUI 버전별 rollback 경로도 별도 보완 필요. 모든 진입점의 모든 상태 조합을 실제 프로세스로 전수 시험한 것은 아님. 회사 UE/계정·원격 CI 미검증. [기록](docs/reference/managed-gui-safety-validation.md) |
+| OPS-08/P0 | 50% | 부분 · 실제 인증서 대기 | 공식 사전 gate·EXE 선서명·MSI 내장 payload 검증·실행별 WiX intermediate 구현. 계약 11개 및 개발 MSI 추출/hash 비교 통과 | 실제 회사 인증서와 설치된 EXE 서명 검증은 미완료. [기록](docs/reference/archive/validation/deployment-safety-validation.md) |
+| OPS-09/P0 | 75% | 부분 · GUI/현장 검증 대기 | 누락 기록 fail-closed, 단일 서비스 snapshot·시작 barrier·이전/대상 잠금, 위험 migration apply 차단. Windows/WSL 각 393개와 저장 경계 강제 종료·실제 health 실패·대상 분리·CLI E2E 통과 | 실행 직후·문제 해결의 runtime 상태 보완과 미설치 fixture를 추가했다. 일반 GUI 설치/실행·창 종료/재실행·자식 정상 종료는 직접 통과. 개발자 버전 선택/취소·v2 복구·rollback 적용 통과. v1 승인 실행·실행 중 GUI 변경 차단·일반 문제 해결 직접 시험은 남음. portable GUI 버전별 rollback 경로도 별도 보완 필요. 모든 진입점의 모든 상태 조합을 실제 프로세스로 전수 시험한 것은 아님. 회사 UE/계정·원격 CI 미검증. [기록](docs/reference/archive/validation/managed-gui-safety-validation.md) |
 
 ## 성능·저장 공간
 
@@ -86,7 +99,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | PERF-03/P1 | 75% | 부분 · 기준 미달 | 부분 완료: 토큰 매 요청 검사, 정책 파싱 재사용, exact 조회, fresh sequence 유지. 30개 연결 p95 833.44→81.23ms·실패32→0 | `10ec1f9`, `d152477`; **10개 연결 혼합 p95 5.43→24.66ms 악화**, 시간 gate 미달. 기본 운영 적용 승인 보류, 혼합 읽기/쓰기 지연 추가 개선 필요 |
 | PERF-04/P2 | 100% | 완료 · 재현 범위 | 재현 환경 완료: 진행/공간 점검, schema 백업, OS 작업 잠금·cleanup 보호·공정 큐. 동시 HTTP 중 4개 ZIP 접수 중앙값 1 worker 5.02초 / 2 workers 2.59초 | `d3f8d68`, `f12a861`, `d152477`; 2 worker 편차·응답 지연도 보고. 기본1 유지, 실환경 자원 기준선 별도 |
 
-상세 조건·반복 횟수·부분 미달 항목은 [성능 검증 기록](docs/reference/performance-validation.md)을 따릅니다. WSL1 nginx의 큰 파일 중단은 직접 API 정상/프록시 경유 실패로 분리 관측했고, 실제 RHEL nginx 대용량 검증은 미완료입니다. 이 제한을 작은 파일 E2E 통과로 대체하지 않습니다.
+상세 조건·반복 횟수·부분 미달 항목은 [성능 검증 기록](docs/reference/archive/validation/performance-validation.md)을 따릅니다. WSL1 nginx의 큰 파일 중단은 직접 API 정상/프록시 경유 실패로 분리 관측했고, 실제 RHEL nginx 대용량 검증은 미완료입니다. 이 제한을 작은 파일 E2E 통과로 대체하지 않습니다.
 
 ## 사용자 관점
 
@@ -96,7 +109,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | USER-02/P1 | 0% | 대기 · 추가 보완 | 서버/Agent/토큰/공개키 초기 설정 단계가 많음 | 관리자 사전 점검·설정 검증, 사용자 오류 코드/조치 안내. 새 PC 최초 실행·비밀정보 미노출 |
 | USER-03/P2 | 0% | 대기 · 추가 보완 | 엔진 취소 토큰과 별개로 일반 UX 취소는 이전 범위에서 제외 | 안전 중단 지점·취소/재개 설계. 다운로드·검증·설치별 중단 후 손상 없음 |
 | USER-04/P2 | 0% | 대기 · 추가 보완 | 오프라인·권한 폐기 후 기설치 실행 최종 정책 미정 | 실행/권한 재확인 규칙 합의. 미설치·기설치·폐기 토큰 수용 테스트 |
-| USER-05/P1 | 100% | 완료 · 설정 보완 범위 | schema 3 생성기·doctor·MSI 예제/RPM 설정, Windows/Linux publish 생성 설정 E2E와 실제 artifact 내용 확인 | `24cc451` 및 최종 검증. MSI/RPM 실제 설치 수명주기는 OPS-02로 유지. [기록](docs/reference/intranet-auth-validation.md) |
+| USER-05/P1 | 100% | 완료 · 설정 보완 범위 | schema 3 생성기·doctor·MSI 예제/RPM 설정, Windows/Linux publish 생성 설정 E2E와 실제 artifact 내용 확인 | `24cc451` 및 최종 검증. MSI/RPM 실제 설치 수명주기는 OPS-02로 유지. [기록](docs/reference/archive/validation/intranet-auth-validation.md) |
 
 ## UI·접근성
 
@@ -113,8 +126,8 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 |---|---:|---|---|---|
 | SEC-01/P1 | 0% | 대기 · 추가 보완 | DistributionTokens 발급·PC 단위 전체 폐기, 만료/개별 관리 없음 | 만료·토큰별 폐기·순환·감사 설계. 비밀 노출 없는 교체/만료/폐기 시험 |
 | SEC-02/P1 | 0% | 대기 · 추가 보완 | loopback nginx 신뢰와 직접 사내 IP 전제 | NAT/추가 proxy의 실제 IP 계약·rate limit 검토. 위조 헤더 차단과 회사 망 경로별 검증 |
-| SEC-03/P0 | 75% | 부분 · Windows 서비스 실행 대기 | `e22a908` 이후 생성 시 ACL/mode/owner 검증. Linux uedt 실제 읽기·nobody 거부 통과 | Windows LocalService 실제 설치 계정 읽기와 기존 credential 이전 현장 확인 남음. [기록](docs/reference/intranet-auth-validation.md) |
-| SEC-04/P0 | 75% | 부분 · 환경 제약 남음 | `babb88e`, `10d4063`: 요청 서명·challenge/nonce·Catalog 결속·Agent 이미지, Windows/Linux E2E·1/10/30 연결 실패 0 | WSL proxy의 간헐 handshake/startup timeout과 메모리 지표 미수집을 보존. 실제 RHEL 대용량·회사 HTTP 위험 수용 별도. [기록](docs/reference/intranet-auth-validation.md) |
+| SEC-03/P0 | 75% | 부분 · Windows 서비스 실행 대기 | `e22a908` 이후 생성 시 ACL/mode/owner 검증. Linux uedt 실제 읽기·nobody 거부 통과 | Windows LocalService 실제 설치 계정 읽기와 기존 credential 이전 현장 확인 남음. [기록](docs/reference/archive/validation/intranet-auth-validation.md) |
+| SEC-04/P0 | 75% | 부분 · 환경 제약 남음 | `babb88e`, `10d4063`: 요청 서명·challenge/nonce·Catalog 결속·Agent 이미지, Windows/Linux E2E·1/10/30 연결 실패 0 | WSL proxy의 간헐 handshake/startup timeout과 메모리 지표 미수집을 보존. 실제 RHEL 대용량·회사 HTTP 위험 수용 별도. [기록](docs/reference/archive/validation/intranet-auth-validation.md) |
 | EXT-01/P2 | 0% | 대기 · 추가 보완 | IAccessPolicyProvider 파일 구현만 존재 | 회사 API 합의 후 timeout/cache TTL/기본 거부. 장애·취소·오래된 응답에서 권한 확대 없음 |
 | DEV-01/P2 | 0% | 대기 · 추가 보완 | Core 링크 컴파일, MainWindow 동작 코드 잔존 | 기능 변경과 분리한 물리 폴더·ViewModel 정리. API/CLI/IPC 회귀 없음 |
 

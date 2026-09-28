@@ -1,6 +1,6 @@
 # 최종 프로젝트 목표 — 회사용 Unreal Engine DT 배포 시스템
 
-갱신: 2026-09-28. **최상위 목표는 확정**됐습니다. 세부 운영 정책·회사 SLA·출시 일정은 아직 미정이며 아래 결정 표에서 별도로 관리합니다.
+갱신: 2026-09-28 / 기능·검증 기준 `0d12957`. **최상위 목표는 확정**됐습니다. 세부 운영 정책·회사 SLA·출시 일정은 아직 미정이며 아래 결정 표에서 별도로 관리합니다.
 
 ## 확정한 최종 목표
 
@@ -11,6 +11,10 @@
 제품은 Linux 배포 서버, Windows 일반/개발자 런처, Windows/Linux 업데이트 서비스와 CLI, 설치본·운영 도구·문서로 구성합니다. UE 빌드 자체를 대신하는 프로그램은 아니며 기본 입력은 **패키징된 ZIP + 외부 release.json**입니다.
 
 현재 사용 방법은 [기능 지도·명령 순서](docs/reference/feature-workflow.md), 현재 구현은 [README](README.md), 작업 목록은 [IMPROVEMENTS](IMPROVEMENTS.md)가 정본입니다.
+
+## 현재 위치
+
+기본 배포 시스템과 실행 안전성은 구현·합성 검증 단계까지 진행했습니다. 일반 GUI 실행/수명, 개발자 선택·취소·v2 복구·같은 설치 backup 복원은 직접 확인했지만, 회사 인수 G1~G6는 아직 완료되지 않았습니다. 현행 가이드는 [운영 문서 색인](docs/reference/README.md), 실제 증거는 [검증 아카이브](docs/reference/archive/README.md), 진행률은 [개선 대장](IMPROVEMENTS.md)에서 각각 관리합니다. 이번 문서 재배치는 기능 추가나 인수 승인으로 간주하지 않습니다.
 
 ## 최종적으로 가능해야 할 사용자 경험
 
@@ -39,7 +43,7 @@ G1~G6의 증거가 확보된 뒤 전사 확대를 승인합니다. 현재 자동
 
 ## 기존 합의 방향
 
-2026-09-28 추가 합의: 사내 HTTP + PC별 요청 서명 모드를 구현한다(SEC-04). 기존 HTTPS/Bearer는 유지하되 HTTP Bearer로 후퇴하지 않는다. HTTP의 도청·실시간 중계 위험은 남으며 G2 운영 수용은 별도이다. 현재 구현/검증 단계는 [별도 기록](docs/reference/intranet-auth-validation.md)을 따른다.
+2026-09-28 추가 합의: 사내 HTTP + PC별 요청 서명 모드를 구현한다(SEC-04). 기존 HTTPS/Bearer는 유지하되 HTTP Bearer로 후퇴하지 않는다. HTTP의 도청·실시간 중계 위험은 남으며 G2 운영 수용은 별도이다. 현재 구현/검증 단계는 [별도 기록](docs/reference/archive/validation/intranet-auth-validation.md)을 따른다.
 
 | 영역 | 목표 | 현재 연결 |
 |---|---|---|
@@ -55,9 +59,9 @@ G1~G6의 증거가 확보된 뒤 전사 확대를 승인합니다. 현재 자동
 
 ## 개발·도입 진행 순서
 
-2차 구현: MSI payload 선서명 gate와 runtime-host/설치 변경 조정기를 추가했다. OPS-08은 실제 인증서 미검증으로 50%, OPS-09는 합성 실행 검증 75%이며 후속 저장 경계 강제 종료·health 실패·서비스 대상 구분은 합성 환경에서 검증했다. 일반 GUI 설치/실행·창 종료 수명은 직접 검증했으며, 개발자 버전 선택/취소·v2 복구·rollback 적용도 통과했다. 다른 버전 승인 실행·실행 중 GUI 변경 차단·일반 문제 해결 추가 시험과 실제 UE/계정 검증은 남는다. [후속 검증](docs/reference/runtime-safety-completion-validation.md)
+2차 구현: MSI payload 선서명 gate와 runtime-host/설치 변경 조정기를 추가했다. OPS-08은 실제 인증서 미검증으로 50%, OPS-09는 합성 실행 검증 75%이며 후속 저장 경계 강제 종료·health 실패·서비스 대상 구분은 합성 환경에서 검증했다. 일반 GUI 설치/실행·창 종료 수명은 직접 검증했으며, 개발자 버전 선택/취소·v2 복구·rollback 적용도 통과했다. 다른 버전 승인 실행·실행 중 GUI 변경 차단·일반 문제 해결 추가 시험과 실제 UE/계정 검증은 남는다. [후속 검증](docs/reference/archive/validation/runtime-safety-completion-validation.md)
 
-관리형 GUI의 실행 후 관측·문제 해결 차단을 추가 보완했다. 일반 GUI의 미설치→실행→창 종료/재실행→자식 정상 종료는 실제 합성 앱으로 통과했다. 일반/개발자 GUI 직접 조작은 자동화나 화면 관측으로 대체하지 않으며, [해당 증거](docs/reference/managed-gui-safety-validation.md)가 확보되기 전 완료로 판단하지 않는다. portable GUI 버전별 rollback도 별도 잔여 조건이다.
+관리형 GUI의 실행 후 관측·문제 해결 차단을 추가 보완했다. 일반 GUI의 미설치→실행→창 종료/재실행→자식 정상 종료는 실제 합성 앱으로 통과했다. 일반/개발자 GUI 직접 조작은 자동화나 화면 관측으로 대체하지 않으며, [해당 증거](docs/reference/archive/validation/managed-gui-safety-validation.md)가 확보되기 전 완료로 판단하지 않는다. portable GUI 버전별 rollback도 별도 잔여 조건이다.
 
 동일 설치를 공유하는 portable→관리형 migration apply는 안전한 소유권 이전 계약이 마련될 때까지 차단한다. 세이브 이전 기능을 완료한 것으로 간주하지 않는다. 자동화/CLI 통과와 GUI 직접 조작·회사 인수는 별도 증거로 관리한다.
 
@@ -93,7 +97,7 @@ G1~G6의 증거가 확보된 뒤 전사 확대를 승인합니다. 현재 자동
 - 서버 동시 연결 1/10/30, 같은 프로젝트·환경·채널·OS의 이전 설치에서 검증 후 복사. 공용 캐시·hard link는 도입하지 않음.
 - 90% 동일 콘텐츠의 네트워크 바이트 90% 이상 절감. 비교 중앙값 10% 이상 악화 시 해당 성능 기준 완료로 표시하지 않음.
 - 자동화뿐 아니라 publish된 Windows GUI/Agent·Linux CLI/Agent·HTTPS 검증 수행. 실제 RHEL/UE와 구분.
-- 현재 PERF-03의 10개 연결 지연 기준은 미달이므로 회사 운영 적용을 승인하지 않음. [결과와 한계](docs/reference/performance-validation.md)
+- 현재 PERF-03의 10개 연결 지연 기준은 미달이므로 회사 운영 적용을 승인하지 않음. [결과와 한계](docs/reference/archive/validation/performance-validation.md)
 
 ## 현재 범위 밖
 

@@ -1,60 +1,44 @@
-# 참고 문서 모음
+# 현재 운영 문서 색인
 
-정리: 2026-09-22. 상시 관리 정본은 루트의 [README](../../README.md), [AGENTS](../../AGENTS.md), [보완 목록](../../IMPROVEMENTS.md), [목표](../../PROJECT_GOALS.md) 4개입니다. 이 폴더는 상세 명령·사용법·과거 증거를 모아 관리합니다.
+정리: 2026-09-28 / 기능·검증 기준 `0d12957`. 상시 관리 정본은 루트 4개이며, 이 폴더에는 **현재 사용하는 상세 가이드 9개와 이 색인**만 둡니다.
 
-## 현재 사용 절차
-
-- [관리형 GUI 안전성 검증](managed-gui-safety-validation.md): shell 없는 미설치 fixture·상태 수정·직접 조작 진행 상태.
-
-- [실행 안전성 후속 검증](runtime-safety-completion-validation.md): 저장 경계·서비스 health·이전 차단·남은 GUI/회사 검증.
-
-- [실행 중 차단·수동 복구](runtime-safety.md), [배포/실행 안전성 검증](deployment-safety-validation.md)
-
-- [사내 HTTP 인증 단계별 검증](intranet-auth-validation.md): 현재 진행 작업과 미완료 조건.
-- [사내 HTTP 요청 서명 설정](intranet-auth.md): PC 키 등록·설정 생성·Agent 진단의 최초 준비와 반복 운영.
-
-| 문서 | 용도 |
+| 루트 정본 | 역할 |
 |---|---|
-| [기능 지도·단계별 실행 안내](feature-workflow.md) | 처음 읽는 사람용 구성도·순서도·담당자·명령어·정상 결과 |
-| [통합 배포 운영](distribution-workflow.md) | 서버·서명·IP/토큰·권한·클라이언트·보관/복원 설정의 상세 기준 |
-| [서버 준비](guide-01-linux-server-setup.md) | nginx/서비스 신뢰 경계와 구성 입구 |
-| [ZIP 업로드·승인](guide-02-publish-package.md) | 외부 JSON 생성부터 승인 공개까지 |
-| [클라이언트 설정·CLI](guide-03-launcher-usage.md) | GUI/Agent 설정 분리와 명령 |
-| [화면 사용](launcher-user-guide.md) | 일반·개발자 버튼·상태·오류 |
-| [UI 커스터마이징](launcher-ui-customization.md) | 프로필·이미지·브랜드 fallback |
-| [무인 서비스](service-mode.md) | Agent와 앱 감시 서비스의 차이·운영 주의 |
-| [설치본·상용 배포](commercial-deployment.md) | MSI/RPM·자격 증명·운영 gate |
-| [2026-09-12 검증 기록](distribution-validation.md) | 당시 테스트 환경·결과·회사 미검증 범위 |
-| [성능 설정·2026-09-28 검증](performance-validation.md) | 병렬 처리·파일 재사용·접수 worker·실측 결과와 미달 항목 |
+| [README](../../README.md) | 구현된 기능·현재 상태·시작 방법 |
+| [AGENTS](../../AGENTS.md) | 개발·검증·문서 관리 규칙 |
+| [IMPROVEMENTS](../../IMPROVEMENTS.md) | 28개 보완 항목의 진행률·증거·남은 조건 |
+| [PROJECT_GOALS](../../PROJECT_GOALS.md) | 회사용 DT 배포 시스템 목표·운영 인수 조건 |
 
-처음 읽을 때는 기능 지도·실행 안내 → 통합 운영 → ZIP 업로드 → 클라이언트 순서입니다. 실제 회사 RHEL/UE 검증과 테스트용 Windows/WSL 실행은 구분합니다. 과거 검증 날짜를 문서 점검 날짜로 덮어쓰지 않습니다.
+## 무엇을 읽으면 되나요?
 
-## 과거 참고 자료
-
-아래는 삭제하지 않고 보존한 역사 자료입니다. HTTP/public static 경로, Basic Auth, 직접 압축 해제·게시, 과거 UI 설명은 **신규 운영 구성에 적용하지 않습니다**. 현재 대응 절차는 위 문서를 따릅니다.
-
-| 보존 자료 | 현재 대신 볼 문서 |
+| 필요한 작업 | 현재 문서 |
 |---|---|
-| [RHEL 서버 이전 가이드](archive/redhat-distribution-server.md) | 통합 배포 운영·서버 준비 |
-| [오프라인 Linux 이전 구성](archive/offline-linux-update-server-setup.md) | 통합 배포 운영·설치본 배포 |
-| [회사 RHEL 8.4 이전 기록](archive/company-rhel84-dt-update-server.md) | 서버 준비; 현재 회사 적용 완료의 증거가 아님 |
-| [구 게시 스크립트](archive/release-publish-scripts.md) | ZIP 업로드·승인; publish-wizard는 현재 ingest 래퍼 |
-| [구 일반/개발자 사용법](archive/developer-and-general-launcher-usage.md) | 클라이언트·화면 사용 |
-| [초기 개선 노트](archive/launcher-refinement-notes.md) | 루트 보완 목록·목표 |
-| [Netmarble 초기 분석](archive/netmarble-launcher-analysis.md) | 설계 참고만; 현행 구현 명세가 아님 |
+| 처음부터 업로드·승인·설치·실행 순서 확인 | [기능 지도·실행 명령](feature-workflow.md) |
+| Linux 서버·IP/배포 권한·접수/승인·보관 운영 | [배포 서버 운영](distribution-workflow.md) |
+| 사내 HTTP 요청 서명·PC 공개키 등록·초기 설정 | [인증·초기 준비](intranet-auth.md) |
+| GUI/Agent 설정 역할·CLI·성능 옵션 | [설정·CLI 레퍼런스](guide-03-launcher-usage.md) |
+| 일반/개발자 버튼·복구·rollback 사용 | [GUI 사용자 안내](launcher-user-guide.md) |
+| 이름·이미지·표시 설정 | [UI 커스터마이징](launcher-ui-customization.md) |
+| 실행 중 변경 차단·Unknown·수동 정지 확인·이전 제한 | [실행 안전성](runtime-safety.md) |
+| 무인 service 한 회차·health 실패·수동 전환 | [서비스 모드](service-mode.md) |
+| MSI/RPM 제작·서명 gate·설치 전 체크 | [설치본·상용 배포](commercial-deployment.md) |
 
-## 갱신 규칙
+처음에는 **기능 지도 → 인증·초기 준비 → 서버 운영 → 설정/GUI 안내** 순서로 읽으세요. HTTPS/Bearer 예제의 URL만 HTTP로 바꾸지 않습니다. HTTP는 요청 서명을 사용해도 암호화되지 않습니다.
 
-- 현재 가이드: 명령·설정 변경 시 소스와 함께 갱신하고 점검 기준을 적습니다.
-- 실행 기록: 실제 재시험할 때 날짜·환경·결과를 별도로 추가합니다.
-- archive: 과거 내용은 보존하고 폐기 상태·현재 대체 문서만 갱신합니다. 보안상 구 절차를 현재 권장으로 복원하지 않습니다.
-- 최종 기능·계획·우선순위를 이 색인에 중복 작성하지 않습니다.
+## 검증 증거와 과거 자료
 
-## 2026-09-22 문서 점검 기록
+[아카이브 색인](archive/README.md)에서 찾습니다. **보관된 검증 결과는 유효한 이력**이지만 해당 날짜·환경·범위를 넘는 보장은 아닙니다.
 
-- Markdown 21개: 루트 관리 문서 4개 + 참고/보존 문서 17개.
-- 상대 로컬 링크 108개 존재 확인, 현재 가이드 JSON 예시 6개 파싱 성공.
-- 루트 문서 4개 계약 및 docs 루트에 흩어진 Markdown 없음 확인.
-- 소스·CLI·서비스·설치 스크립트와 대조, git diff --check 통과.
-- 문서만 수정했으므로 전체 .NET 테스트·GUI/서버 실행·성능 측정은 재수행하지 않음. 과거 실제 실행 결과는 기존 날짜로 보존.
-- 확인된 기능 보완은 루트 보완 문서에 미해결 상태로 기록. 문서 갱신이 해당 코드 문제 수정 완료를 의미하지 않음.
+- `archive/validation/`: 배포·성능·인증·runtime·GUI 실행 기록과 관련 측정 JSON.
+- `archive/guides/`: 현재 가이드에 통합한 중복 입문 문서.
+- `archive/`의 기존 자료: 초기 설계·구 정적 서버·이전 게시 방식.
+
+현재 기능/진행률은 루트 정본, 현재 명령은 위 가이드, 실제 과거 결과는 검증 이력에서 확인합니다. 이 세 가지를 섞어 완료 여부를 판단하지 않습니다.
+
+## 관리 규칙
+
+- 기능과 명령의 현재 설명을 검증 기록에만 두지 않습니다. 가이드에 반영하고 이력은 보존합니다.
+- 과거 실행 날짜·수치를 새 문서 점검 날짜나 재시험 결과로 바꾸지 않습니다.
+- 이동 시 Markdown 상대 링크와 코드/스크립트의 문서 경로 참조를 함께 확인합니다.
+- `python tools/check-documentation.py`와 `python tools/check-improvement-ledger.py`로 구조·링크·집계를 검사합니다.
+- 이번 정리는 문서 전용이며 프로그램 빌드·GUI·성능 시험을 다시 실행하지 않았습니다.

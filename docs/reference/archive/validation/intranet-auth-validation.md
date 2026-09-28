@@ -1,3 +1,5 @@
+> 검증 이력 보관: 실제 실행 날짜·환경·결과를 보존합니다. 아카이브 이동은 증거 폐기를 뜻하지 않습니다. 현재 진행률은 [개선 대장](../../../../IMPROVEMENTS.md), 현재 사용 절차는 [문서 색인](../../README.md)을 따릅니다.
+
 # 사내 HTTP 요청 인증 구현·검증 기록
 
 기준: `edcb8de`, 작업 브랜치 `codex/intranet-request-auth`, 2026-09-28.
@@ -46,7 +48,7 @@ HTTP는 암호화된 전송이 아니다. 요청 인증·콘텐츠 무결성과 
 - doctor는 키 형식/접근과 공개키 파싱을 확인하고 빈 trust 설정·인증 실패·권한 거부·정상 빈 목록을 구분한다.
 - MSI에는 활성 파일이 아닌 launcher.config.example.json만 추가. RPM은 새 distribution-agent-linux 예제를 사용하되 %config(noreplace)는 유지.
 - 설정/진단/패키징 관련 Windows 테스트 13개 통과. publish 생성 설정으로 온라인 doctor 및 전체 CLI E2E 성공(`publish/intranet/e2e-generated-01`). Linux 및 최종 installer artifact 확인은 5단계에서 수행.
-- 자세한 최초 등록/반복 실행 명령은 [사내 HTTP 안내](intranet-auth.md)를 따른다.
+- 자세한 최초 등록/반복 실행 명령은 [사내 HTTP 안내](../../intranet-auth.md)를 따른다.
 
 ## 5단계: 통합 결과와 남은 조건
 

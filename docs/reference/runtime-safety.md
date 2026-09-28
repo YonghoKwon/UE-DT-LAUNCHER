@@ -1,6 +1,6 @@
 # 실행 중 변경 차단과 수동 복구
 
-2026-09-28 / `codex/runtime-safety-completion`. 앱을 자동 종료하거나 다른 버전으로 자동 전환하지 않는 안전성 단계이다. 실제 회사 UE/서비스 계정 검증은 별도이다.
+2026-09-28 / `0d12957` 기준 현재 가이드. 앱을 자동 종료하거나 다른 버전으로 자동 전환하지 않는 안전성 단계이다. 실제 회사 UE/서비스 계정 검증은 별도이다.
 
 ## 사용자에게 달라지는 점
 
@@ -14,7 +14,7 @@
 
 GUI를 닫는 것과 DT 앱을 종료하는 것은 다르다. runtime-host는 일반 자식 프로세스가 모두 종료될 때까지 유지된다. Windows Job과 Linux subreaper는 임의 WMI/D-Bus/systemd broker나 악성 동일 사용자 격리를 보장하지 않는다. 직접 EXE/오래된 바로가기를 통한 실행은 지원 경로 밖이다.
 
-관리형 GUI는 실행 후 runtime 상태를 다시 확인합니다. 정보가 누락되거나 실행 상태가 불명확하면 정상 완료로 표시하지 않습니다. 문제 해결도 실행 상태 차단을 유지하며, 단지 실행 중이라는 이유로 rollback을 제안하지 않습니다. [후속 GUI 검증 범위](managed-gui-safety-validation.md)
+관리형 GUI는 실행 후 runtime 상태를 다시 확인합니다. 정보가 누락되거나 실행 상태가 불명확하면 정상 완료로 표시하지 않습니다. 문제 해결도 실행 상태 차단을 유지하며, 단지 실행 중이라는 이유로 rollback을 제안하지 않습니다. [후속 GUI 검증 범위](archive/validation/managed-gui-safety-validation.md)
 
 ## 확인 → 종료 → 복구
 
@@ -66,4 +66,4 @@ UeDtLauncher runtime recover --config <config> --version 1.2.0 --confirm-stopped
 
 첫 명령은 UNSIGNED-DEV이다. 두 번째는 사용 가능한 코드서명 인증서/개인키/EKU와 timestamp 검증이 없으면 실패한다. 공식 EXE 서명 뒤 MSI를 만들고, 내장 EXE hash/signer 검증 후에만 `runs/<실행ID>/release`를 공개한다. `package-result.json`의 정확한 경로를 사용하고 이전 MSI wildcard를 사용하지 않는다. MSI를 실제 설치한 검증은 별도이다.
 
-[후속 검증 기록](runtime-safety-completion-validation.md) / [현재 개선률](../../IMPROVEMENTS.md)
+[runtime 후속 이력](archive/validation/runtime-safety-completion-validation.md) / [최신 GUI 이력](archive/validation/managed-gui-safety-validation.md) / [현재 개선률](../../IMPROVEMENTS.md)

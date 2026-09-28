@@ -1,12 +1,10 @@
 # UE-DT Launcher
 
-2차 후속 안전성 구현: 실행 기록 엄격 검증, 원자적 서비스 상태·health barrier, 정확한 서비스 대상 선택과 위험한 migration 차단을 추가했습니다. [종료 후 재시도·수동 복구](docs/reference/runtime-safety.md), [실제 검증과 남은 조건](docs/reference/deployment-safety-validation.md)을 확인하세요. OPS-08은 50%, OPS-09는 75%이며 회사 운영 승인은 별도입니다.
+Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 배포 시스템입니다.
 
-추가 구현: 사내 HTTP 요청 서명·PC 인증키 보호·Agent 이미지 전달·설정 생성기를 제공합니다. [최초 등록 명령](docs/reference/intranet-auth.md)과 [검증·남은 조건](docs/reference/intranet-auth-validation.md)을 확인하세요. HTTP는 암호화되지 않으며 회사 운영 승인은 별도입니다.
+문서 점검: **2026-09-28**, 기능·검증 기준: `0d12957` / `codex/managed-gui-safety-validation`. 로컬 브랜치 기준이며 main 반영·회사 운영 승인 완료를 뜻하지 않습니다.
 
-Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 런처입니다.
-
-문서 점검: **2026-09-28**, 구현 기준: `codex/managed-gui-safety-validation` (시작점 `28c4019`). 로컬 브랜치 기준이며 main 반영·운영 배포 완료를 뜻하지 않습니다.
+**현재 판단: 합성 앱 기반 배포·설치·실행·복구는 활용 가능한 단계이며, 회사 정식 운영 인수는 미완료입니다.** 현재 수치와 남은 작업은 [개선 진행 현황](IMPROVEMENTS.md), 상세 명령은 [운영 문서 색인](docs/reference/README.md)을 확인하세요.
 
 ## 프로젝트 목표와 처음 읽을 안내
 
@@ -33,11 +31,13 @@ flowchart LR
 
 개선 문서는 남은 항목만 모은 것이 아니라 완료·부분 진행·대기를 함께 관리합니다. 퍼센트는 **추가 보완의 체크포인트 진척**이며, 기존 기능 구현도나 회사 운영 승인율이 아닙니다. 최신 집계는 해당 문서 한 곳에서 확인합니다.
 
-그 외 자료는 [참고 문서 모음](docs/reference/README.md)에 있습니다. 상세 명령·설정·검증 기록은 참고 문서에, 과거 자료는 그 아래 `archive/`에 보존합니다. 과거 서버 절차를 신규 설치 지침으로 사용하지 않습니다.
+그 외 자료는 [참고 문서 모음](docs/reference/README.md)에 있습니다. 현재 가이드 9개와 색인은 `docs/reference/`, 검증 이력·중복 입문/구 운영 자료는 그 아래 `archive/`에 보존합니다. 아카이브로 옮긴 검증 증거를 폐기한 것은 아닙니다. 과거 서버 절차를 신규 설치 지침으로 사용하지 않습니다.
 
 ## 현재 구현
 
-최신 안전성 작업: Windows/WSL 자동화 각 393개, MSI 실패 gate 계약 11개 통과. publish된 일반/개발자 GUI와 CLI·console Agent, 부모 선종료/자식 유지·host 장애·Agent 재시작을 확인했습니다. GUI에서는 상태 표시를, 실제 설치·실행·repair는 CLI E2E로 확인했습니다. [후속 안전성 결과](docs/reference/runtime-safety-completion-validation.md). 이전 인증 부하/WSL nginx·메모리 제약과 실제 LocalService·회사 RHEL/UE 미검증은 [인증 기록](docs/reference/intranet-auth-validation.md)에 남아 있습니다.
+마지막 전체 자동화는 Windows/WSL **각 393개 통과**입니다. 일반 GUI 설치·실행·실행 중 버튼 차단·창 종료/재실행·자식 정상 종료, 개발자 선택/취소·v2 파일 복구·같은 설치의 정상 backup rollback을 실제로 확인했습니다. [GUI 실행 이력](docs/reference/archive/validation/managed-gui-safety-validation.md), [runtime 장애 이력](docs/reference/archive/validation/runtime-safety-completion-validation.md)
+
+개발자 v1 승인 설치/실행, 실행 중 개발자 GUI 변경 차단, 일반 문제 해결의 단절/재연결, portable GUI rollback, 회사 UE/RHEL·설치 서비스 계정 검증은 남았습니다. 과거 393개 통과를 이번 문서 정리에서 새로 재실행한 결과로 표시하지 않습니다.
 
 | 영역 | 내용 |
 |---|---|
@@ -59,9 +59,7 @@ GUI의 general/developer는 표시 정책이지 다운로드 권한이 아닙니
 
 프로그램이 실행 중이면 정상 종료 후 런처에서 다시 확인하세요. GUI를 닫아도 프로그램은 종료되지 않습니다. 추적 불명 상태는 관리자 점검과 명시적 정지 확인이 필요하며 PID 파일 삭제로 우회하지 않습니다. 런처와 Agent를 함께 갱신하세요. 구형 IPC v1의 조회는 유지하지만 실행 추적 capability 없는 변경 요청은 거부합니다. 기존 직접 EXE 바로가기는 관리자가 이전하고, 새 바로가기는 정확한 버전을 선택한 런처를 호출합니다. [상태별 명령](docs/reference/runtime-safety.md)
 
-후속 시험에서 저장 경계 36곳의 프로세스 강제 종료와 service health 500/timeout/연결 실패를 Windows/WSL에서 확인했습니다. 일반 GUI 설치·실행·실행 중 버튼 차단·GUI 종료/재실행·자식 정상 종료, 개발자 버전 선택·취소·v2 복구·backup rollback 적용은 직접 검증했습니다. 다른 버전 승인 실행·실행 중 GUI 변경 차단·일반 문제 해결 추가 시험과 회사 서비스 계정·UE/RHEL 검증은 남아 있습니다. 따라서 로컬 수용 기준 전체 완료나 운영 승인을 선언하지 않습니다.
-
-관리형 GUI 후속 수정: 실행 후 실제 runtime 상태를 재조회하고, 실행 중/불명 상태에서 문제 해결이 정상 완료나 rollback을 제안하지 않도록 보완했습니다. shell 없는 합성 앱과 미설치 GUI fixture도 마련했습니다. 일반 GUI의 실제 설치/실행과 창 종료 수명 시험은 통과했습니다. 개발자 버전 선택·취소와 v2 복구·rollback 적용도 직접 통과했습니다. 다른 버전 승인 실행·실행 중 변경 차단·일반 문제 해결 추가 시험은 남아 있습니다. [GUI 검증 기록](docs/reference/managed-gui-safety-validation.md)
+서명·권한·해시·실행 수명 안전성을 유지합니다. 사내 HTTP 요청 서명은 암호화가 아니며, Windows LocalService·회사 RHEL/UE와 실제 코드서명 인증서 검증은 별도입니다. [회사 운영 승인 조건](PROJECT_GOALS.md)을 모두 통과하기 전 정식 운영 완료로 보지 않습니다.
 
 ## 처음 준비할 것
 
@@ -89,7 +87,7 @@ GUI의 general/developer는 표시 정책이지 다운로드 권한이 아닙니
 UeDtLauncher release-metadata --zip Windows.zip --project-id demo --version 1.2.0 --platform windows-x64 --payload-root Windows --entry-point Demo.exe --output release.json
 ```
 
-payloadRoot는 ZIP 내부 프로그램 루트, entryPoint는 그 기준 경로입니다. ZIP을 변경하면 JSON도 다시 생성합니다. [업로드·승인 상세](docs/reference/guide-02-publish-package.md)
+payloadRoot는 ZIP 내부 프로그램 루트, entryPoint는 그 기준 경로입니다. ZIP을 변경하면 JSON도 다시 생성합니다. [업로드·승인 상세](docs/reference/feature-workflow.md)
 
 서버 등록 위치는 `releases/<project>/<environment>/<channel>/<version>/<platform>/`입니다. 클라이언트는 필요한 개별 파일을 받습니다. 새 버전은 별도 설치 경로를 유지하면서 같은 배포 구분의 최근 설치 파일을 검증 후 복사할 수 있습니다. 원본을 공유하는 hard link나 공용 콘텐츠 캐시는 사용하지 않습니다.
 
@@ -100,7 +98,7 @@ payloadRoot는 ZIP 내부 프로그램 루트, entryPoint는 그 기준 경로�
 - 서버 정책은 매 요청 다시 읽고 토큰도 매 요청 검사합니다. Catalog 서명 응답을 캐시하지 않습니다.
 - 접수 worker는 기본 1개, 선택적으로 2개입니다. 작업별 잠금·활성 임시 폴더 보호·진행/디스크 예상량을 제공합니다.
 
-Windows 재현 시험에서 작은 파일 최초 설치는 중앙값 10.96초→5.98초, 다음 버전 설치는 11.01초→3.29초였고 콘텐츠 전송량은 90% 줄었습니다. 서버 30개 연결의 혼합 API p95는 833.44ms→81.23ms, 측정 요청 실패는 32→0이었습니다. **10개 연결의 혼합 p95는 5.43ms→24.66ms로 악화되어 PERF-03은 부분 완료**입니다. 회사 성능 보장이나 운영 배포 승인이 아닙니다. [설정·재현·한계](docs/reference/performance-validation.md)
+Windows 재현 시험에서 작은 파일 최초 설치는 중앙값 10.96초→5.98초, 다음 버전 설치는 11.01초→3.29초였고 콘텐츠 전송량은 90% 줄었습니다. 서버 30개 연결의 혼합 API p95는 833.44ms→81.23ms, 측정 요청 실패는 32→0이었습니다. **10개 연결의 혼합 p95는 5.43ms→24.66ms로 악화되어 PERF-03은 부분 완료**입니다. 회사 성능 보장이나 운영 배포 승인이 아닙니다. [설정·재현·한계](docs/reference/archive/validation/performance-validation.md)
 
 ## 빌드·검증
 
@@ -119,7 +117,7 @@ Linux 클라이언트/Agent는 `-r linux-x64`로 생성합니다. 네이티브 �
 
 ## 검증 범위와 제약
 
-2026-09-12 [기존 실행 기록](docs/reference/distribution-validation.md): Windows 210/210, WSL Ubuntu 210/210, Release 경고·오류 0. 테스트 프로그램으로 HTTPS 배포와 Windows GUI/Agent·Linux CLI 설치·실행을 확인했습니다.
+2026-09-12 [기존 실행 기록](docs/reference/archive/validation/distribution-validation.md): Windows 210/210, WSL Ubuntu 210/210, Release 경고·오류 0. 테스트 프로그램으로 HTTPS 배포와 Windows GUI/Agent·Linux CLI 설치·실행을 확인했습니다.
 
 2026-09-28 성능 작업: Windows/Linux 각각 전체 293개 테스트 통과, Python 측정 도구 계약 테스트 16개 통과. Release build/publish 및 실제 Windows 일반·개발자 GUI/Agent, Linux CLI/Agent 실행을 확인했습니다. Linux nginx HTTPS E2E의 작은 파일은 통과했지만 WSL1 nginx의 1MiB 응답 중단이 관측되어 큰 파일 GUI 검증은 격리된 Windows HTTPS 프록시로 분리했습니다. 실제 회사 RHEL·UE 패키지·IP/CA·설치본 수명주기는 별도 검증해야 합니다. 코드서명 없는 개발 산출물을 운영용 서명 제품으로 배포하지 않습니다.
 

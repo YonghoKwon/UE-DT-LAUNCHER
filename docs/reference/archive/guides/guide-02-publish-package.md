@@ -1,6 +1,8 @@
+> 중복 입문 가이드 보관: 신규 운영 절차로 사용하지 마세요. 현재 [전체 명령 순서](../../feature-workflow.md)와 [서버 운영](../../distribution-workflow.md)에 통합했습니다. 아래는 당시 기록입니다.
+
 # ZIP + 외부 release.json 배포
 
-> 참고 가이드 / 문서 점검 2026-09-22 / 구현 기준 2cd28c8. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
+> 참고 가이드 / 문서 점검 2026-09-22 / 구현 기준 2cd28c8. 현재 기능은 [README](../../../../README.md), 미완료 항목은 [보완 목록](../../../../IMPROVEMENTS.md)을 따릅니다.
 
 점검: 2026-09-22 / 구현 기준 2cd28c8. Windows와 Linux는 각각 별도의 ZIP/JSON 쌍과 업로드 폴더를 사용합니다. 아래 실행 파일 경로는 예시입니다.
 ZIP 안에 배포 JSON을 넣지 않습니다. ZIP 옆에 release.json을 만들고 같은 incoming 하위 폴더로 업로드합니다.
@@ -38,4 +40,4 @@ UeDtLauncher.DistributionServer approve <job-id> --config /etc/ue-dt-distributio
 
 현재 latest는 같은 환경·채널·OS에서 마지막 승인된 버전입니다. 과거 버전을 나중에 승인하면 최신 선택이 바뀔 수 있으므로 승인 순서를 확인하세요. 관리 명령은 서비스 계정 또는 허용된 운영자로 실행합니다.
 
-[서버 구성 및 권한](distribution-workflow.md)을 함께 확인하세요.
+[서버 구성 및 권한](../../distribution-workflow.md)을 함께 확인하세요.

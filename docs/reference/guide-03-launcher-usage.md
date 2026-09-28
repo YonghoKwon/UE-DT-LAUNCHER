@@ -2,9 +2,9 @@
 
 2026-09-28: `sample-config` 기본은 DistributionServer/schema 3 요청 서명입니다. 기존 정적 예제는 `--mode legacy-catalog`로 생성합니다. [새 명령·키 저장·doctor 안내](intranet-auth.md)를 참고하세요. 기존 파일은 `--force` 없이 덮어쓰지 않습니다.
 
-> 참고 가이드 / 기본 지침 2026-09-22, 성능 설정 추가 2026-09-28. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
+> 현재 설정 가이드 / 2026-09-28, 코드 0d12957과 대조. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
 
-현재 기본 배포는 DistributionServer의 ZIP + 외부 `release.json` 접수·승인 방식입니다. 서버는 [서버 가이드](guide-01-linux-server-setup.md), 게시는 [게시 가이드](guide-02-publish-package.md), 화면은 [GUI 사용법](launcher-user-guide.md), 개요는 [README](../../README.md)를 참고하세요.
+현재 기본 배포는 DistributionServer의 ZIP + 외부 `release.json` 접수·승인 방식입니다. 서버는 [서버 가이드](distribution-workflow.md), 게시는 [게시 가이드](feature-workflow.md), 화면은 [GUI 사용법](launcher-user-guide.md), 개요는 [README](../../README.md)를 참고하세요.
 
 ## 설정 파일의 역할
 
@@ -20,7 +20,7 @@ CLI의 `run --config` 등은 지정한 파일을 읽고, 생략하면 현재 작
 
 관리 설정 기본 위치는 Windows `%ProgramData%\UE-DT Launcher\config\launcher.config.json`, Linux `/etc/ue-dt-launcher/launcher.config.json`입니다. 관리형 DistributionServer GUI는 실제 작업 때 관리 설정을 다시 읽고 Agent도 자신의 보호 설정으로 검증합니다. GUI 설정만 고쳐 서버 권한을 늘릴 수 없습니다.
 
-## 관리 설정 예시
+## 기존 HTTPS/Bearer 관리 설정 예시
 
 Linux 경로 예시입니다. Windows에서는 경로를 Windows 관리 디렉터리로 바꾸고 `targetPlatform`을 `windows-x64`로 지정합니다. 공개키 상대 경로는 관리 설정 파일 기준입니다.
 
@@ -57,7 +57,7 @@ Linux 경로 예시입니다. Windows에서는 경로를 Windows 관리 디렉�
 
 ## 인증정보와 점검
 
-성능 설정은 선택적 `performance` 객체로 지정합니다. 기본 다운로드2/해시2, 범위1~8/1~4이며 같은 트랙의 이전 설치 재사용은 기본 활성입니다. 관리형에서는 Agent 설정에 지정합니다. IPC v1의 선택적 진행 필드로 실제 네트워크 수신과 재사용을 구분하고 일반 화면에는 원시 측정값 JSON을 표시하지 않습니다. [설정 전문·측정 조건](performance-validation.md)
+기존 HTTPS/Bearer credential 명령입니다. 신규 schema 3의 키 생성·등록·교체는 [요청 서명 안내](intranet-auth.md)를 따릅니다. PC 개인키와 서버 배포 검증 공개키를 혼용하지 않습니다.
 
 ```text
 UeDtLauncher credential set --name company-distribution
@@ -87,8 +87,38 @@ UeDtLauncher diagnostics export --config launcher.config.json --output diagnosti
 
 portable Linux CLI는 같은 설정에서 `deploymentMode=portable`로 지정하고 현재 계정이 쓸 수 있는 경로를 사용합니다. 같은 업데이트 엔진을 거치지만 보호된 Agent 경계는 사용하지 않습니다.
 
+## 성능 옵션
+
+관리형은 Agent 보호 설정, portable은 해당 설정의 선택 필드입니다.
+
+```json
+{
+  "performance": {
+    "downloadConcurrency": 2,
+    "hashConcurrency": 2,
+    "reusePreviousInstallations": true
+  }
+}
+```
+
+| 옵션 | 기본 / 허용값 | 동작 |
+|---|---|---|
+| downloadConcurrency | 2 / 1~8 | 스트리밍 다운로드 동시 수. 1은 순차 진단 |
+| hashConcurrency | 2 / 1~4 | 해시 검사 동시 수 |
+| reusePreviousInstallations | true / boolean | 인증된 새 버전 설치에 한해 같은 프로젝트/환경/채널/OS의 최근 3개 설치에서 파일 복사 후 해시 검증 |
+
+기존 설치 repair는 재사용하지 않습니다. hard link·공용 콘텐츠 캐시는 사용하지 않으며 transaction 적용/rollback은 직렬입니다. 큰 pak 파일 내용이 바뀌면 파일 전체를 받을 수 있어 합성 시험의 90% 절감이 실제 UE에 보장되지는 않습니다.
+
+서버 설정의 `intakeWorkers`는 기본 1, 허용값 1 또는 2입니다. bounded queue는 worker 수의 2배이며 초과 업로드는 다음 스캔에서 다시 발견합니다. 2 worker는 선택 기능이고 자동 승인을 추가하지 않습니다. inspect 진행/공간 추정은 공간 예약이나 게시 성공 보장이 아닙니다. DB 교체 전 기존 프로세스를 중지하고 백업해야 합니다.
+
+[과거 측정·재현 조건](archive/validation/performance-validation.md)은 이력입니다. PERF-03 지연 미달과 회사 실측 조건은 [개선 대장](../../IMPROVEMENTS.md)에 계속 남습니다.
+
+## 실행 차단과 이전 제한
+
+실행 중/Pending/Unknown에서는 update·repair·rollback을 하지 않습니다. 상태 확인과 정지 후 명시적 복구는 [실행 안전성](runtime-safety.md)을 따릅니다. `Agent migrate --apply`는 동일 설치 공유 위험으로 현재 차단되며 dry-run만 지원합니다. `import-install`의 명시적 복사와 사용자 세이브 이전은 서로 다른 작업입니다.
+
 ## 레거시 호환과 검증 범위
 
-`catalogUrl`/직접 `manifestUrl`, `generate-manifest`, `update-catalog`, `publish-release`는 기존 정적 배포 호환 기능입니다. `sample-config` 출력도 아직 정적 catalog 예시이므로 새 운영 설정으로 그대로 사용하지 않습니다. 공개 `/catalogs/general` 또는 `/projects` 구조는 현재 통합 서버의 보안 모델이 아닙니다.
+`catalogUrl`/직접 `manifestUrl`, `generate-manifest`, `update-catalog`, `publish-release`는 기존 정적 배포 호환 기능입니다. 기본 `sample-config`는 DistributionServer/schema 3 요청 서명 설정을 생성합니다. 정적 예제는 `--mode legacy-catalog`를 명시한 경우에만 사용합니다. 공개 `/catalogs/general` 또는 `/projects` 구조는 현재 통합 서버의 보안 모델이 아닙니다.
 
-무인 실행은 [서비스 모드](service-mode.md), 이전은 [통합 운영](distribution-workflow.md), 패키징은 [상용 배포 준비](commercial-deployment.md)를 참고하세요. [2026-09-12 검증](distribution-validation.md)은 Windows GUI/Agent·Linux CLI 테스트 패키지 결과이며 실제 회사 RHEL·실제 UE 검증 완료를 뜻하지 않습니다.
+무인 실행은 [서비스 모드](service-mode.md), 이전은 [통합 운영](distribution-workflow.md), 패키징은 [상용 배포 준비](commercial-deployment.md)를 참고하세요. [2026-09-12 검증](archive/validation/distribution-validation.md)은 Windows GUI/Agent·Linux CLI 테스트 패키지 결과이며 실제 회사 RHEL·실제 UE 검증 완료를 뜻하지 않습니다.

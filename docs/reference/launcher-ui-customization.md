@@ -1,6 +1,6 @@
 # GUI 표시 설정·이미지 커스터마이징
 
-> 참고 가이드 / 문서 점검 2026-09-22 / 구현 기준 2cd28c8. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
+> 참고 가이드 / 문서 점검 2026-09-28 / 코드 기준 0d12957. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
 
 이 문서는 이름·이미지·정렬을 다룹니다. 서버 접근 권한, 서명키, 설치 루트는 Agent 보호 설정과 서버 정책이 담당합니다. [설정 레퍼런스](guide-03-launcher-usage.md)의 설정 선택 순서를 먼저 확인하세요.
 
@@ -30,7 +30,7 @@
 }
 ```
 
-`projectId`는 서버 프로젝트 ID와 일치해야 합니다. 로컬 메타데이터는 서버 목록과 병합되며 권한 없는 프로젝트를 추가하는 수단이 아닙니다. DistributionServer 목록을 갱신하면 `displayName`, `heroPath`, `thumbnailPath`는 서버 값으로 교체됩니다. 통합 배포의 이름·이미지는 외부 `release.json`에서 지정하며 이미지는 내려받은 로컬 캐시로 표시합니다. 서버 이미지가 없으면 로컬 설정 이미지가 유지되는 것이 아니라 대체 이미지가 표시됩니다. DistributionServer에서 `installPath`로 버전별 설치 경로를 덮어쓰지 않습니다.
+`projectId`는 서버 프로젝트 ID와 일치해야 합니다. 로컬 메타데이터는 서버 목록과 병합되며 권한 없는 프로젝트를 추가하는 수단이 아닙니다. DistributionServer 목록을 갱신하면 `displayName`, `heroPath`, `thumbnailPath`는 서버 값으로 교체됩니다. 통합 배포의 이름·이미지는 외부 `release.json`에서 지정하며 이미지는 내려받은 로컬 캐시로 표시합니다. 서버 이미지가 없으면 로컬 설정 이미지가 유지되는 것이 아니라 대체 이미지가 표시됩니다. 관리형 서버 이미지는 Agent가 권한·크기·해시를 확인해 IPC로 전달하고 GUI는 사용자 캐시에 저장합니다. GUI에 개인키를 공유하지 않습니다. DistributionServer에서 `installPath`로 버전별 설치 경로를 덮어쓰지 않습니다.
 
 정렬은 고정(`isPinned`) 우선 → `sortOrder` 오름차순 → 표시 이름순입니다. `visibleToProfiles`가 비면 모든 프로필에 표시하며 로컬 필터일 뿐 보안 정책이 아닙니다.
 

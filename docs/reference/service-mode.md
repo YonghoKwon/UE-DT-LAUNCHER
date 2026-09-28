@@ -1,6 +1,6 @@
 # 무인 실행과 서비스 모드
 
-문서 점검 2026-09-28 / `codex/runtime-safety-completion`. **현재 서비스는 앱을 자동 종료하거나 다른 버전으로 자동 전환하지 않습니다.** [실행 안전성·수동 복구](runtime-safety.md)를 함께 읽으세요.
+문서 점검 2026-09-28 / `0d12957` 기준 현재 가이드. **현재 서비스는 앱을 자동 종료하거나 다른 버전으로 자동 전환하지 않습니다.** [실행 안전성·수동 복구](runtime-safety.md)를 함께 읽으세요.
 
 `UeDtLauncher service` 반복 실행과 `UeDtLauncher.Agent` OS 서비스는 서로 다릅니다.
 
@@ -62,4 +62,4 @@ AgentWorker의 자동 스케줄러는 미구현입니다(OPS-07). Windows 서비
 
 Linux Agent unit은 `packaging/linux/ue-dt-launcher-agent.service`이며 `uedt`로 실행합니다. portable loop와 Agent가 같은 설치를 동시에 소유하지 않도록 하세요.
 
-현재 합성 앱의 health 500/timeout/연결 실패·중간 CLI 종료는 Windows/WSL에서 검증했습니다. 실제 설치 서비스 계정·UE/RHEL 운영 시험은 미완료입니다. [후속 검증](runtime-safety-completion-validation.md)과 [상용 배포 준비](commercial-deployment.md)를 확인하세요.
+현재 합성 앱의 health 500/timeout/연결 실패·중간 CLI 종료는 Windows/WSL에서 검증했습니다. 실제 설치 서비스 계정·UE/RHEL 운영 시험은 미완료입니다. [후속 검증](archive/validation/runtime-safety-completion-validation.md)과 [상용 배포 준비](commercial-deployment.md)를 확인하세요.

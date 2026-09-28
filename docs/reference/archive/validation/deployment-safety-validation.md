@@ -1,3 +1,5 @@
+> 검증 이력 보관: 실제 실행 날짜·환경·결과를 보존합니다. 아카이브 이동은 증거 폐기를 뜻하지 않습니다. 현재 진행률은 [개선 대장](../../../../IMPROVEMENTS.md), 현재 사용 절차는 [문서 색인](../../README.md)을 따릅니다.
+
 # 배포 서명·실행 수명 안전성 검증
 
 2026-09-28 / 기준 `548cab8`, 작업 브랜치 `codex/launcher-deployment-safety`. 회사 운영 승인과 별도이다.
@@ -95,4 +97,4 @@ python3 tools/test-runtime-broker.py --launcher publish/safety/linux/UeDtLaunche
 - 수동 EXE 실행·외부 WMI/D-Bus/systemd broker·특수 clone은 지원 보장 밖이다. runtime-host는 악성 동일 사용자 격리 경계가 아니다.
 - SEC-03/04와 PERF-03의 기존 미달은 유지한다. 세이브 데이터 이전, 자동 서비스 handoff/스케줄, 새 계정·회사 서버 변경, push/PR은 하지 않았다.
 
-[정상/차단/수동 복구 명령](runtime-safety.md) / [개선 진행률](../../IMPROVEMENTS.md)
+[정상/차단/수동 복구 명령](../../runtime-safety.md) / [개선 진행률](../../../../IMPROVEMENTS.md)

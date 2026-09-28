@@ -5,7 +5,8 @@
 ## 문서 관리 계약
 
 - 루트 정본은 README.md(현재), AGENTS.md(규칙), IMPROVEMENTS.md(보완), PROJECT_GOALS.md(확정 목표·승인 조건·미정 정책) 4개입니다.
-- 나머지 상세 가이드·검증 기록은 docs/reference/, 과거 자료는 archive/에 두고 색인에 연결합니다.
+- 현재 상세 가이드 9개와 색인은 docs/reference/에 둡니다. 실행 증거는 docs/reference/archive/validation/, 통합된 중복 안내는 archive/guides/, 초기 자료는 기존 archive/에 보존합니다. archive/README.md에서 현재 대체 문서와 이력을 구분합니다.
+- 검증 이력의 아카이브 이동은 증거 폐기를 뜻하지 않습니다. 날짜·환경·과거 미완료 문장을 임의로 최신화하지 말고, 현재 상태는 루트 정본에 반영합니다.
 - 기능·설정·보안·CLI·UI 변경 시 관련 정본과 상세 가이드를 함께 갱신합니다. 같은 설정 전문을 중복 관리하지 않습니다.
 - 구현됨/과거 테스트됨/이번 검증됨/회사 미검증을 구분하고 날짜·플랫폼·입력을 기록합니다.
 - 최상위 목표는 사용자 확정 사항인 **회사에서 안정적으로 활용 가능한 Unreal Engine DT 배포 시스템**입니다. 세부 범위·회사 SLA·운영 정책은 PROJECT_GOALS의 미정 항목을 따릅니다. 제안이나 목표를 구현/운영 완료로 바꾸지 않습니다.
@@ -79,10 +80,10 @@
 3. 기능 변경은 publish된 GUI/Agent/CLI/서버로 실행 검증합니다. Unreal Editor 프로젝트가 아닙니다.
 4. Windows/WSL 결과를 회사 RHEL/실제 UE 결과로 보고하지 않습니다.
 5. 관련 파일만 git add로 선별 stage하고 staged diff 확인 후 부분별 커밋합니다. git add -A는 사용하지 않습니다.
-6. 최종 git diff --check, 링크, 커밋 범위, worktree와 tools/check-improvement-ledger.py의 집계 검사를 확인합니다. push/PR은 요청 범위에 따릅니다.
+6. 최종 git diff --check, 링크, 커밋 범위, worktree와 tools/check-documentation.py의 구조/링크 검사, tools/check-improvement-ledger.py의 집계 검사를 확인합니다. push/PR은 요청 범위에 따릅니다.
 
 기본 빌드·테스트 명령은 README를 따릅니다. 문서 전용 수정은 소스·명령·링크 대조와 diff 검사로 검증 가능하며 GUI 실행·전체 테스트를 수행한 것처럼 보고하지 않습니다.
 
 publish/bin/obj, 테스트 logs·DB·인증서·토큰, 패키지·설치 데이터는 커밋하지 않습니다. 새 테스트 없이 과거 검증 날짜·결과를 덮어쓰지 않습니다.
 
-성능 변경은 [재현 절차](docs/reference/performance-validation.md)를 따릅니다. 준비 1회/측정 3회, 같은 publish 형식·데이터·호스트 조건으로 비교합니다. CLI 시작 비용·OS 캐시·측정 프록시 영향과 누락 지표를 구분합니다. 실패한 요청을 지연 통계에서 숨기지 않고, 악화된 시나리오를 유리한 평균으로 덮지 않습니다. 공유 CI의 시간 수치를 성능 합격 gate로 사용하지 않습니다.
+성능 변경은 [재현 절차](docs/reference/archive/validation/performance-validation.md)를 따릅니다. 준비 1회/측정 3회, 같은 publish 형식·데이터·호스트 조건으로 비교합니다. CLI 시작 비용·OS 캐시·측정 프록시 영향과 누락 지표를 구분합니다. 실패한 요청을 지연 통계에서 숨기지 않고, 악화된 시나리오를 유리한 평균으로 덮지 않습니다. 공유 CI의 시간 수치를 성능 합격 gate로 사용하지 않습니다.

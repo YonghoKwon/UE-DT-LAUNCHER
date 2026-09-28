@@ -72,4 +72,4 @@ UeDtLauncher.DistributionServer client-key revoke --key-id pc-001-v1 --config /e
 
 - release.json/Manifest/설치 경로/IPC v1 기존 필드는 유지한다. schema 3 설정은 구형 런처에 배포하지 않는다.
 - DB v3 이전 전 자동 백업. 되돌릴 때 DB만 몰래 교체하거나 구/신 버전을 동시에 돌리지 않는다. Catalog sequence 보존도 확인한다.
-- 실제 결과는 [검증 기록](intranet-auth-validation.md)에 구분한다. WSL/합성 테스트는 RHEL/Unreal/LocalService 운영 승인과 다르다.
+- 실제 결과는 [검증 기록](archive/validation/intranet-auth-validation.md)에 구분한다. WSL/합성 테스트는 RHEL/Unreal/LocalService 운영 승인과 다르다.
