@@ -21,6 +21,7 @@ public sealed class RuntimeRecord
     public string[] Arguments { get; set; } = [];
     public string? Origin { get; set; }
     public int? PayloadPid { get; set; }
+    public RuntimeIdentity? PayloadIdentity { get; set; }
 }
 public sealed class RuntimeBlockedException(RuntimeObservation observation) : InvalidOperationException(observation.Message)
 {
@@ -118,6 +119,15 @@ public static class RuntimeStore
         if (record.State is not (RuntimeState.LaunchPending or RuntimeState.Running)) throw new InvalidOperationException("Runtime attempt cannot transition.");
         if (completed && record.State != RuntimeState.Running) throw new InvalidOperationException("Unstarted runtime cannot report completion.");
         record.State = completed ? RuntimeState.Quiescent : RuntimeState.Running; record.PayloadPid = payloadPid ?? record.PayloadPid;
+        if (!completed && payloadPid.HasValue)
+        {
+            try
+            {
+                var payload = RuntimeIdentities.Read(payloadPid.Value);
+                if (payload.Owner == peer.Owner) record.PayloadIdentity = payload;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException) { /* fast root exit; family remains supervised */ }
+        }
         record.Origin = completed ? "supervisor-completed" : "supervised"; Write(config, record);
     }
     private static RuntimeRecord Authenticate(LauncherConfig config, RuntimeLaunchTicket ticket)
@@ -138,9 +148,11 @@ public static class RuntimeStore
             throw new UnauthorizedAccessException("Portable runtime recovery requires the installation owner.");
         RuntimeRecord? record = null;
         try { record = Read(config); } catch (Exception ex) when (ex is IOException or JsonException or InvalidDataException) { }
-        if (record?.State != RuntimeState.Quiescent && record?.Host is not null && RuntimeIdentities.StillMatches(record.Host)) throw new RuntimeBlockedException(Observe(config));
-        if (!config.IsManagedDeployment && record?.Requester is not null && record.Requester.Owner != actor.Owner) throw new UnauthorizedAccessException("Runtime belongs to another owner.");
         if (!confirm) return Observe(config);
+        if (record?.State != RuntimeState.Quiescent && record?.Host is not null && RuntimeIdentities.StillMatches(record.Host)) throw new RuntimeBlockedException(Observe(config));
+        if (record?.PayloadIdentity is not null && RuntimeIdentities.StillMatches(record.PayloadIdentity))
+            throw new RuntimeBlockedException(new(RuntimeState.Running,"payload-still-running","실행 중—프로그램을 종료한 뒤 다시 시도해 주세요."));
+        if (!config.IsManagedDeployment && record?.Requester is not null && record.Requester.Owner != actor.Owner) throw new UnauthorizedAccessException("Runtime belongs to another owner.");
         // Explicit operator maintenance acknowledgement, NOT OS-proven family termination.
         var path = RecordPath(config);
         if (File.Exists(path)) File.Copy(path, path + ".before-recovery-" + Guid.NewGuid().ToString("N"), false);

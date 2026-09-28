@@ -1,6 +1,6 @@
 # 관리형 배포·패키징 준비
 
-> 참고 가이드 / 문서 점검 2026-09-22 / 구현 기준 2cd28c8. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
+> 참고 가이드 / 문서 점검 2026-09-28 / 구현 기준 codex/launcher-deployment-safety. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
 
 현재 기본 경로는 DistributionServer의 ZIP + 외부 `release.json` 접수·승인 → 서버 권한 확인 → 서명된 메타데이터/파일 다운로드 → 버전별 설치입니다. 서버·토큰 준비는 [통합 운영](distribution-workflow.md)을 따릅니다.
 
@@ -20,7 +20,7 @@ Windows 개발 패키지:
 .\scripts\build-windows-installer.ps1 -Version 1.0.0
 ```
 
-출력은 `artifacts/windows-installer`이며 기본은 `UNSIGNED-DEV`입니다. `-OfficialBuild`도 표시·빌드 속성을 바꾸는 옵션이며 자체적으로 Authenticode 서명을 하지 않습니다.
+기본은 `UNSIGNED-DEV`입니다. 출력은 `artifacts/windows-installer/runs/<실행ID>/release`이며 성공한 `package-result.json`의 정확한 파일만 사용합니다. `-OfficialBuild`는 publish 전 인증서/개인키/EKU/유효기간/도구를 확인하고 EXE 선서명·검증, MSI 생성·서명·검증, CAB payload 비교를 강제합니다. 개발 빌드는 인증서 환경변수만으로 공식 빌드로 승격되지 않습니다.
 
 Linux RPM:
 
@@ -32,7 +32,7 @@ Linux RPM:
 
 `.github/workflows/release.yml`은 `launcher-v*` tag에서 Windows PFX·RPM GPG 비밀값을 검사합니다. 코드에 gate가 있다는 사실과 실제 서명된 설치 결과 검증은 다릅니다. 배포 전 MSI 내부에 설치되는 EXE의 서명까지 검사하세요.
 
-현재 순서는 MSI 생성 후 payload EXE 서명이므로 embedded CAB 내부 EXE에는 그 서명이 반영되지 않습니다. **EXE 서명·검증 → MSI 생성 → MSI 서명·설치 후 검증** 순서로 수정하기 전 운영 배포를 승인하지 마세요. 이는 코드에서 확인한 미해결 항목 OPS-08입니다.
+현재 순서는 **EXE 서명·검증 → MSI 생성·서명·검증 → 비설치 CAB 추출·EXE hash/signer 확인 → artifact 공개**입니다. 실행별 WiX intermediate를 분리하며 CI는 검증된 정확한 release 폴더만 사용합니다. 실제 개발 MSI 추출은 통과했지만 회사 인증서·설치된 EXE 검증은 미완료이므로 OPS-08은 50%입니다. [상세 기록](deployment-safety-validation.md)
 
 ## 현장 적용 순서
 

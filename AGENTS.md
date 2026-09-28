@@ -1,6 +1,6 @@
 # 작업 지침
 
-점검: 2026-09-28 / 구현 기준 codex/intranet-request-auth. 저장소 전체에 적용합니다.
+점검: 2026-09-28 / 구현 기준 codex/launcher-deployment-safety. 저장소 전체에 적용합니다.
 
 ## 문서 관리 계약
 
@@ -45,7 +45,12 @@
 - GUI 프로필은 화면 정책입니다. Agent의 보호된 운영 설정·credential·서버 권한과 분리합니다. 정확한 선택을 다른 버전으로 몰래 대체하지 않습니다.
 - 설치·상태·잠금·PID는 프로젝트/환경/채널/버전/OS별 격리입니다. 기존 설치·사용자 데이터는 승인 없이 삭제하지 않습니다.
 - 일반 GUI는 자동 점검만 합니다. 설치는 사용자 동작, rollback은 확인 후 실행합니다. 무인 서비스와 구분합니다.
-- IPC v1 단일 응답과 streaming 클라이언트 호환성을 보존합니다.
+- IPC v1 framing·조회·streaming 의미를 보존합니다. runtime-supervision-v1 capability 없는 변경 요청은 업그레이드 안내로 거부합니다.
+- 실행 시작과 모든 설치 변경은 InstallationMutationLease로 직렬화합니다. Prepare의 복구보다 먼저 검사하고 Running/LaunchPending/Unknown에서는 설치·state·backup·journal을 변경하지 않습니다.
+- 이름/PID만 보고 종료하거나 host 소멸/timeout을 Quiescent로 바꾸지 않습니다. runtime-host가 표준 후손 종료를 확인해야 하며 추적 불가 플랫폼에서 우회 실행하지 않습니다.
+- 관리형 실행 기록은 Agent 소유입니다. 티켓은 private pipe로 전달하고 실제 OS peer/생성 식별자/시도에 결속합니다. GUI에 보호 state 쓰기 권한이나 임의 원격 실행 IPC를 추가하지 않습니다.
+- service-run의 자동 kill·버전 handoff·health 실패 자동 rollback을 금지합니다. 수동 정지 확인은 관리자/portable 소유자 권한과 보존 기록을 요구하며 OS 종료 증거로 표시하지 않습니다.
+- runtime-host는 악성 동일 사용자 격리 경계가 아닙니다. 외부 실행 broker·수동 EXE는 보장 범위 밖입니다. 테스트 정리는 직접 생성해 보유한 handle만 사용합니다.
 - 병렬 작업 실패 시 형제 작업을 취소하고 모두 종료한 뒤 반환합니다. transaction 적용은 직렬로 유지합니다.
 - 파일 재사용의 로컬 기록은 힌트이며, 인증된 대상 Manifest와 복사 결과 해시가 신뢰 기준입니다. 원본 수정·hard link를 금지합니다.
 - DB schema 변경 전 백업, 작업별 OS 잠금, active_work 보호를 유지합니다. 잠금 파일을 삭제하거나 긴 ZIP I/O를 공용 잠금 안에 넣지 않습니다.

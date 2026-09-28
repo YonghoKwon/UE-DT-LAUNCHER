@@ -4,6 +4,8 @@
 
 ## 현재 사용 절차
 
+- [실행 중 차단·수동 복구](runtime-safety.md), [배포/실행 안전성 검증](deployment-safety-validation.md)
+
 - [사내 HTTP 인증 단계별 검증](intranet-auth-validation.md): 현재 진행 작업과 미완료 조건.
 - [사내 HTTP 요청 서명 설정](intranet-auth.md): PC 키 등록·설정 생성·Agent 진단의 최초 준비와 반복 운영.
 

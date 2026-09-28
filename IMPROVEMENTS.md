@@ -1,6 +1,6 @@
 # 개선 진행 현황과 보완 필요 사항
 
-점검: 2026-09-28 / `codex/intranet-request-auth`, 기준 `edcb8de` 이후 부분 커밋과 [실제 검증](docs/reference/intranet-auth-validation.md)을 반영했습니다. 현재 구현·이번 검증·회사 미검증을 구분합니다.
+점검: 2026-09-28 / `codex/launcher-deployment-safety`, 기준 `548cab8` 이후 부분 커밋과 [안전성 검증](docs/reference/deployment-safety-validation.md)을 반영했습니다. 현재 구현·이번 검증·회사 미검증을 구분합니다.
 
 P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선. 우선순위는 제안이며 일정·수치 목표는 미정입니다. 미검증과 미구현을 구분합니다.
 
@@ -10,7 +10,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 | 완료 | 부분 진행 | 대기 | 전체 |
 |---:|---:|---:|---:|
-| 4개 | 5개 | 19개 | 28개 |
+| 4개 | 6개 | 18개 | 28개 |
 
 완료를 제외하면 열린 항목은 **24개**입니다. 각 분야 표에서 `진행률`과 `상태`를 먼저 보면 됩니다.
 
@@ -47,6 +47,9 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | SEC-03 | 생성 시 ACL/mode/owner·명시적 repair | Windows/WSL 권한 회귀 통과 | uedt 읽기 성공·nobody 거부 확인 | Windows LocalService 실제 실행 미확인 | 75% |
 | SEC-04 | 요청 서명·nonce·Catalog 결속·Agent 이미지 | 변조/replay/만료 갱신 회귀 통과 | Windows GUI/Agent·Linux HTTP/HTTPS 및 부하 실행 | WSL proxy 간헐 timeout·메모리 계측 공백 남음 | 75% |
 
+| OPS-08 | 공식 preflight·EXE 선서명·MSI payload gate | 계약 11개·개발 MSI 추출/hash 확인 | 실제 회사 서명 인증서 미확인 | 인증서·설치본 서명 검증 대기 | 50% |
+| OPS-09 | runtime-host·peer 결속·공통 변경 조정기 | Windows/WSL 회귀 각 347개 | publish 후손 수명·Agent 재시작·host 장애·GUI 안내 확인 | 저장 실패 전 경계·service health 실제 실패·회사 UE/계정 검증 남음 | 75% |
+
 근거: [성능 검증 기록](docs/reference/performance-validation.md), [CI 구성](.github/workflows/build.yml), 각 항목의 커밋·미완료 조건. 다른 항목의 기존 기반 기능이나 문서 작성만으로 추가 보완 진척을 자동 가산하지 않았습니다.
 
 ## 확정 목표에 따른 진행 순서
@@ -73,7 +76,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | OPS-06/P1 | 50% | 부분 · 원격 검증 대기 | Linux signed HTTPS E2E가 build.yml에 추가됨. 원격 CI 실행·운영 결과 보관은 미확인 | 실제 PR/배포 CI 성공 확인 및 민감정보 없는 결과 보관 정책 확정 |
 | OPS-07/P1 | 0% | 대기 · 추가 보완 | AgentWorker는 IPC 대기만 하고 service-run은 once=true. CLI는 managed 반복 실행을 거부 | Agent 스케줄러 또는 명시적 외부 스케줄 운영을 확정. 재부팅 후 정기 점검·중복 작업 방지·maintenance window 시험 |
 | OPS-08/P0 | 50% | 부분 · 실제 인증서 대기 | 공식 사전 gate·EXE 선서명·MSI 내장 payload 검증·실행별 WiX intermediate 구현. 계약 11개 및 개발 MSI 추출/hash 비교 통과 | 실제 회사 인증서와 설치된 EXE 서명 검증은 미완료. [기록](docs/reference/deployment-safety-validation.md) |
-| OPS-09/P0 | 0% | 대기 · 추가 보완 | ServiceRunner가 PID 검증에 이름 부분 일치, fallback으로 동명 첫 프로세스를 사용. 다중 버전에서 다른 프로세스 선택 위험 | 실행 경로·시작 시각·설치 식별자로 프로세스 결속. 동명 다른 버전/무관 앱을 종료하지 않는 회귀 테스트 |
+| OPS-09/P0 | 75% | 부분 · 추가 장애/실환경 검증 | 이름/PID 종료 제거, Windows Job·Linux subreaper, Agent OS peer·실행 티켓, 전 변경 경로 공통 lease, 구형 위험 요청 차단. 실제 후손/재시작/host 장애·UI 안내 확인 | 저장 실패 모든 경계·service health 실패의 실제 실행, 전체 변경 진입점의 publish 장애 시험, 회사 UE/서비스 계정 검증 미완료. 자동 handoff 제외. [기록](docs/reference/deployment-safety-validation.md) |
 
 ## 성능·저장 공간
 

@@ -28,9 +28,9 @@ def main():
     entry = "game.exe" if os.name == "nt" else "game.sh"
     if os.name == "nt":
         shutil.copy2(Path(os.environ["SystemRoot"]) / "System32" / "cmd.exe", app / entry)
-        arguments = ["/c", "ping -n 4 127.0.0.1 > nul"]
+        arguments = ["/c", "ping -n 6 127.0.0.1 > nul"]
     else:
-        (app / entry).write_text("#!/bin/sh\nsleep 3\n"); (app / entry).chmod(0o755); arguments = []
+        (app / entry).write_text("#!/bin/sh\nsleep 5\n"); (app / entry).chmod(0o755); arguments = []
     config = {"schemaVersion": 1, "deploymentMode": "managed-agent", "projectId": "demo", "targetPlatform": platform,
               "installDir": str(app), "stateRootDir": str(root / "state"), "logDir": str(root / "logs"), "launchArguments": arguments}
     (root / "config").mkdir()
@@ -107,11 +107,25 @@ def main():
         after = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
                  for folder in (app, state) for p in folder.rglob("*") if p.is_file() and p.name != "update.lock"}
         assert before == after, "Running mutation changed protected files"
+        service.terminate(); service.wait(timeout=10)
+        assert host.poll() is None, "Runtime host died with Agent"
+        service = subprocess.Popen([str(agent)], env=env, stdout=log, stderr=log, creationflags=flags)
+        time.sleep(1)
         output, error = host.communicate(timeout=20)
         assert host.returncode == 0, error
         assert rpc("runtime-inspect")["runtime"]["state"] == 0
+        again = rpc("launch-begin"); assert again["success"]
+        host = subprocess.Popen([str(launcher), "runtime-host"], env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, creationflags=flags)
+        host.stdin.write(json.dumps({"config": config, "ticket": again["runtimeTicket"], "agentEndpoint": endpoint}) + "\n"); host.stdin.close(); host.stdin=None
+        assert json.loads(host.stdout.readline())["state"] == "started"
+        host.kill(); host.wait(timeout=5)
+        assert rpc("runtime-inspect")["runtime"]["state"] == 3
+        assert not rpc("repair")["success"]
+        time.sleep(6)  # Owned synthetic descendants exit naturally; no guessed PID cleanup.
+        assert rpc("runtime-inspect")["runtime"]["state"] == 3, "Host disappearance incorrectly cleared unknown state"
         summary = {"platform": platform, "same_user_console_agent": True, "wrong_peer_rejected": True,
-                   "duplicate_launch_blocked": True, "normal_completion": True, "managed_service_account_verified": False}
+                   "duplicate_launch_blocked": True, "normal_completion": True, "agent_restart": True,
+                   "host_crash_stays_unknown": True, "managed_service_account_verified": False}
         (root / "summary.json").write_text(json.dumps(summary, indent=2))
         print("PASS: " + str(root))
     finally:

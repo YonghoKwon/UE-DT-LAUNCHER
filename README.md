@@ -1,12 +1,12 @@
 # UE-DT Launcher
 
-2차 안전성 작업: `codex/launcher-deployment-safety`에서 MSI 서명 순서와 실행 중 변경 차단을 개선 중입니다. 단계별 상태는 [안전성 검증](docs/reference/deployment-safety-validation.md)을 따릅니다.
+2차 안전성 구현: MSI payload 선서명·검증과 runtime-host 기반 실행 중 변경 차단을 추가했습니다. [종료 후 재시도·수동 복구](docs/reference/runtime-safety.md), [실제 검증과 남은 조건](docs/reference/deployment-safety-validation.md)을 확인하세요. OPS-08은 50%, OPS-09는 75%이며 회사 운영 승인은 별도입니다.
 
 추가 구현: 사내 HTTP 요청 서명·PC 인증키 보호·Agent 이미지 전달·설정 생성기를 제공합니다. [최초 등록 명령](docs/reference/intranet-auth.md)과 [검증·남은 조건](docs/reference/intranet-auth-validation.md)을 확인하세요. HTTP는 암호화되지 않으며 회사 운영 승인은 별도입니다.
 
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 런처입니다.
 
-문서 점검: **2026-09-28**, 구현 기준: `codex/intranet-request-auth` (시작점 `edcb8de`). 로컬 브랜치 기준이며 main 반영·운영 배포 완료를 뜻하지 않습니다.
+문서 점검: **2026-09-28**, 구현 기준: `codex/launcher-deployment-safety` (시작점 `548cab8`). 로컬 브랜치 기준이며 main 반영·운영 배포 완료를 뜻하지 않습니다.
 
 ## 프로젝트 목표와 처음 읽을 안내
 
@@ -37,7 +37,7 @@ flowchart LR
 
 ## 현재 구현
 
-최신 인증 작업: Windows/Linux 자동화 각 331개, Python 기존 측정 도구 계약 16개 통과. 실제 GUI 표시·Agent/CLI·HTTP/HTTPS E2E와 1/10/30 연결을 확인했습니다. WSL nginx 간헐 timeout, WSL 메모리 계측 제한, Windows LocalService 및 회사 RHEL/UE 검증은 남아 있습니다. [상세 결과](docs/reference/intranet-auth-validation.md)
+최신 안전성 작업: Windows/WSL 자동화 각 347개, MSI 실패 gate 계약 11개 통과. publish된 일반/개발자 GUI와 CLI·console Agent, 부모 선종료/자식 유지·host 장애·Agent 재시작을 확인했습니다. GUI에서는 상태 표시를, 실제 설치·실행·repair는 CLI E2E로 확인했습니다. [안전성 결과](docs/reference/deployment-safety-validation.md). 이전 인증 부하/WSL nginx·메모리 제약과 실제 LocalService·회사 RHEL/UE 미검증은 [인증 기록](docs/reference/intranet-auth-validation.md)에 남아 있습니다.
 
 | 영역 | 내용 |
 |---|---|
@@ -45,7 +45,8 @@ flowchart LR
 | 게시 | 관리자 승인, 디렉터리 자동 생성, Manifest·서명, 완료 전 비공개, 중단 게시 재개 |
 | 권한 | 실제 IP/CIDR + PC 요청 서명(기존 HTTPS는 Bearer), 프로젝트·환경·채널·선택적 버전 제한, 기본 거부 |
 | 전송 | 인증된 목록·Manifest·이미지·파일·Range, 서명·해시 검증, 재시도·이어받기 |
-| 설치 | 정확한 릴리스, 버전별 설치·상태·잠금·PID 분리, transaction 복구·repair·rollback |
+| 설치 | 정확한 릴리스, 버전별 설치·상태·잠금 분리, 실행 중/불명 상태의 update·repair·rollback·transaction 복구 차단 |
+| 실행 | 사용자 세션 runtime-host, Windows Job / Linux x64 subreaper, 표준 후손 종료까지 추적, 자동 kill 없음 |
 | 일반 화면 | 자동 상태 확인, 상태별 실행 버튼, 친화적 오류·문제 해결, 이미지/fallback |
 | 개발자 화면 | 해당 PC에 허용된 배포 선택, 상세 진행·진단·유지보수 |
 | 운영 | Windows/Linux Agent·IPC·CLI, 진단 내보내기, 무인 서비스 모드, MSI/RPM 제작 구성 |
@@ -53,6 +54,10 @@ flowchart LR
 GUI의 general/developer는 표시 정책이지 다운로드 권한이 아닙니다. 기존 HTTPS/Bearer와 명시적인 schema 3 사내 HTTP/요청 서명을 지원하며, 둘 다 Metadata 서명·해시·권한 검증을 유지합니다. HTTP/Bearer나 무인증으로 자동 후퇴하지 않습니다. nginx 뒤 API는 loopback에만 바인딩하고 공개 정적 경로와 혼합하지 않습니다.
 
 일반 GUI는 자동 점검만 하며 설치는 사용자 클릭 후 수행합니다. 무인 서비스 자동 업데이트와 구분합니다. 관리형 런처 자체 갱신은 MSI/RPM, 게임 콘텐츠 갱신은 Agent 책임입니다.
+
+## 실행 중 변경과 구형 클라이언트
+
+프로그램이 실행 중이면 정상 종료 후 런처에서 다시 확인하세요. GUI를 닫아도 프로그램은 종료되지 않습니다. 추적 불명 상태는 관리자 점검과 명시적 정지 확인이 필요하며 PID 파일 삭제로 우회하지 않습니다. 런처와 Agent를 함께 갱신하세요. 구형 IPC v1의 조회는 유지하지만 실행 추적 capability 없는 변경 요청은 거부합니다. 기존 직접 EXE 바로가기는 관리자가 이전하고, 새 바로가기는 정확한 버전을 선택한 런처를 호출합니다. [상태별 명령](docs/reference/runtime-safety.md)
 
 ## 처음 준비할 것
 

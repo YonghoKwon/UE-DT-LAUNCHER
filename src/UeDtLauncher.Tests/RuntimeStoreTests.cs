@@ -51,6 +51,8 @@ public sealed class RuntimeStoreTests : IDisposable
         RuntimeStore.Write(config,new() { InstallationId=RuntimeStore.InstallationId(config),State=RuntimeState.Running,Host=identity });
         Assert.Equal(RuntimeState.Unknown,RuntimeStore.Observe(config).State);
         Assert.Throws<RuntimeBlockedException>(()=>InstallationMutationLease.Acquire(config));
+        var record=RuntimeStore.Read(config)!; record.PayloadIdentity=RuntimeIdentities.Current(); RuntimeStore.Write(config,record);
+        Assert.Throws<RuntimeBlockedException>(()=>RuntimeStore.Recover(config,RuntimeIdentities.Current(),true));
     }
     public void Dispose() { if (Directory.Exists(root)) Directory.Delete(root,true); }
 }

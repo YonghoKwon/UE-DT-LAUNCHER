@@ -8,7 +8,18 @@ root=$(mktemp -d /tmp/uedt-distribution-e2e.XXXXXX)
 server_pid= nginx_pid=
 trap 'test -z "$nginx_pid" || kill "$nginx_pid" 2>/dev/null || true; test -z "$server_pid" || kill "$server_pid" 2>/dev/null || true' EXIT
 mkdir -p "$root/server/incoming" "$root/client" "$root/nginx" "$root/game"
-printf '#!/bin/sh\nprintf "UE_DT_FAKE_GAME_OK\\n"\n' > "$root/game/game.sh"
+wait_runtime() {
+    for attempt in {1..50}; do
+        "$launcher" runtime inspect --config "$root/client/config.json" > "$root/runtime-inspect.json"
+        if python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1]))["state"] == 0 else 1)' "$root/runtime-inspect.json"; then
+            return 0
+        fi
+        sleep 0.1
+    done
+    echo "Runtime did not report supervised completion" >&2
+    return 1
+}
+printf '#!/bin/sh\nprintf "UE_DT_FAKE_GAME_OK\\n" > runtime-marker.txt\n' > "$root/game/game.sh"
 chmod +x "$root/game/game.sh"
 "$launcher" generate-signing-key --private-key "$root/sign.pem" --public-key "$root/public.pem" > "$root/key.log"
 openssl req -x509 -newkey rsa:2048 -nodes -keyout "$root/tls.key" -out "$root/tls.crt" -days 1 -subj /CN=localhost -addext subjectAltName=DNS:localhost >/dev/null 2>&1
@@ -99,13 +110,20 @@ cat > "$root/client/config.json" <<EOF
 {"schemaVersion":2,"distributionServerUrl":"https://localhost:19443","projectId":"demo","clientProfile":"developer","environment":"prod","channel":"stable","versionPolicy":"exact","requestedVersion":"$version","targetPlatform":"linux-x64","installDir":"$root/client/apps","stateRootDir":"$root/client/state","requireSignedManifests":true,"security":{"credentialName":"e2e","customCaCertificatePath":"$root/tls.crt","allowedDownloadHosts":["localhost"],"trustedSigningKeys":[{"keyId":"release-1","publicKeyPath":"$root/public.pem"}]}}
 EOF
     "$launcher" run --config "$root/client/config.json" > "$root/run-$version.log" 2>&1
-    grep -q UE_DT_FAKE_GAME_OK "$root/run-$version.log"
+    for attempt in {1..50}; do
+        test ! -f "$root/client/apps/demo/prod/stable/$version/linux-x64/runtime-marker.txt" || break
+        sleep 0.1
+    done
+    grep -q UE_DT_FAKE_GAME_OK "$root/client/apps/demo/prod/stable/$version/linux-x64/runtime-marker.txt"
+    wait_runtime
 done
 test -x "$root/client/apps/demo/prod/stable/1.0.0/linux-x64/game.sh"
 test -x "$root/client/apps/demo/prod/stable/2.0.0/linux-x64/game.sh"
 printf damaged > "$root/client/apps/demo/prod/stable/2.0.0/linux-x64/game.sh"
+rm "$root/client/apps/demo/prod/stable/2.0.0/linux-x64/runtime-marker.txt"
 "$launcher" run --config "$root/client/config.json" --repair > "$root/repair.log" 2>&1
-grep -q UE_DT_FAKE_GAME_OK "$root/repair.log"
+wait_runtime
+grep -q UE_DT_FAKE_GAME_OK "$root/client/apps/demo/prod/stable/2.0.0/linux-x64/runtime-marker.txt"
 "$server" token-revoke pc-a --config "$root/server.json"
 check 401 "$file"
 echo "PASS: HTTPS, sidecar approval, IP/header denial, Range, token revocation, two Linux versions, executable permissions and repair. Evidence: $root"

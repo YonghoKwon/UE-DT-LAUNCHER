@@ -2,6 +2,8 @@
 
 2026-09-28 / 기준 `548cab8`, 작업 브랜치 `codex/launcher-deployment-safety`. 회사 운영 승인과 별도이다.
 
+1~5절은 각 부분 커밋 당시의 단계별 기록이다. 중간 단계의 ‘아직 연결하지 않음’은 해당 시점의 범위이며 최종 상태는 6절을 따른다.
+
 ## 1. MSI 서명 순서
 
 - 공식 진입점에서 서명 환경 검사 → publish → EXE 서명/검증 → MSI 생성/서명 → 내장 EXE 추출/hash/signer 검증 순서를 강제한다.
@@ -48,3 +50,49 @@
 - 새 .lnk는 정확한 버전의 사용자 소유 설정을 통해 런처를 실행한다. 기존 .url/.lnk는 덮어쓰거나 삭제하지 않는다. COM .lnk 생성과 설정 pinning 테스트 통과.
 - host control stream은 payload와 분리하고 CLI stderr 상속으로 부모가 payload 종료까지 기다리는 문제를 수정했다. Linux 보존 FD는 close-on-exec로 설정한다.
 - runtime recover는 관리형 관리자/portable 소유자 확인이며 서비스 버전 선택은 --service-selection으로 별도 명시한다. 수동 확인을 OS 종료 증거로 기록하지 않는다.
+
+## 6. 통합 결과와 잔여 검증
+
+| 검증 | 결과 / 증거 |
+|---|---|
+| Windows / WSL 전체 .NET Release 회귀 | 각각 347개 통과, 빌드·publish 경고/오류 0 |
+| MSI 사전 검사·순서·실패 전파 | PowerShell 계약 11개 통과. 실제 서명 인증서 증거 아님 |
+| 개발 MSI | 실제 생성, 비설치 CAB 추출, GUI/Agent payload hash 일치. 설치/custom action 실행 없음 |
+| Windows native family | direct·부모 선종료/자식 생존·host crash 자식 생존, `publish/safety/proof-win-final` |
+| WSL Linux x64 native family | 위 시험 + double-fork/setsid 후손, `/tmp/uedt-runtime-proof-8r8ee5la` |
+| 최종 publish Agent broker | Windows `uedt-broker-proof-22pdgmc4`, Linux `/tmp/uedt-broker-proof-noz0tkn8`: 실제 peer 거부, 중복 실행·구형 변경 차단, 실행 중 update/repair 파일 불변, Agent 재시작, 정상 종료, host 장애 후 Unknown 유지 |
+| signed HTTP 실제 두 버전 설치·실행·repair | Windows `publish/safety/e2e-win-02`, Linux `/tmp/uedt-intranet-_e00ddqd` |
+| HTTPS/Bearer 호환 E2E | 최종 `/tmp/uedt-distribution-e2e.vGCqWV` 통과. 정상 종료 관측 후 repair하고 기존 marker를 제거해 새 실행을 확인. nginx 기본 error-log 경로 경고는 있었으나 isolated config/전송 성공. 기존 대용량 제약 해결을 뜻하지 않음 |
+| 일반/개발자 GUI | publish 실제 화면, 실행 중 친화적 안내·기본 버튼 disabled, 종료 후 상태, 개발자 명령 표시 확인. 설치·실행 동작 자체는 CLI로 검증 |
+| CI 연결 | 양 OS native family/broker 및 Windows packaging failure gate 추가. 원격 CI는 미실행 |
+
+마지막 보강은 수동 확인 시 살아 있는 정확한 payload 신원도 차단하고, dry-run은 변경 없이 상태를 반환하는 것이다. 두 플랫폼 전체 회귀와 재publish broker 시험을 다시 통과했다. 임시 fixture 경로는 로컬 증거 식별자이며 원시 로그·키·바이너리는 커밋하지 않는다.
+
+### 재현 명령
+
+아래는 저장소 루트에서 실행한다. 각 proof는 자기 임시 폴더와 합성 프로세스를 사용하며 OS 서비스/계정을 만들지 않는다.
+
+```powershell
+dotnet test src/UeDtLauncher.Tests -c Release
+./tools/test-windows-packaging.ps1
+python tools/test-runtime-family.py --launcher publish/safety/win/UeDtLauncher.exe
+python tools/test-runtime-broker.py --launcher publish/safety/win/UeDtLauncher.exe --agent publish/safety/win-agent/UeDtLauncher.Agent.exe
+```
+
+```bash
+dotnet test src/UeDtLauncher.Tests -c Release --artifacts-path publish/safety/linux-artifacts
+python3 tools/test-runtime-family.py --launcher publish/safety/linux/UeDtLauncher
+python3 tools/test-runtime-broker.py --launcher publish/safety/linux/UeDtLauncher --agent publish/safety/linux-agent/UeDtLauncher.Agent
+```
+
+입력은 각 OS의 self-contained single-file publish 결과이다. 실행 파일 하나만 복사하는 broker 시험에 framework-dependent DLL 빌드 경로를 넘기지 않는다.
+
+### 완료로 보지 않은 조건
+
+- OPS-08 **50%**: 실제 회사 인증서·RFC3161 서비스 성공·설치된 EXE 검증은 없다. mock과 개발 MSI로 대체하지 않는다.
+- OPS-09 **75%**: 실제 실행 수명·장애·차단 확인은 있지만 모든 상태 저장 실패 지점, 모든 변경 진입점의 publish 장애 주입, service health 실패의 실제 프로세스 시험은 남는다. 현재 guard/서비스 선택 회귀를 이 전체 시험의 완료로 대체하지 않는다.
+- Windows LocalService·Linux uedt 실제 설치 서비스·회사 UE/RHEL, GUI 설치/rollback 직접 조작·GUI 종료 중 payload 유지의 별도 화면 시험은 미완료다. native host 부모 분리 시험과 GUI 상태 관측은 구분한다.
+- 수동 EXE 실행·외부 WMI/D-Bus/systemd broker·특수 clone은 지원 보장 밖이다. runtime-host는 악성 동일 사용자 격리 경계가 아니다.
+- SEC-03/04와 PERF-03의 기존 미달은 유지한다. 세이브 데이터 이전, 자동 서비스 handoff/스케줄, 새 계정·회사 서버 변경, push/PR은 하지 않았다.
+
+[정상/차단/수동 복구 명령](runtime-safety.md) / [개선 진행률](../../IMPROVEMENTS.md)

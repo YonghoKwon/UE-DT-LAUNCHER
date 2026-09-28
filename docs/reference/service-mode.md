@@ -1,20 +1,20 @@
 # 무인 실행과 서비스 모드
 
-> 참고 가이드 / 문서 점검 2026-09-22 / 구현 기준 2cd28c8. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
+문서 점검 2026-09-28 / `codex/launcher-deployment-safety`. **현재 서비스는 앱을 자동 종료하거나 다른 버전으로 자동 전환하지 않습니다.** [실행 안전성·수동 복구](runtime-safety.md)를 함께 읽으세요.
 
 `UeDtLauncher service` 반복 실행과 `UeDtLauncher.Agent` OS 서비스는 서로 다릅니다.
 
 | 방식 | 현재 동작 |
-| --- | --- |
-| portable service | 현재 사용자 권한으로 주기적 준비·적용·앱 재시작 |
+|---|---|
+| portable service | 현재 사용자 권한의 점검 반복. 정지 확인된 같은 설치만 적용·선택적 시작 |
 | managed-agent service --once | IPC로 Agent에 한 회차 요청 |
 | Windows Service/systemd Agent | IPC 요청 대기. 설치만으로 주기적 업데이트가 시작되지 않음 |
 
-현재 Agent의 `AgentWorker`에는 자동 점검 스케줄러가 없습니다. 관리형 무인 운영은 운영 계정·스케줄러·실행 세션을 별도로 검증해야 합니다. Windows 서비스 계정에서 실행한 앱은 로그인 사용자 데스크톱에 표시되지 않습니다.
+AgentWorker의 자동 스케줄러는 미구현입니다(OPS-07). Windows 서비스 계정에서 실행한 앱은 로그인 사용자 데스크톱에 표시되지 않습니다. GUI용 실행과 무인 service 실행을 혼용하지 마세요.
 
 ## 명령
 
-아래 반복 명령은 `deploymentMode=portable` 전용입니다. 서버·서명·credential은 [설정 레퍼런스](guide-03-launcher-usage.md)를 따르고 현재 계정이 쓸 수 있는 설치·상태 경로를 사용합니다.
+아래 반복 명령은 `deploymentMode=portable` 전용입니다.
 
 ```bash
 ./UeDtLauncher service --config launcher.config.json
@@ -22,11 +22,9 @@
 ./UeDtLauncher service --config launcher.config.json --once
 ```
 
-관리형은 반복 실행이 거부되며 `service --config launcher.config.json --once`만 사용합니다. Agent는 GUI/CLI가 지정한 임의 파일이 아니라 자신의 관리 설정으로 실행합니다. `--interval`은 관리형 스케줄러 설정이 아닙니다.
+관리형은 `--once`만 지원하며 자신의 보호 설정을 사용합니다. `--interval`은 Agent 스케줄러 설정이 아닙니다. runtime 추적 capability 없는 구형 클라이언트의 변경 요청은 거부됩니다.
 
 ## serviceMode 설정
-
-전체 런처 설정에 추가하는 블록입니다.
 
 ```json
 {
@@ -35,37 +33,33 @@
     "autoRestartApp": true,
     "startupGraceSeconds": 5,
     "healthCheckUrl": "http://127.0.0.1:8080/health",
-    "healthCheckTimeoutSeconds": 60,
-    "rollbackOnHealthCheckFailure": true,
-    "processName": "YourApplication"
+    "healthCheckTimeoutSeconds": 60
   }
 }
 ```
 
-| 필드 | 동작 |
-| --- | --- |
+| 필드 | 현재 의미 |
+|---|---|
 | intervalSeconds | 기본 300초, 최소 15초. portable --interval 우선, 시작 시 결정 |
-| autoRestartApp | 기본 true. 앱이 꺼졌거나 적용으로 중지한 경우 시작 |
-| startupGraceSeconds | 기본 5초, 0~300초 |
-| healthCheckUrl | 선택적 HTTP(S). 생략하면 시작 유예 뒤 프로세스 생존 확인 |
-| healthCheckTimeoutSeconds | 기본 60초, 1~900초 |
-| rollbackOnHealthCheckFailure | 기본 true. 이전 백업·manifest가 있어야 복원·재실행 가능 |
-| processName | PID 추적 실패 시 프로세스 이름으로 검색. 확장자 제외 |
+| autoRestartApp | 기본 true. 정지 확인·설치 적용 후 supervised 시작. 실행 중 앱을 중지/재시작하는 옵션 아님 |
+| startupGraceSeconds | 기본 5초, 0~300초. 시작 후 대기 |
+| healthCheckUrl | 선택적 HTTP(S). 유예 후 Running 확인 및 한 번의 HTTP 성공 검사 |
+| healthCheckTimeoutSeconds | 기본 60초, 1~900초. 해당 HTTP 요청 제한 |
+| rollbackOnHealthCheckFailure | 기존 설정 호환으로 읽지만 자동 rollback하지 않음 |
+| processName | 기존 설정 호환으로 읽지만 검색/종료에 사용하지 않음 |
 
-매 회차 설정을 다시 읽지만 반복 간격은 시작 시 계산되므로 간격 변경은 재시작 후 반영됩니다. PID 기록은 선택 설치의 상태 경로에 저장됩니다. 이름 검색은 동명 프로세스를 구분하지 못할 수 있으므로 전용 계정·환경에서 검증하세요.
+매 회차 설정을 다시 읽지만 반복 간격은 시작 시 계산하므로 간격 변경은 재시작 후 반영됩니다.
 
-## 순서와 제한
+## 한 회차 순서
 
-1. 릴리스 선택, 다운로드·서명·해시 검사, staging 준비를 먼저 수행합니다.
-2. 실제 적용 변경이 있고 앱이 실행 중이면 정상 종료를 시도하고 필요 시 프로세스 트리를 종료합니다.
-3. transaction 적용 후 필요 시 앱 시작과 상태 확인을 수행합니다.
-4. 실패 시 복원 가능한 백업으로 되돌리고 이전 앱 재시작을 시도합니다.
-5. 다음 주기를 기다립니다. --once 오류는 종료 코드 1입니다.
+1. 배포 metadata 확인 → 서비스 선택 잠금 → 실행 상태·보호된 활성 버전 검사.
+2. Running/LaunchPending/Unknown 또는 다른 활성 버전이면 중단. 설치·backup·transaction journal은 변경하지 않음.
+3. 공통 설치 lease 안에서 prepare/transaction 적용. 필요한 경우 같은 서비스 계정의 runtime-host로 시작.
+4. 시작/health 실패 시 backup과 manual-recovery failure 기록 보존. 앱 자동 종료·파일 rollback·이전 앱 재실행 없음.
+5. 다음 주기 대기. `--once` 오류는 종료 코드 1.
 
-버전 비교는 문자열의 차이를 감지하며 단순히 숫자가 큰 버전만 적용하는 규칙이 아닙니다. 서버 정책·메타데이터 검증도 통과해야 합니다. 버전별 설치에서 이전 프로세스 탐색·동시 실행 방지·실제 UE 종료/재기동은 현장 검증 대상입니다.
+정지 확인과 서비스 버전 선택 변경은 `runtime recover --dry-run`으로 먼저 점검한 뒤, 관리자가 `--confirm-stopped --service-selection`으로 명시합니다. 실제 명령은 [수동 복구 안내](runtime-safety.md)를 따릅니다. 수동 확인은 OS가 증명한 종료와 다릅니다.
 
-현재 PID 확인은 프로세스 이름 부분 일치이며 fallback은 동명 첫 프로세스 선택입니다. 다른 버전·다른 설치와 이름이 같으면 오인 종료 위험이 있으므로 그런 환경의 무인 적용을 승인하지 마세요. 실행 경로·시작 시각·설치 ID 결속 보완은 [OPS-09](../../IMPROVEMENTS.md)에 기록했습니다.
+Linux Agent unit은 `packaging/linux/ue-dt-launcher-agent.service`이며 `uedt`로 실행합니다. portable loop와 Agent가 같은 설치를 동시에 소유하지 않도록 하세요.
 
-Linux Agent unit은 `packaging/linux/ue-dt-launcher-agent.service`이며 `uedt`로 실행합니다. 기존 portable loop를 직접 systemd/작업 스케줄러에 등록하는 방식은 별도 운영 방식입니다. 관리 Agent와 같은 설치를 동시에 소유하게 구성하지 마세요.
-
-[상용 배포 준비](commercial-deployment.md)와 [검증 범위](distribution-validation.md)를 확인한 뒤 실제 UE·픽셀 스트리밍에 적용하세요.
+현재 검증은 합성 앱·console Agent·Windows/WSL입니다. 실제 health 실패 시나리오, 서비스 계정·UE/RHEL 운영 시험은 미완료입니다. [검증 기록](deployment-safety-validation.md)과 [상용 배포 준비](commercial-deployment.md)를 확인하세요.
