@@ -23,8 +23,8 @@ public sealed class LauncherOperationPresentation
         };
     public ObservableCollection<string> Logs { get; } = [];
     public LauncherRetryContext? Retry { get; set; }
-    public static LauncherUiOperation RetryOperation(LauncherRetryContext? failed, LauncherRetryContext current) =>
-        failed is null ? LauncherUiOperation.None : failed == current ? failed.Operation : LauncherUiOperation.Check;
+    public static LauncherUiOperation RetryOperation(LauncherRetryContext? failed, LauncherRetryContext current, bool runtimeBlocked = false) =>
+        runtimeBlocked ? LauncherUiOperation.Check : failed is null ? LauncherUiOperation.None : failed == current ? failed.Operation : LauncherUiOperation.Check;
     public void Begin(LauncherUiOperation operation)
     {
         Kind = operation; Percent = null; CurrentStage = "확인"; ErrorCode = SupportId = null;

@@ -361,7 +361,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                         var document = await ManifestDownloader.DownloadAsync(config, http, (stage, message, percent) =>
                             AddProgress(new LauncherProgress(stage, message, percent)), cancellationToken);
                         var projectStatus = await ManagedProjectStatusInspector.InspectAsync(config, document.Manifest, cancellationToken);
-                        var checkedResponse = Success(request, identity, "checked", $"Release {document.Manifest.Version} metadata, files and signatures are valid.", progress, projectStatus, config.SelectedRelease);
+                        var checkedResponse = Success(request, identity, "checked", $"Release {document.Manifest.Version}: missing {projectStatus.MissingFiles}, changed {projectStatus.ChangedFiles}. Metadata signature verified.", progress, projectStatus, config.SelectedRelease);
                         checkedResponse.Runtime = RuntimeStore.Observe(config);
                         return checkedResponse;
                     }

@@ -1263,7 +1263,7 @@ public sealed partial class MainWindow : Window
             if(selection is not null)VersionedReleasePaths.Bind(config,selection);
             var preview=config.IsManagedDeployment
                 ? await PreviewManagedRollbackAsync(config)
-                : await RollbackPreviewService.ReadAsync(config);
+                : await Task.Run(()=>RollbackPreviewService.ReadAsync(config));
             if(preview is null || !preview.CanRestore)
             {SetStatus("복원할 수 있는 백업 정보를 확인해 주세요.");return;}
             if(!await ConfirmPreviewAsync(preview))return;

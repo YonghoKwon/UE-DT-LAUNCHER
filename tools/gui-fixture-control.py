@@ -1,9 +1,9 @@
 """Controls only a prepared synthetic GUI fixture. Never operates on company installations."""
 import argparse, hashlib, json, os, re, subprocess, time, zipfile
 from pathlib import Path
-from gui_fixture_evidence import inside, verify_files, verify_cohort
+from gui_fixture_evidence import inside, verify_files, verify_cohort, preference_hash, restore_preferences, snapshot_preferences
 p=argparse.ArgumentParser(); p.add_argument('--root',required=True)
-p.add_argument('action',choices=['smoke','gui-general','gui-developer','snapshot','compare','damage','release','stop-agent','start-agent','stop-all','status','approve-v2','verify','verify-backup','invalidate-preview'])
+p.add_argument('action',choices=['smoke','gui-general','gui-developer','snapshot','compare','damage','release','stop-agent','start-agent','stop-all','status','approve-v2','verify','verify-backup','invalidate-preview','prefs-snapshot','prefs-record-owned','prefs-restore'])
 p.add_argument('--version',choices=['1.0.0','2.0.0'],default='1.0.0'); p.add_argument('--name',default='before')
 p.add_argument('--attempt', help='Exact synthetic child marker id to release')
 a=p.parse_args(); root=Path(a.root).resolve()
@@ -22,7 +22,16 @@ def snapshot():
     roots=[root/'client'/'apps'/'demo'/'prod'/'stable'/a.version,root/'client'/'state'/'demo'/'prod'/'stable'/a.version]
     return {str(f.relative_to(root)):hashlib.sha256(f.read_bytes()).hexdigest() for folder in roots if folder.exists()
             for f in folder.rglob('*') if f.is_file() and not f.name.endswith('.lock')}
-if a.action=='approve-v2':
+if a.action=='prefs-snapshot':
+    if (root/'ui-preferences-original.json').exists(): raise ValueError('Original preferences already captured')
+    snapshot_preferences(root); print('Original preferences captured')
+elif a.action=='prefs-record-owned':
+    (control/'ui-preferences-owned.sha256').write_text(preference_hash())
+    print('Recorded last explicitly test-owned preference value')
+elif a.action=='prefs-restore':
+    restore_preferences(root,(control/'ui-preferences-owned.sha256').read_text())
+    print('Restored original preferences after hash guard')
+elif a.action=='approve-v2':
     job=fixture['pendingJobs'].get('2.0.0')
     if not job: raise ValueError('No pending v2 in this fixture')
     subprocess.run([fixture['binaries']['server']['path'],'approve',job,'--config',str(root/'server.json')],env=env,check=True,capture_output=True)

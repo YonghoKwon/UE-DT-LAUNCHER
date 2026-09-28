@@ -5,6 +5,21 @@ namespace UeDtLauncher.Tests;
 public class ManagedAgentTests
 {
     [Fact]
+    public async Task DisconnectedStreamingUsesConnectionDeadlineNotOperationDeadline()
+    {
+        var endpoint=OperatingSystem.IsWindows()?"uedt-absent-"+Guid.NewGuid().ToString("N"):Path.Combine(Path.GetTempPath(),"uedt-absent-"+Guid.NewGuid().ToString("N"));
+        using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var error=await Assert.ThrowsAsync<AgentConnectionException>(()=>new ManagedAgentClient(endpoint).SendStreamingAsync("catalog",null,_=>{},cancellationToken:deadline.Token));
+        Assert.Equal("service-unavailable",LauncherFailure.Code(error));
+    }
+    [Fact]
+    public async Task ExplicitCancellationIsPreserved()
+    {
+        using var cancelled=new CancellationTokenSource();cancelled.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>new ManagedAgentClient("uedt-unused").SendStreamingAsync("catalog",null,_=>{},cancellationToken:cancelled.Token));
+    }
+
+    [Fact]
     public void Protocol_RejectsUnknownCommandsAndVersions()
     {
         Assert.NotNull(ManagedAgentProtocol.Validate(new ManagedAgentRequest

@@ -20,8 +20,17 @@ public sealed partial class MainWindow
             dialog.RequestedThemeVariant=RequestedThemeVariant;
             dialog.Classes.Set("high-contrast",HighContrast);
             foreach(var text in dialog.GetVisualDescendants().OfType<TextBlock>())text.Foreground=Fg();
+            foreach(var box in dialog.GetVisualDescendants().OfType<TextBox>()){box.Foreground=Fg();box.Background=SurfaceBrush;}
+            foreach(var combo in dialog.GetVisualDescendants().OfType<ComboBox>()){combo.Foreground=Fg();combo.Background=SurfaceBrush;}
+            foreach(var check in dialog.GetVisualDescendants().OfType<CheckBox>())check.Foreground=Fg();
             foreach(var button in dialog.GetVisualDescendants().OfType<Button>())
-            {button.Foreground=HighContrast?Brushes.White:Fg();button.Background=HighContrast?Brushes.Black:SurfaceBrush;}
+            {
+                var primary=button.Classes.Contains("posco-primary");
+                button.Foreground=HighContrast||primary?Brushes.White:Fg();
+                button.Background=HighContrast?Brushes.Black:primary?LauncherVisualTokens.Brush(LauncherVisualTokens.Accent):SurfaceBrush;
+                button.BorderBrush=HighContrast?Brushes.White:LauncherVisualTokens.Border(IsDeveloper);
+                foreach(var text in button.GetVisualDescendants().OfType<TextBlock>())text.Foreground=button.Foreground;
+            }
         }
     }
     private Window AccessibleDialog(string title,Control body,Button cancel,params Button[] actions)

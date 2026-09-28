@@ -106,6 +106,26 @@ public class EnterpriseLayoutTests
         finally {window.Close();}
     }
     [AvaloniaFact]
+    public void OpenDialogFollowsContrastAndRestoresPrimaryPalette()
+    {
+        var window=Create(false);window.Show();Dispatcher.UIThread.RunJobs();
+        var dialog=window.ShowEnterpriseSettings(false);Dispatcher.UIThread.RunJobs();
+        try
+        {
+            var flags=System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic;
+            var prefs=typeof(MainWindow).GetField("_preferences",flags)!;
+            var refresh=typeof(MainWindow).GetMethod("RefreshOpenDialogs",flags)!;
+            prefs.SetValue(window,new LauncherUiPreferences(1,true));refresh.Invoke(window,null);
+            Assert.Equal(Avalonia.Media.Brushes.Black,dialog.Background);
+            var primary=dialog.GetLogicalDescendants().OfType<Button>().Single(b=>AutomationProperties.GetAutomationId(b)=="dialog-confirm");
+            Assert.Equal(Avalonia.Media.Brushes.White,primary.Foreground);
+            prefs.SetValue(window,new LauncherUiPreferences());refresh.Invoke(window,null);
+            Assert.Equal(LauncherVisualTokens.Accent,((Avalonia.Media.ISolidColorBrush)primary.Background!).Color);
+            Assert.All(primary.GetVisualDescendants().OfType<TextBlock>(),text=>Assert.Equal(Avalonia.Media.Brushes.White,text.Foreground));
+        }
+        finally{dialog.Close();window.Close();}
+    }
+    [AvaloniaFact]
     public void RuntimeBlockedKeepsDeveloperMutationsDisabled()
     {
         var model=new LauncherDashboardViewModel {Config=new LauncherConfig {ClientProfile="developer",Projects=[new(){ProjectId="demo",DisplayName="demo"}]},GeneralState=GeneralLauncherState.RuntimeBlocked};

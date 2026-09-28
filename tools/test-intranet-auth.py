@@ -20,7 +20,7 @@ import zipfile
 import struct
 import zlib
 import hashlib
-from gui_fixture_evidence import agent_status
+from gui_fixture_evidence import agent_status, snapshot_preferences
 
 
 def main():
@@ -46,6 +46,7 @@ def main():
     root.mkdir(parents=True, exist_ok=True)
     if (root / "server.json").exists():
         raise RuntimeError("Use a new isolated root; existing fixture will not be replaced")
+    if args.prepare_gui: snapshot_preferences(root)
     client = root / "client"
     (client / "agent").mkdir(parents=True)
     env = dict(os.environ, UE_DT_AGENT_DATA_ROOT=str(client / "agent"))
@@ -269,7 +270,9 @@ http {{
             if args.prepare_gui:
                 binaries = {"launcher": str(composed_launcher), "agent": str(composed_agent),
                             "server": server, "synthetic": str(Path(args.prepare_gui).resolve())}
+                source_diff = subprocess.check_output(["git", "diff", "HEAD", "--", "src", "tools"])
                 write(root / "fixture.json", {"schemaVersion": 1, "id": root.name,
+                      "sourceDiffSha256": hashlib.sha256(source_diff).hexdigest(), "sourceDirty": bool(source_diff),
                       "sourceHead": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
                       "binaries": {k: {"path": v, "sha256": hashlib.sha256(Path(v).read_bytes()).hexdigest()}
                                    for k, v in binaries.items()}, "pendingJobs": pending_jobs})

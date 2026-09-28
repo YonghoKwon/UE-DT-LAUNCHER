@@ -22,6 +22,15 @@ public class EnterpriseFeedbackTests
         Assert.DoesNotContain("secret",error.Message);Assert.DoesNotContain("secret",error.Detail);
     }
     [Fact]
+    public void RuntimeBlockedRetryCanOnlyCheck()
+    {
+        foreach(var operation in new[]{LauncherUiOperation.Launch,LauncherUiOperation.Update,LauncherUiOperation.Repair,LauncherUiOperation.Rollback})
+        {
+            var context=new LauncherRetryContext(operation,"demo","prod","stable","1");
+            Assert.Equal(LauncherUiOperation.Check,LauncherOperationPresentation.RetryOperation(context,context,true));
+        }
+    }
+    [Fact]
     public void GeneralRuntimeMessageDoesNotExposeInternalObservation()
     {
         var error=LauncherUiError.From(new RuntimeBlockedException(new(RuntimeState.Unknown,"unknown","internal C:\\protected\\runtime.json")));

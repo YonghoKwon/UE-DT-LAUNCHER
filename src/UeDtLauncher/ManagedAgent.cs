@@ -406,10 +406,13 @@ public sealed class ManagedAgentClient(string? endpoint = null)
 
     private async Task<Stream> ConnectAsync(CancellationToken cancellationToken)
     {
+        using var connectTimeout=CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        connectTimeout.CancelAfter(TimeSpan.FromSeconds(3));
         if (OperatingSystem.IsWindows())
         {
             var pipe = new NamedPipeClientStream(".", _endpoint, PipeDirection.InOut, PipeOptions.Asynchronous);
-            try { await pipe.ConnectAsync(cancellationToken); return pipe; }
+            try { await pipe.ConnectAsync(connectTimeout.Token); return pipe; }
+            catch(OperationCanceledException ex) when(!cancellationToken.IsCancellationRequested) {pipe.Dispose();throw new AgentConnectionException(ex);}
             catch(IOException ex) {pipe.Dispose();throw new AgentConnectionException(ex);}
             catch {pipe.Dispose();throw;}
         }
@@ -417,9 +420,11 @@ public sealed class ManagedAgentClient(string? endpoint = null)
         var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
         try
         {
-            await socket.ConnectAsync(new UnixDomainSocketEndPoint(_endpoint), cancellationToken);
+            await socket.ConnectAsync(new UnixDomainSocketEndPoint(_endpoint), connectTimeout.Token);
             return new NetworkStream(socket, ownsSocket: true);
         }
+        catch(OperationCanceledException ex) when(!cancellationToken.IsCancellationRequested)
+        {socket.Dispose();throw new AgentConnectionException(ex);}
         catch(Exception ex) when(ex is SocketException or IOException)
         {
             socket.Dispose();

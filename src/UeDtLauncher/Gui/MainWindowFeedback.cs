@@ -14,10 +14,10 @@ public sealed partial class MainWindow
     {
         var context=_presentation.Retry;
         if(_running||context is null)return;
-        var operation=LauncherOperationPresentation.RetryOperation(context,CurrentContext(context.Operation));
+        var operation=LauncherOperationPresentation.RetryOperation(context,CurrentContext(context.Operation),_viewModel.GeneralState==GeneralLauncherState.RuntimeBlocked);
         switch(operation)
         {
-            case LauncherUiOperation.Catalog: await RefreshCatalog(true);break;
+            case LauncherUiOperation.Catalog: await RefreshSelectionStatusAsync();break;
             case LauncherUiOperation.Check: await RefreshInstallStatusAsync();break;
             case LauncherUiOperation.Update: await RunAsync(false,false,context.Selection);break;
             case LauncherUiOperation.Repair: await RunAsync(true,false,context.Selection);break;
@@ -25,6 +25,16 @@ public sealed partial class MainWindow
             case LauncherUiOperation.Troubleshoot: await TroubleshootAsync();break;
             case LauncherUiOperation.Rollback: await RollbackLatestAsync();break; // New preview and confirmation every time.
         }
+    }
+    private async Task RefreshSelectionStatusAsync()
+    {
+        if(_running)return;
+        if(UsesDistributionServer)
+        {
+            await RefreshCatalog(false,suppressDialog:true);
+            if(_presentation.ErrorCode is not null || !HasProject)return;
+        }
+        await RefreshInstallStatusAsync();
     }
     private async Task<RollbackPreview?> PreviewManagedRollbackAsync(LauncherConfig config)
     {

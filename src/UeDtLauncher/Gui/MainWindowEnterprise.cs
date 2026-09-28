@@ -230,9 +230,9 @@ public sealed partial class MainWindow
         if(IsDeveloper)primary.IsEnabled=HasProject&&!_running;
         primary.HotKey=new KeyGesture(Key.F5);actions.Children.Add(primary);
         if(IsDeveloper)actions.Children.Add(EnterpriseButton("업데이트","update",async (_,_)=>await RunAsync(false,false)));
-        var check=EnterpriseButton(_viewModel.GeneralState==GeneralLauncherState.RecoverableError?"문제 해결":"상태 확인","status-check",async (_,_)=>{if(!IsDeveloper&&_viewModel.GeneralState==GeneralLauncherState.RecoverableError)await TroubleshootAsync();else await RefreshInstallStatusAsync();});
+        var check=EnterpriseButton(_viewModel.GeneralState==GeneralLauncherState.RecoverableError?"문제 해결":"상태 확인","status-check",async (_,_)=>{if(!IsDeveloper&&_viewModel.GeneralState==GeneralLauncherState.RecoverableError)await TroubleshootAsync();else await RefreshSelectionStatusAsync();});
         check.HotKey=new KeyGesture(Key.F6);actions.Children.Add(check);
-        if(_presentation.ErrorCode is not null && _presentation.Retry is not null)actions.Children.Add(EnterpriseButton("다시 시도","retry-operation",async (_,_)=>await RetryCurrentAsync()));
+        if(_viewModel.GeneralState!=GeneralLauncherState.RuntimeBlocked && _presentation.ErrorCode is not null && _presentation.Retry is not null)actions.Children.Add(EnterpriseButton("다시 시도","retry-operation",async (_,_)=>await RetryCurrentAsync()));
         foreach(var item in actions.Children)item.Margin=new Thickness(0,0,8,0);
         panel.Children.Add(actions);
         _statusText=Identify(Txt(_presentation.Title,14,true),"operation-status","작업 상태");

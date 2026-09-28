@@ -1,5 +1,5 @@
 """Read/verify only files inside a synthetic fixture; no UI automation."""
-import hashlib, json, os, socket, struct, uuid
+import hashlib, json, os, socket, struct, uuid, base64
 from pathlib import Path
 
 def inside(root, relative):
@@ -58,3 +58,29 @@ def agent_status(endpoint):
     finally:
         connection.close()
         if channel: channel.close()
+
+def preference_path():
+    base=Path(os.environ['LOCALAPPDATA']) if os.name=='nt' else Path(os.environ.get('XDG_CONFIG_HOME',str(Path.home()/'.config')))
+    return base/'UE-DT Launcher'/'ui-preferences.json'
+
+def snapshot_preferences(root):
+    path=preference_path()
+    if path.is_symlink(): raise ValueError('Linked preferences are not supported')
+    original=path.read_bytes() if path.exists() else None
+    if original is not None and len(original)>4096: raise ValueError('Unexpected preferences size')
+    inside(root,'ui-preferences-original.json').write_text(json.dumps({'original':base64.b64encode(original).decode() if original is not None else None}))
+
+def preference_hash():
+    path=preference_path()
+    return sha256(path) if path.exists() else 'absent'
+
+def restore_preferences(root, expected):
+    if preference_hash()!=expected: raise ValueError('Preferences changed since the last owned write; refusing overwrite')
+    path=preference_path()
+    if path.is_symlink(): raise ValueError('Linked preferences are not supported')
+    data=json.loads(inside(root,'ui-preferences-original.json').read_text())['original']
+    if data is None: path.unlink(missing_ok=True)
+    else:
+        path.parent.mkdir(parents=True,exist_ok=True)
+        temporary=path.with_name('fixture-'+uuid.uuid4().hex+'.tmp')
+        temporary.write_bytes(base64.b64decode(data));temporary.replace(path)
