@@ -140,6 +140,27 @@ public sealed class LauncherDashboardViewModel : INotifyPropertyChanged
                 : GeneralLauncherState.Ready;
     }
 
+    public static RuntimeObservation RequireRuntimeObservation(RuntimeObservation? runtime) => runtime ??
+        new(RuntimeState.Unknown, "runtime-observation-missing", "실행 상태 확인이 필요합니다. 업데이트 서비스 연결을 다시 확인해 주세요.");
+
+    public bool ApplyRuntimeObservation(RuntimeObservation? runtime)
+    {
+        var observed = RequireRuntimeObservation(runtime);
+        if (observed.State == RuntimeState.Quiescent) return true;
+        GeneralState = GeneralLauncherState.RuntimeBlocked;
+        InstallState = observed.State == RuntimeState.Running ? "실행 중" : "실행 상태 확인 필요";
+        InstallDetail = observed.Message;
+        return false;
+    }
+
+    public void RequireRuntimeQuiescent(RuntimeObservation? runtime)
+    {
+        if (!ApplyRuntimeObservation(runtime)) throw new RuntimeBlockedException(RequireRuntimeObservation(runtime));
+    }
+
+    public static bool CanOfferRecoveryRollback(bool repairAttempted, bool hasBackup, Exception error) =>
+        repairAttempted && hasBackup && error.GetBaseException() is not RuntimeBlockedException;
+
     public static string ConnectionLabel(
         bool developer,
         ServiceConnectionState state,

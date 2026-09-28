@@ -1054,6 +1054,7 @@ public sealed partial class MainWindow : Window
         {
             if (_statusText is not null) _statusText.Text = launch ? "실행 준비 중..." : "업데이트 확인 중...";
             var c = await RunConfig(repair, launch);
+            RuntimeObservation? launchedRuntime = null;
             if (c.IsManagedDeployment)
             {
                 var requested = CurrentReleaseSelection();
@@ -1063,7 +1064,21 @@ public sealed partial class MainWindow : Window
                     ReportManagedProgress, selection: requested);
                 response.ThrowIfFailed();
                 ApplyManagedSelection(c, response, requested);
-                if (launch) _ = await ManagedAppLauncher.LaunchAsync(c);
+                if (response.ProjectStatus is not null) _viewModel.ApplyProjectStatus(response.ProjectStatus);
+                if (launch)
+                {
+                    _ = await ManagedAppLauncher.LaunchAsync(c);
+                    try
+                    {
+                        var observed = await new ManagedAgentClient().SendRuntimeAsync("runtime-inspect", c);
+                        observed.ThrowIfFailed();
+                        launchedRuntime = observed.Runtime;
+                    }
+                    catch (Exception)
+                    {
+                        launchedRuntime = LauncherDashboardViewModel.RequireRuntimeObservation(null);
+                    }
+                }
             }
             else
             {
@@ -1081,6 +1096,8 @@ public sealed partial class MainWindow : Window
             _installState = "최신 상태"; _installDetail = "현재 설치된 파일이 최신 배포 정보와 일치합니다.";
             Build(); // refresh the version tile and release info with the new install state
             Progress(100); if (_statusText is not null) _statusText.Text = launch ? "실행되었습니다." : "최신 상태입니다.";
+            if (launch && c.IsManagedDeployment && !_viewModel.ApplyRuntimeObservation(launchedRuntime))
+                MarkError(new RuntimeBlockedException(LauncherDashboardViewModel.RequireRuntimeObservation(launchedRuntime)), "실행 상태 확인", showDialog: false);
         }
         catch (Exception ex) { MarkError(ex); }
         finally { _running = false; SetBusy(false); }
@@ -1122,8 +1139,8 @@ public sealed partial class MainWindow : Window
                 Build();
                 Progress(100);
                 if (_statusText is not null) _statusText.Text = _installState;
-                if (response.Runtime is { State: not RuntimeState.Quiescent } runtime)
-                    MarkError(new RuntimeBlockedException(runtime), "실행 상태 확인", showDialog: false);
+                if (!_viewModel.ApplyRuntimeObservation(response.Runtime))
+                    MarkError(new RuntimeBlockedException(LauncherDashboardViewModel.RequireRuntimeObservation(response.Runtime)), "실행 상태 확인", showDialog: false);
                 return;
             }
             var (missing, changed, total, version) = await Task.Run(async () =>
@@ -1160,33 +1177,39 @@ public sealed partial class MainWindow : Window
         _viewModel.GeneralState = GeneralLauncherState.Working;
         SetBusy(true);
         Progress(0);
+        var repairAttempted = false;
         try
         {
             var client = new ManagedAgentClient();
             var service = await client.SendAsync("status", timeout: TimeSpan.FromSeconds(3));
-            if (!service.Success) throw new InvalidOperationException(service.Message);
+            service.ThrowIfFailed();
             var config = await RunConfig(false, false);
             var check = await client.SendStreamingAsync(
                 "check",
                 config.ProjectId,
                 ReportManagedProgress,
                 timeout: TimeSpan.FromMinutes(5), selection: CurrentReleaseSelection());
-            if (!check.Success) throw new InvalidOperationException(check.Message);
+            check.ThrowIfFailed();
             if (check.ProjectStatus is not null) _viewModel.ApplyProjectStatus(check.ProjectStatus);
+            _viewModel.RequireRuntimeQuiescent(check.Runtime);
+            if (check.ProjectStatus is null) throw new InvalidDataException("설치 상태를 확인할 수 없습니다. 다시 확인해 주세요.");
 
             if (check.ProjectStatus is { UpdateRequired: true })
             {
+                repairAttempted = true;
                 var repair = await client.SendStreamingAsync(
                     "repair",
                     config.ProjectId,
                     ReportManagedProgress, selection: CurrentReleaseSelection());
-                if (!repair.Success) throw new InvalidOperationException(repair.Message);
+                repair.ThrowIfFailed();
                 var verified = await client.SendStreamingAsync(
                     "check",
                     config.ProjectId,
                     ReportManagedProgress,
                     timeout: TimeSpan.FromMinutes(5), selection: CurrentReleaseSelection());
-                if (!verified.Success || verified.ProjectStatus is { UpdateRequired: true })
+                verified.ThrowIfFailed();
+                _viewModel.RequireRuntimeQuiescent(verified.Runtime);
+                if (verified.ProjectStatus is null || verified.ProjectStatus is { UpdateRequired: true })
                     throw new InvalidOperationException(verified.Message);
                 if (verified.ProjectStatus is not null) _viewModel.ApplyProjectStatus(verified.ProjectStatus);
             }
@@ -1200,7 +1223,7 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            var canRollback = _viewModel.ProjectStatus?.HasBackup == true;
+            var canRollback = LauncherDashboardViewModel.CanOfferRecoveryRollback(repairAttempted, _viewModel.ProjectStatus?.HasBackup == true, ex);
             if (canRollback && await ConfirmRollback("업데이트 서비스 최신 백업", null))
             {
                 try

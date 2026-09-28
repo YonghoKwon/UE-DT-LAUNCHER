@@ -8,3 +8,21 @@
 - `test-intranet-auth.py --prepare-gui <exe>`는 서명 HTTP 서버에 두 버전을 승인하고 console Agent·일반/개발자 설정을 준비하되 클라이언트에 설치하지 않는다.
 - `gui-fixture-control.py`는 해당 격리 root의 상태/hash 관측·데이터 파일 손상·정상 자식 종료·자기가 띄운 Agent 제어만 제공한다. GUI 버튼 호출을 대체하지 않는다.
 - `publish/gui-safety/prep-smoke`에서 준비 성공, 부모 선종료/자식 유지/정상 종료, client/apps 미생성 확인. 개발 도구 Release publish 경고/오류 0. 준비 후 테스트 서버·Agent 종료.
+
+## 2. 상태 수정과 현재 검증
+
+- 실행 후 Agent runtime-inspect로 Running/Pending/Unknown/누락을 반영하고 기본 버튼을 비활성화한다. 설치 결과의 구조화 버전 정보도 반영한다.
+- 문제 해결의 typed runtime 오류를 유지하고 검사 전/후 runtime을 확인한다. 실제 repair 실패 + backup 존재일 때만 rollback을 제안하며 runtime 차단에서는 제안하지 않는다.
+- Windows/WSL 전체 각 393개 통과. 최종 버전 정보 갱신 보강 후 관련 8개 재통과, Windows publish 경고/오류 0.
+- 실제 일반 GUI의 업데이트 서비스 정상·미설치·설치 후 실행 버튼을 관측했다. 일반 프로필은 현행 정책으로 최신 v2를 선택하므로, 실제 시험은 일반 v2 첫 설치 → 개발자 v1 정확 선택 순서로 수행한다. 정책을 임의 변경하지 않는다.
+- 설치 버튼 직전 Computer Use 확인을 요청했다. 응답 전에는 실제 설치/실행 버튼을 누르지 않으며, 아직 아래 직접 조작 결과를 완료로 인정하지 않는다.
+
+## 남은 직접 조작
+
+1. 일반 첫 설치/실행 및 즉시 실행 중 안내.
+2. GUI가 시작한 앱의 자식 유지 중 GUI 종료·재실행, 자연 종료 확인.
+3. 실행 중 update/repair/rollback 차단과 보호 파일 hash 불변.
+4. 정상 파일의 repair로 실제 backup 생성 → 테스트 version.txt 손상 → rollback 취소/확인·바이트 복원.
+5. 개발자 다른 버전 설치·실행 확인 취소/승인, 일반 문제 해결의 단절/재연결·실행 중 차단.
+
+portable GUI의 버전별 rollback 경로는 별도 보완이 남는다. 회사 UE/RHEL·서비스 계정은 이번 범위 밖이다. OPS-09 75%, OPS-08 50%와 기존 개선 집계를 유지한다.
