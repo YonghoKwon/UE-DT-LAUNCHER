@@ -161,14 +161,14 @@
     "sourceCommit": "8ce5060563c6294e55fbbcf086682a84ccef1c98",
     "productFixCommit": "fa87eaa",
     "sourceDirty": false,
-    "nativeGuiApply": "partial-portable-v1-install-run-pass",
+    "nativeGuiApply": "partial-portable-v1-v2-install-run-and-developer-repair-pass",
     "nativeGeneralStartup": "pass-local-mode-not-installed-latest-v1-install-and-run-button-observed-without-click",
     "fixtures": [
       "accept-portable-02",
       "accept-managed-02"
     ],
     "fixtureState": {
-      "portable": "v1-installed-stopped-v2-published-awaiting-user-install",
+      "portable": "v1-unchanged-v2-restored-stopped-awaiting-healthy-backup-approval",
       "managed": "uninstalled-v1-published-v2-pending"
     },
     "managedCapabilities": [
@@ -207,6 +207,50 @@
         "latestVersion": "2.0.0",
         "primaryAction": "update-and-launch",
         "applied": false
+      },
+      {
+        "id": "portable-v2-update-run",
+        "result": "pass",
+        "actor": "assistant-after-action-approval",
+        "verifiedFiles": 3,
+        "previousVersionSnapshotUnchanged": true,
+        "runtime": "Running"
+      },
+      {
+        "id": "portable-v2-running-developer-blocks",
+        "result": "pass",
+        "selectedVersion": "2.0.0",
+        "payloadAliveBeforeObservation": true,
+        "disabledActions": [
+          "run",
+          "update",
+          "repair",
+          "rollback"
+        ],
+        "protectedSnapshotUnchangedBeforeExit": true,
+        "afterSyntheticRelease": "Quiescent",
+        "refreshResult": "ready-actions-enabled",
+        "limit": "disabled GUI controls and snapshots; not exhaustive forced mutation requests"
+      },
+      {
+        "id": "portable-v2-repair-preparation",
+        "result": "prepared-then-repaired",
+        "damagedFile": "version.txt",
+        "missingFiles": 0,
+        "changedFiles": 1,
+        "previousVersionSnapshotUnchanged": true,
+        "repairApplied": true
+      },
+      {
+        "id": "portable-v2-developer-repair",
+        "result": "pass",
+        "actor": "assistant-after-action-approval",
+        "verifiedFiles": 3,
+        "previousVersionSnapshotUnchanged": true,
+        "newApplicationMarker": false,
+        "runtime": "Quiescent",
+        "display": "repair-complete-ready",
+        "backupLimit": "pre-repair damaged files are not a normal rollback proof"
       }
     ]
   },

@@ -67,6 +67,7 @@
 - 글자 배율·앱 고대비는 사용자별 ui-preferences.json에만 저장합니다. UI 스레드에서 비동기 파일 저장을 동기 대기하지 않습니다. OS 고대비 요청을 우선합니다.
 - GUI 시험은 새 fixture에 같은 소스의 GUI/Agent/서버/합성 앱을 게시하고 바이너리 hash·HEAD·소스 diff hash를 기록합니다. 기존 fixture와 설치를 덮어쓰지 않습니다.
 - 최종 수용은 고정된 같은 게시본 묶음으로 수행합니다. 수정 후에는 영향받는 시험을 새 게시본에서 다시 실행하고 이전 후보 성공을 합산하지 않습니다. Portable fixture는 Agent 없이 별도 credential/설치/state를 사용합니다. 준비·재개·제어 도구에서 게시본 해시와 실제 readiness를 확인합니다.
+- 실행 중 차단 시험은 살아 있는 합성 marker와 Running을 먼저 확인하고 종료 전에 보호 snapshot을 비교합니다. 정상 종료가 기록하는 runtime 변경을 설치 변경으로 오인하거나, 제한시간 종료 뒤 비활성 버튼을 실행 중 차단 증거로 사용하지 않습니다.
 - 손상 repair 직전 파일은 손상 상태로 백업될 수 있습니다. 정상 rollback 시험은 repair 성공 후 정상 상태에서 다시 repair하여 최신 backup 전체 hash를 확인합니다.
 - OS 해상도·배율·고대비는 사용자 협업으로 변경/원복하고 앱 진단의 screen/work area·RenderScaling·DIP·글자 배율로 대조합니다. 사용자 prefs는 원본을 보존하고 중간 사용자 변경이 감지되면 복원 덮어쓰기를 거부합니다.
 - PreviousInstallation은 인증된 동일 track의 bounded 설치 기록 표시 힌트입니다. 현재 선택의 IsInstalled/InstalledVersion/HasBackup 의미, 실행 권한·실행 대상·백업 대상을 바꾸지 않습니다.

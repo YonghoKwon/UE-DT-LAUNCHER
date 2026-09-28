@@ -37,7 +37,7 @@ flowchart LR
 
 현재 보완 소스는 **Windows/WSL 각 510개 통과, Release 경고·오류 0**입니다. 변경 없는 소스로 고정한 `8ce5060`의 Windows/Linux publish와 Linux HTTP 요청 서명+Agent·HTTPS/Bearer+nginx E2E도 통과했습니다. 관리형·portable의 정확한 선택/설치/runtime 표시, 최초 연결 실패 재시도와 복원 후 상태 재확인, 제목 글자 배율·작은 화면·포커스를 보완했습니다. Portable은 Agent 없이 `로컬 모드`로 동작하고, 문제 해결은 설치된 손상 대상만 복구하며 미설치 버전을 자동 설치하거나 앱을 실행하지 않습니다.
 
-이전 게시본에서는 portable v1→v2 설치/실행·v1 보존·창 종료 후 자식 수명·실행 중 변경 버튼 차단·정상 백업 복원을 확인했습니다. 새 후보도 portable v1의 GUI 설치·실행, 3파일 해시, 창 종료/재실행 중 동일 자식 생존과 정상 종료 후 실행 가능 복귀를 확인했습니다. **새 후보의 v2 업데이트·복구·복원 및 관리형 적용은 남았습니다.** 미설치 재연결 첫 클릭 복귀와 설치/실행0건은 작업 중 게시본의 별도 사전 시험입니다. 서로 다른 게시본의 성공을 합산하지 않습니다. [게시본별 실제 증거와 남은 조건](docs/reference/archive/validation/ui-acceptance-finalization.md)
+이전 게시본에서는 portable v1→v2 설치/실행·v1 보존·창 종료 후 자식 수명·실행 중 변경 버튼 차단·정상 백업 복원을 확인했습니다. 새 후보도 portable v1의 GUI 설치·실행, 3파일 해시, 창 종료/재실행 중 동일 자식 생존과 정상 종료 후 실행 가능 복귀를 확인했습니다. 새 후보의 v2 업데이트·실행도 3파일 해시·v1 보호 snapshot 불변을 확인했고, 실행 중 개발자 변경 버튼 차단과 정상 종료 후 재활성화를 확인했습니다. 개발자 v2 손상 복구도 파일 3개 해시·v1 불변·추가 실행 없음으로 통과했습니다. **새 후보의 일반 문제 해결·복원 및 관리형 적용은 남았습니다.** 미설치 재연결 첫 클릭 복귀와 설치/실행0건은 작업 중 게시본의 별도 사전 시험입니다. 서로 다른 게시본의 성공을 합산하지 않습니다. [게시본별 실제 증거와 남은 조건](docs/reference/archive/validation/ui-acceptance-finalization.md)
 
 기존 GUI 검증 이력에서는 일반 GUI 설치·실행·실행 중 버튼 차단·창 종료/재실행·자식 정상 종료, 개발자 선택/취소·v2 파일 복구·같은 설치의 정상 backup rollback을 실제로 확인했습니다. [GUI 실행 이력](docs/reference/archive/validation/managed-gui-safety-validation.md), [runtime 장애 이력](docs/reference/archive/validation/runtime-safety-completion-validation.md)
 
