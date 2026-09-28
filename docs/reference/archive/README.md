@@ -12,6 +12,7 @@
 | [인증 부하 JSON](validation/intranet-auth-load-results.json) | 위 인증 시험의 구조화 측정 결과 |
 | [배포 서명·runtime 1차](validation/deployment-safety-validation.md) | MSI 순서·native 후손·Agent·변경 차단 |
 | [runtime 후속](validation/runtime-safety-completion-validation.md) | 상태 저장·서비스 전환·장애 주입 |
+| [포스코DX UI·접근성](validation/poscodx-ui-accessibility-validation.md) | 새 일반/개발자 화면·작업 피드백·설정/접근성·실제/미검증 구분 |
 | [관리형 GUI](validation/managed-gui-safety-validation.md) | 일반 설치/실행·창 종료, 개발자 선택·취소·복구·rollback 실제 기록 |
 
 아카이브로 이동한 것은 시험 결과 폐기나 실패 전환이 아닙니다. 최신 상태를 확인하지 않고 과거의 “미완료/다음 단계” 문장을 현재 상태로 인용하지 마세요. 현행 성능 옵션은 [설정 레퍼런스](../guide-03-launcher-usage.md)를 따릅니다.

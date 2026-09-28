@@ -1,6 +1,6 @@
 # GUI 표시 설정·이미지 커스터마이징
 
-> 참고 가이드 / 문서 점검 2026-09-28 / 코드 기준 0d12957. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
+> 참고 가이드 / 문서 점검 2026-09-28 / 코드 기준 codex/poscodx-ui-accessibility. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
 
 이 문서는 이름·이미지·정렬을 다룹니다. 서버 접근 권한, 서명키, 설치 루트는 Agent 보호 설정과 서버 정책이 담당합니다. [설정 레퍼런스](guide-03-launcher-usage.md)의 설정 선택 순서를 먼저 확인하세요.
 
@@ -40,17 +40,23 @@
 
 | 이미지 | 권장 크기 | 표시 |
 | --- | --- | --- |
-| thumbnail.png | 480 × 320 | 프로젝트 카드 |
-| hero.png | 1920 × 720 | 선택 프로젝트 배너 |
+| thumbnail.png | 480 × 320 | 서버/캐시 메타데이터 지원; 현행 프로젝트 목록은 이름 중심 |
+| hero.png | 1920 × 720 | 선택 프로젝트 요약의 작은 이미지(좁은 창/고대비에서는 숨김) |
 
 PNG, JPG/JPEG, WebP, 파일당 최대 20 MiB를 지원합니다. 확장자·시그니처를 확인하고 누락·잘못된 이미지·디코딩 실패에는 이니셜 기반 대체 이미지를 사용합니다. Hero는 `UniformToFill`로 잘리므로 주요 로고는 중앙 안전 영역에 배치하세요.
 
 로컬 이미지와 서버 외부 `release.json`의 이미지 메타데이터는 구분합니다. 로컬 경로가 자동으로 서버에 업로드되지는 않습니다.
 
+## 브랜드·접근성
+
+일반 화면은 밝은 Surface, 개발자는 다크 Surface를 사용하며 POSCO BLUE `#05507D`를 주 버튼에 적용합니다. LIGHT BLUE `#00A5E5`는 흰색 본문 글자의 배경으로 쓰지 않습니다. 공식 로고 파일·출처·SHA-256은 `Assets/Branding/`에서 관리합니다. 앱 구현용 사용과 회사 최종 CI/브랜드 승인 여부는 구분합니다.
+
+글자 크기·앱 고대비는 서버 config에 추가하지 않습니다. Windows `%LOCALAPPDATA%/UE-DT Launcher/ui-preferences.json`, Linux `$XDG_CONFIG_HOME/UE-DT Launcher/ui-preferences.json`(미지정 시 `~/.config`)에 사용자별 저장합니다. 허용 배율은 1/1.25/1.5/2이며 손상 설정은 기본값으로 읽습니다. 키·토큰·Agent 설정과 분리하며 설정 저장은 비동기로 처리합니다.
+
 ## 화면과 소스
 
 `general`은 단순한 밝은 화면, `developer`는 배포·유지보수·진단을 추가한 어두운 화면입니다. 플랫폼은 두 프로필 모두 현재 OS에 고정됩니다.
 
-실제 레이아웃은 `src/UeDtLauncher/Gui/MainWindowRefinedDashboard.cs`와 `MainWindowRefinedHelpers.cs`에서 구성하며 `MainWindow.axaml`은 최소 Window입니다. 공통 값은 `LauncherVisualTokens.cs`, 상태·노출 기능은 `LauncherDashboardViewModel.cs`, 이미지 검사는 `ProjectVisualResolver.cs`를 확인합니다. 예전 `MainWindow.axaml.cs` 경로를 편집 대상으로 사용하지 않습니다.
+실제 레이아웃은 `src/UeDtLauncher/Gui/MainWindowEnterprise.cs`, 대화창은 `MainWindowAccessibility.cs`, 작업 피드백은 `MainWindowFeedback.cs`에서 구성하며 `MainWindow.axaml`은 최소 Window입니다. 공통 값은 `LauncherVisualTokens.cs`, 상태·노출 기능은 `LauncherDashboardViewModel.cs`, 이미지 검사는 `ProjectVisualResolver.cs`를 확인합니다. 예전 `MainWindow.axaml.cs` 경로를 편집 대상으로 사용하지 않습니다.
 
 수정 후 general/developer 양쪽에서 긴 이름, 이미지 없음·손상, 작은 창, 허용 목록 없음, Agent 연결 실패를 확인합니다. 코드 빌드 성공만으로 GUI 배치·실제 앱 실행을 검증했다고 기록하지 않습니다.

@@ -438,6 +438,7 @@ public sealed partial class MainWindow : Window
             ItemsSource = names,
             SelectedIndex = Math.Max(0, projects.FindIndex(project => project.ProjectId.Equals(_selectedProject.ProjectId, StringComparison.OrdinalIgnoreCase))),
             MinHeight = 40,
+            FontSize = 14 * _preferences.TextScale,
             TabIndex = _nextTabIndex++
         };
         Identify(combo, "compact-project", "프로젝트 선택"); _selectionControls.Add(combo);
@@ -1136,8 +1137,7 @@ public sealed partial class MainWindow : Window
                             ? "프로젝트를 처음 설치할 수 있습니다."
                             : "설치된 파일이 최신 배포와 일치합니다.";
                 Build();
-                Progress(100);
-                if (_statusText is not null) SetStatus(_installState);
+                _presentation.Complete(_installState); RefreshPresentation();
                 if (!_viewModel.ApplyRuntimeObservation(response.Runtime))
                     MarkError(new RuntimeBlockedException(LauncherDashboardViewModel.RequireRuntimeObservation(response.Runtime)), "실행 상태 확인", showDialog: false);
                 return;
@@ -1161,7 +1161,7 @@ public sealed partial class MainWindow : Window
             else if (missing > 0 || changed > 0) { _viewModel.GeneralState = GeneralLauncherState.UpdateAvailable; _installState = "업데이트 가능"; _installDetail = $"누락 {missing}개, 변경 {changed}개 파일이 있습니다."; }
             else { _viewModel.GeneralState = GeneralLauncherState.Ready; _installState = "최신 상태"; _installDetail = $"{version} 버전이 설치되어 있습니다."; }
             Build();
-            Progress(100); if (_statusText is not null) SetStatus(_installState);
+            _presentation.Complete(_installState); RefreshPresentation();
             var portableRuntime = RuntimeStore.Observe(c);
             if (portableRuntime.State != RuntimeState.Quiescent) MarkError(new RuntimeBlockedException(portableRuntime), "실행 상태 확인", showDialog: false);
         }

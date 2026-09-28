@@ -2,7 +2,7 @@
 
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 배포 시스템입니다.
 
-문서 점검: **2026-09-28**, 기능·검증 기준: `0d12957` / `codex/managed-gui-safety-validation`. 로컬 브랜치 기준이며 main 반영·회사 운영 승인 완료를 뜻하지 않습니다.
+문서 점검: **2026-09-28**, 기능·검증 기준: `codex/poscodx-ui-accessibility` (디자인·피드백·접근성 부분 커밋). 로컬 브랜치 기준이며 main 반영·회사 운영 승인 완료를 뜻하지 않습니다.
 
 **현재 판단: 합성 앱 기반 배포·설치·실행·복구는 활용 가능한 단계이며, 회사 정식 운영 인수는 미완료입니다.** 현재 수치와 남은 작업은 [개선 진행 현황](IMPROVEMENTS.md), 상세 명령은 [운영 문서 색인](docs/reference/README.md)을 확인하세요.
 
@@ -35,9 +35,11 @@ flowchart LR
 
 ## 현재 구현
 
-마지막 전체 자동화는 Windows/WSL **각 393개 통과**입니다. 일반 GUI 설치·실행·실행 중 버튼 차단·창 종료/재실행·자식 정상 종료, 개발자 선택/취소·v2 파일 복구·같은 설치의 정상 backup rollback을 실제로 확인했습니다. [GUI 실행 이력](docs/reference/archive/validation/managed-gui-safety-validation.md), [runtime 장애 이력](docs/reference/archive/validation/runtime-safety-completion-validation.md)
+최신 전체 자동화는 Windows/WSL **각 428개 통과**, Windows Release 경고·오류 0입니다. 포스코DX 일반 라이트/개발자 다크 화면, 사용자별 100~200% 글자·고대비, 작업 의도 유지 재시도, 확인한 backup에 결속된 복원을 추가했습니다. 실제 새 GUI 표시·설정 적용과 Windows/Linux console Agent 복원 시험을 확인했습니다. [새 UI 검증과 미완료 조건](docs/reference/archive/validation/poscodx-ui-accessibility-validation.md)
 
-개발자 v1 승인 설치/실행, 실행 중 개발자 GUI 변경 차단, 일반 문제 해결의 단절/재연결, portable GUI rollback, 회사 UE/RHEL·설치 서비스 계정 검증은 남았습니다. 과거 393개 통과를 이번 문서 정리에서 새로 재실행한 결과로 표시하지 않습니다.
+기존 GUI 검증 이력에서는 일반 GUI 설치·실행·실행 중 버튼 차단·창 종료/재실행·자식 정상 종료, 개발자 선택/취소·v2 파일 복구·같은 설치의 정상 backup rollback을 실제로 확인했습니다. [GUI 실행 이력](docs/reference/archive/validation/managed-gui-safety-validation.md), [runtime 장애 이력](docs/reference/archive/validation/runtime-safety-completion-validation.md)
+
+개발자 v1 승인 설치/실행, 실행 중 개발자 GUI 변경 차단, 일반 문제 해결의 단절/재연결, portable GUI rollback, 회사 UE/RHEL·설치 서비스 계정 검증은 남았습니다. 실제 OS 해상도/DPI 전체 조합·내레이터 음성과 새 디자인에서의 설치/복원 직접 조작은 별도 검증 항목입니다. 기존 화면의 성공을 새 화면의 전체 성공으로 대신하지 않습니다.
 
 | 영역 | 내용 |
 |---|---|
@@ -47,8 +49,8 @@ flowchart LR
 | 전송 | 인증된 목록·Manifest·이미지·파일·Range, 서명·해시 검증, 재시도·이어받기 |
 | 설치 | 정확한 릴리스, 버전별 설치·상태·잠금 분리, 실행 중/불명 상태의 update·repair·rollback·transaction 복구 차단 |
 | 실행 | 사용자 세션 runtime-host, Windows Job / Linux x64 subreaper, 표준 후손 종료까지 추적, 자동 kill 없음 |
-| 일반 화면 | 자동 상태 확인, 상태별 실행 버튼, 친화적 오류·문제 해결, 이미지/fallback |
-| 개발자 화면 | 해당 PC에 허용된 배포 선택, 상세 진행·진단·유지보수 |
+| 일반 화면 | 포스코DX 밝은 화면, 자동 확인·상태별 주 버튼·하단 진행·지원 ID, 이미지/fallback |
+| 개발자 화면 | 포스코DX 다크 화면, 허용 배포/정확한 버전 선택, 접히는 유지보수·복사 가능한 정보/로그 |
 | 운영 | Windows/Linux Agent·IPC·CLI, 진단 내보내기, 무인 서비스 모드, MSI/RPM 제작 구성 |
 
 GUI의 general/developer는 표시 정책이지 다운로드 권한이 아닙니다. 기존 HTTPS/Bearer와 명시적인 schema 3 사내 HTTP/요청 서명을 지원하며, 둘 다 Metadata 서명·해시·권한 검증을 유지합니다. HTTP/Bearer나 무인증으로 자동 후퇴하지 않습니다. nginx 뒤 API는 loopback에만 바인딩하고 공개 정적 경로와 혼합하지 않습니다.

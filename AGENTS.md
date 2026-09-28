@@ -1,6 +1,6 @@
 # 작업 지침
 
-점검: 2026-09-28 / 구현 기준 codex/managed-gui-safety-validation. 저장소 전체에 적용합니다.
+점검: 2026-09-28 / 구현 기준 codex/poscodx-ui-accessibility. 저장소 전체에 적용합니다.
 
 ## 문서 관리 계약
 
@@ -62,7 +62,12 @@
 
 ## UI 규칙
 
-- programmatic View와 LauncherVisualTokens·ViewModel을 사용합니다.
+- programmatic View와 LauncherVisualTokens·ViewModel을 사용합니다. 현행 레이아웃은 MainWindowEnterprise, 대화창은 MainWindowAccessibility, 피드백은 MainWindowFeedback입니다.
+- 일반은 밝은 POSCO DX 업무 화면, 개발자는 같은 브랜드의 다크 화면을 유지합니다. 공식 로고 원본/출처를 보존하며 임의 CI 재가공을 하지 않습니다.
+- 글자 배율·앱 고대비는 사용자별 ui-preferences.json에만 저장합니다. UI 스레드에서 비동기 파일 저장을 동기 대기하지 않습니다. OS 고대비 요청을 우선합니다.
+- 조회 오류의 재시도를 설치/실행으로 바꾸지 않습니다. 작업·릴리스 snapshot이 달라지면 조회하고 rollback은 새 preview/확인을 받습니다. backup ID/fingerprint를 설치 lease 안에서 재검증합니다.
+- 관리형 정리에 필요한 Agent 명령이 없으면 보호 디렉터리 직접 쓰기로 우회하지 않습니다. 기존 IPC와 신규 rollback-preview-v1 capability를 구분합니다.
+- headless DIP viewport/UIA 이름은 실제 DPI·내레이터 음성 증거가 아닙니다. 실제 GUI 시험은 합성 앱에 한정하고 적용 직전 필요한 확인을 받습니다.
 - 관리형 실행 성공을 Ready로 단정하지 않습니다. runtime 관측의 Running/Pending/Unknown/누락은 차단 상태이며, 문제 해결에서 typed runtime 실패를 일반 예외로 잃거나 rollback 제안으로 바꾸지 않습니다.
 - GUI 시험용 앱은 셸 없이 자기 자식·marker만 사용하며 공식 배포물에 포함하지 않습니다. 미설치 GUI 시험을 CLI 선설치로 대체하지 않습니다. 실제 버튼 조작과 단위/CLI 검증을 별도로 기록합니다. 일반 설치/실행·창 종료 통과를 모든 개발자 경로 통과로 확대하지 않습니다. rollback 증거는 실제 정상 backup과 복원 후 hash로 확인하며, 같은 설치의 backup 복원을 다른 버전 경로로의 전환이라고 표현하지 않습니다.
 - 일반 화면은 한 버튼·친화적 오류, Agent 대신 업데이트 서비스로 표기합니다. 기술 예외·내부 경로·비밀정보를 기본 화면에 표시하지 않습니다.

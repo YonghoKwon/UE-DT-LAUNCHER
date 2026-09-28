@@ -70,6 +70,9 @@ public class EnterpriseLayoutTests
             primary.Focus(Avalonia.Input.NavigationMethod.Tab);Dispatcher.UIThread.RunJobs();Assert.Equal(3,primary.BorderThickness.Left);
             var point=primary.TranslatePoint(default,window)!.Value;Assert.True(point.Y+primary.Bounds.Height<=window.ClientSize.Height+1);
             Assert.False(string.IsNullOrWhiteSpace(AutomationProperties.GetName(primary)));
+            var settings=window.GetLogicalDescendants().OfType<Button>().Single(c=>AutomationProperties.GetAutomationId(c)=="settings");
+            var settingsPoint=settings.TranslatePoint(default,window)!.Value;
+            Assert.True(settingsPoint.X+settings.Bounds.Width<=window.ClientSize.Width+1);
         }
         finally {window.Close();}
     }
@@ -85,6 +88,20 @@ public class EnterpriseLayoutTests
             window.KeyPressQwerty(Avalonia.Input.PhysicalKey.ArrowDown,Avalonia.Input.RawInputModifiers.None);Dispatcher.UIThread.RunJobs();
             Assert.Equal("b",model.SelectedProject.ProjectId);
             Assert.Equal("project-b",AutomationProperties.GetAutomationId((Control)window.FocusManager!.GetFocusedElement()!));
+        }
+        finally {window.Close();}
+    }
+    [AvaloniaFact]
+    public void ResizingKeepsMaintenanceExpansionAndDetailsTab()
+    {
+        var window=Create(true);window.Show();window.Width=1000;Dispatcher.UIThread.RunJobs();
+        try
+        {
+            window.GetLogicalDescendants().OfType<Expander>().Single(c=>AutomationProperties.GetAutomationId(c)=="maintenance").IsExpanded=true;
+            window.GetLogicalDescendants().OfType<TabControl>().Single().SelectedIndex=1;
+            window.Width=1200;Dispatcher.UIThread.RunJobs();window.Width=1000;Dispatcher.UIThread.RunJobs();
+            Assert.True(window.GetLogicalDescendants().OfType<Expander>().Single(c=>AutomationProperties.GetAutomationId(c)=="maintenance").IsExpanded);
+            Assert.Equal(1,window.GetLogicalDescendants().OfType<TabControl>().Single().SelectedIndex);
         }
         finally {window.Close();}
     }

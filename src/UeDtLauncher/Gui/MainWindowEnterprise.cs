@@ -26,6 +26,9 @@ public sealed partial class MainWindow
     private bool _building;
     private string? _configDraft;
     private string _lastAnnouncement = "";
+    private bool _maintenanceExpanded;
+    private bool _helpExpanded;
+    private int _detailsTabIndex;
     private bool HighContrast => _preferences.HighContrast || PlatformSettings?.GetColorValues().ContrastPreference == ColorContrastPreference.High;
     private IBrush PageBrush => HighContrast ? Brushes.Black : LauncherVisualTokens.Background(IsDeveloper);
     private IBrush SurfaceBrush => HighContrast ? Brushes.Black : LauncherVisualTokens.Surface(IsDeveloper);
@@ -96,7 +99,8 @@ public sealed partial class MainWindow
                 content.Children.Add(EnterpriseOverview());
                 if(IsDeveloper)
                 {
-                    var more=new Expander { Header="유지보수 및 진단",Content=EnterpriseMaintenance() };
+                    var more=new Expander { Header="유지보수 및 진단",Content=EnterpriseMaintenance(),IsExpanded=_maintenanceExpanded };
+                    more.PropertyChanged+=(_,e)=>{if(e.Property==Expander.IsExpandedProperty)_maintenanceExpanded=more.IsExpanded;};
                     Identify(more,"maintenance","유지보수 및 진단"); content.Children.Add(more);
                     var details=ReleaseInfo(); var logs=EnterpriseLogs();
                     if(wide)
@@ -105,11 +109,17 @@ public sealed partial class MainWindow
                     }
                     else
                     {
-                        var tabs=Identify(new TabControl {ItemsSource=new[]{new TabItem {Header="배포 정보",Content=details},new TabItem {Header="작업 기록",Content=logs}}},"details-tabs","배포 정보와 작업 기록");
+                        var tabs=Identify(new TabControl {ItemsSource=new[]{new TabItem {Header="배포 정보",Content=details},new TabItem {Header="작업 기록",Content=logs}},SelectedIndex=_detailsTabIndex},"details-tabs","배포 정보와 작업 기록");
+                        tabs.SelectionChanged+=(_,_)=>{if(!_building)_detailsTabIndex=Math.Max(0,tabs.SelectedIndex);};
                         content.Children.Add(tabs);
                     }
                 }
-                else content.Children.Add(EnterpriseCard(new Expander {Header="릴리스 설명 및 도움말",Content=new StackPanel {Spacing=12,Children={Txt(_releaseNotes,14,false),Muted("프로그램이 실행 중이면 정상 종료 후 다시 확인해 주세요. 창을 닫아도 실행 중인 프로그램은 종료되지 않습니다.",14)}}}));
+                else
+                {
+                    var help=new Expander {Header="릴리스 설명 및 도움말",IsExpanded=_helpExpanded,Content=new StackPanel {Spacing=12,Children={Txt(_releaseNotes,14,false),Muted("프로그램이 실행 중이면 정상 종료 후 다시 확인해 주세요. 창을 닫아도 실행 중인 프로그램은 종료되지 않습니다.",14)}}};
+                    help.PropertyChanged+=(_,e)=>{if(e.Property==Expander.IsExpandedProperty)_helpExpanded=help.IsExpanded;};
+                    content.Children.Add(EnterpriseCard(help));
+                }
             }
             _enterpriseScroll=Identify(new ScrollViewer {Content=content,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled},"workspace-scroll","프로젝트 작업 공간");
             work.Children.Add(At(_enterpriseScroll,sidebar?1:0)); root.Children.Add(AtRow(work,1));

@@ -22,6 +22,13 @@ public class EnterpriseFeedbackTests
         Assert.DoesNotContain("secret",error.Message);Assert.DoesNotContain("secret",error.Detail);
     }
     [Fact]
+    public void GeneralRuntimeMessageDoesNotExposeInternalObservation()
+    {
+        var error=LauncherUiError.From(new RuntimeBlockedException(new(RuntimeState.Unknown,"unknown","internal C:\\protected\\runtime.json")));
+        Assert.DoesNotContain("internal",error.Message);Assert.DoesNotContain("protected",error.Message);
+        Assert.Contains("점검",error.Message);
+    }
+    [Fact]
     public async Task BackupPreviewIsReadOnlyAndChangedPreviewCannotRestore()
     {
         var root=Path.Combine(Path.GetTempPath(),"rollback-preview-"+Guid.NewGuid().ToString("N"));
