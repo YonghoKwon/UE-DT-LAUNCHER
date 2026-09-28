@@ -111,7 +111,10 @@ public sealed record ManagedProjectStatus(
     bool UpdateRequired,
     int MissingFiles,
     int ChangedFiles,
-    bool HasBackup);
+    bool HasBackup,
+    PreviousInstallation? PreviousInstallation = null);
+
+public sealed record PreviousInstallation(ReleaseSelection Release, string InstalledAtUtc);
 
 public static class ManagedProjectStatusInspector
 {
@@ -166,7 +169,8 @@ public static class ManagedProjectStatusInspector
             updateRequired,
             missing,
             changed,
-            BackupManager.List(config.BackupDir).Count > 0);
+            BackupManager.List(config.BackupDir).Count > 0,
+            installedManifest is null ? await PreviousInstallationStatus.FindAsync(config, cancellationToken) : null);
     }
 }
 

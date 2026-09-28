@@ -17,6 +17,7 @@ public sealed class LauncherConfig
     [JsonIgnore] public string? VersionedInstallRoot { get; set; }
     [JsonIgnore] public ReleaseSelection? SelectedRelease { get; set; }
     [JsonIgnore] internal bool CatalogAuthenticated { get; set; }
+    [JsonIgnore] internal DistributionCatalog? AuthenticatedCatalog { get; set; }
     public string? CatalogSignatureUrl { get; set; }
     public string? CatalogPublicKeyPath { get; set; }
 

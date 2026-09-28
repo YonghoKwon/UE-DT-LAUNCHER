@@ -718,6 +718,7 @@ public sealed partial class MainWindow : Window
 
     private string? ReadInstalledVersion()
     {
+        if (_config.IsManagedDeployment) return _viewModel.ProjectStatus?.InstalledVersion ?? (!IsDeveloper ? _viewModel.ProjectStatus?.PreviousInstallation?.Release.Version : null);
         try
         {
             var statePath = SelectedStatePaths.InstallStatePath;
@@ -957,7 +958,8 @@ public sealed partial class MainWindow : Window
 
     private async Task RefreshCatalog(bool rebuild, bool suppressDialog = false)
     {
-        if (!_running) BeginOperation(LauncherUiOperation.Catalog);
+        var ownsBusy = !_running;
+        if (ownsBusy) { BeginOperation(LauncherUiOperation.Catalog); _running=true; SetBusy(true); }
         try
         {
             _catalogState = "카탈로그 확인 중...";
@@ -971,10 +973,9 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             _catalogState = "카탈로그 오류";
-            AppendLog("카탈로그 확인 실패: " + FriendlyError(ex), true);
-            if (!IsDeveloper && !suppressDialog) ErrorDialog("카탈로그 확인 실패", FriendlyError(ex));
+            MarkError(ex,"카탈로그 확인 실패",showDialog: !suppressDialog);
         }
-        finally { if (rebuild) Build(); }
+        finally { if (ownsBusy) { _running=false; SetBusy(false); } if (rebuild) Build(); }
     }
 
     private void MergeCatalogProjects()
@@ -1035,7 +1036,7 @@ public sealed partial class MainWindow : Window
     private void ApplyManagedSelection(LauncherConfig config, ManagedAgentResponse response, ReleaseSelection? requested)
     {
         if (!UsesDistributionServer) return;
-        if (response.SelectedRelease is null || (requested is not null && response.SelectedRelease != requested))
+        if (response.SelectedRelease is null || (requested is not null && (response.SelectedRelease != requested || CurrentReleaseSelection() != requested)))
             throw new InvalidDataException("업데이트 서비스가 선택한 버전을 확인하지 못했습니다. 서비스 업데이트가 필요합니다.");
         VersionedReleasePaths.Bind(config, response.SelectedRelease);
         _selectedRuntimeConfig = config;
@@ -1133,6 +1134,8 @@ public sealed partial class MainWindow : Window
                     ? response.Message
                     : response.ProjectStatus is { UpdateRequired: true, IsInstalled: true } status
                         ? $"새 버전 {status.AvailableVersion}을 설치할 수 있습니다."
+                        : response.ProjectStatus is { IsInstalled: false, PreviousInstallation: { } previous }
+                            ? $"기존 설치 {previous.Release.Version}을 보존하고 새 버전을 설치합니다."
                         : response.ProjectStatus is { IsInstalled: false }
                             ? "프로젝트를 처음 설치할 수 있습니다."
                             : "설치된 파일이 최신 배포와 일치합니다.";
@@ -1251,45 +1254,30 @@ public sealed partial class MainWindow : Window
     private async Task RollbackLatestAsync()
     {
         if (_running) return;
-        var config = await RunConfig(false, false);
-        if (config.IsManagedDeployment)
-        {
-            BeginOperation(LauncherUiOperation.Rollback);
-            try
-            {
-                var preview=await PreviewManagedRollbackAsync(config);
-                if(preview is null || !await ConfirmPreviewAsync(preview))return;
-                _running=true;SetBusy(true);
-                await RestoreManagedPreviewAsync(config,preview);
-            }
-            catch(Exception ex){MarkError(ex,"백업 복원 실패");}
-            finally{_running=false;SetBusy(false);}
-            return;
-        }
-        var backups = BackupManager.List(config.BackupDir);
-        if (backups.Count == 0)
-        {
-            AppendLog("롤백할 백업이 없습니다.", true);
-            if (!IsDeveloper) ErrorDialog("롤백 불가", "보관된 백업이 없어 이전 버전으로 되돌릴 수 없습니다.");
-            return;
-        }
-
-        var (backupRoot, info) = backups[0];
-        if (!await ConfirmRollback(Path.GetFileName(backupRoot), info)) return;
-
-        _running = true; SetBusy(true); Progress(0);
+        _running=true;SetBusy(true);
         try
         {
-            if (_statusText is not null) SetStatus("이전 버전으로 되돌리는 중...");
-            await Task.Run(() => BackupManager.RestoreAsync(backupRoot, config.InstallDir, config.InstalledManifestPath, config.InstallStatePath,
-                m => Dispatcher.UIThread.Post(() => AppendLog("롤백: " + m, true))));
-            _installState = "롤백 완료"; _installDetail = $"{info?.PreviousVersion ?? "이전"} 버전으로 되돌렸습니다. 상태 확인으로 검증하세요.";
-            _fileLogger?.Log("Rollback", $"GUI rollback to backup {Path.GetFileName(backupRoot)} completed.");
-            Build();
-            Progress(100); if (_statusText is not null) SetStatus("롤백이 완료되었습니다.");
+            var selection=CurrentReleaseSelection();
+            var config=await RunConfig(false,false);
+            if(selection is not null)VersionedReleasePaths.Bind(config,selection);
+            var preview=config.IsManagedDeployment
+                ? await PreviewManagedRollbackAsync(config)
+                : await RollbackPreviewService.ReadAsync(config);
+            if(preview is null || !preview.CanRestore)
+            {SetStatus("복원할 수 있는 백업 정보를 확인해 주세요.");return;}
+            if(!await ConfirmPreviewAsync(preview))return;
+            BeginOperation(LauncherUiOperation.Rollback);
+            if(config.IsManagedDeployment)await RestoreManagedPreviewAsync(config,preview);
+            else
+            {
+                await Task.Run(()=>RollbackPreviewService.RestoreExpectedAsync(config,preview.BackupId,preview.MetadataFingerprint));
+                _selectedRuntimeConfig=config;
+                _installState="백업 복원 완료";_installDetail="선택한 설치를 확인한 백업 시점으로 복원했습니다.";
+                _presentation.Complete("백업 복원 완료");Build();
+            }
         }
-        catch (Exception ex) { MarkError(ex, "롤백 실패"); }
-        finally { _running = false; SetBusy(false); }
+        catch(Exception ex){MarkError(ex,"백업 복원 실패");}
+        finally{_running=false;SetBusy(false);}
     }
 
     private Task<bool> ConfirmRollback(string backupName, BackupInfo? info)

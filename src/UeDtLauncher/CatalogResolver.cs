@@ -7,6 +7,7 @@ public static class CatalogResolver
     public static async Task ResolveAsync(LauncherConfig config, HttpClient httpClient, Action<string, string, double?>? log = null, CancellationToken cancellationToken = default)
     {
         config.CatalogAuthenticated = false;
+        config.AuthenticatedCatalog = null;
         config.SelectedRelease = null;
         if (string.IsNullOrWhiteSpace(config.CatalogUrl))
         {
@@ -39,6 +40,7 @@ public static class CatalogResolver
         CancellationToken cancellationToken = default)
     {
         config.CatalogAuthenticated = false;
+        config.AuthenticatedCatalog = null;
         if (string.IsNullOrWhiteSpace(config.CatalogUrl))
         {
             throw new InvalidOperationException("catalogUrl is required.");
@@ -78,6 +80,7 @@ public static class CatalogResolver
             ?? throw new InvalidOperationException("Release catalog JSON was empty or invalid.");
         await CatalogTrustManager.ValidateAndRecordAsync(config, catalog, cancellationToken);
         config.CatalogAuthenticated = signatureVerified;
+        config.AuthenticatedCatalog = signatureVerified ? catalog : null;
         return catalog;
     }
 

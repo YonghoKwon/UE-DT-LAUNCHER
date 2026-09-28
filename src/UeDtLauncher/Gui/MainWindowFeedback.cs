@@ -32,7 +32,7 @@ public sealed partial class MainWindow
         var service=await client.SendAsync("status"); service.ThrowIfFailed();
         if(!service.AgentCapabilities.Contains(RollbackPreviewService.Capability))
             throw new RuntimeBlockedException(new(RuntimeState.Unknown,"client-upgrade-required","백업 정보를 확인하려면 업데이트 서비스를 갱신해 주세요."));
-        var response=await client.SendStreamingAsync("rollback-preview",config.ProjectId,_=>{},selection:CurrentReleaseSelection());
+        var response=await client.SendStreamingAsync("rollback-preview",config.ProjectId,_=>{},selection:config.SelectedRelease ?? CurrentReleaseSelection());
         response.ThrowIfFailed();
         var preview=response.RollbackPreview;
         if(preview is null || !preview.CanRestore)
@@ -50,7 +50,7 @@ public sealed partial class MainWindow
     private async Task RestoreManagedPreviewAsync(LauncherConfig config,RollbackPreview preview)
     {
         var response=await new ManagedAgentClient().SendStreamingAsync("rollback",config.ProjectId,ReportManagedProgress,
-            selection:CurrentReleaseSelection(),expectedBackup:preview);
+            selection:config.SelectedRelease ?? CurrentReleaseSelection(),expectedBackup:preview);
         response.ThrowIfFailed();
         if(response.ProjectStatus is not null)_viewModel.ApplyProjectStatus(response.ProjectStatus);
         _installState="백업 복원 완료";

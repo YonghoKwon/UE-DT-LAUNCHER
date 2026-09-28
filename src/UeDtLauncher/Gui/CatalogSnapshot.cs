@@ -40,7 +40,8 @@ public static class CatalogSnapshotService
         if (config.IsManagedDeployment && !string.IsNullOrWhiteSpace(config.DistributionServerUrl))
         {
             var response = await new ManagedAgentClient().SendStreamingAsync("catalog", null, _ => { }, cancellationToken: cancellationToken);
-            if (!response.Success || response.Catalog is null) throw new InvalidOperationException("배포 목록을 가져오지 못했습니다.");
+            response.ThrowIfFailed();
+            if (response.Catalog is null) throw new InvalidDataException("배포 목록을 가져오지 못했습니다.");
             catalog = response.Catalog;
         }
         else

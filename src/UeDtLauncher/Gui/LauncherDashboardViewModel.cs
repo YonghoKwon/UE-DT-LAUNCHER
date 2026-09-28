@@ -132,7 +132,7 @@ public sealed class LauncherDashboardViewModel : INotifyPropertyChanged
     public void ApplyProjectStatus(ManagedProjectStatus status)
     {
         ProjectStatus = status;
-        GeneralState = !status.IsInstalled
+        GeneralState = !status.IsInstalled && (IsDeveloper || status.PreviousInstallation is null)
             ? GeneralLauncherState.NotInstalled
             : status.UpdateRequired
                 ? GeneralLauncherState.UpdateAvailable

@@ -198,7 +198,7 @@ public sealed partial class MainWindow
         AutomationProperties.SetAccessibilityView(icon,AccessibilityView.Raw);status.Children.Add(icon);status.Children.Add(At(Txt(_installState,16,true),1));
         stack.Children.Add(status);stack.Children.Add(Muted(_installDetail,14));
         var versions=new WrapPanel {Orientation=Orientation.Horizontal};
-        versions.Children.Add(new StackPanel {Margin=new Thickness(0,0,32,0),Children={Muted("설치 버전",12),Txt(ReadInstalledVersion()??"미설치",16,true)}});
+        versions.Children.Add(new StackPanel {Margin=new Thickness(0,0,32,0),Children={Muted(!IsDeveloper && _viewModel.ProjectStatus is {IsInstalled:false,PreviousInstallation:not null}?"기존 설치 버전":"설치 버전",12),Txt(ReadInstalledVersion()??"미설치",16,true)}});
         versions.Children.Add(new StackPanel {Children={Muted(IsDeveloper?"선택 배포 버전":"최신 배포 버전",12),Txt(LatestCatalogVersion()??"확인 필요",16,true)}});
         stack.Children.Add(versions);grid.Children.Add(stack);
         if(!narrow&&!HighContrast)
@@ -231,6 +231,7 @@ public sealed partial class MainWindow
         if(IsDeveloper)actions.Children.Add(EnterpriseButton("업데이트","update",async (_,_)=>await RunAsync(false,false)));
         var check=EnterpriseButton(_viewModel.GeneralState==GeneralLauncherState.RecoverableError?"문제 해결":"상태 확인","status-check",async (_,_)=>{if(!IsDeveloper&&_viewModel.GeneralState==GeneralLauncherState.RecoverableError)await TroubleshootAsync();else await RefreshInstallStatusAsync();});
         check.HotKey=new KeyGesture(Key.F6);actions.Children.Add(check);
+        if(_presentation.ErrorCode is not null && _presentation.Retry is not null)actions.Children.Add(EnterpriseButton("다시 시도","retry-operation",async (_,_)=>await RetryCurrentAsync()));
         foreach(var item in actions.Children)item.Margin=new Thickness(0,0,8,0);
         panel.Children.Add(actions);
         _statusText=Identify(Txt(_presentation.Title,14,true),"operation-status","작업 상태");
