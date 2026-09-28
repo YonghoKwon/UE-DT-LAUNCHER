@@ -161,7 +161,7 @@
     "sourceCommit": "8ce5060563c6294e55fbbcf086682a84ccef1c98",
     "productFixCommit": "fa87eaa",
     "sourceDirty": false,
-    "nativeGuiApply": "partial-portable-restore-managed-install-update-repair-pass",
+    "nativeGuiApply": "partial-both-mode-install-update-repair-restore-pass",
     "nativeGeneralStartup": "pass-local-mode-not-installed-latest-v1-install-and-run-button-observed-without-click",
     "fixtures": [
       "accept-portable-02",
@@ -169,7 +169,7 @@
     ],
     "fixtureState": {
       "portable": "v1-unchanged-v2-healthy-stopped-normal-backup-present-preview-rejection-tested",
-      "managed": "v1-unchanged-v2-stopped-damaged-normal-backup-verified-restore-confirmation-open"
+      "managed": "v1-unchanged-v2-healthy-stopped-agent-reconnected"
     },
     "managedCapabilities": [
       "runtime-supervision-v1",
@@ -408,6 +408,43 @@
         "displayPreserved": "update-available",
         "defaultFocus": "dialog-cancel",
         "restoredFocus": "status-check"
+      },
+      {
+        "id": "managed-v2-normal-restore",
+        "fixture": "accept-managed-02",
+        "result": "pass",
+        "actor": "assistant-after-action-approval",
+        "backupId": "20260928145009",
+        "verifiedFiles": 3,
+        "previousVersionSnapshotUnchanged": true,
+        "newApplicationMarker": false,
+        "runtime": "both-versions-Quiescent",
+        "display": "ready-launch-enabled-backup-restore-complete"
+      },
+      {
+        "id": "managed-v2-preview-change-rejected",
+        "fixture": "accept-managed-02",
+        "result": "pass",
+        "actor": "assistant-after-action-approval",
+        "errorCode": "backup-preview-changed",
+        "protectedSnapshotUnchanged": true,
+        "verifiedFiles": 3,
+        "retryRequiresNewConfirmation": true,
+        "cancelledRetryUnchanged": true
+      },
+      {
+        "id": "managed-healthy-troubleshoot-after-agent-restart",
+        "fixture": "accept-managed-02",
+        "result": "pass",
+        "actor": "assistant-read-only-action",
+        "errorBeforeReconnect": "service-unavailable",
+        "verifiedFiles": 3,
+        "protectedSnapshotUnchanged": true,
+        "applicationMarkerCount": 2,
+        "newApplicationMarker": false,
+        "display": "ready-installation-check-complete",
+        "oldErrorCleared": true,
+        "serviceConnected": true
       }
     ]
   },
