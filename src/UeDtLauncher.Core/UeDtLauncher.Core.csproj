@@ -11,6 +11,7 @@
     <InternalsVisibleTo Include="UeDtLauncher" />
     <InternalsVisibleTo Include="UeDtLauncher.Agent" />
     <InternalsVisibleTo Include="UeDtLauncher.Tests" />
+    <InternalsVisibleTo Include="UeDtLauncher.RuntimeFaultHarness" />
   </ItemGroup>
 
   <ItemGroup>

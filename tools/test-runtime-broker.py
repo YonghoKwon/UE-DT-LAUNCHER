@@ -39,6 +39,8 @@ def main():
     manifest = {"appId": "demo", "version": "1.0.0", "platform": platform, "entryPoint": entry,
                 "files": [{"path": entry, "size": (app / entry).stat().st_size, "sha256": hashlib.sha256((app / entry).read_bytes()).hexdigest()}]}
     (state / "installed-manifest.json").write_text(json.dumps(manifest))
+    backup = state / 'backups' / '20260928000000'; backup.mkdir(parents=True)
+    shutil.copy2(app / entry, backup / entry)
     canonical = str(app).upper() if os.name == "nt" else str(app)
     (state / "runtime-state.json").write_text(json.dumps({"schemaVersion": 1, "installationId": hashlib.sha256(canonical.encode()).hexdigest(), "state": 0, "origin": "new-install"}))
     endpoint = "uedt-proof-" + uuid.uuid4().hex if os.name == "nt" else str(root / "agent.sock")
@@ -101,7 +103,7 @@ def main():
         assert not rpc("launch-complete", runtimeTicket=ticket)["success"]
         before = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
                   for folder in (app, state) for p in folder.rglob("*") if p.is_file() and p.name != "update.lock"}
-        for command in ("update", "repair"):
+        for command in ("update", "repair", "rollback"):
             response = rpc(command)
             assert not response["success"], command
         after = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()

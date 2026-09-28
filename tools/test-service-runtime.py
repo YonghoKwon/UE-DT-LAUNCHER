@@ -29,6 +29,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if self.path=='/health':
             health_entered.set()
             if health_mode=='hold': release_health.wait(15)
+            if health_mode=='timeout': time.sleep(3)
+            if health_mode=='disconnect': self.close_connection=True; return
             try: self.send_response(200 if health_mode=='ok' else 500); self.end_headers()
             except (BrokenPipeError,ConnectionResetError): pass
         else: super().do_GET()
@@ -63,6 +65,14 @@ try:
     wait_stopped(); assert (root/'app'/'ended.txt').exists(), 'payload did not finish naturally'
     before=snapshot.read_bytes(); assert run('service','--once').returncode==1; assert before==snapshot.read_bytes()
     assert run('runtime','recover','--confirm-stopped','--service-selection','--version','1').returncode==0
+    for mode in ('timeout','disconnect'):
+        health_mode=mode; health_entered.clear()
+        (root/'app'/'ended.txt').unlink()
+        assert run('service','--once').returncode==1
+        assert health_entered.is_set()
+        assert json.loads(snapshot.read_text())['phase']==2
+        wait_stopped(); assert (root/'app'/'ended.txt').exists(), 'health failure killed payload'
+        assert run('runtime','recover','--confirm-stopped','--service-selection','--version','1').returncode==0
     health_mode='hold'; health_entered.clear()
     child=subprocess.Popen([launcher,'service','--once','--config',str(config)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     assert health_entered.wait(15),'health never reached'

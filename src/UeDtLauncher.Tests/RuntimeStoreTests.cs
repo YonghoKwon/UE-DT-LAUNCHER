@@ -44,6 +44,16 @@ public sealed class RuntimeStoreTests : IDisposable
         using var lease = InstallationMutationLease.Acquire(config);
     }
     [Fact]
+    public void InterruptedTransactionCannotLaunchBeforeRecovery()
+    {
+        using (InstallationMutationLease.Acquire(config)) { }
+        File.WriteAllText(UpdateTransactionManager.JournalPath(config),"{}");
+        var before=File.ReadAllBytes(RuntimeStore.RecordPath(config));
+        var error=Assert.Throws<RuntimeBlockedException>(()=>RuntimeStore.Begin(config,RuntimeIdentities.Current(),Environment.ProcessPath!));
+        Assert.Equal("installation-recovery-required",error.Observation.Code);
+        Assert.Equal(before,File.ReadAllBytes(RuntimeStore.RecordPath(config)));
+    }
+    [Fact]
     public void MissingOrReusedHostNeverMeansStopped()
     {
         using (InstallationMutationLease.Acquire(config)) { }

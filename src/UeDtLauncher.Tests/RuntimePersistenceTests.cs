@@ -67,6 +67,26 @@ public sealed class RuntimePersistenceTests : IDisposable
         Assert.Equal("2",RuntimeServiceState.Read(next)!.Version);
     }
     [Fact]
+    public async Task SelectionBarrierSerializesLaunchAndRepeatedRecovery()
+    {
+        var c=Config(); RuntimeServiceState.RequireSelection(c,"1");
+        using var entered=new ManualResetEventSlim(); using var release=new ManualResetEventSlim();
+        var pending=Task.Run(()=>
+        {
+            RuntimeStatePersistence.Boundary.Value=(p,b)=> { if(p==RuntimeServiceState.SnapshotPath(c) && b=="replace") { entered.Set(); if(!release.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException(); } };
+            try { RuntimeServiceState.ConfirmSelection(c,RuntimeIdentities.Current(),"1"); }
+            finally { RuntimeStatePersistence.Boundary.Value=null; }
+        });
+        try
+        {
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(10)));
+            Assert.Throws<InvalidOperationException>(()=>RuntimeStore.Begin(c,RuntimeIdentities.Current(),Environment.ProcessPath!));
+            Assert.Throws<InvalidOperationException>(()=>RuntimeServiceState.ConfirmSelection(c,RuntimeIdentities.Current(),"1"));
+        }
+        finally { release.Set(); await pending; }
+        Assert.Equal(ServiceRuntimePhase.Ready,RuntimeServiceState.Read(c)!.Phase);
+    }
+    [Fact]
     public void SelectionFinalWriteFailureKeepsReviewBarrier()
     {
         var c=Config(); RuntimeServiceState.RequireSelection(c,"1"); RuntimeServiceState.Starting(c,"backup");

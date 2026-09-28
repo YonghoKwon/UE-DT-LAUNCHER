@@ -124,6 +124,8 @@ public static class RuntimeStore
     internal static RuntimeLaunchTicket BeginUnderServiceLock(LauncherConfig config, RuntimeIdentity requester, string hostExecutable)
     {
         using var lease = InstallationMutationLease.Acquire(config);
+        if (File.Exists(UpdateTransactionManager.JournalPath(config)))
+            throw new RuntimeBlockedException(new(RuntimeState.Unknown, "installation-recovery-required", "중단된 설치를 먼저 복구한 뒤 실행해 주세요."));
         var manifest = JsonFiles.ReadAsync<LauncherManifest>(config.InstalledManifestPath).GetAwaiter().GetResult();
         LauncherEngine.ValidateManifest(manifest, config);
         var entry = SafePath.ResolveInsideChecked(config.InstallDir, manifest.EntryPoint);
