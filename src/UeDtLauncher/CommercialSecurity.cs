@@ -11,6 +11,7 @@ namespace UeDtLauncher;
 
 public sealed class LauncherSecurityConfig
 {
+    public string AuthenticationMode { get; set; } = "bearer";
     public bool RequireHttps { get; set; } = true;
     public string? CredentialName { get; set; }
     public string? CustomCaCertificatePath { get; set; }
@@ -59,7 +60,7 @@ public static class LauncherConfigValidator
 {
     public static void Validate(LauncherConfig config)
     {
-        if (config.SchemaVersion is < 1 or > 2)
+        if (config.SchemaVersion is < 1 or > 3)
             throw new InvalidOperationException($"Unsupported launcher config schemaVersion: {config.SchemaVersion}.");
         if (config.DeploymentMode is not ("portable" or "managed-agent"))
             throw new InvalidOperationException("deploymentMode must be portable or managed-agent.");
@@ -67,6 +68,16 @@ public static class LauncherConfigValidator
             throw new InvalidOperationException("performance.downloadConcurrency must be between 1 and 8.");
         if (config.Performance.HashConcurrency is < 1 or > 4)
             throw new InvalidOperationException("performance.hashConcurrency must be between 1 and 4.");
+        if (config.Security.AuthenticationMode is not ("bearer" or "request-signature-v1"))
+            throw new InvalidOperationException("Unsupported authentication mode.");
+        if (config.Security.AuthenticationMode == "request-signature-v1")
+        {
+            if (config.SchemaVersion != 3 || !config.RequireSignedManifests || !config.Security.EnforceCatalogFreshness ||
+                string.IsNullOrWhiteSpace(config.Security.CredentialName) || config.Security.TrustedSigningKeys.Count == 0 ||
+                !Uri.TryCreate(config.DistributionServerUrl, UriKind.Absolute, out var origin) ||
+                origin.Scheme is not ("http" or "https") || origin.AbsolutePath != "/" || origin.Query.Length != 0 || origin.Fragment.Length != 0 || origin.UserInfo.Length != 0)
+                throw new InvalidOperationException("Request signatures require schema 3, a distribution origin, device credential and trusted signed metadata with freshness checks.");
+        }
         if (config.SchemaVersion < 2) return;
 
         var production = string.Equals(config.Environment, "prod", StringComparison.OrdinalIgnoreCase);
@@ -123,12 +134,9 @@ public static partial class CredentialStore
         ValidateName(name);
         if (string.IsNullOrWhiteSpace(token)) throw new ArgumentException("Credential token must not be empty.", nameof(token));
         var path = CredentialPath(name, layout);
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var plain = Encoding.UTF8.GetBytes(token);
-        var stored = OperatingSystem.IsWindows() ? ProtectWindows(plain) : plain;
-        File.WriteAllBytes(path, stored);
-        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS()) SetUnixCredentialPermissions(path);
-        CryptographicOperations.ZeroMemory(plain);
+        try { ProtectedCredentialFile.Write(path, plain, DeviceCredentials.IsManaged(layout), replace: true); }
+        finally { CryptographicOperations.ZeroMemory(plain); }
     }
 
     public static string? Read(string? name, ManagedLauncherPathLayout? layout = null)
@@ -137,8 +145,7 @@ public static partial class CredentialStore
         ValidateName(name);
         var path = CredentialPath(name, layout);
         if (!File.Exists(path)) return null;
-        var stored = File.ReadAllBytes(path);
-        var plain = OperatingSystem.IsWindows() ? UnprotectWindows(stored) : stored;
+        var plain = ProtectedCredentialFile.Read(path, DeviceCredentials.IsManaged(layout));
         try { return Encoding.UTF8.GetString(plain); }
         finally { CryptographicOperations.ZeroMemory(plain); }
     }
@@ -184,6 +191,8 @@ public static class SecureHttpClientFactory
     public static HttpClient Create(LauncherConfig config)
     {
         LauncherConfigValidator.Validate(config);
+        if (config.Security.AuthenticationMode == "request-signature-v1")
+            throw new InvalidOperationException("The request-signature transport must be configured before connecting.");
         var handler = new HttpClientHandler { AllowAutoRedirect = false, AutomaticDecompression = System.Net.DecompressionMethods.All };
         if (!string.IsNullOrWhiteSpace(config.Security.CustomCaCertificatePath))
         {

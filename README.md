@@ -1,5 +1,7 @@
 # UE-DT Launcher
 
+진행 중: `codex/intranet-request-auth`에서 사내 HTTP 요청 인증·credential 보호·초기 설정을 구현합니다. 단계별 완료/미완료는 [검증 기록](docs/reference/intranet-auth-validation.md)을 확인하세요. HTTP는 암호화되지 않으며 이번 개발은 회사 운영 승인이 아닙니다.
+
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 런처입니다.
 
 문서 점검: **2026-09-28**, 구현 기준: `codex/launcher-performance` (시작점 `39ca4d6`). 로컬 작업 브랜치 기준이며 main 반영·운영 배포 완료를 뜻하지 않습니다.

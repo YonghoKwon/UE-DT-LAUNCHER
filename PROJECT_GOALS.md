@@ -39,6 +39,8 @@ G1~G6의 증거가 확보된 뒤 전사 확대를 승인합니다. 현재 자동
 
 ## 기존 합의 방향
 
+2026-09-28 추가 합의: 사내 HTTP + PC별 요청 서명 모드를 구현한다(SEC-04). 기존 HTTPS/Bearer는 유지하되 HTTP Bearer로 후퇴하지 않는다. HTTP의 도청·실시간 중계 위험은 남으며 G2 운영 수용은 별도이다. 현재 구현/검증 단계는 [별도 기록](docs/reference/intranet-auth-validation.md)을 따른다.
+
 | 영역 | 목표 | 현재 연결 |
 |---|---|---|
 | 패키징 배포 | Windows/Linux ZIP을 수정하지 않고 외부 release.json과 업로드 | 두 파일 검사·승인 게시 구현 |

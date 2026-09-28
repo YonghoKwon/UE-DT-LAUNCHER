@@ -273,8 +273,25 @@ public static class Program
         var name = Get(args, "--name") ?? throw new ArgumentException("credential requires --name <credential-name>.");
         if (action.Equals("status", StringComparison.OrdinalIgnoreCase))
         {
-            Console.WriteLine(CredentialStore.Exists(name) ? $"Credential '{name}' is configured." : $"Credential '{name}' is not configured.");
-            return CredentialStore.Exists(name) ? 0 : 1;
+            var inspection = DeviceCredentials.Inspect(name);
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(inspection, JsonFiles.Options));
+            return inspection.Ready ? 0 : 1;
+        }
+        if (action == "keygen")
+        {
+            var output = Path.GetFullPath(Required(args, "--public-out"));
+            if (File.Exists(output)) throw new IOException("Public registration file already exists.");
+            var key = DeviceCredentials.Generate(name, Required(args, "--key-id"));
+            using var stream = new FileStream(output, FileMode.CreateNew, FileAccess.Write);
+            System.Text.Json.JsonSerializer.Serialize(stream, key, JsonFiles.Options);
+            Console.WriteLine($"Device key '{key.KeyId}' stored. Only the public registration file was exported.");
+            return 0;
+        }
+        if (action == "repair-permissions")
+        {
+            if (args.Contains("--apply") == args.Contains("--dry-run")) throw new ArgumentException("Choose --dry-run or --apply.");
+            Console.WriteLine(DeviceCredentials.RepairPermissions(name, args.Contains("--apply")));
+            return 0;
         }
         if (action.Equals("delete", StringComparison.OrdinalIgnoreCase))
         {
