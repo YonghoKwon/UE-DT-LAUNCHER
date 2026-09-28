@@ -17,6 +17,7 @@ public static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        if (args.SequenceEqual(new[] { "runtime-host", "--capability-probe" })) return RuntimeHost.RunProbe();
         CrashReporter.Install(Path.Combine(AppContext.BaseDirectory, "logs"));
         if (args.Length == 1 && args[0].Equals("--version", StringComparison.OrdinalIgnoreCase))
         {

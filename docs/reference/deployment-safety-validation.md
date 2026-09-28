@@ -15,4 +15,9 @@
 
 ## 2. 실행 수명 추적
 
-구현/검증 대기. Windows Job Object와 Linux subreaper의 실제 자식 수명 시험 후에만 변경 경로에 연결한다. API 존재만으로 완료로 표시하지 않는다.
+- 기존 EXE의 별도 runtime-host capability 경로를 GUI/self-update보다 먼저 분기했다. 아직 일반 실행/변경 경로에는 연결하지 않았다.
+- Windows: suspended 생성 → Job 연결 → resume, breakaway/kill-on-close 없음, active count=0 확인. 아직 resume하지 않은 이번 생성 프로세스만 초기화 실패 시 보유 handle로 정리한다.
+- Linux x64: subreaper set/get 확인, 독립 session, native posix_spawn/waitpid. managed Process.Start/wait를 사용하지 않으며 opaque spawn 구조체 크기를 가정하지 않는다.
+- 단위 검사 5개 통과. publish Windows 실제 3개 case(direct, 부모 선종료/자식 유지, host crash 후 자식 생존) 통과: `publish/safety/proof-win-01`.
+- publish WSL 실제 4개 case(위 3개 + double-fork/setsid 손자 유지) 통과: `/tmp/uedt-runtime-proof-a_c5rcvo`.
+- 임의 외부 broker/WMI/D-Bus/systemd spawn은 보장 범위 밖이다. 이 결과는 실행 수명 primitive 증거이며 Agent 등록/설치 변경 차단 완료가 아니다.
