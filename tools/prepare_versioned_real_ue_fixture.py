@@ -164,14 +164,48 @@ def mutation_lock(root, version):
     finally: kernel.CloseHandle(handle)
 
 
-def snapshot(root, version):
+def snapshot(root, version, scope='all'):
     app, state = release_paths(root, version)
     manifest = json.loads(inside(state, 'installed-manifest.json').read_text())
     managed = {e['path']: sha256(inside(app, e['path'])) for e in manifest['files']}
     all_app = inventory(app)
-    return {'version': version, 'managed': managed,
+    value = {'version': version, 'managed': managed,
         'unmanaged': {p: v for p, v in all_app.items() if p not in managed},
         'state': inventory(state), 'data': inventory(inside(root, 'client/runtime-data')) if inside(root, 'client/runtime-data').exists() else {}}
+    return select_snapshot_scope(value, scope)
+
+
+def select_snapshot_scope(value, scope):
+    if scope == 'all': return value
+    if scope == 'protected':
+        return {'version': value['version'], 'managed': value['managed'], 'state':
+            {p: v for p, v in value['state'].items() if p not in ('runtime-state.json', 'update.lock')}}
+    if scope == 'data':
+        # Logs are mutable during normal execution. Save/config/export files under UserDir
+        # are checked separately while the payload is stopped; never exclude install files.
+        return {'version': value['version'], 'data': {p: v for p, v in value['data'].items()
+            if any('/'+value['version']+'/'+platform+'/user/' in p for platform in ('windows-x64', 'linux-x64'))}}
+    raise ValueError('Unknown snapshot scope')
+
+
+def observe(root, f, env, version):
+    app, state = release_paths(root, version)
+    installed = inside(state, 'installed-manifest.json').exists()
+    runtime = json.loads(command(root, f, env, 'launcher', 'runtime', 'inspect', '--config', root/'client/developer.json', '--version', version))
+    value = {'version': version, 'installed': installed, 'runtime': runtime,
+        'dataFiles': inventory(inside(root, 'client/runtime-data')) if inside(root, 'client/runtime-data').exists() else {},
+        'managed': {}, 'unmanaged': {}}
+    if installed:
+        manifest = json.loads(inside(state, 'installed-manifest.json').read_text())
+        known = {e['path'] for e in manifest['files']}
+        files = inventory(app)
+        value['managed'] = {p: v for p, v in files.items() if p in known}
+        value['unmanaged'] = {p: v for p, v in files.items() if p not in known}
+    output = inside(root, 'evidence/observe-'+str(time.time_ns())+'.json'); write(output, value)
+    saves = [p for p in value['dataFiles'] if p.endswith('.sav')]
+    logs = [p for p in value['dataFiles'] if p.endswith('.log')]
+    print(json.dumps({'version': version, 'installed': installed, 'runtimeState': runtime['state'],
+        'saveFiles': saves, 'logFiles': logs, 'unmanagedFiles': list(value['unmanaged']), 'evidence': output.relative_to(root).as_posix()}))
 
 
 def hold(root, f, env):
@@ -250,7 +284,7 @@ def prepare(args):
     for index, version in enumerate(args.versions, 1):
         upload = root/('server/incoming/ue-00'+str(index)); upload.mkdir(parents=True)
         archive = upload/'Windows.zip'; archive_release(package, archive, version, index, source)
-        run('launcher', 'release-metadata', '--zip', archive, '--project-id', 'ma0t10-dt', '--display-name', 'MA0T10 DT — 격리된 버전 시험',
+        run('launcher', 'release-metadata', '--zip', archive, '--project-id', 'ma0t10-dt', '--display-name', 'MA0T10 DT — '+args.mode+' '+root.name,
             '--version', version, '--platform', 'windows-x64', '--entry-point', 'ma0t10_dt.exe', '--output', upload/'release.json')
         job = json.loads(run('server', 'ingest', upload, '--config', root/'server.json'))
         if job['state'] != 'pending': raise ValueError('Not approval-pending')
@@ -293,9 +327,11 @@ def main():
     p.add_argument('--versions', nargs=2, default=['0.1.0-ue-test.v1', '0.1.0-ue-test.v2']); p.add_argument('--approve', action='store_true')
     for action in ('resume', 'status', 'open-general', 'open-developer', 'approve-v2', 'stop-services'):
         sub.add_parser(action)
-    for action in ('verify', 'snapshot', 'damage', 'verify-backup', 'invalidate-preview', 'compare'):
+    for action in ('verify', 'snapshot', 'damage', 'verify-backup', 'invalidate-preview', 'compare', 'observe'):
         p = sub.add_parser(action); p.add_argument('--version', required=True)
-        if action in ('snapshot', 'compare'): p.add_argument('--name', required=True)
+        if action in ('snapshot', 'compare'):
+            p.add_argument('--name', required=True)
+            p.add_argument('--scope', choices=['all', 'protected', 'data'], default='protected')
     args = parser.parse_args()
     if args.action == 'prepare': return prepare(args)
     root, f, env = load(args.root)
@@ -317,17 +353,18 @@ def main():
     if args.action == 'stop-services':
         p = inside(root, 'control/stop-all'); p.parent.mkdir(exist_ok=True); p.touch(); return
     app, state = release_paths(root, args.version)
+    if args.action == 'observe': observe(root, f, env, args.version); return
     if args.action == 'verify': print('PASS: Manifest files='+str(verify_files(app, inside(state, 'installed-manifest.json'))))
     if args.action == 'snapshot':
         if not re.fullmatch(r'[a-zA-Z0-9-]{1,64}', args.name): raise ValueError('Invalid evidence label')
-        value = snapshot(root, args.version); path = inside(root, 'evidence/'+args.name+'.json')
+        value = snapshot(root, args.version, args.scope); path = inside(root, 'evidence/'+args.name+'.json')
         if path.exists(): raise ValueError('Existing snapshot is never overwritten')
         write(path, value)
-        print(json.dumps({'managedHash': fingerprint(value['managed']), 'dataHash': fingerprint(value['data']), 'unmanagedFiles': list(value['unmanaged'])}))
+        print(json.dumps({'scope': args.scope, 'snapshotHash': fingerprint(value), 'evidence': path.relative_to(root).as_posix()}))
     if args.action == 'compare':
         if not re.fullmatch(r'[a-zA-Z0-9-]{1,64}', args.name): raise ValueError('Invalid evidence label')
         previous = json.loads(inside(root, 'evidence/'+args.name+'.json').read_text())
-        current = snapshot(root, args.version)
+        current = snapshot(root, args.version, args.scope)
         if previous != current: raise ValueError('Snapshot changed; inspect protected and unmanaged inventories separately')
         print('PASS: unchanged protected/state/data snapshot')
     if args.action == 'damage':

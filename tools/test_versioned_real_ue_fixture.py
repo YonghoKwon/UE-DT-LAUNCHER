@@ -3,11 +3,23 @@ from pathlib import Path
 import tempfile
 import unittest
 import zipfile
-from prepare_versioned_real_ue_fixture import archive_release, inventory, validate_versions, require_stopped, release_paths, validate_cohort
+from prepare_versioned_real_ue_fixture import archive_release, inventory, validate_versions, require_stopped, release_paths, validate_cohort, select_snapshot_scope
 from gui_fixture_evidence import sha256
 
 
 class VersionedRealFixtureTests(unittest.TestCase):
+    def test_snapshot_scopes_keep_install_logs_and_separate_normal_runtime_writes(self):
+        value = {'version': 'v1', 'managed': {'Logs/packaged.log': 'signed'}, 'unmanaged': {'Logs/CustomLogs/runtime.log': 'mutable'},
+            'state': {'runtime-state.json': 'running', 'update.lock': '', 'transaction.json': 'protected'},
+            'data': {'users/owner/releases/project/prod/stable/v1/windows-x64/user/SaveGames/test.sav': 'save',
+                     'users/owner/releases/project/prod/stable/v1/windows-x64/logs/attempt.log': 'log',
+                     'users/owner/releases/project/prod/stable/v2/windows-x64/user/SaveGames/test.sav': 'other-version'}}
+        protected = select_snapshot_scope(value, 'protected')
+        self.assertEqual({'Logs/packaged.log': 'signed'}, protected['managed'])
+        self.assertEqual({'transaction.json': 'protected'}, protected['state'])
+        data = select_snapshot_scope(value, 'data')
+        self.assertEqual(1, len(data['data'])); self.assertTrue(next(iter(data['data'])).endswith('.sav'))
+        self.assertEqual(value, select_snapshot_scope(value, 'all'))
     def test_bad_and_duplicate_versions(self):
         for versions in (['v1', 'v1'], ['../escape', 'v2'], ['v1'], ['.', 'v2']):
             with self.assertRaises(ValueError): validate_versions(versions)
