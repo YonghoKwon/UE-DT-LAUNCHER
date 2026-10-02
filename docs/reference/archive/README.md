@@ -6,6 +6,7 @@
 
 | 기록 | 내용 |
 |---|---|
+| [데이터 수용 후속](validation/runtime-data-acceptance-completion.md) | cf99ba1 보강·양 OS552개·scope별 비교·사용자 직접 GUI 조작 대기 |
 | [UE 데이터 경로·수용 준비](validation/real-ue-data-safety-validation.md) · [정제 JSON](validation/real-ue-data-safety-evidence.json) | opt-in 경로 보호·Windows/WSL542개·게시 합성 host·HTTP/HTTPS, 실제 UE GUI 입력 제약과 재개 순서 |
 | [실제 UE 패키지](validation/real-ue-package-validation.md) | ma0t10_dt Windows 패키징·실제 GUI 설치/실행·수명, 보호 경로와 회사 미검증 범위 |
 | [배포 통합](validation/distribution-validation.md) | 초기 ZIP/JSON·권한·Windows/WSL 통합 시험 |

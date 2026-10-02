@@ -1,6 +1,6 @@
 # 작업 지침
 
-점검: 2026-10-02 / 작업 기준 codex/real-ue-data-safety. 저장소 전체에 적용합니다.
+점검: 2026-10-02 / 작업 기준 codex/runtime-data-acceptance-completion. 저장소 전체에 적용합니다.
 
 ## 문서 관리 계약
 
@@ -36,6 +36,11 @@
 | installer/windows/, packaging/linux/, .github/workflows/ | 설치본·nginx·서비스·CI |
 
 ## 보존할 경계
+
+- launch-begin이 확정한 선택을 host session에 고정한다. 데이터 plan의 ReleaseId/설치 경로/attempt/owner 관계를 검사하며 rootDirectory 누락을 명시적 null(기본 루트)로 보충하지 않는다.
+- Linux sticky 예외는 root 소유 공용 상위 컨테이너에만 적용한다. 실제 사용자 데이터 namespace는 공용 쓰기를 거부하고 사용자 데이터/로그 양쪽의 write/flush를 확인한다.
+- 자동 GUI 입력이 막히면 합의한 사용자 직접 조작 협업을 사용한다. 버튼/정확한 fixture를 안내하고 결과를 파일·runtime 증거로 확인하며 사용자 조작임을 기록한다. 적용 결과가 없으면 미실행으로 유지한다.
+- snapshot protected는 Manifest 관리 파일과 metadata/backup/journal을 비교하고 runtime-state/update.lock은 별도 관측한다. data는 선택 버전 UserDir만 비교하고 실행 로그는 따로 기록한다. all은 원시 전체 inventory다. scope가 다른 snapshot은 성공 비교로 합산하지 않는다.
 
 - 이번 USER-01 작업은 런처만 수정한다. UE·DTCore 재패키징/수정은 금지하며 다른 작업에서 발생한 소스 변경을 stage·되돌리지 않는다. 기존 실제 UE 패키지와 현재 UE 소스 revision을 동일하다고 기록하지 않는다.
 - runtimeData는 opt-in schema 3·unreal-engine·per-user-per-release만 지원한다. GUI/IPC 입력으로 임의 경로/인수를 받지 않는다. Agent의 보호 설정으로 만든 plan을 실행 attempt·installation·실제 owner에 결속한다.

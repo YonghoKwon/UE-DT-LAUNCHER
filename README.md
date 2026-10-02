@@ -2,7 +2,7 @@
 
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 배포 시스템입니다.
 
-문서 점검: **2026-10-02**, 작업 기준: `codex/real-ue-data-safety`. 데이터 경로 기능의 고정 제품 후보는 `64c4ad0`입니다. Windows/WSL 각542개 회귀와 게시된 runtime-host의 합성 데이터 시험을 통과했습니다. 이전 `8ce5060`의 GUI 수용과 이번 후보의 실제 UE GUI 적용 대기를 구분합니다. 로컬 브랜치 기준이며 main 반영·회사 운영 승인 완료를 뜻하지 않습니다.
+문서 점검: **2026-10-02**, 작업 기준: `codex/runtime-data-acceptance-completion`. 데이터 경로 보강 후보는 `cf99ba1`입니다. Windows/WSL 각552개 회귀와 게시된 runtime-host의 합성 데이터 시험을 통과했습니다. 실제 UE GUI는 격리된 새 fixture에서 사용자 직접 조작 협업을 준비했으며 적용 결과를 기다리고 있습니다. 이전 `8ce5060` GUI 수용을 이번 후보의 결과로 합산하지 않습니다. 로컬 브랜치 기준이며 main 반영·회사 운영 승인 완료를 뜻하지 않습니다.
 
 **현재 판단: 합성 앱 기반 배포·설치·실행·복구는 활용 가능한 단계이며, 회사 정식 운영 인수는 미완료입니다.** 현재 수치와 남은 작업은 [개선 진행 현황](IMPROVEMENTS.md), 상세 명령은 [운영 문서 색인](docs/reference/README.md)을 확인하세요.
 
@@ -70,6 +70,8 @@ GUI의 general/developer는 표시 정책이지 다운로드 권한이 아닙니
 서명·권한·해시·실행 수명 안전성을 유지합니다. 사내 HTTP 요청 서명은 암호화가 아니며, Windows LocalService·회사 RHEL/UE와 실제 코드서명 인증서 검증은 별도입니다. [회사 운영 승인 조건](PROJECT_GOALS.md)을 모두 통과하기 전 정식 운영 완료로 보지 않습니다.
 
 ## UE 사용자 데이터 분리 — 선택 기능
+
+추가 보강: 실행 티켓의 확정 릴리스·설치 경로와 데이터 계획을 대조하고, 사용자 host의 credential 경로도 보호합니다. Linux 실제 데이터 폴더는 sticky bit가 있어도 공용 쓰기를 거부하며, UserDir와 로그 폴더 양쪽에서 쓰기·flush를 확인합니다. [이번 후속 결과·직접 조작 순서](docs/reference/archive/validation/runtime-data-acceptance-completion.md)
 
 schema 3의 `runtimeData`를 명시적으로 활성화하면 런처가 실행 사용자·정확한 릴리스별 `-UserDir`와 실행별 `-abslog`를 준비합니다. 기존 설정은 기본 비활성화이며 자동 이전하지 않습니다. 관리형 운영 값은 GUI가 아니라 Agent 설정에서 결정합니다.
 

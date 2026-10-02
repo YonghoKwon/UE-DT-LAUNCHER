@@ -6,6 +6,8 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 ## 먼저 확인할 진행 현황
 
+2026-10-02 후속 `cf99ba1`: 데이터 릴리스/설치 결속·명시적 root 선택·host credential 중첩·Linux 권한·로그 write/flush 보강, Windows/WSL 각552개와 게시 프로세스/HTTP·HTTPS 회귀 통과. 자동 GUI 입력은0x80070005로 거부되어 사용자 직접 조작 협업 대기다. USER-01은 실제 데이터 보존 결과 전까지50%를 유지한다. [후속 기록](docs/reference/archive/validation/runtime-data-acceptance-completion.md)
+
 **이 파일은 남은 일만 적은 목록이 아닙니다. 완료 이력도 삭제하지 않고 함께 관리합니다.**
 
 | 완료 | 부분 진행 | 대기 | 전체 |
@@ -58,7 +60,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | PERF-04 | 작업 잠금·큐·진행·공간 점검 확인 | 복구·충돌·cleanup 회귀 확인 | worker1/2 및 API 동시 측정 확인 | 기본1 유지, 선택2의 재현 범위 충족 | 100% |
 | PERF-03 | 권한 유지·조회/SQL 조정 확인 | 동시 요청·권한/서명 회귀 확인 | 1/10/30개 연결 측정 확인 | **10개 연결 지연 미달** | 75% |
 | OPS-01 | 실제 UE 패키징/접수 준비 | 관련 Editor29건/도구6건·Manifest328파일 검증 | 로컬 Windows GUI 설치/실행·UE 수명/정상 종료 확인 | 회사망·Linux/RHEL·업데이트/복구 gate 미완료 | 50% |
-| USER-01 | schema3 opt-in·실행 사용자/릴리스별 UserDir/abslog·데이터 보존 정책 | Windows/WSL 각542개, 경로/기록/복원/prune 회귀 | 게시 runtime-host의 합성 v1/v2 데이터·로그·정상 종료 확인 | 실제 UE GUI 보존·앱 CustomLogs 분리·명시적 데이터 이전·회사 계정은 미완료 | 50% |
+| USER-01 | schema3 opt-in·릴리스/설치/owner 결속·host 경로/권한/write 보강 | 후속 Windows/WSL 각552개·Root 누락/다른 릴리스/로그 접근 거부 회귀 | 게시 runtime-host 합성 v1/v2·HTTP/HTTPS 확인, 새 실제 UE fixture 사용자 조작 대기 | 실제 UE GUI 보존·앱 CustomLogs·명시적 이전·회사 계정은 미완료 | 50% |
 | OPS-06 | CI의 HTTPS E2E 단계 확인 | 같은 E2E 스크립트 로컬 통과 | **현재 변경의 원격 CI 증거 미확인** | 결과 보관 정책·운영 확인 남음 | 50% |
 | USER-05 | schema 3 생성기·doctor·설치 예제 확인 | 관련 자동화 통과 | Windows/Linux 생성 설정 연결·실제 MSI/RPM 내용 확인 | 설정 예제 보완 범위 충족, 회사 설치 승인은 별도 | 100% |
 | SEC-03 | 생성 시 ACL/mode/owner·명시적 repair | Windows/WSL 권한 회귀 통과 | uedt 읽기 성공·nobody 거부 확인 | Windows LocalService 실제 실행 미확인 | 75% |
@@ -112,7 +114,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 | ID/우선 | 진행률 | 상태 | 현재 근거·영향 | 보완 방향·완료 조건 |
 |---|---:|---|---|---|
-| USER-01/P1 | 50% | 부분 · 런처 경로 보호 | `611fe35`·`64c4ad0`: 실행 사용자/정확한 버전별 외부 경로, host 권한/쓰기 확인, 설치·backup 중첩 차단, 데이터 rollback/prune 제외. Windows/WSL 각542개·게시 합성 host 시험 통과. [현재 증거](docs/reference/archive/validation/real-ue-data-safety-validation.md) | 실제 UE GUI 업데이트/복원 데이터 보존 미실행. DTCore CustomLogs는 설치 안에 쓰며 이번 UE 수정 제외. 자동 이전·데이터 snapshot·회사 서비스 계정은 미완료 |
+| USER-01/P1 | 50% | 부분 · GUI 협업 대기 | `cf99ba1`: 릴리스/설치 결속·명시적 root·user host credential 보호·Linux 권한·UserDir/log write 보강. Windows/WSL 각552개·게시 합성 host 통과. [후속 증거](docs/reference/archive/validation/runtime-data-acceptance-completion.md) | 실제 UE GUI 설치/업데이트/복원·SaveGame 보존 사용자 직접 조작 대기. CustomLogs·데이터 이전·회사 계정 미완료. 실제 수용 전75%로 올리지 않음 |
 | USER-02/P1 | 0% | 대기 · 추가 보완 | 서버/Agent/토큰/공개키 초기 설정 단계가 많음 | 관리자 사전 점검·설정 검증, 사용자 오류 코드/조치 안내. 새 PC 최초 실행·비밀정보 미노출 |
 | USER-03/P2 | 0% | 대기 · 추가 보완 | 엔진 취소 토큰과 별개로 일반 UX 취소는 이전 범위에서 제외 | 안전 중단 지점·취소/재개 설계. 다운로드·검증·설치별 중단 후 손상 없음 |
 | USER-04/P2 | 0% | 대기 · 추가 보완 | 오프라인·권한 폐기 후 기설치 실행 최종 정책 미정 | 실행/권한 재확인 규칙 합의. 미설치·기설치·폐기 토큰 수용 테스트 |

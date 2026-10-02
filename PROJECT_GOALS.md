@@ -14,6 +14,8 @@
 
 ## 현재 위치
 
+후속 `cf99ba1`은 데이터 계획의 정확한 릴리스 결속과 host 권한/로그 쓰기를 보강했고 Windows/WSL 각552개·게시 프로세스 및 인증 호환을 확인했다. 실제 UE GUI 자동 입력이 실패하면 사용자가 직접 조작하고 결과를 관측하는 방식으로 합의했다. 새 fixture 적용/SaveGame 보존은 사용자 조작 결과 전까지 미실행이며 USER-01은50% 유지다. [후속 수용 기록](docs/reference/archive/validation/runtime-data-acceptance-completion.md)
+
 2026-10-02 런처만 수정하여 schema3 opt-in 사용자/버전별 UE 데이터 경로와 유지보수 보호를 추가했습니다. 후보 `64c4ad0`의 Windows/WSL 각542개, 게시 runtime-host 합성 v1/v2, HTTP 요청 서명·HTTPS/Bearer 회귀를 통과했습니다. 실제 UE 포함 두 릴리스 fixture의 UE 바이너리는 동일하며 시험 텍스트 파일만 다릅니다. GUI 입력 접근 거부로 실제 UE 업데이트/복원/데이터 수용은 미실행입니다. USER-01은50%, OPS-01은50% 유지이며 회사 Gate 완료가 아닙니다. [구현·검증·남은 조건](docs/reference/archive/validation/real-ue-data-safety-validation.md)
 
 2026-09-29 실제 ma0t10_dt Windows Development 패키지의 로컬 접수→승인→GUI 설치/실행→런처 종료 후 수명 유지→정상 종료 증거를 확보했습니다. OPS-01은50%(로컬 증거)이며 G3는 여전히 미완료입니다. 실제 UE 업데이트/복구·Shipping/Linux·회사 TLS/CA/권한/서비스 계정과 데이터 보존은 이 결과로 대체하지 않습니다. [실제 UE 결과](docs/reference/archive/validation/real-ue-package-validation.md)

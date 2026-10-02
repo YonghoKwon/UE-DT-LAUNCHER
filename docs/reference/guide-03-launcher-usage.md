@@ -143,6 +143,8 @@ portable Linux CLI는 같은 설정에서 `deploymentMode=portable`로 지정하
 | 호환 | IPC v1의 선택 필드와 `runtime-data-v1` capability. 새 모드 실행은 지원하는 런처/Agent 동시 갱신 필요 |
 | 데이터 | 버전 간 자동 공유/복사 없음. repair·payload backup 복원·prune은 외부 사용자 데이터 유지 |
 
+후속 cf99ba1: rootDirectory를 plan에서 누락하면 불명 상태로 처리하고 명시적인 null만 기본 사용자 루트로 인정합니다. 실행 시 확정된 릴리스와 설치 경로를 대조하며, user host의 credential 경로도 보호합니다. 실제 사용자 디렉터리의 Linux 공용 쓰기 권한은 sticky bit와 관계없이 거부합니다. UserDir·로그 디렉터리 모두 write/flush를 확인합니다.
+
 `doctor`는 정책을 확인합니다. Portable은 현재 사용자 루트 권한을 읽기 전용으로 검사하며, 관리형 Agent 진단은 **사용자 세션 쓰기 검사를 지연**한다고 명시합니다. 실제 write/flush 접근 검사는 실행 host가 합니다. doctor 성공을 서비스 계정/사용자 계정의 실제 실행 성공으로 확대하지 마세요.
 
 UE 인수는 앱의 독자적인 쓰기 위치를 강제 변경하지 않습니다. ma0t10_dt의 DTCore CustomLogs는 설치 안에 쓰는 한계가 남고, 실제 SaveGame/사용자 설정 보존 수용과 회사 서비스 계정 검증도 남습니다. [이번 증거](archive/validation/real-ue-data-safety-validation.md)
