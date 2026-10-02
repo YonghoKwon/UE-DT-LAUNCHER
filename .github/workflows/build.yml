@@ -62,6 +62,21 @@ jobs:
         if: runner.os == 'Linux'
         run: dotnet publish src/UeDtLauncher.DistributionServer -c Release -r linux-x64 --self-contained true -o publish/distribution-server
 
+      - name: Publish Windows distribution server for promotion proof
+        if: runner.os == 'Windows'
+        run: dotnet publish src/UeDtLauncher.DistributionServer -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish/distribution-server
+
+      - name: Controlled promotion published process proof
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            rid=win-x64; suffix=.exe; py=python
+          else
+            rid=linux-x64; suffix=; py=python3
+          fi
+          "$py" tools/test-release-promotion.py --root "$PWD/publish/promotion-proof" --server "publish/distribution-server/UeDtLauncher.DistributionServer$suffix" --launcher "publish/$rid/UeDtLauncher$suffix" --catalog-proof
+
       - name: Install isolated distribution E2E prerequisites
         if: runner.os == 'Linux'
         run: |
@@ -78,7 +93,7 @@ jobs:
       - name: Signed intranet HTTP and managed Agent end to end
         if: runner.os == 'Linux'
         timeout-minutes: 10
-        run: python3 tools/test-intranet-auth.py --server publish/distribution-server/UeDtLauncher.DistributionServer --launcher publish/linux-x64/UeDtLauncher --agent publish/agent-linux-x64/UeDtLauncher.Agent --nginx /usr/sbin/nginx --service-proof
+        run: python3 tools/test-intranet-auth.py --server publish/distribution-server/UeDtLauncher.DistributionServer --launcher publish/linux-x64/UeDtLauncher --agent publish/agent-linux-x64/UeDtLauncher.Agent --nginx /usr/sbin/nginx --service-proof --promotion-proof
         # Functional only; test keys and private roots must never become public CI artifacts.
 
       - name: Runtime descendant and managed broker proof

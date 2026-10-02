@@ -151,6 +151,8 @@ UE 인수는 앱의 독자적인 쓰기 위치를 강제 변경하지 않습니�
 
 ## 레거시 호환과 검증 범위
 
+명시적 승격 Catalog의 `selectionPolicy=explicit-promotion-v1`을 Core·Agent·GUI가 전달합니다. latest는 IsLatest 추천만 사용하고 없으면 지정 대기, exact는 허용된 승인 목록에서 선택합니다. 기존 정적 Catalog나 구 서버 응답에 정책 필드가 없으면 기존 선택 동작을 유지합니다. 새 서버의 구형 요청 목록은 미승격판을 제외하므로 구형 fallback으로 미승격판이 자동 선택되지 않습니다.
+
 `catalogUrl`/직접 `manifestUrl`, `generate-manifest`, `update-catalog`, `publish-release`는 기존 정적 배포 호환 기능입니다. 기본 `sample-config`는 DistributionServer/schema 3 요청 서명 설정을 생성합니다. 정적 예제는 `--mode legacy-catalog`를 명시한 경우에만 사용합니다. 공개 `/catalogs/general` 또는 `/projects` 구조는 현재 통합 서버의 보안 모델이 아닙니다.
 
 무인 실행은 [서비스 모드](service-mode.md), 이전은 [통합 운영](distribution-workflow.md), 패키징은 [상용 배포 준비](commercial-deployment.md)를 참고하세요. [2026-09-12 검증](archive/validation/distribution-validation.md)은 Windows GUI/Agent·Linux CLI 테스트 패키지 결과이며 실제 회사 RHEL·실제 UE 검증 완료를 뜻하지 않습니다.

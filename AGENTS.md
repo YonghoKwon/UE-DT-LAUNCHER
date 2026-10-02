@@ -1,6 +1,6 @@
 # 작업 지침
 
-점검: 2026-10-02 / 작업 기준 codex/runtime-data-acceptance-completion. 저장소 전체에 적용합니다.
+점검: 2026-10-02 / 작업 기준 codex/release-promotion-control. 저장소 전체에 적용합니다.
 
 ## 문서 관리 계약
 
@@ -36,6 +36,11 @@
 | installer/windows/, packaging/linux/, .github/workflows/ | 설치본·nginx·서비스·CI |
 
 ## 보존할 경계
+
+- approve는 게시만 한다. 첫 버전도 명시적 promote가 필요하며 PC별 추천은 현재 허용된 승격 이력의 마지막 판이다. 프로젝트/환경/채널/플랫폼을 섞거나 미승격판으로 fallback하지 않는다.
+- 승격/감사 기록은 한 transaction, expected revision 재검사를 사용한다. same-target/current-revision은 no-op이며 승인/서버 재시작은 이력을 변경하지 않는다. 승격은 다운로드 grant·설치·실행 티켓을 변경하지 않는다.
+- Catalog의 release/promotion은 동일 DB snapshot에서 읽는다. 새 selectionPolicy 요청은 전체 허용 목록, 구형 요청은 승격된 허용 목록만 제공한다. 인증·권한·fresh sequence·서명·요청 결속을 유지한다.
+- 기존 DB migration dry-run은 IntakeStore를 만들지 않고 read-only DB만 읽는다. apply는 서버 중지·백업·상태 재검사 후 legacy-baseline을 정확히 한 번 기록한다. DB schema4와 구 서버의 동시 사용을 금지한다.
 
 - launch-begin이 확정한 선택을 host session에 고정한다. 데이터 plan의 ReleaseId/설치 경로/attempt/owner 관계를 검사하며 rootDirectory 누락을 명시적 null(기본 루트)로 보충하지 않는다.
 - Linux sticky 예외는 root 소유 공용 상위 컨테이너에만 적용한다. 실제 사용자 데이터 namespace는 공용 쓰기를 거부하고 사용자 데이터/로그 양쪽의 write/flush를 확인한다.

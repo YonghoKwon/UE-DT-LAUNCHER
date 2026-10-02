@@ -14,6 +14,8 @@
 
 ## 현재 위치
 
+OPS-03의 명시적 승격과 기존 기준선 이전을 구현·로컬 수용했다. 후보a8080ea의 양 OS 각568개와 게시 CLI/API·HTTP/HTTPS·티켓/실행 불변·실제 일반 대기 화면을 확인했다. 이는 회사 Gate 승인 또는 기존 실제 UE 데이터 수용 완료가 아니다. [승격 결과](docs/reference/archive/validation/release-promotion-validation.md)
+
 후속 `cf99ba1`은 데이터 계획의 정확한 릴리스 결속과 host 권한/로그 쓰기를 보강했고 Windows/WSL 각552개·게시 프로세스 및 인증 호환을 확인했다. 실제 UE GUI 자동 입력이 실패하면 사용자가 직접 조작하고 결과를 관측하는 방식으로 합의했다. 새 fixture 적용/SaveGame 보존은 사용자 조작 결과 전까지 미실행이며 USER-01은50% 유지다. [후속 수용 기록](docs/reference/archive/validation/runtime-data-acceptance-completion.md)
 
 2026-10-02 런처만 수정하여 schema3 opt-in 사용자/버전별 UE 데이터 경로와 유지보수 보호를 추가했습니다. 후보 `64c4ad0`의 Windows/WSL 각542개, 게시 runtime-host 합성 v1/v2, HTTP 요청 서명·HTTPS/Bearer 회귀를 통과했습니다. 실제 UE 포함 두 릴리스 fixture의 UE 바이너리는 동일하며 시험 텍스트 파일만 다릅니다. GUI 입력 접근 거부로 실제 UE 업데이트/복원/데이터 수용은 미실행입니다. USER-01은50%, OPS-01은50% 유지이며 회사 Gate 완료가 아닙니다. [구현·검증·남은 조건](docs/reference/archive/validation/real-ue-data-safety-validation.md)
@@ -94,7 +96,7 @@ G1~G6의 증거가 확보된 뒤 전사 확대를 승인합니다. 게시본 `ab
 | 결정 | 질문 | 상태 / 관련 항목 |
 |---|---|---|
 | D-01 | 실제 지원 OS·RHEL minor·PC 수·동시 다운로드 규모는? | 미정 / OPS-01, PERF-03 |
-| D-02 | 승인이 곧 최신 공개인가, 별도 승격·예약 공개가 필요한가? | 현행 마지막 승인판, 최종 정책 미정 / OPS-03 |
+| D-02 | 승인이 곧 최신 공개인가, 별도 승격·예약 공개가 필요한가? | 2026-10-02 확정: 첫 버전부터 승인과 명시적 승격 분리, 현재 권한별 마지막 승격판 추천, 기존 추천은 offline legacy-baseline 이전으로 보존. 예약/자동 공개는 제외 / OPS-03 로컬 완료 |
 | D-03 | 버전·원본 ZIP 보관 기간/개수/용량·삭제 권한은? | 미정 / OPS-04 |
 | D-04 | UE 세이브·설정 위치와 이전 책임은? | 2026-10-02 확정: 실행 사용자별·정확한 버전별 분리, 프로그램 복원은 사용자 데이터 유지. 자동 공유/이전 없음. 앱 CustomLogs 수정·데이터 이전/호환·보관 정책은 별도 / USER-01 |
 | D-05 | 오프라인·권한 폐기 후 기설치 실행 규칙은? | 미정 / USER-04 |

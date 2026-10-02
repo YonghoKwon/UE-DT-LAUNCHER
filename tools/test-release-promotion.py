@@ -10,6 +10,7 @@ import base64
 import socket
 import urllib.request
 import time
+import sqlite3
 
 
 def main():
@@ -73,6 +74,20 @@ def main():
                 assert a['sequence']>legacy['sequence']; summary['catalogAndPerPcPromotionProof']=True
             finally:
                 process.terminate(); process.wait(timeout=15)
+    # Exercise offline schema3 migration with published CLI, preserving approved order.
+    legacy=root/'legacy'; legacy.mkdir(); legacy_db=legacy/'distribution.db'
+    with sqlite3.connect(db) as source, sqlite3.connect(legacy_db) as target: source.backup(target)
+    with sqlite3.connect(legacy_db) as target: target.executescript('DROP TABLE promotions; DROP TABLE promotion_state; PRAGMA user_version=3;')
+    legacy_config=root/'legacy-server.json'; write(legacy_config,{'root':str(legacy)})
+    before=hashlib.sha256(legacy_db.read_bytes()).hexdigest()
+    plan=json.loads(run(server,'promotion','migrate','--dry-run','--config',legacy_config))
+    assert plan['applyRequired'] and before==hashlib.sha256(legacy_db.read_bytes()).hexdigest()
+    run(server,'promotion','migrate','--apply','--config',legacy_config)
+    run(server,'promotion','migrate','--apply','--config',legacy_config)
+    history=json.loads(run(server,'promotion','inspect',*track,'--config',legacy_config))
+    assert len(history['history'])==3 and all(e['kind']=='legacy-baseline' for e in history['history'])
+    assert history['recommendedRelease'].endswith('/1.0.0/windows-x64') and len(list(legacy.glob('distribution.pre-v4-*.db')))==1
+    summary['publishedOfflineMigrationProof']=True
     write(root/'summary.json',summary); print('PASS: '+str(root))
 
 

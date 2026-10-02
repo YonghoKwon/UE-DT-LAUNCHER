@@ -49,6 +49,7 @@ def main():
     parser.add_argument("--hold", action="store_true")
     parser.add_argument("--hold-runtime", action="store_true", help="Keep a synthetic managed game active briefly for GUI inspection")
     parser.add_argument("--service-proof", action="store_true", help="Verify explicit versioned portable service selection using synthetic payloads")
+    parser.add_argument("--promotion-proof", action="store_true", help="Verify promotion cannot retarget pending or running managed launches")
     parser.add_argument("--agent")
     parser.add_argument("--prepare-gui", help="Test-only synthetic executable; leave installs empty and hold for GUI")
     parser.add_argument("--nginx", help="Optional isolated Linux nginx executable; no system service changes")
@@ -325,7 +326,8 @@ http {{
                     except (OSError,RuntimeError,json.JSONDecodeError):
                         if agent_process.poll() is not None or time.monotonic()>=deadline: raise
                         time.sleep(.1)
-            run(launcher, "agent", "project-asset", "--project", "demo", "--kind", "hero", "--cache", client / "images")
+            if not args.defer_promotion:
+                run(launcher, "agent", "project-asset", "--project", "demo", "--kind", "hero", "--cache", client / "images")
             gui = dict(config, clientProfile="general")
             gui["security"] = dict(config["security"], credentialName="gui-must-not-read-private-key")
             write(client / "general.json", gui)
@@ -334,6 +336,29 @@ http {{
             write(root / "test-environment.json", {"UE_DT_AGENT_DATA_ROOT": env["UE_DT_AGENT_DATA_ROOT"], "UE_DT_AGENT_ENDPOINT": env["UE_DT_AGENT_ENDPOINT"]})
             run(launcher, "doctor", "--config", client / "general.json", "--online")
             summary["managed_asset_and_doctor"] = True
+            if args.promotion_proof:
+                import uuid
+                from gui_fixture_evidence import agent_status
+                config['requestedVersion']='2.0.0'
+                config['launchArguments']=['/c','ping -n 8 127.0.0.1 > nul'] if os.name=='nt' else ['7']
+                write(agent_config,config)
+                selection={'projectId':'demo','environment':'prod','channel':'stable','platform':platform,'version':'2.0.0'}
+                response=agent_status(env['UE_DT_AGENT_ENDPOINT'],{'protocolVersion':1,'correlationId':uuid.uuid4().hex,'command':'launch-begin',
+                    'projectId':'demo','selection':selection,'clientCapabilities':['runtime-supervision-v1','runtime-data-v1']})
+                if not response.get('success'):raise RuntimeError('Pending launch proof failed')
+                state=client/'state/demo/prod/stable/2.0.0'/platform/'runtime-state.json'
+                before=state.read_bytes()
+                promote(lambda *a:run(server,*a),root/'server.json','demo','1.0.0',platform,'promotion during pending launch')
+                assert before==state.read_bytes()
+                with subprocess.Popen([launcher,'runtime-host'],env=env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,creationflags=flags) as host:
+                    host.stdin.write(json.dumps({'config':config,'ticket':response['runtimeTicket'],'agentEndpoint':env['UE_DT_AGENT_ENDPOINT'],'selection':selection})+'\n');host.stdin.close()
+                    started=json.loads(host.stdout.readline());assert started['state']=='started'
+                    live=json.loads(state.read_text());assert live['state']==2 and live['entryPoint'].endswith('game.exe' if os.name=='nt' else 'game.sh')
+                    before=state.read_bytes()
+                    promote(lambda *a:run(server,*a),root/'server.json','demo','2.0.0',platform,'promotion during active launch')
+                    assert before==state.read_bytes()
+                    host.wait(timeout=25);assert host.returncode==0 and json.loads(state.read_text())['state']==0
+                summary['promotion_preserves_pending_and_running_launch']=True
             if args.hold_runtime:
                 config["launchArguments"] = ["/c", "ping -n 61 127.0.0.1 > nul"] if os.name == "nt" else ["60"]
                 write(agent_config, config)

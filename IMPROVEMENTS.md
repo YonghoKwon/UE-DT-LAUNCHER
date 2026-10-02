@@ -6,15 +6,17 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 ## 먼저 확인할 진행 현황
 
+2026-10-02 OPS-03 완료(로컬 범위): 승인/승격 분리, revision·감사·schema4 기준선 이전, 현재 권한별 추천·구형 요청 제한, Core/Agent/GUI explicit policy 처리를 검증했다. 후보a8080ea Windows/WSL 각568개·게시본 이력/이전/실행 티켓·Running 불변·HTTP/HTTPS 통과, 실제 일반 GUI의 지정 대기/주 버튼 비활성화 관측. [승격 검증](docs/reference/archive/validation/release-promotion-validation.md)
+
 2026-10-02 후속 `cf99ba1`: 데이터 릴리스/설치 결속·명시적 root 선택·host credential 중첩·Linux 권한·로그 write/flush 보강, Windows/WSL 각552개와 게시 프로세스/HTTP·HTTPS 회귀 통과. 자동 GUI 입력은0x80070005로 거부되어 사용자 직접 조작 협업 대기다. USER-01은 실제 데이터 보존 결과 전까지50%를 유지한다. [후속 기록](docs/reference/archive/validation/runtime-data-acceptance-completion.md)
 
 **이 파일은 남은 일만 적은 목록이 아닙니다. 완료 이력도 삭제하지 않고 함께 관리합니다.**
 
 | 완료 | 부분 진행 | 대기 | 전체 |
 |---:|---:|---:|---:|
-| 5개 | 10개 | 13개 | 28개 |
+| 6개 | 10개 | 12개 | 28개 |
 
-완료를 제외하면 열린 항목은 **23개**입니다. 각 분야 표에서 `진행률`과 `상태`를 먼저 보면 됩니다.
+완료를 제외하면 열린 항목은 **22개**입니다. 각 분야 표에서 `진행률`과 `상태`를 먼저 보면 됩니다.
 
 ### 현재 진행 상태 요약
 
@@ -60,6 +62,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | PERF-04 | 작업 잠금·큐·진행·공간 점검 확인 | 복구·충돌·cleanup 회귀 확인 | worker1/2 및 API 동시 측정 확인 | 기본1 유지, 선택2의 재현 범위 충족 | 100% |
 | PERF-03 | 권한 유지·조회/SQL 조정 확인 | 동시 요청·권한/서명 회귀 확인 | 1/10/30개 연결 측정 확인 | **10개 연결 지연 미달** | 75% |
 | OPS-01 | 실제 UE 패키징/접수 준비 | 관련 Editor29건/도구6건·Manifest328파일 검증 | 로컬 Windows GUI 설치/실행·UE 수명/정상 종료 확인 | 회사망·Linux/RHEL·업데이트/복구 gate 미완료 | 50% |
+| OPS-03 | approve/promote·revision·감사·기준선 이전·권한별 Catalog/클라이언트 선택 | Windows/WSL 각568개, 동시/저장 실패/구형/명시적 추천 회귀 | 양 OS 게시 CLI/API·HTTP 서명·HTTPS/Bearer·pending/running 불변·실제 GUI 대기 안내 확인 | 합의한 로컬 승격 범위 충족. 회사 인수는 별도 | 100% |
 | USER-01 | schema3 opt-in·릴리스/설치/owner 결속·host 경로/권한/write 보강 | 후속 Windows/WSL 각552개·Root 누락/다른 릴리스/로그 접근 거부 회귀 | 게시 runtime-host 합성 v1/v2·HTTP/HTTPS 확인, 새 실제 UE fixture 사용자 조작 대기 | 실제 UE GUI 보존·앱 CustomLogs·명시적 이전·회사 계정은 미완료 | 50% |
 | OPS-06 | CI의 HTTPS E2E 단계 확인 | 같은 E2E 스크립트 로컬 통과 | **현재 변경의 원격 CI 증거 미확인** | 결과 보관 정책·운영 확인 남음 | 50% |
 | USER-05 | schema 3 생성기·doctor·설치 예제 확인 | 관련 자동화 통과 | Windows/Linux 생성 설정 연결·실제 MSI/RPM 내용 확인 | 설정 예제 보완 범위 충족, 회사 설치 승인은 별도 | 100% |
@@ -91,7 +94,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 |---|---:|---|---|---|
 | OPS-01/P0 | 50% | 부분 · 로컬 Windows UE 확인 | 실제ma0t10_dt UE5.3 Development 328파일 패키징·ZIP/외부 JSON 서명 게시·GUI 설치/실행·수명/종료, Manifest 해시 확인. [실제 UE 기록](docs/reference/archive/validation/real-ue-package-validation.md) | 실제 UE 업데이트/복구·Shipping/Linux/RHEL·회사 TLS/CA·IP·서비스 계정 검증은 남음. 로컬 성공은 회사 승인 아님 |
 | OPS-02/P0 | 0% | 대기 · 추가 보완 | MSI/RPM 구성은 있으나 이번 통합의 실기기 수명주기 미검증 | 설치/upgrade/repair/uninstall, 서비스 자동 시작·credential ACL·데이터 보존, 코드서명 gate 검증 |
-| OPS-03/P1 | 0% | 대기 · 추가 보완 | DistributionHttp의 track.Last()가 latest. 과거판 승인 시 역행 가능 | 승인과 운영 승격 분리·변경 이력. 과거판 등록 시 latest 유지 및 명시적 변경 테스트 |
+| OPS-03/P1 | 100% | 완료 · 로컬 승격 범위 | `cbb5ba7`·`9350e57`·`a8080ea`: 승인/승격 분리, revision/감사/legacy-baseline, 권한별 추천·구형 목록 제한·Core/GUI fallback 차단. 양 OS568개·게시 프로세스/서명/이전·티켓/Running 불변 통과. [증거](docs/reference/archive/validation/release-promotion-validation.md) | 회사 인수·예약 공개·삭제·자동 앱 전환은 별도. 기존 DB는 offline migration 후 운영 |
 | OPS-04/P1 | 0% | 대기 · 추가 보완 | StorageMaintenance는 scratch만 정리, 공개판·snapshot 누적 | 보관 기간/용량·참조 보호·dry-run·감사 정리. 사용 중 자료 보존 검증 |
 | OPS-05/P1 | 0% | 대기 · 추가 보완 | 수동 백업·복원, catalog sequence 역행 위험 | 일관된 백업/복원 도구·sequence 보호·복구 훈련. 기존 PC 검증 성공, RPO/RTO 별도 합의 |
 | OPS-06/P1 | 50% | 부분 · 원격 검증 대기 | Linux signed HTTPS E2E가 build.yml에 추가됨. 원격 CI 실행·운영 결과 보관은 미확인 | 실제 PR/배포 CI 성공 확인 및 민감정보 없는 결과 보관 정책 확정 |
@@ -151,6 +154,6 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 3. PERF 기준선·OPS-06: 측정 후 개선, 자동 회귀 검증.
 4. USER/UI·API 범위는 [목표 문서](PROJECT_GOALS.md)에서 확정 후 진행.
 
-PERF-01/02/04·USER-05·UI-01은 100%(UI-01은1920×1080 한정), PERF-03·SEC-03·SEC-04·OPS-09·UI-02·UI-03은 75%, OPS-01·OPS-06·OPS-08·USER-01은 50%(각 남은 조건 참조)입니다. 나머지 13개는 0%이며 기존 기능 부재를 의미하지 않습니다.
+PERF-01/02/04·USER-05·UI-01·OPS-03은 100%(UI-01은1920×1080 한정, OPS-03은로컬 승격 범위), PERF-03·SEC-03·SEC-04·OPS-09·UI-02·UI-03은 75%, OPS-01·OPS-06·OPS-08·USER-01은 50%(각 남은 조건 참조)입니다. 나머지 12개는 0%이며 기존 기능 부재를 의미하지 않습니다.
 
 진행률을 변경할 때는 상태·체크포인트·커밋/검증 링크·남은 조건·상단 집계를 함께 갱신합니다. 100% 항목은 완료 이력으로 남기고, 새 미달 조건이나 범위 변경이 확인되면 이유를 기록해 다시 열 수 있습니다. 빌드 성공만으로 완료하지 않습니다.

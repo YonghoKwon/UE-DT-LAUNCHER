@@ -74,7 +74,32 @@ UeDtLauncher credential set --name company-distribution
 - failed: 파일 오류 등. inspect로 확인하고 원본을 고친 후 retry
 - rejected: 운영자가 거절함. 수정한 업로드는 새 업로드 폴더를 사용
 
-관리 명령은 전용 서비스 계정 또는 허용된 OS 관리자만 실행합니다. 원본과 외부 JSON은 job.snapshot에 기록된 비공개 폴더에 보관됩니다. 디렉터리 생성만으로 공개되지 않으며 DB에 등록된 릴리스만 서비스합니다. latest는 트랙별로 가장 최근 승인된 릴리스입니다. 이전 버전은 개발자가 exact로 선택할 수 있습니다.
+관리 명령은 전용 서비스 계정 또는 허용된 OS 관리자만 실행합니다. 원본과 외부 JSON은 job.snapshot에 기록된 비공개 폴더에 보관됩니다. approve는 서명된 릴리스를 등록하지만 latest를 바꾸지 않습니다. 첫 버전도 별도 promote가 필요합니다. latest는 그 PC가 허용받은 승격 이력의 마지막 판이며 개발자는 허용된 미승격판도 exact로 선택할 수 있습니다.
+
+### 3.1 개발자 검증 후 추천 승격
+
+```bash
+./UeDtLauncher.DistributionServer promotion inspect --project-id demo --environment prod --channel stable --platform windows-x64 --config /etc/ue-dt-distribution/server.json
+# inspect의 revision을 아래 N으로 치환. 첫 승격은 0.
+./UeDtLauncher.DistributionServer promote --project-id demo --environment prod --channel stable --platform windows-x64 --version 1.2.0 --expected-revision N --reason '개발자 실행 검증 통과' --config /etc/ue-dt-distribution/server.json
+```
+
+프로젝트/환경/채널/플랫폼마다 독립적으로 지정합니다. Linux 판은 platform=linux-x64로 실행합니다. 승격은 파일·사용 중 앱·PC 권한을 변경하지 않습니다. v2 권한이 없는 PC는 허용된 이전 승격판을 추천받고, 승격 이력이 전혀 없는 PC는 지정 대기 안내를 봅니다. 이미 최신인 대상과 현재 revision으로 반복하면 no-op입니다. revision 변경 오류가 나면 inspect를 다시 확인한 후 판단합니다.
+
+### 3.2 기존 서버 schema4 이전
+
+기존 서버 프로세스를 중지하고 새 서버 바이너리로 아래 순서를 수행합니다. 회사 서비스 이름은 실제 설치 구성에 맞춥니다. 이전/구 서버를 같은 DB에 동시에 실행하지 않습니다.
+
+```bash
+./UeDtLauncher.DistributionServer promotion migrate --dry-run --config /etc/ue-dt-distribution/server.json
+./UeDtLauncher.DistributionServer promotion migrate --apply --config /etc/ue-dt-distribution/server.json
+./UeDtLauncher.DistributionServer promotion inspect --project-id demo --environment prod --channel stable --platform windows-x64 --config /etc/ue-dt-distribution/server.json
+./UeDtLauncher.DistributionServer serve --config /etc/ue-dt-distribution/server.json
+```
+
+dry-run은 read-only DB 조회로 파일/DB를 변경하지 않습니다. apply의 schema 변경 전 SQLite 일관된 `distribution.pre-v4-*.db` 백업을 만들고, 기존 공개판 순서를 legacy-baseline으로 기록하여 PC별 기존 추천을 유지합니다. 반복 apply는 기준선을 중복 생성하지 않습니다. 기존 서버는 migration 전 serve를 거부하며, 새 빈 DB는 승격 이력이 없는 상태로 바로 시작합니다. baseline은 실제 수동 승격과 구분하고 이후 approve는 자동 승격하지 않습니다.
+
+API v1의 `?selectionPolicy=explicit-promotion-v1` 요청은 전체 허용 승인 목록·추천을 받습니다. query 없는 구형 요청은 승격된 허용 목록만 받습니다. 서명/권한/Range·Catalog freshness 형식은 유지합니다. [검증·호환 범위](archive/validation/release-promotion-validation.md)
 
 ## 4. 클라이언트
 

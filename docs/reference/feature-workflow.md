@@ -48,6 +48,7 @@ flowchart LR
 | 버전마다 | B3 | 개발자 / SFTP 또는 SSH/SCP | 새 incoming 폴더에 두 파일 전송·이름 변경 | ZIP + JSON 두 파일 완성 |
 | 자동 | B4 | 배포 서버 | 폴더 감지·크기/해시/경로/압축 검사 | `pending` 승인 대기 |
 | 버전마다 | B5 | 관리자 / Linux 터미널 | `list` → `inspect` → `approve` | `published`, 배포 폴더 자동 생성 |
+| 검증 후 | B6 | 개발자·관리자 / PC·Linux | 개발자 exact 검증 → `promotion inspect` → `promote` | PC별 최신 추천 갱신 |
 | 사용할 때 | C1 | 사용자 / Windows 런처 | 프로젝트·필요한 버전 선택 | 설치 상태·가능한 작업 표시 |
 | 사용할 때 | C2 | 사용자 / 런처 버튼 | 설치 후 실행 / 업데이트 후 실행 / 실행 | 필요한 파일 준비 후 DT 실행 |
 | 문제 발생 시 | D | 사용자·관리자 | 재확인 → 검사 → 복구, 필요 시 백업 복원 | 상태 확인 또는 원인·다음 조치 확보 |
@@ -190,7 +191,9 @@ flowchart TD
     pending --> approved{"관리자 승인?"}
     approved -->|"보류·거절"| private["다운로드 비공개 유지"]
     approved -->|"승인"| publish["서명·배포 폴더 생성·등록"]
-    publish --> visible["권한 있는 PC에 표시"]
+    publish --> developer["권한 있는 개발자: exact 검증"]
+    developer --> promote["B6 관리자: 명시적 promote"]
+    promote --> visible["PC별 허용 승격판 추천"]
 ```
 
 ### B1. 완성된 ZIP 준비
@@ -285,7 +288,18 @@ sudo -u uedt-distribution /opt/ue-dt-distribution/UeDtLauncher.DistributionServe
     ...
 ```
 
-운영자가 직접 압축을 풀어 이 폴더에 옮기거나 Catalog를 수동 편집하지 않습니다. 신규 프로젝트는 게시와 별개로 PC grant를 추가해야 합니다. `latest`는 해당 PC에 허용된 트랙에서 마지막 게시된 판이며 최고 버전 번호가 아닙니다.
+운영자가 직접 압축을 풀어 이 폴더에 옮기거나 Catalog를 수동 편집하지 않습니다. 신규 프로젝트는 게시와 별개로 PC grant를 추가해야 합니다. `latest`는 그 PC가 허용받은 승격 이력의 마지막 판입니다. 승인만으로 바뀌지 않습니다.
+
+### B6. exact 검증 후 승격 — 개발자·Linux 서버 운영자
+
+개발자는 허용된 버전을 exact로 설치·실행해 확인합니다. 관리자는 배포 구분의 현재 revision을 읽고 검증된 버전만 추천으로 지정합니다. 첫 승격도 필요합니다.
+
+```bash
+./UeDtLauncher.DistributionServer promotion inspect --project-id demo --environment prod --channel stable --platform windows-x64 --config /etc/ue-dt-distribution/server.json
+./UeDtLauncher.DistributionServer promote --project-id demo --environment prod --channel stable --platform windows-x64 --version 1.2.0 --expected-revision N --reason '개발자 검증 통과' --config /etc/ue-dt-distribution/server.json
+```
+
+N은 inspect 결과로 치환합니다. 승격은 자동 설치나 실행 전환이 아니며, 사용자는 다음 상태 확인 후 주 버튼으로 작업합니다. [기존 DB 이전·권한별 추천](distribution-workflow.md)
 
 ## C. 사용자 PC: 상태 확인 → 설치 → 실행
 

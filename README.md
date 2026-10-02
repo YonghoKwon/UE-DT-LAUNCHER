@@ -2,7 +2,7 @@
 
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 배포 시스템입니다.
 
-문서 점검: **2026-10-02**, 작업 기준: `codex/runtime-data-acceptance-completion`. 데이터 경로 보강 후보는 `cf99ba1`입니다. Windows/WSL 각552개 회귀와 게시된 runtime-host의 합성 데이터 시험을 통과했습니다. 실제 UE GUI는 격리된 새 fixture에서 사용자 직접 조작 협업을 준비했으며 적용 결과를 기다리고 있습니다. 이전 `8ce5060` GUI 수용을 이번 후보의 결과로 합산하지 않습니다. 로컬 브랜치 기준이며 main 반영·회사 운영 승인 완료를 뜻하지 않습니다.
+문서 점검: **2026-10-02**, 작업 기준: `codex/release-promotion-control`. 승격 분리 후보 `a8080ea`의 Windows/WSL 각568개·게시본 권한별 추천/이전/HTTP·HTTPS E2E가 통과했습니다. 실제 UE 데이터 GUI 수용은 기존 협업 대기를 유지합니다. 로컬 검증이며 main 반영·회사 운영 승인 완료를 뜻하지 않습니다.
 
 **현재 판단: 합성 앱 기반 배포·설치·실행·복구는 활용 가능한 단계이며, 회사 정식 운영 인수는 미완료입니다.** 현재 수치와 남은 작업은 [개선 진행 현황](IMPROVEMENTS.md), 상세 명령은 [운영 문서 색인](docs/reference/README.md)을 확인하세요.
 
@@ -15,7 +15,9 @@ flowchart LR
     package["개발자: ZIP와 외부 JSON"] --> inspect["서버: 자동 검사"]
     inspect --> approve["관리자: 승인"]
     approve --> publish["서버: 서명과 공개"]
-    publish --> launch["허용된 PC: 설치와 실행"]
+    publish --> verifyRelease["개발자: 검증"]
+    verifyRelease --> promote["관리자: 최신 추천 승격"]
+    promote --> launch["허용된 PC: 설치와 실행"]
 ```
 
 **어떤 명령을 어디서 실행하는지 알고 싶다면 [기능 지도·단계별 실행 안내](docs/reference/feature-workflow.md)부터 읽으세요.** 최초 준비 A, 새 버전 배포 B, 사용자 실행 C, 문제 해결 D로 나누고 각 단계의 담당자·명령·정상 결과를 제공합니다. 배포 서버가 사용자 PC에 자동 설치를 밀어 넣는 방식은 아닙니다.
@@ -102,7 +104,9 @@ schema 3의 `runtimeData`를 명시적으로 활성화하면 런처가 실행 �
 | 4 | 서버 | 파일 쌍·해시·ZIP 검사 후 승인 대기 |
 | 5 | 관리자 | list / inspect 확인 후 approve |
 | 6 | 서버 | 서명·디렉터리 생성 후 배포 목록 공개 |
-| 7 | 사용자 | 런처에서 설치/업데이트 후 실행 |
+| 7 | 개발자 | 허용된 exact 버전으로 검증 |
+| 8 | 관리자 | promotion inspect의 revision 확인 후 promote |
+| 9 | 사용자 | PC에 허용된 승격판으로 설치/업데이트 후 실행 |
 
 ```text
 UeDtLauncher release-metadata --zip Windows.zip --project-id demo --version 1.2.0 --platform windows-x64 --payload-root Windows --entry-point Demo.exe --output release.json
@@ -142,7 +146,7 @@ Linux 클라이언트/Agent는 `-r linux-x64`로 생성합니다. 네이티브 �
 
 2026-09-28 성능 작업: Windows/Linux 각각 전체 293개 테스트 통과, Python 측정 도구 계약 테스트 16개 통과. Release build/publish 및 실제 Windows 일반·개발자 GUI/Agent, Linux CLI/Agent 실행을 확인했습니다. Linux nginx HTTPS E2E의 작은 파일은 통과했지만 WSL1 nginx의 1MiB 응답 중단이 관측되어 큰 파일 GUI 검증은 격리된 Windows HTTPS 프록시로 분리했습니다. 실제 회사 RHEL·UE 패키지·IP/CA·설치본 수명주기는 별도 검증해야 합니다. 코드서명 없는 개발 산출물을 운영용 서명 제품으로 배포하지 않습니다.
 
-- latest는 같은 환경/채널/OS에서 마지막 승인된 판이며 최대 버전 번호가 아닙니다.
+- latest는 같은 환경/채널/OS에서 해당 PC에 허용된 승격 이력의 마지막 판입니다. 승인만으로 추천이 바뀌지 않고, 첫 버전도 promote가 필요합니다. 개발자는 허용된 미승격판을 exact로 선택할 수 있습니다. [승격·기존 서버 이전](docs/reference/distribution-workflow.md)
 - 신규 프로젝트 게시가 PC 권한을 자동 부여하지 않습니다.
 - cleanup은 임시 작업 폴더 대상이며 공개 버전·참조 원본은 삭제하지 않습니다.
 - `Agent migrate --apply`의 동일 설치 공유는 현재 안전상 차단합니다. dry-run만 지원하며 소유권 이전은 별도 계획이 필요합니다. 기존 설치의 복사는 명시적 import-install입니다. UE 사용자 데이터는 실제 저장 경로에 맞춰 별도 보존합니다.

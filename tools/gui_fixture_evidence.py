@@ -165,7 +165,7 @@ def hold_fixture(root, fixture, env, server_process, agent_process, server_log, 
             if process is not None and process.poll() is None:
                 process.terminate(); process.wait(timeout=10)
 
-def agent_status(endpoint):
+def agent_status(endpoint, request=None):
     channel = None
     if os.name == 'nt':
         connection = open('\\\\.\\pipe\\'+endpoint, 'r+b', buffering=0)
@@ -173,7 +173,7 @@ def agent_status(endpoint):
         channel=socket.socket(socket.AF_UNIX); channel.settimeout(5); channel.connect(endpoint)
         connection=channel.makefile('rwb',buffering=0)
     try:
-        request=dict(protocolVersion=1,correlationId=uuid.uuid4().hex,command='status')
+        request=dict(protocolVersion=1,correlationId=uuid.uuid4().hex,command='status') if request is None else request
         body=json.dumps(request).encode(); connection.write(struct.pack('<i',len(body))+body)
         def read_exact(size):
             output=bytearray()
