@@ -58,6 +58,12 @@ Core 물리 이동, 취소/재개, 인증 수명, 유지보수, 백업/정리, �
 
 ## 4. 최종 로컬 후속 검증
 
+### 성능 판정
+
+준비1/측정3·1/10/30·동일 80MiB 파일의 HTTP 서명 비교 p95(ms):13.15/71.44/289.71 → 최종18.16/97.01/365.33, 실패0. 10연결 개선과10% 이내 시간 조건 미달이다. CLI 설치/변경 없음/새 버전/repair 중앙값도953/663/890/994ms →1105/810/993/1181ms로 악화됐다. 병렬 설정은 기존2/2 그대로이며 새 성능 설정/서명키 파싱 캐시는 채택하지 않았다. 지속 기록/보안을 제거해 시간을 맞추지 않는다. PERF-03은75% 열린 상태이며 성능 수용 완료로 처리하지 않는다.
+
+파싱 pool 시험도 악화해 제거했다. bounded policy-read/database-wait/signing/catalog-build 계측과 도구만 남겼다. HTTPS/Bearer는 별도 private CA로 설치/90% 재사용/repair/1·10·30을 통과했다(host trust store 변경0, 이전cohort-02 참고). 같은 호스트라도 시간·ambient load/캐시 drift는 통제하지 못했으므로 인과/회사 SLA를 주장하지 않는다. [정제 수치](headless-performance-results.json). Windows 종료 aggregate 미수집은 null이다.
+
 635개 Windows/WSL 회귀 및 Release 게시 통과. cohort-06 Windows GUI/CLI·Agent·서버 SHA-256은 각각 `24d03143cc8482e8aa2b1d45e31a88667f2e2f203014dbfbffbe2e31bf932e42`, `245044785e1f843861c97204d287a1a24e7423d263614847e79f13698097f30e`, `dff439109afdb67ecc96cde1bb53265682a78a56b1a8221187f7385d5bd4a131`이다. 소스 기준은 ab9ada2 + 이번 후속 diff이며 회사/GUI 수용이 아니다.
 
 - Windows/WSL run-headless-operations: 실제 console Agent 취소/재개/기존 arbitrary correlation ID, 만료/폐기, 조회 전용 schedule, 명시 service 선택, offline backup/latest restore/stale retention을 통과했다. 원격 CI는 실행하지 않았다.
@@ -65,6 +71,7 @@ Core 물리 이동, 취소/재개, 인증 수명, 유지보수, 백업/정리, �
 - runtime broker의 실제 peer 거부/Agent 재시작/host crash Unknown, 표준 후손 수명, health500/timeout/disconnect 및 명시 복구를 양 OS에서 확인했다. legacy 시험 fixture는 무인증이 아니라 별도 합성 HTTPS/Bearer·서명 Manifest로 갱신했다. 제품 실행 검사를 우회하지 않았다.
 - Windows 저장 경계36개 프로세스 종료, readonly inspect/dry-run, 공유 migration apply 거부와 stopped import, 정확한 service 대상A/defaultB 불변 통과. 모든 새 변경 진입점 × 모든 장애 조합의 전수 완료나 정전 내구성은 주장하지 않는다.
 - Windows 개발 MSI 생성·비설치 CAB 추출/hash 확인 및11개 공식 preflight/순서/failure 계약 통과. 실제 인증서/설치/upgrade/repair/uninstall은 하지 않았다.
+- Ubuntu WSL RPM 생성/메타데이터: credential root:uedt0750, config0640+config(noreplace), state/log uedt0750. 중복 build-id 경고는 남았다. 설치/계정/서비스 시작·RHEL 인수는 하지 않았다.
 - 기존 Ubuntu private nginx HTTPS/Bearer 두 버전/실행 권한/repair·IP/header/Range/폐기를 통과했다. `/var/log/nginx/error.log` 기본 alert는 private config 로그와 분리해 기록한다. 실제 RHEL/nginx 대용량 회사 인수는 아니다.
 - NuGet 현재 소스의 vulnerability 조회: 전 프로젝트 취약 패키지0. Python fixture/회사 플랫폼 보안 인수와 별개다.
 

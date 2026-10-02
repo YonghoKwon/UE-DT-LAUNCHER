@@ -25,6 +25,7 @@ import urllib.request
 import zipfile
 
 import psutil
+import ssl
 from promotion_fixture_support import promote
 from benchmark_intranet_auth import run_load
 
@@ -222,6 +223,7 @@ def main():
     parser.add_argument("--corrupt-source-record", action="store_true",
                         help="Test fallback by replacing this fresh fixture's old install-state with JSON null")
     parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument("--authentication-mode",choices=['request-signature-v1','bearer'],default='request-signature-v1',help='Bearer always uses private loopback TLS')
     args = parser.parse_args()
     if args.runs < 1:
         parser.error("--runs must be positive")
@@ -237,21 +239,25 @@ def main():
     proxy.upstream, proxy.delay = backend, args.latency_ms / 1000
     proxy.counter_lock, proxy.content_bytes = threading.Lock(), 0
     proxy.connections = queue.Queue(maxsize=64)
-    base = f"http://127.0.0.1:{proxy.server_port}"
+    tls=args.authentication_mode=='bearer'
+    base = f"{'https' if tls else 'http'}://127.0.0.1:{proxy.server_port}"
+    if tls:
+        from benchmark_tls_support import context
+        proxy.socket=context(root).wrap_socket(proxy.socket,server_side=True)
     env = {**os.environ, "UE_DT_AGENT_DATA_ROOT": str(root / "credentials")}
     run([args.launcher, "generate-signing-key", "--private-key", root / "key.pem",
          "--public-key", root / "public.pem"], root / "keys.log", env)
     write_json(root / "server.json", {"root": str(root / "server"), "publicUrl": base,
                "listenUrl": f"http://127.0.0.1:{backend}", "signingKeyPath": str(root / "key.pem"),
                "policyPath": str(root / "policy.json"), "intakeWorkers": args.workers,
-               "authenticationMode": "request-signature-v1"})
+               "authenticationMode": args.authentication_mode})
     write_json(root / "policy.json", {"clients": [{"id": "bench", "addresses": ["127.0.0.1"],
                "grants": [{"projectId": "bench-" + p, "environment": "prod", "channel": "stable", "versions": []}
                           for p in profiles]}]})
     server_cli = [args.server, "--config", root / "server.json"]
     platform = "windows-x64" if os.name == "nt" else "linux-x64"
     report = {"schemaVersion": 1, "platform": platform, "runs": args.runs, "warmups": 1,
-              "transport": "loopback HTTP request-signature-v1 + signed metadata",
+              "transport": "loopback HTTPS/Bearer + signed metadata" if tls else "loopback HTTP request-signature-v1 + signed metadata",
               "fileRequestDelayMs": args.latency_ms, "cacheCondition": "fresh app/state per iteration; OS cache not flushed",
               "settings": {"downloads": args.download_concurrency, "hashes": args.hash_concurrency,
                            "reuse": not args.no_reuse, "intakeWorkers": args.workers,
@@ -268,9 +274,14 @@ def main():
             approval = run([*server_cli, "approve", job["id"]], root / "approve.json", env)
             report["intake"].append({"profile": profile, "version": version, "payloadBytes": size,
                                      "ingest": measurement, "approve": approval})
-    run([args.launcher, "credential", "keygen", "--name", "benchmark", "--key-id", "bench-cli",
-         "--public-out", root / "device-public.json"], root / "credential.log", env)
-    run([*server_cli, "client-key", "add", "--client", "bench", "--public-key", root / "device-public.json"], root / "register.log", env)
+    if not tls:
+        run([args.launcher, "credential", "keygen", "--name", "benchmark", "--key-id", "bench-cli",
+             "--public-out", root / "device-public.json"], root / "credential.log", env)
+        run([*server_cli, "client-key", "add", "--client", "bench", "--public-key", root / "device-public.json"], root / "register.log", env)
+    if tls:
+        run([*server_cli,'token-issue','bench'],root/'token-private.log',env)
+        token=(root/'token-private.log').read_text(encoding='utf-8-sig').strip()
+        run([args.launcher,'credential','set','--name','benchmark'],root/'bearer.log',{**env,'UE_DT_CREDENTIAL_TOKEN':token})
     for profile in profiles:
         # Approval never changes recommendations; baseline explicitly records promotion.
         def execute(*arguments):
@@ -307,7 +318,8 @@ def main():
                                   "performance": {"downloadConcurrency": args.download_concurrency,
                                                   "hashConcurrency": args.hash_concurrency,
                                                   "reusePreviousInstallations": not args.no_reuse},
-                                  "security": {"requireHttps": False, "credentialName": "benchmark", "authenticationMode": "request-signature-v1",
+                                  "security": {"requireHttps": tls, "credentialName": "benchmark", "authenticationMode": args.authentication_mode,
+                                               "customCaCertificatePath":str(root/'tls.pem') if tls else None,
                                                "allowedDownloadHosts": ["127.0.0.1"],
                                                "trustedSigningKeys": [{"keyId": "release-1", "publicKeyPath": str(root / "public.pem")}]}}
                         write_json(client / "config.json", config)
@@ -338,7 +350,10 @@ def main():
             target = f"/releases/bench-{first}/prod/stable/2.0.0/{platform}/files/g0/f00000.bin"
             # Deterministic changed g0/f0 bytes, identical to fixture().
             expected = random.Random(999999).randbytes(PROFILES[first][0][1])[:3]
-            report["api"] = run_load(base, root,
+            if tls:
+                from benchmark_tls_support import run_tls_load
+                report['api']=run_tls_load(base,root,token,target,expected,server.pid)['results']
+            else: report["api"] = run_load(base, root,
                 lambda path: run([*server_cli, "client-key", "add", "--client", "bench", "--public-key", path], root / "load-register.log", env),
                 platform, server.pid, target, expected)["results"]
         finally:

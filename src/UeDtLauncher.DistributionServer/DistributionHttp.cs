@@ -186,6 +186,7 @@ public static class DistributionHttp
             var releases = (List<PublishedRelease>)context.Items["allowed"]!;
             var sequence = await NextSequenceAsync(store, sequenceGate, databaseGate, context.RequestAborted);
             var now = DateTimeOffset.UtcNow;
+            using var catalogMeasurement=DistributionPerformance.MeasurePhase("catalog-build");
             var catalog = PromotionCatalog.Build((PromotionSnapshot)context.Items["promotion-snapshot"]!, releases,
                 context.Request.Query["selectionPolicy"].ToString() == PromotionCatalog.SelectionPolicy,
                 store.Settings.PublicUrl, assets, sequence, now);

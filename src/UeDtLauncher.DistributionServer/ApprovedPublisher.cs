@@ -148,6 +148,7 @@ public sealed class ApprovedPublisher(IntakeStore store)
 
     public string Sign(string payload)
     {
+        using var measurement=DistributionPerformance.MeasurePhase("signing");
         using var key = ECDsa.Create(); key.ImportFromPem(File.ReadAllText(store.Settings.SigningKeyPath));
         return JsonSerializer.Serialize(new DetachedSignatureEnvelope
         {

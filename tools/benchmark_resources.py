@@ -44,4 +44,4 @@ class ProcessSampler:
     def result(self):
         return {"cpu_seconds": self.cpu, "peak_rss_bytes": self.peak,
                 "source": "psutil-process-sampled", "sample_interval_ms": 20,
-                "samples": self.samples, "missing_reason": self.reason if not self.samples else None}
+                "samples": self.samples, "missing_reason": self.reason if not self.samples else "peak-rss-unavailable" if self.peak is None else None}

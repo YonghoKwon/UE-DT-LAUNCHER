@@ -24,13 +24,13 @@ internal static class DistributionDatabaseCoordinator
 
     public static IDisposable Read(ReaderWriterLockSlim gate)
     {
-        gate.EnterReadLock();
+        using(DistributionPerformance.MeasurePhase("database-wait"))gate.EnterReadLock();
         return new Scope(gate, write: false);
     }
 
     public static IDisposable Write(ReaderWriterLockSlim gate)
     {
-        gate.EnterWriteLock();
+        using(DistributionPerformance.MeasurePhase("database-wait"))gate.EnterWriteLock();
         return new Scope(gate, write: true);
     }
 

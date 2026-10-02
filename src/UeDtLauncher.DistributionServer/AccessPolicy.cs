@@ -49,6 +49,7 @@ public sealed class FileAccessPolicyProvider(string path) : IAccessPolicyProvide
 
     private async Task<byte[]> ReadBytesAsync(CancellationToken token)
     {
+        using var measurement=DistributionPerformance.MeasurePhase("policy-read");
         // Read on EVERY request, even when size/mtime match. No last-known-good authorization fallback.
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
             FileShare.ReadWrite | FileShare.Delete, 16 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);

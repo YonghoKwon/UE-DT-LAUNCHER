@@ -14,6 +14,12 @@ public static class DistributionPerformance
     private static readonly Counter<long> Busy = Meter.CreateCounter<long>("distribution.database.busy");
     private static long databaseOperations, databaseTicks, requests, requestTicks, sequenceWaitTicks, databaseBusy, policyCompilations, policyReuses, assetHits, assetMisses;
     private static long authenticationOperations, authenticationTicks;
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string,long> phases=new(StringComparer.Ordinal);
+    public static IDisposable MeasurePhase(string phase)
+    {
+        if(phase is not ("policy-read" or "database-wait" or "signing" or "catalog-build"))throw new ArgumentException("Unknown bounded metric phase.");
+        return new Measurement(elapsed=>phases.AddOrUpdate(phase,elapsed.Ticks,(_,prior)=>prior+elapsed.Ticks));
+    }
 
     public static IDisposable MeasureAuthentication() => new Measurement(elapsed =>
     {
@@ -60,6 +66,7 @@ public static class DistributionPerformance
         authenticationElapsedMs = TimeSpan.FromTicks(Interlocked.Read(ref authenticationTicks)).TotalMilliseconds,
         policyCompilations = Interlocked.Read(ref policyCompilations), policyReuses = Interlocked.Read(ref policyReuses),
         assetCacheHits = Interlocked.Read(ref assetHits), assetCacheMisses = Interlocked.Read(ref assetMisses)
+        ,phaseElapsedMs=phases.ToDictionary(pair=>pair.Key,pair=>TimeSpan.FromTicks(pair.Value).TotalMilliseconds)
     };
     private sealed class Measurement(Action<TimeSpan> record) : IDisposable
     {

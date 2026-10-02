@@ -8,6 +8,8 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 
 ## 프로젝트 목표와 처음 읽을 안내
 
+성능 재측정은 요청 실패0·90% 콘텐츠 재사용을 유지했지만 10연결 지연·시간 목표가 미달해 PERF-03을 완료로 올리지 않았습니다. [최종 수치와 조건](docs/reference/archive/validation/headless-performance-results.json). 테스트 활용과 회사 성능/운영 수용을 구분하세요.
+
 자동 점검은 `scheduledCheck: {"enabled": true, "intervalSeconds": 3600}`처럼 관리자가 명시한 경우에만 `scheduled-check --config ...` 한 회차로 수행합니다. Catalog·설치 상태 조회만 하고 설치/실행/버전 전환은 하지 않습니다. Windows/Linux 비활성 템플릿은 저장소에 있으며 이 PC에는 등록하지 않았습니다.
 
 정리: `retention inspect` → `retention plan --jobs 실패ID --output 계획.json` 또는 `--temporary processing/선택폴더` → 서버/watch 중지 → `retention apply --plan 계획.json --confirm`. 공개판·승격·진행 자료는 지우지 않습니다. 계획/파일이 바뀌면 새 확인이 필요하며 완료 계획으로 재생성 자료를 삭제하지 않습니다.

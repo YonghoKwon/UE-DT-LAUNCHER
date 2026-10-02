@@ -25,7 +25,7 @@ def run_load(origin, root, register, platform, server_pid, file_path=None, expec
     if parsed.scheme != "http" or parsed.hostname != "127.0.0.1":
         raise ValueError("This harness only targets its isolated loopback HTTP fixture")
     key = ec.generate_private_key(ec.SECP256R1())
-    key_id = "load-key"
+    key_id = "load-" + secrets.token_hex(8)
     public_file = root / "load-public.json"
     public_file.write_text(json.dumps({"schemaVersion": 1, "keyId": key_id,
         "publicKeyPem": key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()}))

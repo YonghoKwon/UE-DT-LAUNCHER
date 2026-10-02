@@ -1,6 +1,6 @@
 # 최종 프로젝트 목표 — 회사용 Unreal Engine DT 배포 시스템
 
-갱신: 2026-10-03 / 작업 기준 `codex/headless-operations`. **최상위 목표는 확정**됐습니다. 管理형/portable headless 운영 보완을 구현·로컬 검증했지만 회사 SLA·출시/실환경 인수는 별도입니다. 정책과 조건은 아래 결정 표에서 관리합니다.
+갱신: 2026-10-03 / 작업 기준 `codex/headless-operations`. **최상위 목표는 확정**됐습니다. 관리형/portable headless 운영 보완을 구현·로컬 검증했지만 회사 SLA·출시/실환경 인수는 별도입니다. 정책과 조건은 아래 결정 표에서 관리합니다.
 
 ## 확정한 최종 목표
 
@@ -13,6 +13,8 @@
 현재 사용 방법은 [기능 지도·명령 순서](docs/reference/feature-workflow.md), 현재 구현은 [README](README.md), 작업 목록은 [IMPROVEMENTS](IMPROVEMENTS.md)가 정본입니다.
 
 ## 현재 위치
+
+최신 성능 후보는 기능 정확성/재사용을 유지했으나 시간 수용 미달이다. 회사 성능 목표/운영 승인을 선언하지 않으며 PERF-03의 다음 병목/통제된 환경 재검증이 필요하다.
 
 Core 물리 이동·취소/재개·온라인 실행·자격 수명·통제된 backup/restore·확인형 retention·조회 전용 예약을 구현했다. Windows/WSL635개 및 합성 게시 프로그램 통과는 GUI·회사·정전·성능 수용을 대체하지 않는다. 남은 장애 전수와 실환경 조건을 분리한다. [최신 증거](docs/reference/archive/validation/headless-operations-validation.md)
 
