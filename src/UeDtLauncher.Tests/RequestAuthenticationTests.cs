@@ -205,6 +205,7 @@ public sealed class RequestAuthenticationTests
                 command.CommandText = "INSERT INTO releases VALUES($id,'test',$dir,$metadata)";
                 command.Parameters.AddWithValue("$id", metadata.ReleaseId); command.Parameters.AddWithValue("$dir", directory); command.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(metadata, JsonFiles.Options)); command.ExecuteNonQuery();
             }
+            new ReleasePromotions(f.Store).Promote(new(metadata.ProjectId, metadata.Environment, metadata.Channel, metadata.Platform, metadata.Version), 0, "test fixture");
             f.app = DistributionHttp.CreateApplication(f.Store); await f.app.StartAsync();
             f.Http = new() { BaseAddress = new Uri(f.app.Urls.Single()) }; return f;
         }

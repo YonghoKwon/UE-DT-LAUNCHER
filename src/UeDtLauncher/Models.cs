@@ -90,6 +90,7 @@ public sealed class ProjectUiConfig
 
 public sealed class DistributionCatalog
 {
+    public string? SelectionPolicy { get; set; }
     public int SchemaVersion { get; set; } = 1;
     public string GeneratedAt { get; set; } = DateTimeOffset.UtcNow.ToString("O");
     public long Sequence { get; set; }

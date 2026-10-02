@@ -23,6 +23,8 @@ public static class DistributionHttp
 
     public static WebApplication CreateApplication(IntakeStore store)
     {
+        var promotions = new ReleasePromotions(store);
+        if (!promotions.Snapshot().Ready) throw new InvalidDataException("Stop the server and apply promotion migration before serving.");
         if (!Uri.TryCreate(store.Settings.ListenUrl, UriKind.Absolute, out var listen) ||
             !IPAddress.TryParse(listen.Host, out var ip) || !IPAddress.IsLoopback(ip))
             throw new InvalidDataException("Distribution API must bind to loopback behind nginx.");
@@ -135,11 +137,12 @@ public static class DistributionHttp
                 if (client is null || address is null || !client.AllowsAddress(address)) { context.Response.StatusCode = 403; return; }
                 if (context.Request.Path == "/api/v1/catalog")
                 {
-                    List<PublishedRelease> releases;
-                    databaseGate.EnterReadLock();
-                    try { releases = publisher.List(); }
-                    finally { databaseGate.ExitReadLock(); }
-                    context.Items["allowed"] = releases.Where(r => client.AllowsRelease(r.Metadata)).ToList();
+                    var query = context.Request.Query;
+                    if (query.Count > 1 || (query.Count == 1 && (query["selectionPolicy"].Count != 1 || query["selectionPolicy"].ToString() != PromotionCatalog.SelectionPolicy)))
+                    { context.Response.StatusCode = 400; return; }
+                    var snapshot = promotions.Snapshot();
+                    context.Items["promotion-snapshot"] = snapshot;
+                    context.Items["allowed"] = snapshot.Releases.Where(r => client.AllowsRelease(r.Metadata)).ToList();
                     if (!ConsumeProof()) return;
                     await next(); return;
                 }
@@ -177,33 +180,9 @@ public static class DistributionHttp
             var releases = (List<PublishedRelease>)context.Items["allowed"]!;
             var sequence = await NextSequenceAsync(store, sequenceGate, databaseGate, context.RequestAborted);
             var now = DateTimeOffset.UtcNow;
-            var catalog = new DistributionCatalog
-            {
-                SchemaVersion = 2, Sequence = sequence, GeneratedAt = now.ToString("O"),
-                IssuedAtUtc = now.ToString("O"), ExpiresAtUtc = now.AddMinutes(10).ToString("O"),
-                Projects = releases.GroupBy(r => r.Metadata.ProjectId).Select(group =>
-                {
-                    var latest = group.Last();
-                    var projectAssets = assets.Get(latest);
-                    return new DistributionProject
-                    {
-                        ProjectId = group.Key, DisplayName = group.First().Metadata.DisplayName,
-                        Hero = Asset(latest, projectAssets.Hero, store.Settings.PublicUrl),
-                        Thumbnail = Asset(latest, projectAssets.Thumbnail, store.Settings.PublicUrl),
-                        Releases = group.Select(r => new DistributionRelease
-                        {
-                            Version = r.Metadata.Version, Environment = r.Metadata.Environment, Channel = r.Metadata.Channel,
-                            Platform = r.Metadata.Platform, Notes = r.Metadata.Notes,
-                            ManifestUrl = store.Settings.PublicUrl.TrimEnd('/') + "/releases/" + r.ReleaseId + "/manifest.json",
-                            ManifestSignatureUrl = store.Settings.PublicUrl.TrimEnd('/') + "/releases/" + r.ReleaseId + "/manifest.json.sig",
-                            AllowedClientProfiles = new() { "general", "developer" }, IsLatest = false
-                        }).ToList()
-                    };
-                }).ToList()
-            };
-            // Publication order is explicit and monotonic; each track selects its most recently approved release.
-            foreach (var project in catalog.Projects)
-                foreach (var track in project.Releases.GroupBy(r => (r.Environment, r.Channel, r.Platform))) track.Last().IsLatest = true;
+            var catalog = PromotionCatalog.Build((PromotionSnapshot)context.Items["promotion-snapshot"]!, releases,
+                context.Request.Query["selectionPolicy"].ToString() == PromotionCatalog.SelectionPolicy,
+                store.Settings.PublicUrl, assets, sequence, now);
             var payload = JsonSerializer.Serialize(catalog, JsonFiles.Options);
             CatalogRequestBinding? binding = null;
             if (context.Items["request-proof"] is RequestSignatureContext proof)

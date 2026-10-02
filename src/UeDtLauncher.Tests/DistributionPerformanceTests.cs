@@ -453,6 +453,9 @@ public sealed class DistributionPerformanceTests
                 command.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(metadata, JsonFiles.Options));
                 command.ExecuteNonQuery();
             }
+            var promotion = new ReleasePromotions(store);
+            var first = promotion.Promote(new("demo", "prod", "stable", "windows-x64", "2.0.0"), 0, "test fixture");
+            promotion.Promote(new("demo", "prod", "stable", "windows-x64", "1.0.0"), first.Revision, "test fixture");
             var app = DistributionHttp.CreateApplication(store);
             await app.StartAsync();
             return new ServerFixture(directory, store, app);
