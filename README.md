@@ -35,6 +35,8 @@ flowchart LR
 
 ## 최초 연결 점검과 문제 해결
 
+현재 GUI 자동 조작은 사용자 요청으로 중단 상태입니다. 구현·이전 게시본의 실제 통과·최신 후보 재검증을 구분하며, 재개 후 남은 범위는 [단일 GUI 수용 체크리스트](docs/reference/guide-03-launcher-usage.md#보류-중인-gui-수용-체크리스트)를 따릅니다.
+
 | 실행 위치·담당 | 입력/행동 | 결과와 다음 조치 |
 |---|---|---|
 | PC 관리자·CLI | `UeDtLauncher.exe doctor --config launcher.config.json --format text` | 파일을 생성/이전하지 않고 설정·키·권한을 점검. 온라인 연결은 미검증으로 표시 |

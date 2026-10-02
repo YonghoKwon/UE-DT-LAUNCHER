@@ -87,6 +87,8 @@
 
 ## UI 규칙
 
+- 최신 GUI 수용의 남은 목록은 guide-03-launcher-usage의 단일 체크리스트를 정본으로 사용한다. readiness final/final-02 및 이전8ce5060 이력을 섞지 않으며 현재 요약/항목표/체크포인트는 최신 검증 범위를 함께 반영한다.
+
 - programmatic View와 LauncherVisualTokens·ViewModel을 사용합니다. 현행 레이아웃은 MainWindowEnterprise, 대화창은 MainWindowAccessibility, 피드백은 MainWindowFeedback입니다.
 - 일반은 밝은 POSCO DX 업무 화면, 개발자는 같은 브랜드의 다크 화면을 유지합니다. 공식 로고 원본/출처를 보존하며 임의 CI 재가공을 하지 않습니다.
 - 글자 배율·앱 고대비는 사용자별 ui-preferences.json에만 저장합니다. UI 스레드에서 비동기 파일 저장을 동기 대기하지 않습니다. OS 고대비 요청을 우선합니다.
