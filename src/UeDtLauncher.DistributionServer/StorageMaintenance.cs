@@ -54,6 +54,7 @@ public static class StorageMaintenance
             foreach (var path in candidates)
             {
                 if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) throw new IOException("Cleanup refuses linked directories.");
+                _ = DistributionBackup.Files(path); // Reject nested links, not just the top-level candidate.
                 Directory.Delete(path, true);
             }
         return new { Applied = apply, Directories = candidates };

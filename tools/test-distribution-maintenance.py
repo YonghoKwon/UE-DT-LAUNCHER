@@ -25,7 +25,7 @@ def main():
         counter+=1
         result=subprocess.run([executable,*map(str,command),'--config',str(config)],capture_output=True,text=True,encoding='utf-8',timeout=120,creationflags=flags)
         (args.output/('private-command-'+str(counter)+'.log')).write_text(result.stdout+result.stderr,encoding='utf-8')
-        if result.returncode!=expected:raise RuntimeError('Maintenance command failed: '+str(command[:2]))
+        if (expected is None and result.returncode==0) or (expected is not None and result.returncode!=expected):raise RuntimeError('Maintenance command failed: '+str(command[:2]))
         return result.stdout
     backup=args.output/'backup'; target=args.output/'restored'
     run('backup','plan'); run('backup','create','--output',backup); run('backup','verify','--backup',backup)
@@ -49,10 +49,22 @@ def main():
         finally:
             owned.terminate();owned.wait(timeout=15)
     run('restore','activate','--target',target,'--confirm')
+    import uuid
+    temporary_name='processing/headless-cleanup-'+uuid.uuid4().hex[:8]
+    temporary=Path(settings['root'])/temporary_name;temporary.mkdir(exist_ok=False)
+    (temporary/'data.bin').write_bytes(b'owned-temporary')
+    plan=args.output/'retention-plan.json'
+    run('retention','plan','--temporary',temporary_name,'--output',plan)
+    (temporary/'data.bin').write_bytes(b'changed-plan')
+    run('retention','apply','--plan',plan,'--confirm',expected=None)
+    if not temporary.exists():raise RuntimeError('Stale plan deleted content')
+    run('retention','plan','--temporary',temporary_name,'--output',plan)
+    run('retention','apply','--plan',plan,'--confirm')
+    if temporary.exists():raise RuntimeError('Confirmed cleanup failed')
     with sqlite3.connect(target/'distribution.db') as db:
         if db.execute('SELECT revoked FROM tokens WHERE management_id=?',(metadata['id'],)).fetchone()!=(1,):raise RuntimeError('Restore resurrected credential')
     summary={'schemaVersion':1,'backup_verified':True,'live_exclusion':True,'staged_fence':True,'latest_revocation_preserved':True,
-             'private_key_included':False,'source_loss_recovery_tested':False}
+             'private_key_included':False,'source_loss_recovery_tested':False,'stale_retention_plan_rejected':True,'confirmed_temp_cleanup':True}
     (args.output/'summary.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
     print('PASS: published offline backup and controlled restore')
 

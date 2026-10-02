@@ -2,6 +2,8 @@ using System.Text.Json;
 using UeDtLauncher;
 using UeDtLauncher.Distribution;
 
+try
+{
 var arguments = args.ToList();
 if (arguments.Contains("--help"))
 {
@@ -50,6 +52,20 @@ if (action is "backup" or "restore")
     };
     Console.WriteLine(JsonSerializer.Serialize(result, JsonFiles.Options)); return;
 }
+if(action=="retention")
+{
+    string[] Values(string option) => arguments.Contains(option) ? RequiredOption(option).Split(',',StringSplitOptions.RemoveEmptyEntries) : [];
+    object result=arguments.ElementAtOrDefault(1) switch
+    {
+        "inspect"=>RetentionMaintenance.Inspect(settings),
+        "plan"=>await RetentionMaintenance.PlanAsync(settings,Values("--jobs"),Values("--temporary")),
+        "apply"=>await RetentionMaintenance.ApplyAsync(settings,await JsonFiles.ReadAsync<RetentionPlan>(RequiredOption("--plan")),arguments.Contains("--confirm")),
+        _=>throw new ArgumentException("Use retention inspect/plan/apply.")
+    };
+    if(arguments.Contains("--output"))await JsonFiles.WriteAsync(RequiredOption("--output"),result);
+    Console.WriteLine(JsonSerializer.Serialize(result,JsonFiles.Options));return;
+}
+if(action=="cleanup" && arguments.Contains("--apply"))throw new InvalidOperationException("Use retention plan followed by retention apply --plan ... --confirm; legacy unconfirmed cleanup apply is disabled.");
 var store = new IntakeStore(settings);
 using var operationLease = DistributionMaintenanceLease.Acquire(settings.Root, false);
 ReleaseSelection Selection(bool version) => new(RequiredOption("--project-id"), RequiredOption("--environment"), RequiredOption("--channel"), RequiredOption("--platform"), version ? RequiredOption("--version") : "inspect");
@@ -102,4 +118,10 @@ switch (action)
         }
         break;
     default: throw new ArgumentException("Use ingest, list, inspect, reject, retry, or watch.");
+}
+}
+catch(Exception error)
+{
+    Console.Error.WriteLine("Distribution operation rejected: " + error.GetType().Name + ". Check configuration, ownership and offline maintenance conditions.");
+    Environment.ExitCode=1;
 }

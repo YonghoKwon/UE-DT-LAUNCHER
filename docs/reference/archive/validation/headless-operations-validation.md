@@ -18,6 +18,12 @@
 
 ## 3. 이후 기록
 
+### 確認형 정리
+
+retention inspect/plan/apply: 공개판·모든 승격·pending/active 보호, 명시 선택 failed/rejected 또는 참조 없는 processing 자식만 허용. plan ID/fingerprint·참조·전체 hash 재검사, protected quarantine/journal로 중단 복구, audit/history 보존. legacy cleanup --apply는 새 plan/confirm을 안내하며 거부한다.
+
+Windows unit5개, 게시 retention-candidate/proof-05 stale plan 거부·새 plan 임시 정리 통과. 완료 journal을 내용이 같은 새 폴더에 재사용하던 문제는 unique plan ID/재생성 거부로 수정 후 재시험했다. 회사 기간/공개판 삭제 정책은 범위 밖이다.
+
 ### 오프라인 백업·통제된 복원
 
 shared serve/watch/ingest/publish/auth/승격과 exclusive 유지보수 OS 잠금을 연결했다. 서비스/작업자를 자동 종료하지 않는다. backup plan/create/verify, restore plan/stage/activate를 추가했다. SQLite snapshot/파일 hash/정책/서명 신원을 기록하며 private key는 포함하지 않는다. 새 빈 target만 허용하고 시작 전 staged fence를 저장한다.

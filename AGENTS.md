@@ -37,6 +37,8 @@
 
 ## 보존할 경계
 
+- retention은 명시 선택 failed/rejected·참조 없는 processing 자식만 허용한다. public/모든 promotion/pending/active 보호, 고유 plan/fingerprint·참조·전체 hash 재검사, quarantine/journal을 유지한다. 완료 계획은 재생성 자료에 재사용하지 않는다. 링크/audit/history를 삭제 대상으로 확대하지 않는다.
+
 - serve/watch/긴 파일 작업/DB 변경과 offline backup/restore/정리는 동일 maintenance OS 잠금 계약을 따른다. 프로세스를 도구가 종료하지 않는다. 복원은 새 빈 root·같은 origin/signer·최신 생존 source 대조이며 staged fence 제거가 마지막이다. 순번을 임의로 올리거나 client trust 삭제, 과거 폐기/정책 재활성화는 금지한다. private key를 백업 번들에 넣지 않는다.
 
 - DB schema5 이전 전 snapshot 백업과 구 서버 중지를 지킨다. token 관리 ID와 비밀을 분리한다. legacy 무기한을 보존하고 만료는 명시 지정한다. 수명 변경·최초 만료 latch·audit은 한 transaction이며 시계 역행으로 latch를 풀지 않는다. 권한 허용 캐시는 금지한다. 요청 한도는 opt-in, 초과 시 메모리 큐 없이429다.

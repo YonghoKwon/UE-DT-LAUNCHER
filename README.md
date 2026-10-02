@@ -8,6 +8,8 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 
 ## 프로젝트 목표와 처음 읽을 안내
 
+정리: `retention inspect` → `retention plan --jobs 실패ID --output 계획.json` 또는 `--temporary processing/선택폴더` → 서버/watch 중지 → `retention apply --plan 계획.json --confirm`. 공개판·승격·진행 자료는 지우지 않습니다. 계획/파일이 바뀌면 새 확인이 필요하며 완료 계획으로 재생성 자료를 삭제하지 않습니다.
+
 오프라인 서버 유지보수: `backup plan/create --output 새폴더/verify --backup 폴더`, `restore plan/stage --backup 폴더 --target 빈폴더/activate --target 폴더 --confirm`. 서버/watch/작업자를 먼저 정상 중지하세요. 복원은 최신 원본의 보안·승격·순번 기록과 파일을 확인해야 공개되며, 원본 완전 유실 복구는 이번 범위가 아닙니다. private signing key는 별도로 보관합니다.
 
 자격 관리: `token-list`, `token-revoke-id --id 관리ID`, `token-issue PC --expires-at ISO시각`, `client-key add ... --expires-at ISO시각`. 생략 시 무기한이며 기존 자격을 자동 삭제하지 않습니다. 교체는 새 등록 → 실제 연결 → 이전 폐기 순서입니다. server.json의 `maxApiRequestsPerSecond`, `maxConcurrentDownloads`는 null(기본 비활성) 또는 명시한 양수입니다.

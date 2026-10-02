@@ -10,6 +10,8 @@ ZIP과 JSON은 별개 파일입니다. 내부 release.json은 분류에 사용�
 
 ## 1. 서버 준비
 
+확인형 정리: `retention inspect --config server.json`, `retention plan --jobs 실패ID --output 계획.json --config server.json`(또는 명시 `--temporary processing/폴더`). 원인/크기/선택을 확인하고 서버/watch를 정지한 뒤 `retention apply --plan 계획.json --confirm --config server.json`. public/모든 promotion/pending/active는 보호된다. stale/재생성 자료는 새 plan이 필요하며 중단은 같은 승인 journal로 재개한다. 보관 기간과 공개판 삭제는 미정이다.
+
 오프라인 유지보수(2026-10-03): 서버/watch/작업을 정상 중지 → `backup plan --config server.json` → `backup create --output 새백업 --config server.json` → `backup verify --backup 새백업 --config server.json`. private key는 별도 보관한다. 복원은 `restore stage --backup ... --target 빈폴더 --config 원본server.json` 후 `restore activate --target ... --confirm --config 원본server.json`이며 최신 생존 원본의 파일·보안·순번·승격·정책을 대조한다. 누락/불명이면 staged로 차단한다. 반환한 policyPath와 새 root를 운영 설정에 명시하고 별도 서명키를 준비한다. 회사 완전 유실 복구/RPO·RTO는 미검증이다.
 
 `dotnet publish src/UeDtLauncher.DistributionServer -c Release -r linux-x64 --self-contained true -o artifacts/distribution-server`로 생성하고 `/opt/ue-dt-distribution`에 설치합니다.
