@@ -40,6 +40,7 @@ public static class LauncherDoctor
             config = await LauncherPaths.LoadResolvedAsync(configPath, cancellationToken, readOnly: true);
             if (!string.IsNullOrWhiteSpace(config.Security.CredentialName)) DeviceCredentials.ValidateIdentifier(config.Security.CredentialName);
             target?.Apply(config);
+            LauncherConfigValidator.Validate(config);
             checks.Add(new DoctorCheck("config", true, $"schemaVersion {config.SchemaVersion}"));
         }
         catch (Exception) when (!cancellationToken.IsCancellationRequested)

@@ -10,6 +10,16 @@ namespace UeDtLauncher.Tests;
 
 public sealed class ReadinessUiTests
 {
+    [Theory]
+    [InlineData(System.Net.HttpStatusCode.Unauthorized)]
+    [InlineData(System.Net.HttpStatusCode.Forbidden)]
+    public void MainUserErrorIncludesBothCauseAndAdministratorAction(System.Net.HttpStatusCode status)
+    {
+        var error = LauncherUiError.From(new HttpRequestException("Bearer sentinel", null, status));
+        Assert.Contains("관리자", error.Message);
+        Assert.DoesNotContain("sentinel", error.Message);
+        Assert.NotNull(error.SupportId);
+    }
     [AvaloniaTheory]
     [InlineData("portable")]
     [InlineData("managed-agent")]

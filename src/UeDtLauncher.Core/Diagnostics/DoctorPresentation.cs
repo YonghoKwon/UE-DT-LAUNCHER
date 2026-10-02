@@ -61,7 +61,7 @@ public static class DoctorPresentation
     public static DoctorReport Complete(DoctorReport report) => report with
     {
         PreparationState = report.Checks.Any(c => c.State is "failed" or "waiting") ? "action-required" :
-            report.Checks.Any(c => c.State is null or "deferred") ? "verification-pending" : "checks-passed",
+            report.Checks.Count == 0 || report.Checks.Any(c => c.State is not ("passed" or "not-applicable")) ? "verification-pending" : "checks-passed",
         SupportId = report.SupportId ?? Guid.NewGuid().ToString("N")
     };
 

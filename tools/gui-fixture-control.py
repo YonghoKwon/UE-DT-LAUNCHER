@@ -4,7 +4,7 @@ from pathlib import Path
 from promotion_fixture_support import promote
 from gui_fixture_evidence import inside, verify_files, verify_cohort, preference_hash, restore_preferences, snapshot_preferences, fixture_mode, fixture_environment, record_control, agent_status, sha256
 p=argparse.ArgumentParser(); p.add_argument('--root',required=True)
-p.add_argument('action',choices=['smoke','gui-general','gui-developer','snapshot','compare','damage','release','stop-agent','start-agent','stop-server','start-server','stop-all','status','approve-v2','verify','verify-backup','invalidate-preview','prefs-snapshot','prefs-record-owned','prefs-restore','error-401','error-403','error-empty','policy-reset','error-trust','trust-reset'])
+p.add_argument('action',choices=['smoke','gui-general','gui-developer','snapshot','compare','damage','release','stop-agent','start-agent','stop-server','start-server','stop-all','status','approve-v2','promote-v1','diagnostics','verify','verify-backup','invalidate-preview','prefs-snapshot','prefs-record-owned','prefs-restore','error-401','error-403','error-empty','error-config','config-reset','policy-reset','error-trust','trust-reset'])
 p.add_argument('--version',choices=['1.0.0','2.0.0'],default='1.0.0'); p.add_argument('--name',default='before')
 p.add_argument('--attempt', help='Exact synthetic child marker id to release')
 a=p.parse_args(); root=Path(a.root).resolve()
@@ -51,6 +51,12 @@ elif a.action=='prefs-record-owned':
 elif a.action=='prefs-restore':
     restore_preferences(root,(control/'ui-preferences-owned.sha256').read_text())
     print('Restored original preferences after hash guard')
+elif a.action=='promote-v1':
+    def promotion_run(*values):
+        return subprocess.check_output([fixture['binaries']['server']['path'],*map(str,values)],env=env,text=True,encoding='utf-8')
+    promote(promotion_run,root/'server.json','demo','1.0.0',platform)
+    record_control(root,a.action)
+    print('Promoted fixture v1; no client install/run performed')
 elif a.action=='approve-v2':
     job=fixture['pendingJobs'].get('2.0.0')
     if not job: raise ValueError('No pending v2 in this fixture')
@@ -60,6 +66,15 @@ elif a.action=='approve-v2':
     promote(promotion_run,root/'server.json','demo','2.0.0','windows-x64')
     record_control(root,'approve-v2',jobId=job)
     print('Approved fixture v2')
+elif a.action=='error-config':
+    path=root/'client/general.json';original=control/'original-general.json'
+    if original.exists(): raise ValueError('Configuration failure is already prepared')
+    original.write_bytes(path.read_bytes())
+    atomic_bytes(path,b'{"privateKeyPem":"GUI-SENTINEL",BROKEN')
+    record_control(root,a.action);print('Changed only the fixture display configuration')
+elif a.action=='config-reset':
+    atomic_bytes(root/'client/general.json',(control/'original-general.json').read_bytes())
+    record_control(root,a.action);print('Restored fixture display configuration')
 elif a.action=='error-401':
     subprocess.run([fixture['binaries']['server']['path'],'client-key','revoke','--key-id','pc-test-key','--config',str(inside(root,'server.json'))],env=env,check=True,capture_output=True,creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
     (control/'auth-key-revoked').touch();record_control(root,a.action)
@@ -74,6 +89,19 @@ elif a.action in ('error-trust','trust-reset'):
     data=inside(root,'control/original-public.pem').read_bytes() if a.action=='trust-reset' else json.loads(inside(root,'device-public.json').read_text())['publicKeyPem'].encode()
     atomic_bytes(root/'public.pem',data)
     record_control(root,a.action);print('Changed only this fixture release verification public key')
+elif a.action=='diagnostics':
+    output=control/('diagnostics-'+a.name+'.zip')
+    if output.exists(): raise ValueError('Use a new diagnostic artifact name')
+    subprocess.run([str(exe),'diagnostics','export','--config',str(root/'client/general.json'),'--output',str(output)],env=env,check=True,capture_output=True,creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
+    with zipfile.ZipFile(output) as archive:
+        report=json.loads(archive.read('doctor.json'))
+        if not report.get('supportId') or not report.get('preparationState'): raise ValueError('Missing structured readiness report')
+        for item in archive.infolist():
+            content=archive.read(item).decode('utf-8')
+            if 'PRIVATE KEY' in content or re.search(r'Bearer\s+(?!<redacted>)\S+',content): raise ValueError('Support artifact contains a secret')
+        if mode=='managed' and any(item.filename.startswith('state/') for item in archive.infolist()): raise ValueError('Managed client exported protected state')
+    record_control(root,a.action,mode=mode)
+    print('PASS: structured support ZIP, private-key/Bearer scan and managed state exclusion')
 elif a.action=='verify':
     print('PASS: installed files='+str(verify_files(app,state/'installed-manifest.json')))
 elif a.action=='verify-backup':
