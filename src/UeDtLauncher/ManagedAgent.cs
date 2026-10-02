@@ -331,7 +331,7 @@ public sealed class ManagedAgentClient(string? endpoint = null)
             throw new InvalidDataException("Managed diagnostics are unavailable. Check/update the update service.");
         if (target is not null && response.DoctorReport.Target is not null && response.DoctorReport.Target != target)
             throw new InvalidDataException("Diagnostic target changed.");
-        if (response.DoctorReport.PreparationState is null || response.DoctorReport.Checks.Any(c => c.State is null))
+        if (response.DoctorReport.PreparationState is null || (target is not null && response.DoctorReport.Target is null) || response.DoctorReport.Checks.Any(c => c.State is null))
             return response.DoctorReport with { PreparationState = "verification-pending" };
         return response.DoctorReport;
     }

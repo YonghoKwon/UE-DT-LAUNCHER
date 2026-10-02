@@ -33,6 +33,7 @@ public sealed partial class MainWindow : Window
     private Exception? _configurationError;
     private readonly ILauncherUiBackend _uiBackend;
     private readonly Func<LauncherConfig,string,CancellationToken,Task<CatalogSnapshot>> _catalogLoader;
+    private readonly Func<string,bool,DoctorTarget?,CancellationToken,Task<DoctorReport>> _doctor;
     private bool _windowMetricsInitialized;
     private readonly bool _allowAutomaticChecks;
     private EventHandler<Avalonia.Platform.PlatformColorValues>? _colorValuesChanged;
@@ -76,10 +77,12 @@ public sealed partial class MainWindow : Window
     public MainWindow(LauncherStartupOptions startupOptions) : this(startupOptions, null, null, true) { }
 
     internal MainWindow(LauncherStartupOptions startupOptions, LauncherDashboardViewModel? model, LauncherUiPreferences? preferences, bool startServices, ILauncherUiBackend? backend=null,
-        Func<LauncherConfig,string,CancellationToken,Task<CatalogSnapshot>>? catalogLoader=null)
+        Func<LauncherConfig,string,CancellationToken,Task<CatalogSnapshot>>? catalogLoader=null,
+        Func<string,bool,DoctorTarget?,CancellationToken,Task<DoctorReport>>? doctor=null)
     {
         _uiBackend=backend??new LauncherUiBackend();
         _catalogLoader=catalogLoader??CatalogSnapshotService.LoadAsync;
+        _doctor=doctor??((path,online,target,token)=>LauncherDoctor.RunAsync(path,online,token,target:target));
         _startupOptions = startupOptions;
         _allowAutomaticChecks = startServices;
         if (model is not null) _viewModel = model;
@@ -1322,7 +1325,7 @@ public sealed partial class MainWindow : Window
     private void ClearCache() { try { var p = SelectedStatePaths.StagingDir; if (Directory.Exists(p)) Directory.Delete(p, true); Directory.CreateDirectory(p); AppendLog("캐시를 정리했습니다.", true); } catch (Exception ex) { AppendLog("캐시 정리 실패: " + FriendlyError(ex), true); } }
     private void CleanupBackups() { try { var p = SelectedStatePaths.BackupDir; BackupManager.Prune(p, _config.MaxBackupCount, m => AppendLog("백업 정리: " + m, true)); AppendLog($"백업을 정리했습니다. 최근 {_config.MaxBackupCount}개는 롤백을 위해 보관합니다.", true); } catch (Exception ex) { AppendLog("백업 정리 실패: " + FriendlyError(ex), true); } }
     private void ClearLog() { _presentation.Logs.Clear(); if (_logBox is not null) _logBox.Text = string.Empty; }
-    private string SaveLogFile() { var dir = Path.Combine(Path.GetDirectoryName(LauncherUiPreferences.DefaultPath)!, "support", "logs"); Directory.CreateDirectory(dir); var path = Path.Combine(dir, $"launcher-{DateTime.Now:yyyyMMdd-HHmmss}.log"); File.WriteAllText(path, _presentation.LogText); return path; }
+    private string SaveLogFile() { var dir = Path.Combine(Path.GetDirectoryName(LauncherUiPreferences.DefaultPath)!, "support", "logs"); Directory.CreateDirectory(dir); var path = Path.Combine(dir, $"launcher-{DateTime.Now:yyyyMMdd-HHmmss}.log"); File.WriteAllText(path, DiagnosticRedactor.Redact(_presentation.LogText)); return path; }
     private void ExportLogsZip()
     {
         try
@@ -1331,6 +1334,12 @@ public sealed partial class MainWindow : Window
             var support=Path.Combine(Path.GetDirectoryName(LauncherUiPreferences.DefaultPath)!,"support");
             var zip=Path.Combine(support,"launcher-logs-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+"-"+Guid.NewGuid().ToString("N")[..8]+".zip");
             ZipFile.CreateFromDirectory(Path.Combine(support,"logs"),zip);
+            if (_lastDoctorReport is not null)
+            {
+                using var archive = ZipFile.Open(zip, ZipArchiveMode.Update);
+                using var writer = new StreamWriter(archive.CreateEntry("doctor.json").Open());
+                writer.Write(DiagnosticRedactor.Redact(JsonSerializer.Serialize(_lastDoctorReport, JsonFiles.Options)));
+            }
             SetStatus("지원 로그 ZIP을 사용자 지원 폴더에 저장했습니다.");
             AppendLog(IsDeveloper?"지원 로그 저장: "+zip:"지원 로그 ZIP 저장 완료",true);
         }

@@ -38,6 +38,7 @@ public static class LauncherDoctor
         try
         {
             config = await LauncherPaths.LoadResolvedAsync(configPath, cancellationToken, readOnly: true);
+            if (!string.IsNullOrWhiteSpace(config.Security.CredentialName)) DeviceCredentials.ValidateIdentifier(config.Security.CredentialName);
             target?.Apply(config);
             checks.Add(new DoctorCheck("config", true, $"schemaVersion {config.SchemaVersion}"));
         }
@@ -57,7 +58,7 @@ public static class LauncherDoctor
                     checks[0] = DoctorPresentation.Normalize(checks[0], "client");
                     return DoctorPresentation.Complete(report with { Checks = checks.Concat(report.Checks).ToArray(), Target = target });
                 }
-                catch (Exception ex) when (ex is IOException or OperationCanceledException or InvalidOperationException)
+                catch (Exception ex) when (!cancellationToken.IsCancellationRequested && ex is IOException or OperationCanceledException or InvalidOperationException)
                 {
                     checks.Add(DoctorPresentation.Failure("agent", ex, "client"));
                     return DoctorPresentation.Complete(new(DateTimeOffset.UtcNow.ToString("O"), false,
@@ -136,16 +137,20 @@ public static class DiagnosticsExporter
         bool agentContext = false)
     {
         var config = await LauncherPaths.LoadResolvedAsync(configPath, cancellationToken, readOnly: true);
-        if (config.IsManagedDeployment && !agentContext) throw new InvalidOperationException("Managed support export must use the update service.");
         var doctor = await LauncherDoctor.RunAsync(configPath, online: false, cancellationToken, agentContext);
         var fullOutput = Path.GetFullPath(outputPath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullOutput)!);
         using var archive = ZipFile.Open(fullOutput, ZipArchiveMode.Create);
         AddText(archive, "doctor.json", DiagnosticRedactor.Redact(JsonSerializer.Serialize(doctor, JsonFiles.Options)));
         AddText(archive, "config.sanitized.json", DiagnosticRedactor.Redact(await File.ReadAllTextAsync(Path.GetFullPath(configPath), cancellationToken)));
-        AddFileIfPresent(archive, config.InstallStatePath, "state/install-state.json");
-        AddFileIfPresent(archive, config.InstalledManifestPath, "state/installed-manifest.json");
-        if (Directory.Exists(config.LogDir))
+        // Client-side managed bundles include only display config and Agent diagnostics.
+        // Protected state and logs may be exported by the Agent's administrator path.
+        if (!config.IsManagedDeployment || agentContext)
+        {
+            AddFileIfPresent(archive, config.InstallStatePath, "state/install-state.json");
+            AddFileIfPresent(archive, config.InstalledManifestPath, "state/installed-manifest.json");
+        }
+        if ((!config.IsManagedDeployment || agentContext) && Directory.Exists(config.LogDir))
         {
             foreach (var log in Directory.EnumerateFiles(config.LogDir, "launcher-*.*")
                          .OrderByDescending(File.GetLastWriteTimeUtc).Take(8))
