@@ -35,7 +35,23 @@ if (action == "promotion" && arguments.ElementAtOrDefault(1) == "migrate")
     if (arguments.Contains("--dry-run") == arguments.Contains("--apply")) throw new ArgumentException("Choose --dry-run or --apply.");
     if (arguments.Contains("--dry-run")) { Console.WriteLine(JsonSerializer.Serialize(ReleasePromotions.PreviewMigration(settings), JsonFiles.Options)); return; }
 }
+if (action is "backup" or "restore")
+{
+    var command = arguments.ElementAtOrDefault(1);
+    object result = (action, command) switch
+    {
+        ("backup", "plan") => DistributionBackup.Plan(settings),
+        ("backup", "create") => await DistributionBackup.CreateAsync(settings, RequiredOption("--output")),
+        ("backup", "verify") => await DistributionBackup.VerifyAsync(RequiredOption("--backup")),
+        ("restore", "plan") => new { Requirement = "New empty target, same origin/signer, surviving latest source, stopped processes, explicit activation", Public = false },
+        ("restore", "stage") => await DistributionBackup.StageAsync(RequiredOption("--backup"), RequiredOption("--target"), settings),
+        ("restore", "activate") => await DistributionBackup.ActivateAsync(RequiredOption("--target"), settings, arguments.Contains("--confirm")),
+        _ => throw new ArgumentException("Use backup plan/create/verify or restore plan/stage/activate.")
+    };
+    Console.WriteLine(JsonSerializer.Serialize(result, JsonFiles.Options)); return;
+}
 var store = new IntakeStore(settings);
+using var operationLease = DistributionMaintenanceLease.Acquire(settings.Root, false);
 ReleaseSelection Selection(bool version) => new(RequiredOption("--project-id"), RequiredOption("--environment"), RequiredOption("--channel"), RequiredOption("--platform"), version ? RequiredOption("--version") : "inspect");
 switch (action)
 {

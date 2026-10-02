@@ -18,6 +18,14 @@
 
 ## 3. 이후 기록
 
+### 오프라인 백업·통제된 복원
+
+shared serve/watch/ingest/publish/auth/승격과 exclusive 유지보수 OS 잠금을 연결했다. 서비스/작업자를 자동 종료하지 않는다. backup plan/create/verify, restore plan/stage/activate를 추가했다. SQLite snapshot/파일 hash/정책/서명 신원을 기록하며 private key는 포함하지 않는다. 새 빈 target만 허용하고 시작 전 staged fence를 저장한다.
+
+활성화는 살아 있는 최신 원본의 모든 공개판·참조 snapshot을 확인하고 최신 authority DB(순번/승격/폐기/만료/audit)와 정책을 가져온다. 불명·누락이면 staged를 유지한다. 원본 완전 유실/RPO·RTO·회사 복구훈련은 보장하지 않는다.
+
+Windows unit5개 및 게시 backup-fixed/proof-02 통과: 백업 verify/변조 거부/서버 생존 중 backup 거부/서명키 분리/staged 차단/백업 이후 폐기 기록 보존. 초기 fixture는 이전 바이너리에 maintenance lock이 없어서 create가 거부됐고, apply에서 기존 root의 잠금 파일을 안전하게 생성하도록 수정 후 재시험했다. Windows idle SQLite pool handle로 DB replace 실패도 수정 후 통과했다. 실제 회사 백업·정전 내구성 시험과 분리한다.
+
 ### 자격 수명·요청 경계
 
 DB schema5 이전 전 SQLite snapshot 백업. 기존 token 관리 ID와 null 만료 유지. token-list/개별 revoke, PC key 명시 만료를 추가했다. 발급·폐기·최초 만료 latch와 audit은 같은 transaction이며 시계 역행으로 만료를 풀지 않는다. 명시한 요청/다운로드 한도만 활성화하며 초과 시 큐 없이429다.

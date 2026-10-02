@@ -22,6 +22,7 @@ internal static class CredentialLifecycle
     }
     internal static void LatchExpiry(IntakeStore store, bool deviceKey, string id)
     {
+        using var operation = DistributionMaintenanceLease.Acquire(store.Root, false);
         using var write = store.DatabaseWrite(); using var db = store.Open(); using var tx = db.BeginTransaction();
         using var q = db.CreateCommand(); q.Transaction = tx;
         q.CommandText = deviceKey ? "UPDATE device_keys SET expired=1 WHERE key_id=$id AND expired=0" : "UPDATE tokens SET expired=1 WHERE management_id=$id AND expired=0";

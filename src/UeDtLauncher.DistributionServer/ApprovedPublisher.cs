@@ -36,6 +36,7 @@ public sealed class ApprovedPublisher(IntakeStore store)
     public async Task<PublishedRelease> ApproveAsync(string id, CancellationToken token = default,
         IProgress<PackageWorkProgress>? observer = null)
     {
+        using var operation = DistributionMaintenanceLease.Acquire(store.Root, false);
         using var jobLock = store.LockJob(id);
         var job = store.Get(id);
         if (job.State == "published") return FindByJob(id) ?? throw new InvalidDataException("Published release record missing.");

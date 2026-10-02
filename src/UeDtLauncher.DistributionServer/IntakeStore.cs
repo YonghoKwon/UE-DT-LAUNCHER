@@ -42,10 +42,11 @@ public sealed class IntakeStore
         if (settings.IntakeWorkers is < 1 or > 2) throw new ArgumentOutOfRangeException(nameof(settings.IntakeWorkers), "IntakeWorkers must be 1 or 2.");
         Settings = settings;
         settings.Root = Path.GetFullPath(settings.Root);
+        using var initialization = DistributionMaintenanceLease.Acquire(settings.Root, false);
         DatabaseGate = DistributionDatabaseCoordinator.ForRoot(settings.Root);
         foreach (var directory in new[] { "incoming", "processing", "releases", "archive", ".job-locks" })
             Directory.CreateDirectory(Path.Combine(Root, directory));
-        using var gate = Lock();
+        using var gate = new FileStream(Path.Combine(Root, ".writer.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         var existed = File.Exists(Path.Combine(Root, "distribution.db"));
         using var database = DatabaseWrite();
         using var db = Open();
@@ -54,6 +55,8 @@ public sealed class IntakeStore
         var version = Convert.ToInt32(command.ExecuteScalar());
         if (version > 5) throw new InvalidDataException("Distribution database schema is newer than this server.");
         if (version == 5) return;
+        initialization.Dispose();
+        using var maintenance = DistributionMaintenanceLease.Acquire(Root, true);
         using var offline = new AuthenticationProcessLease(Root);
         // SQLite's backup API captures a consistent image, including committed WAL pages, before any schema change.
         if (existed)
@@ -184,13 +187,17 @@ public sealed class IntakeStore
     internal Func<string, long>? AvailableBytes => availableBytes;
     public IDisposable Lock()
     {
+        var operationLease = DistributionMaintenanceLease.Acquire(Root, false);
         var started = Stopwatch.GetTimestamp();
         while (true)
         {
-            try { return new FileStream(Path.Combine(Root, ".writer.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
+            try { return new WriterLease(new FileStream(Path.Combine(Root, ".writer.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None), operationLease); }
             catch (IOException) when (Stopwatch.GetElapsedTime(started) < TimeSpan.FromSeconds(30)) { Thread.Sleep(20); }
+            catch { operationLease.Dispose(); throw; }
         }
     }
+    private sealed class WriterLease(FileStream writer, IDisposable operation) : IDisposable
+    { public void Dispose() { writer.Dispose(); operation.Dispose(); } }
     public IDisposable LockJob(string id)
     {
         ReleaseSidecar.Segment(id);
@@ -222,6 +229,7 @@ public sealed class IntakeStore
     public async Task<IntakeJob> IngestAsync(string directory, CancellationToken token = default,
         IProgress<PackageWorkProgress>? observer = null)
     {
+        using var operationLease = DistributionMaintenanceLease.Acquire(Root, false);
         var source = Path.GetFullPath(directory);
         var incoming = Path.Combine(Root, "incoming");
         if (!string.Equals(Path.GetDirectoryName(source), incoming, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))

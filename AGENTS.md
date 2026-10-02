@@ -37,6 +37,8 @@
 
 ## 보존할 경계
 
+- serve/watch/긴 파일 작업/DB 변경과 offline backup/restore/정리는 동일 maintenance OS 잠금 계약을 따른다. 프로세스를 도구가 종료하지 않는다. 복원은 새 빈 root·같은 origin/signer·최신 생존 source 대조이며 staged fence 제거가 마지막이다. 순번을 임의로 올리거나 client trust 삭제, 과거 폐기/정책 재활성화는 금지한다. private key를 백업 번들에 넣지 않는다.
+
 - DB schema5 이전 전 snapshot 백업과 구 서버 중지를 지킨다. token 관리 ID와 비밀을 분리한다. legacy 무기한을 보존하고 만료는 명시 지정한다. 수명 변경·최초 만료 latch·audit은 한 transaction이며 시계 역행으로 latch를 풀지 않는다. 권한 허용 캐시는 금지한다. 요청 한도는 opt-in, 초과 시 메모리 큐 없이429다.
 
 - 작업 control은 실제 OS owner/session 또는 관리자만 허용한다. IPC 단절은 취소가 아니다. OS 작업 잠금과 원자적 기록을 유지하며 active 작업을 discard하지 않는다. commit 이후 취소는 완료 상태이며 시작 전 launch만 생략한다. cache는 명시 예산·서명된 Manifest digest·정확한 release/owner에 결속하며 완료 파일도 재검증한다. 새 launch는 온라인 권한 확인 없이 runtime ticket을 만들지 않는다.

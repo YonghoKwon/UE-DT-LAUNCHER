@@ -23,12 +23,14 @@ public static class DistributionHttp
 
     public static WebApplication CreateApplication(IntakeStore store)
     {
+        if (File.Exists(Path.Combine(store.Root, "restore-staged.json"))) throw new InvalidDataException("Restored root is staged; reconcile current security records before serving.");
         var promotions = new ReleasePromotions(store);
         if (!promotions.Snapshot().Ready) throw new InvalidDataException("Stop the server and apply promotion migration before serving.");
         if (!Uri.TryCreate(store.Settings.ListenUrl, UriKind.Absolute, out var listen) ||
             !IPAddress.TryParse(listen.Host, out var ip) || !IPAddress.IsLoopback(ip))
             throw new InvalidDataException("Distribution API must bind to loopback behind nginx.");
         var builder = WebApplication.CreateBuilder();
+        builder.Services.AddSingleton<DistributionMaintenanceLease>(_ => DistributionMaintenanceLease.Acquire(store.Root, false));
         if (store.Settings.AuthenticationMode is not ("bearer" or "request-signature-v1")) throw new InvalidDataException("Unsupported server authentication mode.");
         var publicUri = new Uri(store.Settings.PublicUrl, UriKind.Absolute);
         if (publicUri.Scheme is not ("http" or "https") || publicUri.UserInfo.Length != 0 || publicUri.AbsolutePath != "/" || publicUri.Query.Length != 0 || publicUri.Fragment.Length != 0)
@@ -40,7 +42,8 @@ public static class DistributionHttp
         builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
         builder.WebHost.UseUrls(store.Settings.ListenUrl);
         var app = builder.Build();
-        _ = app.Services.GetRequiredService<AuthenticationProcessLease>();
+        try { _ = app.Services.GetRequiredService<DistributionMaintenanceLease>(); _ = app.Services.GetRequiredService<AuthenticationProcessLease>(); }
+        catch { app.DisposeAsync().AsTask().GetAwaiter().GetResult(); throw; }
         var authentication = app.Services.GetRequiredService<DeviceAuthenticationState>();
         var publisher = new ApprovedPublisher(store);
         var tokens = new DistributionTokens(store);
