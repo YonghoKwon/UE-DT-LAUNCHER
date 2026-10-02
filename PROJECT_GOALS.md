@@ -1,6 +1,6 @@
 # 최종 프로젝트 목표 — 회사용 Unreal Engine DT 배포 시스템
 
-갱신: 2026-10-02 / 작업 기준 `codex/real-ue-data-safety`. **최상위 목표는 확정**됐습니다. 세부 운영 정책·회사 SLA·출시 일정은 아직 미정이며 아래 결정 표에서 별도로 관리합니다.
+갱신: 2026-10-03 / 작업 기준 `codex/launcher-readiness-ux`. **최상위 목표는 확정**됐습니다. 세부 운영 정책·회사 SLA·출시 일정은 아직 미정이며 아래 결정 표에서 별도로 관리합니다.
 
 ## 확정한 최종 목표
 
@@ -13,6 +13,10 @@
 현재 사용 방법은 [기능 지도·명령 순서](docs/reference/feature-workflow.md), 현재 구현은 [README](README.md), 작업 목록은 [IMPROVEMENTS](IMPROVEMENTS.md)가 정본입니다.
 
 ## 현재 위치
+
+최초 연결 준비도 진단과 사용자 조치 안내를 보강했다. 오프라인 점검은 설치 상태를 생성/이전하지 않으며 온라인은 인증·서명·권한·승격·신뢰 기록을 유지한다. 기술 점검 통과는 실제 사용자 쓰기/설치/실행 보장이 아니고, 회사 계정·서비스·UE/RHEL 인수와 분리한다. [이번 증거와 게시본별 실제 GUI 수용](docs/reference/archive/validation/readiness-validation.md)
+
+이번 후속은 Windows/WSL 각587개와 게시 E2E를 통과했다. 사용자 요청으로 마우스·GUI 자동 검증을 잠시 중단했고 마지막 표시 보강 이후 새 후보의 전체 수용은 보류다. USER-02·UI-02는75%로 유지하며 재개 후 같은 후보에서 남은 사례를 확인한다. 이전 후보의 성공으로 회사 G1~G6 또는 새 후보100%를 선언하지 않는다.
 
 OPS-03의 명시적 승격과 기존 기준선 이전을 구현·로컬 수용했다. 후보a8080ea의 양 OS 각568개와 게시 CLI/API·HTTP/HTTPS·티켓/실행 불변·실제 일반 대기 화면을 확인했다. 이는 회사 Gate 승인 또는 기존 실제 UE 데이터 수용 완료가 아니다. [승격 결과](docs/reference/archive/validation/release-promotion-validation.md)
 

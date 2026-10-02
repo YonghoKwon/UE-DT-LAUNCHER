@@ -1,6 +1,6 @@
 # 작업 지침
 
-점검: 2026-10-02 / 작업 기준 codex/release-promotion-control. 저장소 전체에 적용합니다.
+점검: 2026-10-03 / 작업 기준 codex/launcher-readiness-ux. 저장소 전체에 적용합니다.
 
 ## 문서 관리 계약
 
@@ -36,6 +36,13 @@
 | installer/windows/, packaging/linux/, .github/workflows/ | 설치본·nginx·서비스·CI |
 
 ## 보존할 경계
+
+- 오프라인 doctor의 전체 호출 경로는 설정·설치·state·backup·runtime·legacy 파일/디렉터리/잠금을 생성·변경하지 않는다. 검사 전용 설정 로딩은 legacy migration을 수행하지 않으며 credential 경로 조회는 순수 계산이다.
+- 온라인 점검은 기존 인증/서명/요청 결속/sequence 검증과 anti-replay 신뢰 기록을 유지한다. 점검과 조회 재시도가 설치·실행·복원으로 바뀌지 않게 한다.
+- DoctorCheck의 passed/failed/waiting/deferred/not-applicable과 준비도 요약을 구분한다. Healthy/종료0을 설치 가능이나 사용자 쓰기 검증 성공으로 해석하지 않는다. 구형 상세 필드는 미검증이며 read-only-doctor-v1 없는 Agent에 기존 doctor를 우회 호출하지 않는다.
+- 관리형 진단은 표시 설정과 Agent 보호 설정의 주체를 구분하고 GUI가 credential/보호 state를 직접 읽지 않는다. portable은 Agent 요청을 하지 않는다. 진단 대상에는 모드·프로젝트·트랙·OS·정확한 버전 정책만 전달하며 임의 URL/경로는 받지 않는다.
+- 진단 결과와 재시도는 요청 당시 선택에 결속한다. 늦은 결과를 버리고 일반 오류에는 원인·다음 조치·지원 ID를 제공한다. Support ZIP의 JSON/로그에서 비밀과 사용자 경로를 제거한다.
+- GUI 입력 도구의 캐시/캡처 오류는 제품 실패와 구분한다. 창을 새로 선택·활성화하고 화면과 대상이 일치한 뒤 조작한다. 다른 프로그램의 화면이 캡처되면 그 좌표를 사용하지 않는다.
 
 - approve는 게시만 한다. 첫 버전도 명시적 promote가 필요하며 PC별 추천은 현재 허용된 승격 이력의 마지막 판이다. 프로젝트/환경/채널/플랫폼을 섞거나 미승격판으로 fallback하지 않는다.
 - 승격/감사 기록은 한 transaction, expected revision 재검사를 사용한다. same-target/current-revision은 no-op이며 승인/서버 재시작은 이력을 변경하지 않는다. 승격은 다운로드 grant·설치·실행 티켓을 변경하지 않는다.

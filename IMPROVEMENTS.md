@@ -1,10 +1,12 @@
 # 개선 진행 현황과 보완 필요 사항
 
-점검: 2026-10-02 / `codex/real-ue-data-safety`. [데이터 경로 검증](docs/reference/archive/validation/real-ue-data-safety-validation.md)의 후보 `64c4ad0`은 Windows/WSL 각542개·게시 runtime-host 합성 두 버전·HTTP/HTTPS 호환을 통과했습니다. 실제 UE 포함 fixture는 준비됐으나 Windows 입력 접근 거부로 새 후보의 GUI 설치/업데이트/복원은 미실행입니다. [이전 UI 수용](docs/reference/archive/validation/ui-acceptance-finalization.md)의 `8ce5060` 결과와 합산하지 않습니다. UI-01은 1920×1080의 기존 합의 범위100%, UI-02·03은75%를 유지하며 다른 해상도/DPI·내레이터·회사 인수는 별도입니다.
+점검: 2026-10-03 / `codex/launcher-readiness-ux`. USER-02의 준비도 진단·읽기 전용 검사·Agent 선택 결속·조치 안내를 구현하고 Windows/WSL 각587개를 통과했습니다. 합성 GUI 양 모드의 설치·실행·수명·복구·정상 복원·취소·preview 거부·조회 재시도를 직접 확인했습니다. 주 화면 조치 문구를 보강한 뒤 새 게시본의 영향받은 오류 화면을 다시 확인했으며, 이전 후보의 전체 성공을 새 후보 전체 수용으로 합산하지 않습니다. [이번 증거](docs/reference/archive/validation/readiness-validation.md). 실제 UE 데이터·회사 환경은 별도 미완료입니다.
 
 P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선. 우선순위는 제안이며 일정·수치 목표는 미정입니다. 미검증과 미구현을 구분합니다.
 
 ## 먼저 확인할 진행 현황
+
+2026-10-03 최초 연결 진단 후속: USER-02는0%→75%. 최신 소스d665d67 Windows/WSL 각587개와 실제 게시 E2E 통과, 이전 후보의 양 모드/두 프로필 설치·실행·수명·복구·복원·오류/설정 재시도를 직접 확인했다. 일반 오류의 다음 조치를 보강한 새 후보는 양 모드403 화면을 확인했다. 사용자 요청으로 마우스·GUI 자동 검증은 잠시 중단했으며, 새 후보 전체 수용 전까지 USER-02·UI-02는75%다. [게시본별 증거](docs/reference/archive/validation/readiness-validation.md)
 
 2026-10-02 OPS-03 완료(로컬 범위): 승인/승격 분리, revision·감사·schema4 기준선 이전, 현재 권한별 추천·구형 요청 제한, Core/Agent/GUI explicit policy 처리를 검증했다. 후보a8080ea Windows/WSL 각568개·게시본 이력/이전/실행 티켓·Running 불변·HTTP/HTTPS 통과, 실제 일반 GUI의 지정 대기/주 버튼 비활성화 관측. [승격 검증](docs/reference/archive/validation/release-promotion-validation.md)
 
@@ -14,7 +16,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 | 완료 | 부분 진행 | 대기 | 전체 |
 |---:|---:|---:|---:|
-| 6개 | 10개 | 12개 | 28개 |
+| 6개 | 11개 | 11개 | 28개 |
 
 완료를 제외하면 열린 항목은 **22개**입니다. 각 분야 표에서 `진행률`과 `상태`를 먼저 보면 됩니다.
 
@@ -66,6 +68,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | USER-01 | schema3 opt-in·릴리스/설치/owner 결속·host 경로/권한/write 보강 | 후속 Windows/WSL 각552개·Root 누락/다른 릴리스/로그 접근 거부 회귀 | 게시 runtime-host 합성 v1/v2·HTTP/HTTPS 확인, 새 실제 UE fixture 사용자 조작 대기 | 실제 UE GUI 보존·앱 CustomLogs·명시적 이전·회사 계정은 미완료 | 50% |
 | OPS-06 | CI의 HTTPS E2E 단계 확인 | 같은 E2E 스크립트 로컬 통과 | **현재 변경의 원격 CI 증거 미확인** | 결과 보관 정책·운영 확인 남음 | 50% |
 | USER-05 | schema 3 생성기·doctor·설치 예제 확인 | 관련 자동화 통과 | Windows/Linux 생성 설정 연결·실제 MSI/RPM 내용 확인 | 설정 예제 보완 범위 충족, 회사 설치 승인은 별도 | 100% |
+| USER-02 | 상태/대상/조치/지원 ID·읽기 전용 검사·GUI 점검 확인 | Windows/WSL 각587개·무변경/구형/선택·재시도 회귀 | 양 모드 게시 doctor/HTTP/HTTPS·구형 Agent·실제 GUI 오류/재시도·설정 수정 확인 | 마지막 문구 보강 후 새 후보 전체 GUI 수용은 별도. 이력 합산하지 않음 | 75% |
 | SEC-03 | 생성 시 ACL/mode/owner·명시적 repair | Windows/WSL 권한 회귀 통과 | uedt 읽기 성공·nobody 거부 확인 | Windows LocalService 실제 실행 미확인 | 75% |
 | SEC-04 | 요청 서명·nonce·Catalog 결속·Agent 이미지 | 변조/replay/만료 갱신 회귀 통과 | Windows GUI/Agent·Linux HTTP/HTTPS 및 부하 실행 | WSL proxy 간헐 timeout·메모리 계측 공백 남음 | 75% |
 | OPS-08 | 공식 preflight·EXE 선서명·MSI payload gate | 계약 11개·개발 MSI 추출/hash 확인 | 실제 회사 서명 인증서 미확인 | 인증서·설치본 서명 검증 대기 | 50% |
@@ -118,7 +121,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | ID/우선 | 진행률 | 상태 | 현재 근거·영향 | 보완 방향·완료 조건 |
 |---|---:|---|---|---|
 | USER-01/P1 | 50% | 부분 · GUI 협업 대기 | `cf99ba1`: 릴리스/설치 결속·명시적 root·user host credential 보호·Linux 권한·UserDir/log write 보강. Windows/WSL 각552개·게시 합성 host 통과. [후속 증거](docs/reference/archive/validation/runtime-data-acceptance-completion.md) | 실제 UE GUI 설치/업데이트/복원·SaveGame 보존 사용자 직접 조작 대기. CustomLogs·데이터 이전·회사 계정 미완료. 실제 수용 전75%로 올리지 않음 |
-| USER-02/P1 | 0% | 대기 · 추가 보완 | 서버/Agent/토큰/공개키 초기 설정 단계가 많음 | 관리자 사전 점검·설정 검증, 사용자 오류 코드/조치 안내. 새 PC 최초 실행·비밀정보 미노출 |
+| USER-02/P1 | 75% | 부분 · 로컬 진단/GUI 확인 | `8e42536`·`cc7ff02`·`5e3a247`: 읽기 전용 진단·mode/target/capability·준비도·조치 안내·지원 ZIP. Windows/WSL 각587개, 게시 HTTP/HTTPS·구형 Agent·양 모드 실제 오류/재시도·설정 수정 확인. [증거](docs/reference/archive/validation/readiness-validation.md) | 마지막 조치 문구 보강의 영향받은 오류 화면을 새 후보로 확인. 최신 후보 전체 GUI 수용·실제 회사 새 PC는 별도 |
 | USER-03/P2 | 0% | 대기 · 추가 보완 | 엔진 취소 토큰과 별개로 일반 UX 취소는 이전 범위에서 제외 | 안전 중단 지점·취소/재개 설계. 다운로드·검증·설치별 중단 후 손상 없음 |
 | USER-04/P2 | 0% | 대기 · 추가 보완 | 오프라인·권한 폐기 후 기설치 실행 최종 정책 미정 | 실행/권한 재확인 규칙 합의. 미설치·기설치·폐기 토큰 수용 테스트 |
 | USER-05/P1 | 100% | 완료 · 설정 보완 범위 | schema 3 생성기·doctor·MSI 예제/RPM 설정, Windows/Linux publish 생성 설정 E2E와 실제 artifact 내용 확인 | `24cc451` 및 최종 검증. MSI/RPM 실제 설치 수명주기는 OPS-02로 유지. [기록](docs/reference/archive/validation/intranet-auth-validation.md) |
@@ -154,6 +157,6 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 3. PERF 기준선·OPS-06: 측정 후 개선, 자동 회귀 검증.
 4. USER/UI·API 범위는 [목표 문서](PROJECT_GOALS.md)에서 확정 후 진행.
 
-PERF-01/02/04·USER-05·UI-01·OPS-03은 100%(UI-01은1920×1080 한정, OPS-03은로컬 승격 범위), PERF-03·SEC-03·SEC-04·OPS-09·UI-02·UI-03은 75%, OPS-01·OPS-06·OPS-08·USER-01은 50%(각 남은 조건 참조)입니다. 나머지 12개는 0%이며 기존 기능 부재를 의미하지 않습니다.
+PERF-01/02/04·USER-05·UI-01·OPS-03은 100%(UI-01은1920×1080 한정, OPS-03은로컬 승격 범위), PERF-03·SEC-03·SEC-04·OPS-09·UI-02·UI-03·USER-02는 75%, OPS-01·OPS-06·OPS-08·USER-01은 50%(각 남은 조건 참조)입니다. 나머지 11개는 0%이며 기존 기능 부재를 의미하지 않습니다.
 
 진행률을 변경할 때는 상태·체크포인트·커밋/검증 링크·남은 조건·상단 집계를 함께 갱신합니다. 100% 항목은 완료 이력으로 남기고, 새 미달 조건이나 범위 변경이 확인되면 이유를 기록해 다시 열 수 있습니다. 빌드 성공만으로 완료하지 않습니다.

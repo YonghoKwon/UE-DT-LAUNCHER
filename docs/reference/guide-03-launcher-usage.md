@@ -113,7 +113,39 @@ portable Linux CLI는 같은 설정에서 `deploymentMode=portable`로 지정하
 
 [과거 측정·재현 조건](archive/validation/performance-validation.md)은 이력입니다. PERF-03 지연 미달과 회사 실측 조건은 [개선 대장](../../IMPROVEMENTS.md)에 계속 남습니다.
 
-## 실행 차단과 이전 제한
+## 최초 연결 준비도와 오류 조치 (2026-10-03)
+
+GUI 설정에서 **연결·준비 상태 점검**을 열면 오프라인 설정 검사를 수행합니다. **온라인 연결 점검**은 실제 인증·서명·요청 결속을 검증하고 현재 선택의 권한과 추천을 확인합니다. 검사 대상이 바뀌면 이전 결과를 적용하지 않습니다. 검사 창은 설치/실행을 하지 않으며 닫기는 진행 중인 해당 검사만 취소합니다.
+
+```powershell
+# Windows PC: 일반/개발자 표시 설정 또는 portable 운영 설정
+.\UeDtLauncher.exe doctor --config .\launcher.config.json --format text
+.\UeDtLauncher.exe doctor --config .\launcher.config.json --online --format text
+.\UeDtLauncher.exe diagnostics export --config .\launcher.config.json --output .\diagnostics.zip
+```
+
+```bash
+# Linux CLI: 관리자에게 준비도 JSON/텍스트를 전달
+./UeDtLauncher doctor --config /etc/ue-dt-launcher/launcher.config.json --online --format text
+```
+
+| 결과/코드 | 의미 | 담당자와 다음 조치 |
+|---|---|---|
+| configuration-invalid | 설정 없음/읽기/검증 실패 | 관리자 설정 수정 → 다시 확인. 조회 재시도는 설치하지 않음 |
+| service-unavailable | 관리형 업데이트 서비스 미연결 | 관리자 서비스 점검. portable에는 서비스 불필요 |
+| client-upgrade-required | 읽기 전용 상세 진단 미지원 | 런처/업데이트 서비스 동시 갱신. 구형 doctor 자동 호출 없음 |
+| authentication-failed / 401 | PC 인증 등록/폐기 등 확인 필요 | 관리자 PC 키 등록·폐기·읽기 권한 점검 |
+| access-denied / 403 | 현재 PC 주소/배포 권한 거부 | 관리자 IP와 선택 트랙 권한 점검 |
+| no-authorized-release | 정상 연결됐으나 해당 PC·선택 조건의 배포 없음 | 관리자 승인 목록·grant 확인. 설치/실행 우회 없음 |
+| no-promoted-release | 허용 승인판은 있으나 일반 추천 미지정 | 관리자 명시적 promote. 개발자 exact는 현재 권한 안에서 선택 |
+| integrity-failed | 서명·요청 결속 등 보안 검증 실패 | 검사를 끄지 말고 관리자 키·배포 확인 |
+| deferred | 온라인 또는 실제 사용자 환경 검사 보류 | 온라인 점검 또는 실행 직전 host 검사 필요 |
+
+`Healthy`/종료0은 기술적 실패가 없다는 뜻입니다. `preparationState`가 action-required이면 조치, verification-pending이면 미검증, checks-passed이면 현재 검사를 통과한 상태입니다. 실제 설치 용량·파일·사용자 쓰기 검증은 기존 작업 경계에서 수행합니다. CLI 기본 출력은 JSON이며 기존 필드를 유지하고 Code/State/Subject/ActionOwner/NextAction/Target/SupportId를 추가합니다.
+
+관리형 CLI 지원 ZIP은 표시 설정과 Agent 진단만 받으며 보호 state/로그를 직접 읽지 않습니다. 보호 자료의 관리자 내보내기는 기존 Agent 진단 경로를 사용합니다. GUI 지원 로그 ZIP에는 마지막 확인한 진단 결과가 있으면 `doctor.json`을 함께 넣습니다. 키·토큰·인증 헤더·사용자 경로는 제거하며 자동 외부 전송하지 않습니다.
+
+### 실행 차단과 이전 제한 안내
 
 실행 중/Pending/Unknown에서는 update·repair·rollback을 하지 않습니다. 상태 확인과 정지 후 명시적 복구는 [실행 안전성](runtime-safety.md)을 따릅니다. `Agent migrate --apply`는 동일 설치 공유 위험으로 현재 차단되며 dry-run만 지원합니다. `import-install`의 명시적 복사와 사용자 세이브 이전은 서로 다른 작업입니다.
 

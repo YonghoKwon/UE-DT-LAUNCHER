@@ -2,7 +2,7 @@
 
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 배포 시스템입니다.
 
-문서 점검: **2026-10-02**, 작업 기준: `codex/release-promotion-control`. 승격 분리 후보 `a8080ea`의 Windows/WSL 각568개·게시본 권한별 추천/이전/HTTP·HTTPS E2E가 통과했습니다. 실제 UE 데이터 GUI 수용은 기존 협업 대기를 유지합니다. 로컬 검증이며 main 반영·회사 운영 승인 완료를 뜻하지 않습니다.
+문서 점검: **2026-10-03**, 작업 기준: `codex/launcher-readiness-ux`. 최초 연결 진단·선택 결속·오류 조치 안내를 추가했고 Windows/WSL 각587개 회귀가 통과했습니다. 관리형·portable 합성 GUI의 설치·업데이트·실행·복구·정상 백업 복원과 오류 재시도는 게시본별로 기록합니다. [최신 진단·GUI 검증](docs/reference/archive/validation/readiness-validation.md). 실제 UE 데이터와 회사 운영 인수 조건은 별도로 남습니다.
 
 **현재 판단: 합성 앱 기반 배포·설치·실행·복구는 활용 가능한 단계이며, 회사 정식 운영 인수는 미완료입니다.** 현재 수치와 남은 작업은 [개선 진행 현황](IMPROVEMENTS.md), 상세 명령은 [운영 문서 색인](docs/reference/README.md)을 확인하세요.
 
@@ -32,6 +32,20 @@ flowchart LR
 | [최종 프로젝트 목표](PROJECT_GOALS.md) | 확정한 DT 배포 시스템 목표·회사 운영 승인 조건·미정 세부 정책 |
 
 개선 문서는 남은 항목만 모은 것이 아니라 완료·부분 진행·대기를 함께 관리합니다. 퍼센트는 **추가 보완의 체크포인트 진척**이며, 기존 기능 구현도나 회사 운영 승인율이 아닙니다. 최신 집계는 해당 문서 한 곳에서 확인합니다.
+
+## 최초 연결 점검과 문제 해결
+
+| 실행 위치·담당 | 입력/행동 | 결과와 다음 조치 |
+|---|---|---|
+| PC 관리자·CLI | `UeDtLauncher.exe doctor --config launcher.config.json --format text` | 파일을 생성/이전하지 않고 설정·키·권한을 점검. 온라인 연결은 미검증으로 표시 |
+| PC 관리자·CLI | `UeDtLauncher.exe doctor --config launcher.config.json --online --format text` | 인증·서명·현재 선택의 허용/추천 상태 확인. 필요한 anti-replay 신뢰 기록은 갱신 |
+| 사용자·GUI | 설정 → 연결·준비 상태 점검 → 온라인 연결 점검 | 원인·사용자/관리자 조치·지원 ID 확인. 진단은 설치 상태나 주 버튼을 정상으로 덮어쓰지 않음 |
+| 관리자 조치 후·GUI | 다시 확인 / 같은 조회 다시 시도 | 설정 재읽기·조회만 수행. 설치/실행은 주 버튼에서 별도 수행 |
+| 사용자·GUI | 문제 해결 | 이미 설치된 선택 버전의 손상만 복구. 정상 설치는 점검, 미설치는 설치 안내 |
+
+Linux 명령은 `./UeDtLauncher`를 사용합니다. 기본 JSON 출력과 기존 0/1 종료 코드는 유지합니다. `healthy=true`와 종료0은 설치/실행 보장이 아닙니다. 준비도 `action-required`(조치 필요), `verification-pending`(추가 검증 필요), `checks-passed`(점검 완료)를 함께 확인하세요. 관리형 사용자 저장 경로의 실제 쓰기 검사는 사용자 runtime-host가 실행 직전에 수행합니다.
+
+관리형은 업데이트 서비스가 보호 설정과 credential을 검사하며 portable은 Agent 없이 점검합니다. `read-only-doctor-v1`을 지원하지 않는 구형 서비스는 갱신 안내로 처리합니다. 첫 승인만 있는 경우 관리자의 명시적 승격이 필요하며, 빈 배포 목록·401 인증 실패·403 권한 거부·서명 실패와 구분합니다. [명령·오류별 조치](docs/reference/guide-03-launcher-usage.md)
 
 그 외 자료는 [참고 문서 모음](docs/reference/README.md)에 있습니다. 현재 가이드 9개와 색인은 `docs/reference/`, 검증 이력·중복 입문/구 운영 자료는 그 아래 `archive/`에 보존합니다. 아카이브로 옮긴 검증 증거를 폐기한 것은 아닙니다. 과거 서버 절차를 신규 설치 지침으로 사용하지 않습니다.
 
@@ -141,6 +155,8 @@ dotnet publish src/UeDtLauncher.DistributionServer -c Release -r linux-x64 --sel
 Linux 클라이언트/Agent는 `-r linux-x64`로 생성합니다. 네이티브 의존성이 있으므로 출력 폴더 전체를 배치합니다. 설치·실행은 [클라이언트 가이드](docs/reference/guide-03-launcher-usage.md)를 따릅니다.
 
 ## 검증 범위와 제약
+
+2026-10-03 진단 후속: Windows/WSL 각587개, Release 경고·오류0, 게시 HTTP 요청 서명·HTTPS/Bearer·구형 Agent·지원 ZIP 검증을 확인했습니다. GUI의 상세 실제 통과는 [게시본별 표](docs/reference/archive/validation/readiness-validation.md)에 있습니다. 사용자 요청으로 마우스·GUI 자동 검증은 잠시 중단했으며 새 후보 전체 GUI 수용을 이전 후보 성공과 합산하지 않습니다. USER-02·UI-02는75%를 유지합니다.
 
 2026-09-12 [기존 실행 기록](docs/reference/archive/validation/distribution-validation.md): Windows 210/210, WSL Ubuntu 210/210, Release 경고·오류 0. 테스트 프로그램으로 HTTPS 배포와 Windows GUI/Agent·Linux CLI 설치·실행을 확인했습니다.
 

@@ -6,6 +6,7 @@
 
 | 기록 | 내용 |
 |---|---|
+| [최초 연결 진단·오류 해결](validation/readiness-validation.md) · [정제 JSON](validation/readiness-evidence.json) | 양 OS587개·읽기 전용 doctor·선택/승격/구형 호환·게시 E2E·실제 양 모드 설치/복구/복원·게시본별 수용 구분·사용자 GUI 검증 중단 |
 | [승인·승격 분리](validation/release-promotion-validation.md) · [정제 JSON](validation/release-promotion-evidence.json) | a8080ea·양 OS568개·권한별 추천·DB 이전·pending/running 불변·실제 지정 대기 GUI |
 | [데이터 수용 후속](validation/runtime-data-acceptance-completion.md) | cf99ba1 보강·양 OS552개·scope별 비교·사용자 직접 GUI 조작 대기 |
 | [UE 데이터 경로·수용 준비](validation/real-ue-data-safety-validation.md) · [정제 JSON](validation/real-ue-data-safety-evidence.json) | opt-in 경로 보호·Windows/WSL542개·게시 합성 host·HTTP/HTTPS, 실제 UE GUI 입력 제약과 재개 순서 |
