@@ -150,9 +150,9 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | EXT-01/P2 | 0% | 대기 · 추가 보완 | IAccessPolicyProvider 파일 구현만 존재 | 회사 API 합의 후 timeout/cache TTL/기본 거부. 장애·취소·오래된 응답에서 권한 확대 없음 |
 | DEV-01/P2 | 0% | 대기 · 추가 보완 | Core 링크 컴파일, MainWindow 동작 코드 잔존 | 기능 변경과 분리한 물리 폴더·ViewModel 정리. API/CLI/IPC 회귀 없음 |
 
-근거 소스: [서버 API](src/UeDtLauncher.DistributionServer/DistributionHttp.cs), [저장 관리](src/UeDtLauncher.DistributionServer/StorageMaintenance.cs), [권한](src/UeDtLauncher.DistributionServer/AccessPolicy.cs), [엔진](src/UeDtLauncher/LauncherEngine.cs), [버전 경로](src/UeDtLauncher.Core/Distribution/VersionedReleasePaths.cs), [CI](.github/workflows/build.yml).
+근거 소스: [서버 API](src/UeDtLauncher.DistributionServer/DistributionHttp.cs), [저장 관리](src/UeDtLauncher.DistributionServer/StorageMaintenance.cs), [권한](src/UeDtLauncher.DistributionServer/AccessPolicy.cs), [엔진](src/UeDtLauncher.Core/LauncherEngine.cs), [버전 경로](src/UeDtLauncher.Core/Distribution/VersionedReleasePaths.cs), [CI](.github/workflows/build.yml).
 
-추가 교차 확인: [AgentWorker](src/UeDtLauncher.Agent/Program.cs), [Agent 작업](src/UeDtLauncher.Agent/AgentIpcHostedService.cs), [서명 순서](.github/workflows/release.yml), [MSI CAB](installer/windows/Product.wxs), [RPM 설정](scripts/build-rpm.sh), [credential 저장](src/UeDtLauncher/CommercialSecurity.cs), [프로세스 식별](src/UeDtLauncher/ServiceRunner.cs). 위 링크는 점검 출처입니다. 이후 실제 수정과 검증은 각 항목의 최신 기록을 따르며 과거 문서 전용 점검과 구분합니다.
+추가 교차 확인: [AgentWorker](src/UeDtLauncher.Agent/Program.cs), [Agent 작업](src/UeDtLauncher.Agent/AgentIpcHostedService.cs), [서명 순서](.github/workflows/release.yml), [MSI CAB](installer/windows/Product.wxs), [RPM 설정](scripts/build-rpm.sh), [credential 저장](src/UeDtLauncher.Core/CommercialSecurity.cs), [프로세스 식별](src/UeDtLauncher.Core/ServiceRunner.cs). 위 링크는 점검 출처입니다. 이후 실제 수정과 검증은 각 항목의 최신 기록을 따르며 과거 문서 전용 점검과 구분합니다.
 
 ## 처리 제안과 상태 관리
 

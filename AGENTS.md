@@ -29,7 +29,7 @@
 | src/UeDtLauncher/Program.cs | GUI/CLI 명령 |
 | src/UeDtLauncher/Gui/ | programmatic Avalonia View·ViewModel·시각 토큰 |
 | src/UeDtLauncher.Core/ | 공용 assembly, Distribution 메타데이터·경로·이미지 |
-| src/UeDtLauncher/*.cs | 엔진·보안·transaction·IPC 소스 일부. Core csproj가 링크 컴파일 |
+| src/UeDtLauncher.Core/*.cs | 엔진·보안·transaction·IPC 소스. GUI는 Core project reference만 사용 |
 | src/UeDtLauncher.Agent/ | Windows Service/Linux systemd Agent |
 | src/UeDtLauncher.DistributionServer/ | SQLite 접수·승인·서명 게시·인증 API |
 | src/UeDtLauncher.Tests/, tools/test-distribution-e2e.sh | 자동화·실제 프로세스 E2E |

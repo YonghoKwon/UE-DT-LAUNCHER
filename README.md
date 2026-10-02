@@ -8,6 +8,8 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 
 ## 프로젝트 목표와 처음 읽을 안내
 
+런타임 엔진·보안·transaction·IPC 소스는 이제 `src/UeDtLauncher.Core/`에 직접 위치합니다. 링크 컴파일을 제거했으며 기존 CLI/IPC 계약은 유지합니다.
+
 Headless 후속 작업은 `codex/headless-operations`에서 진행 중입니다. 마우스·키보드·실제 GUI 검증 중단을 유지하며 게시 CLI/console Agent/서버를 사용합니다. [묶음별 검증](docs/reference/archive/validation/headless-operations-validation.md). 측정 도구는 HTTP 요청 서명과 명시적 승격을 사용하도록 갱신했으며 운영 완료나 성능 목표 달성을 뜻하지 않습니다.
 
 최종 목표는 **Unreal Engine DT 프로그램의 패키징 결과를 안전하게 배포하고, 회사에서 안정적으로 설치·업데이트·실행·복구할 수 있는 배포 시스템**입니다. 목표는 확정됐지만 회사 운영 승인 조건을 모두 충족한 상태는 아닙니다.
