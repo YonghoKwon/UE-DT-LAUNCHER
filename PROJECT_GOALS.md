@@ -14,6 +14,8 @@
 
 ## 현재 위치
 
+Headless 자격 수명 구현: 기본 TTL 없이 관리자 만료 지정·개별 폐기·교체·audit을 지원한다. 요청 한도는 명시 opt-in이며 회사 보안 정책·망 경로 인수는 별도다.
+
 빠른 개선 묶음은 진단 근거 보존과 모순 검증, 중복 조치 제거, 게시 준비도 검증의 Windows/Linux CI 연결까지 로컬 검증했다. 양 OS601개·준비도 각8개와 정제 요약/실패 기록을 확인했다. GUI 중단 중이므로 USER-02/UI-02는75%, 원격 CI 미확인으로 OPS-06은50%를 유지한다. [비대화형 결과](docs/reference/archive/validation/quick-wins-validation.md)
 
 보류된 최신 후보 GUI 수용은 [한 곳의 체크리스트](docs/reference/guide-03-launcher-usage.md#보류-중인-gui-수용-체크리스트)에서 관리한다. 예전 게시본에서 이미 통과한 작업을 미구현으로 표현하지 않으며, 새 후보의 미실행을 구현 완료와 구분한다.

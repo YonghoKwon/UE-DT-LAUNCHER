@@ -20,7 +20,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 | 완료 | 부분 진행 | 대기 | 전체 |
 |---:|---:|---:|---:|
-| 6개 | 14개 | 8개 | 28개 |
+| 6개 | 16개 | 6개 | 28개 |
 
 완료를 제외하면 열린 항목은 **22개**입니다. 각 분야 표에서 `진행률`과 `상태`를 먼저 보면 됩니다.
 
@@ -63,6 +63,8 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 | 항목 | ① 구현/절차 | ② 로컬 검사 | ③ 요구 환경 실행/측정 | ④ 수용 기준 | 진행률 |
 |---|---|---|---|---|---:|
+| SEC-01 | 자격별 관리/폐기·명시 만료·durable latch/audit | 신규6개 포함29개 회귀 | Windows 게시 만료 키/개별 폐기 확인 | WSL·운영 교체·최종 수용 대기 | 50% |
+| SEC-02 | canonical IP·opt-in rate/concurrency 제한 | IP/상한/무큐 회귀 | 정상 게시 인증/권한 회귀 | HTTP429·프록시·부하 전수 대기 | 50% |
 | DEV-01 | Core28개 물리 이동·기존 backend 조정 활용 | Windows601개 및 게시 readiness8개 | 물리 이동 게시본 통과 | 화면 조정 책임 추가 정리 필요 | 50% |
 | USER-03 | OS owner/session·취소/재개·예산 opt-in 캐시 | 관련13개 unit·기존608개 회귀 | Windows 게시 proof-04 취소/불변/재개/discard 확인 | WSL·장애 전수·GUI 수용은 별도 | 50% |
 | USER-04 | 새 launch 온라인 권한 재확인·기존 앱 미종료 정책 | Windows 회귀/HTTP 게시 실행 | 합성 온라인 실행 통과 | 폐기/단절 실행 전수·회사 인수 대기 | 50% |
@@ -146,8 +148,8 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 | ID/우선 | 진행률 | 상태 | 현재 근거·영향 | 보완 방향·완료 조건 |
 |---|---:|---|---|---|
-| SEC-01/P1 | 0% | 대기 · 추가 보완 | DistributionTokens 발급·PC 단위 전체 폐기, 만료/개별 관리 없음 | 만료·토큰별 폐기·순환·감사 설계. 비밀 노출 없는 교체/만료/폐기 시험 |
-| SEC-02/P1 | 0% | 대기 · 추가 보완 | loopback nginx 신뢰와 직접 사내 IP 전제 | NAT/추가 proxy의 실제 IP 계약·rate limit 검토. 위조 헤더 차단과 회사 망 경로별 검증 |
+| SEC-01/P1 | 50% | 부분 진행 · headless | 관리 ID·개별 폐기·명시 만료·durable latch/audit | WSL/재시작·교체·최종 수용 필요 |
+| SEC-02/P1 | 50% | 부분 진행 · headless | canonical IP와 opt-in 요청/다운로드 제한 | HTTP429/부하·회사 프록시 인수 필요 |
 | SEC-03/P0 | 75% | 부분 · Windows 서비스 실행 대기 | `e22a908` 이후 생성 시 ACL/mode/owner 검증. Linux uedt 실제 읽기·nobody 거부 통과 | Windows LocalService 실제 설치 계정 읽기와 기존 credential 이전 현장 확인 남음. [기록](docs/reference/archive/validation/intranet-auth-validation.md) |
 | SEC-04/P0 | 75% | 부분 · 환경 제약 남음 | `babb88e`, `10d4063`: 요청 서명·challenge/nonce·Catalog 결속·Agent 이미지, Windows/Linux E2E·1/10/30 연결 실패 0 | WSL proxy의 간헐 handshake/startup timeout과 메모리 지표 미수집을 보존. 실제 RHEL 대용량·회사 HTTP 위험 수용 별도. [기록](docs/reference/archive/validation/intranet-auth-validation.md) |
 | EXT-01/P2 | 0% | 대기 · 추가 보완 | IAccessPolicyProvider 파일 구현만 존재 | 회사 API 합의 후 timeout/cache TTL/기본 거부. 장애·취소·오래된 응답에서 권한 확대 없음 |
@@ -164,6 +166,6 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 3. PERF 기준선·OPS-06: 측정 후 개선, 자동 회귀 검증.
 4. USER/UI·API 범위는 [목표 문서](PROJECT_GOALS.md)에서 확정 후 진행.
 
-PERF-01/02/04·USER-05·UI-01·OPS-03은 100%(UI-01은1920×1080 한정, OPS-03은로컬 승격 범위), PERF-03·SEC-03·SEC-04·OPS-09·UI-02·UI-03·USER-02는 75%, OPS-01·OPS-06·OPS-08·USER-01·USER-03·USER-04·DEV-01은 50%(각 남은 조건 참조)입니다. 나머지 8개는 0%이며 기존 기능 부재를 의미하지 않습니다.
+PERF-01/02/04·USER-05·UI-01·OPS-03은 100%(UI-01は1920×1080 한정, OPS-03은로컬 승격 범위), PERF-03·SEC-03·SEC-04·OPS-09·UI-02·UI-03·USER-02는 75%, OPS-01·OPS-06·OPS-08·USER-01·USER-03·USER-04·DEV-01·SEC-01·SEC-02는 50%(각 남은 조건 참조)입니다. 나머지 6개는 0%이며 기존 기능 부재를 의미하지 않습니다.
 
 진행률을 변경할 때는 상태·체크포인트·커밋/검증 링크·남은 조건·상단 집계를 함께 갱신합니다. 100% 항목은 완료 이력으로 남기고, 새 미달 조건이나 범위 변경이 확인되면 이유를 기록해 다시 열 수 있습니다. 빌드 성공만으로 완료하지 않습니다.

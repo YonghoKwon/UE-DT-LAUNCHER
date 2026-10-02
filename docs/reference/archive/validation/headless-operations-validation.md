@@ -18,6 +18,12 @@
 
 ## 3. 이후 기록
 
+### 자격 수명·요청 경계
+
+DB schema5 이전 전 SQLite snapshot 백업. 기존 token 관리 ID와 null 만료 유지. token-list/개별 revoke, PC key 명시 만료를 추가했다. 발급·폐기·최초 만료 latch와 audit은 같은 transaction이며 시계 역행으로 만료를 풀지 않는다. 명시한 요청/다운로드 한도만 활성화하며 초과 시 큐 없이429다.
+
+관련29개 unit(신규6개 포함) 통과. Windows lifecycle/proof-01 게시 CLI·console Agent·서버에서 정상 설치/실행/repair, 명시 만료 키 거부와 durable latch, 비밀 없는 token-list·개별 폐기, 기존 키 폐기 HTTP 회귀 통과. Windows 서비스 identity·WSL·부하/한도 전수는 최종 단계와 분리한다.
+
 ### 작업 조정·취소·재개 (Windows 로컬)
 
 Operation ID/실제 OS owner·session/정확한 릴리스/Manifest SHA-256 기록을 추가했다. Agent는 최대16연결, 변경 gate1개 유지. 단절은 취소가 아니다. 취소 요청과 완료를 구분하고 commit 이후에는 설치 완료·미실행 launch 생략 정책을 적용한다. 런처의 기존 runtime 보호를 우회하지 않는다.

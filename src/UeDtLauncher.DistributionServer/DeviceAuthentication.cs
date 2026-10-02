@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace UeDtLauncher.Distribution;
 
-public sealed record RegisteredDeviceKey(string KeyId, string ClientId, string PublicKeyPem, bool Revoked);
+public sealed record RegisteredDeviceKey(string KeyId, string ClientId, string PublicKeyPem, bool Revoked, string? ExpiresAtUtc = null, bool Expired = false);
 
 internal sealed class AuthenticationProcessLease : IDisposable
 {
@@ -13,40 +13,51 @@ internal sealed class AuthenticationProcessLease : IDisposable
     public void Dispose() => stream.Dispose(); // Keep the lock inode: never unlink an active/reusable OS lock.
 }
 
-public sealed class DistributionDeviceKeys(IntakeStore store)
+public sealed class DistributionDeviceKeys(IntakeStore store, TimeProvider? clock = null)
 {
-    public void Add(string client, DevicePublicKey key)
+    public void Add(string client, DevicePublicKey key, DateTimeOffset? expiresAt = null)
     {
         ReleaseSidecar.Segment(client); DeviceCredentials.ValidatePublic(key);
         using var gate = store.Lock(); using var write = store.DatabaseWrite(); using var db = store.Open();
-        using var command = db.CreateCommand();
-        command.CommandText = "INSERT INTO device_keys(key_id,client,public_pem,revoked) VALUES($key,$client,$pem,0)";
+        using var tx = db.BeginTransaction(); using var command = db.CreateCommand(); command.Transaction = tx;
+        command.CommandText = "INSERT INTO device_keys(key_id,client,public_pem,revoked,expires_at) VALUES($key,$client,$pem,0,$expiry)";
         command.Parameters.AddWithValue("$key", key.KeyId); command.Parameters.AddWithValue("$client", client); command.Parameters.AddWithValue("$pem", key.PublicKeyPem);
-        command.ExecuteNonQuery(); store.Audit("device-key-added", key.KeyId);
+        command.Parameters.AddWithValue("$expiry", (object?)CredentialLifecycle.Expiry(expiresAt) ?? DBNull.Value);
+        command.ExecuteNonQuery(); CredentialLifecycle.Audit(db, tx, "device-key-added", key.KeyId); tx.Commit();
     }
     public void Revoke(string keyId)
     {
         DeviceCredentials.ValidateIdentifier(keyId);
-        using var gate = store.Lock(); using var write = store.DatabaseWrite(); using var db = store.Open(); using var command = db.CreateCommand();
+        using var gate = store.Lock(); using var write = store.DatabaseWrite(); using var db = store.Open(); using var tx = db.BeginTransaction(); using var command = db.CreateCommand(); command.Transaction = tx;
         command.CommandText = "UPDATE device_keys SET revoked=1 WHERE key_id=$key"; command.Parameters.AddWithValue("$key", keyId);
         if (command.ExecuteNonQuery() != 1) throw new InvalidDataException("Unknown device key.");
-        store.Audit("device-key-revoked", keyId);
+        CredentialLifecycle.Audit(db, tx, "device-key-revoked", keyId); tx.Commit();
     }
     public RegisteredDeviceKey? Find(string keyId)
     {
-        using var read = store.DatabaseRead(); using var db = store.Open(); using var command = db.CreateCommand();
-        command.CommandText = "SELECT key_id,client,public_pem,revoked FROM device_keys WHERE key_id=$key";
-        command.Parameters.AddWithValue("$key", keyId); using var reader = command.ExecuteReader();
-        return reader.Read() ? new(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetBoolean(3)) : null;
+        RegisteredDeviceKey? found;
+        using (var read = store.DatabaseRead())
+        using (var db = store.Open())
+        using (var command = db.CreateCommand())
+        {
+            command.CommandText = "SELECT key_id,client,public_pem,revoked,expires_at,expired FROM device_keys WHERE key_id=$key";
+            command.Parameters.AddWithValue("$key", keyId); using var reader = command.ExecuteReader();
+            found = reader.Read() ? Read(reader) : null;
+        }
+        if (found is null || found.Revoked || found.Expired) return found is null ? null : found with { Revoked = true };
+        if (!CredentialLifecycle.Due(found.ExpiresAtUtc, (clock ?? TimeProvider.System).GetUtcNow())) return found;
+        CredentialLifecycle.LatchExpiry(store, true, keyId); return found with { Revoked = true, Expired = true };
     }
     public IReadOnlyList<RegisteredDeviceKey> List()
     {
         using var read = store.DatabaseRead(); using var db = store.Open(); using var command = db.CreateCommand();
-        command.CommandText = "SELECT key_id,client,public_pem,revoked FROM device_keys ORDER BY key_id";
+        command.CommandText = "SELECT key_id,client,public_pem,revoked,expires_at,expired FROM device_keys ORDER BY key_id";
         using var reader = command.ExecuteReader(); var result = new List<RegisteredDeviceKey>();
-        while (reader.Read()) result.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetBoolean(3)));
+        while (reader.Read()) result.Add(Read(reader));
         return result;
     }
+    private static RegisteredDeviceKey Read(Microsoft.Data.Sqlite.SqliteDataReader r) =>
+        new(r.GetString(0), r.GetString(1), r.GetString(2), r.GetBoolean(3), r.IsDBNull(4) ? null : r.GetString(4), r.GetBoolean(5));
 }
 
 public sealed class DeviceAuthenticationState : IDisposable

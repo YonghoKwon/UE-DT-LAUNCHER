@@ -82,9 +82,9 @@ public sealed class ReleasePromotions(IntakeStore store)
         using var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString()); db.Open();
         using var tx = db.BeginTransaction(deferred: true); using var query = db.CreateCommand(); query.Transaction = tx;
         query.CommandText = "PRAGMA user_version"; var schema = Convert.ToInt32(query.ExecuteScalar());
-        if (schema is < 1 or > 4) throw new InvalidDataException("Unsupported migration source schema.");
+        if (schema is < 1 or > 5) throw new InvalidDataException("Unsupported migration source schema.");
         var ready = false;
-        if (schema == 4) { query.CommandText = "SELECT ready FROM promotion_state WHERE id=1"; ready = Convert.ToInt32(query.ExecuteScalar()) == 1; }
+        if (schema >= 4) { query.CommandText = "SELECT ready FROM promotion_state WHERE id=1"; ready = Convert.ToInt32(query.ExecuteScalar()) == 1; }
         query.CommandText = "SELECT id FROM releases ORDER BY rowid"; var releases = new List<string>();
         using (var reader = query.ExecuteReader()) while (reader.Read()) releases.Add(reader.GetString(0));
         tx.Commit(); return new(ready, !ready, ready ? [] : releases);

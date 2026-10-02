@@ -22,6 +22,8 @@ public sealed class DistributionSettings
     public ZipIntakeLimits Limits { get; set; } = new();
     public int IntakeWorkers { get; set; } = 1;
     public string AuthenticationMode { get; set; } = "bearer";
+    public int? MaxApiRequestsPerSecond { get; set; }
+    public int? MaxConcurrentDownloads { get; set; }
 }
 
 public sealed class IntakeStore
@@ -50,14 +52,14 @@ public sealed class IntakeStore
         using var command = db.CreateCommand();
         command.CommandText = "PRAGMA user_version";
         var version = Convert.ToInt32(command.ExecuteScalar());
-        if (version > 4) throw new InvalidDataException("Distribution database schema is newer than this server.");
-        if (version == 4) return;
+        if (version > 5) throw new InvalidDataException("Distribution database schema is newer than this server.");
+        if (version == 5) return;
         using var offline = new AuthenticationProcessLease(Root);
         // SQLite's backup API captures a consistent image, including committed WAL pages, before any schema change.
         if (existed)
         {
             using var backup = new SqliteConnection(new SqliteConnectionStringBuilder
-            { DataSource = Path.Combine(Root, "distribution.pre-v4-" + DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmssfffffff") + ".db"), Pooling = false }.ToString());
+            { DataSource = Path.Combine(Root, "distribution.pre-v5-" + DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmssfffffff") + ".db"), Pooling = false }.ToString());
             backup.Open(); db.BackupDatabase(backup);
         }
         using var transaction = db.BeginTransaction(); command.Transaction = transaction;
@@ -86,7 +88,23 @@ public sealed class IntakeStore
             INSERT OR IGNORE INTO promotion_state SELECT 1,CASE WHEN COUNT(*)=0 THEN 1 ELSE 0 END FROM releases;
             CREATE TABLE IF NOT EXISTS promotions(id INTEGER PRIMARY KEY AUTOINCREMENT,track TEXT NOT NULL,release_id TEXT NOT NULL,previous_release TEXT,actor TEXT NOT NULL,at TEXT NOT NULL,reason TEXT NOT NULL,kind TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS promotions_track_idx ON promotions(track,id);
-            PRAGMA user_version=4;
+            """;
+        command.ExecuteNonQuery();
+        void AddColumn(string table, string name, string declaration)
+        {
+            command.CommandText = "PRAGMA table_info(" + table + ")";
+            bool exists;
+            using (var columns = command.ExecuteReader())
+            { exists = false; while (columns.Read()) if (columns.GetString(1) == name) exists = true; }
+            if (exists) return;
+            command.CommandText = "ALTER TABLE " + table + " ADD COLUMN " + name + " " + declaration; command.ExecuteNonQuery();
+        }
+        AddColumn("tokens", "management_id", "TEXT"); AddColumn("tokens", "expires_at", "TEXT"); AddColumn("tokens", "expired", "INTEGER NOT NULL DEFAULT 0");
+        AddColumn("device_keys", "expires_at", "TEXT"); AddColumn("device_keys", "expired", "INTEGER NOT NULL DEFAULT 0");
+        command.CommandText = """
+            UPDATE tokens SET management_id='legacy-' || substr(hash,1,24) WHERE management_id IS NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS tokens_management_id_idx ON tokens(management_id);
+            PRAGMA user_version=5;
             """;
         command.ExecuteNonQuery(); transaction.Commit();
     }

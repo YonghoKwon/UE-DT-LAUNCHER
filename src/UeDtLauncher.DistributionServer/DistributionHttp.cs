@@ -46,6 +46,7 @@ public static class DistributionHttp
         var tokens = new DistributionTokens(store);
         var deviceKeys = new DistributionDeviceKeys(store);
         var assets = new PublishedAssetCache();
+        var limits = new DistributionRequestLimits(store.Settings);
         var sequenceGate = new SemaphoreSlim(1, 1);
         var databaseGate = store.DatabaseGate;
         IAccessPolicyProvider provider = new FileAccessPolicyProvider(store.Settings.PolicyPath);
@@ -59,9 +60,11 @@ public static class DistributionHttp
             // Catalogs contain client-specific grants and a fresh anti-replay sequence, including errors.
             if (context.Request.Path == "/api/v1/catalog") context.Response.Headers.CacheControl = "no-store";
             if (context.Request.Method is not ("GET" or "HEAD")) { context.Response.StatusCode = 405; return; }
-            var address = context.Connection.RemoteIpAddress;
-            if (address is not null && IPAddress.IsLoopback(address) && context.Request.Headers.TryGetValue("X-Distribution-Client-IP", out var forwarded))
-                address = forwarded.Count == 1 && IPAddress.TryParse(forwarded[0], out var parsed) ? parsed : null;
+            var address = DistributionClientAddress.Resolve(context.Connection.RemoteIpAddress, context.Request.Headers["X-Distribution-Client-IP"].ToArray());
+            if (!limits.AllowRequest()) { context.Response.StatusCode = 429; context.Response.Headers.RetryAfter = "1"; return; }
+            using var downloadSlot = context.Request.Path.Value?.Contains("/files/", StringComparison.Ordinal) == true ? limits.Download() : null;
+            if (context.Request.Path.Value?.Contains("/files/", StringComparison.Ordinal) == true && downloadSlot is null)
+            { context.Response.StatusCode = 429; context.Response.Headers.RetryAfter = "1"; return; }
             if (signedRequests && context.Request.Path == "/api/v1/auth/challenge")
             {
                 context.Response.Headers.CacheControl = "no-store";

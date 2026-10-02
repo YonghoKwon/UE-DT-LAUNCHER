@@ -8,6 +8,8 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 
 ## 프로젝트 목표와 처음 읽을 안내
 
+자격 관리: `token-list`, `token-revoke-id --id 관리ID`, `token-issue PC --expires-at ISO시각`, `client-key add ... --expires-at ISO시각`. 생략 시 무기한이며 기존 자격을 자동 삭제하지 않습니다. 교체는 새 등록 → 실제 연결 → 이전 폐기 순서입니다. server.json의 `maxApiRequestsPerSecond`, `maxConcurrentDownloads`는 null(기본 비활성) 또는 명시한 양수입니다.
+
 취소·이어받기: CLI `run`은 작업 ID를 출력합니다. 관리형은 `operation status|cancel|resume|discard --id ID`, portable은 같은 명령에 `--config 설정.json`을 추가합니다. 취소 요청 후 작업·안전한 복구 종료를 기다리세요. 이어받기는 온라인 권한·Manifest를 다시 확인하며 `performance.resumeCacheBytes`를 명시한 경우에만 지속 캐시를 사용합니다. 새 프로그램 실행도 온라인 확인이 필수이며 기존 실행 중 앱을 원격 종료하지 않습니다.
 
 런타임 엔진·보안·transaction·IPC 소스는 이제 `src/UeDtLauncher.Core/`에 직접 위치합니다. 링크 컴파일을 제거했으며 기존 CLI/IPC 계약은 유지합니다.

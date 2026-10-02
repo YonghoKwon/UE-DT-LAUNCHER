@@ -55,6 +55,7 @@ def main():
     parser.add_argument("--nginx", help="Optional isolated Linux nginx executable; no system service changes")
     parser.add_argument("--benchmark", action="store_true", help="Optional synthetic signed load (requires cryptography)")
     parser.add_argument("--operation-proof", action="store_true", help="Noninteractive owned cancellation/status proof; requires Agent")
+    parser.add_argument("--credential-proof", action="store_true", help="Published individual revocation and explicit device expiry")
     parser.add_argument("--defer-v2", action="store_true", help="GUI-only: retain v2 pending manual approval")
     parser.add_argument("--defer-promotion", action="store_true", help="GUI-only: approve v1 but leave recommendation unassigned")
     parser.add_argument("--readiness-proof", action="store_true", help="Check published read-only diagnostics and selected release readiness")
@@ -412,6 +413,20 @@ http {{
             from benchmark_intranet_auth import run_load
             load = run_load(origin, root, lambda path: run(server, "client-key", "add", "--client", "pc-test", "--public-key", path, "--config", root / "server.json"), platform, process.pid)
             summary["load_failed_requests"] = sum(row["failed_requests"] for row in load["results"])
+        if args.credential_proof:
+            run(launcher, 'credential', 'keygen', '--name', 'expired-device', '--key-id', 'expired-key', '--public-out', root/'expired-public.json')
+            run(server, 'client-key', 'add', '--client', 'pc-test', '--public-key', root/'expired-public.json', '--expires-at', '2000-01-01T00:00:00Z', '--config', root/'server.json')
+            expired=dict(config,deploymentMode='portable',security=dict(config['security'],credentialName='expired-device'))
+            write(client/'expired.json',expired)
+            run(launcher, 'doctor', '--config', client/'expired.json', '--online', expected=1)
+            listed=json.loads(run(server,'client-key','list','--config',root/'server.json'))
+            if not next(k for k in listed if k['keyId']=='expired-key')['expired']:raise RuntimeError('Expiry was not durably latched')
+            token=run(server,'token-issue','pc-test','--config',root/'server.json').strip()
+            rows=json.loads(run(server,'token-list','--config',root/'server.json'))
+            if any(token in json.dumps(row) for row in rows):raise RuntimeError('Management listing disclosed token')
+            run(server,'token-revoke-id','--id',rows[-1]['id'],'--config',root/'server.json')
+            if not json.loads(run(server,'token-list','--config',root/'server.json'))[-1]['revoked']:raise RuntimeError('Individual revoke failed')
+            summary['credential_lifecycle']=True
         if args.hold or args.prepare_gui:
             write(root / "summary.json", summary)
             print(f"READY: {root}", flush=True)

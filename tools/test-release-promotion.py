@@ -86,7 +86,7 @@ def main():
     run(server,'promotion','migrate','--apply','--config',legacy_config)
     history=json.loads(run(server,'promotion','inspect',*track,'--config',legacy_config))
     assert len(history['history'])==3 and all(e['kind']=='legacy-baseline' for e in history['history'])
-    assert history['recommendedRelease'].endswith('/1.0.0/windows-x64') and len(list(legacy.glob('distribution.pre-v4-*.db')))==1
+    assert history['recommendedRelease'].endswith('/1.0.0/windows-x64') and len(list(legacy.glob('distribution.pre-v5-*.db')))==1
     summary['publishedOfflineMigrationProof']=True
     write(root/'summary.json',summary); print('PASS: '+str(root))
 
