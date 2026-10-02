@@ -111,6 +111,12 @@ public static class BackupManager
         await RestoreUnderLeaseAsync(backupRoot, config, lease, log, cancellationToken);
     }
 
+    public static async Task RestoreAsync(string backupRoot, LauncherConfig config, Action<string>? log = null, CancellationToken cancellationToken = default)
+    {
+        using var lease = InstallationMutationLease.Acquire(config);
+        await RestoreUnderLeaseAsync(backupRoot, config, lease, log, cancellationToken);
+    }
+
     internal static async Task RestoreUnderLeaseAsync(string backupRoot, LauncherConfig config, InstallationMutationLease lease, Action<string>? log = null, CancellationToken cancellationToken = default)
     {
         lease.Validate(config);

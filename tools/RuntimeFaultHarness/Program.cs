@@ -2,6 +2,8 @@ using System.Text.Json;
 using UeDtLauncher;
 
 // Test-only executable, deliberately absent from solution/installer/release publish graphs.
+if (args.FirstOrDefault() == "runtime-data-smoke") { await RuntimeDataSmoke.RunAsync(args.Skip(1).ToArray()); return; }
+if (args.FirstOrDefault() == "runtime-data-payload") { RuntimeDataSmoke.Payload(args); return; }
 var root=Path.GetFullPath(args[0]); var operation=args[1]; var boundary=args[2];
 Directory.CreateDirectory(root);
 var configPath=Path.Combine(root,"config.json");

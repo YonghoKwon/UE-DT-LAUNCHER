@@ -46,10 +46,11 @@ public static class RuntimeStore
         using var document = JsonDocument.Parse(File.ReadAllText(path));
         RequireFields(document.RootElement, "schemaVersion", "installationId", "state", "origin");
         if (document.RootElement.TryGetProperty("runtimeData", out var data) && data.ValueKind != JsonValueKind.Null)
-            RequireFields(data, "adapter", "policy", "releaseId", "attemptId", "owner", "protectedDirectories");
+            RequireFields(data, "adapter", "policy", "releaseId", "attemptId", "owner", "protectedDirectories", "installationId");
         var value = document.RootElement.Deserialize<RuntimeRecord>(JsonFiles.Options) ?? throw new InvalidDataException("Invalid runtime record.");
         if (value.SchemaVersion != 1 || value.InstallationId != InstallationId(config) || !Enum.IsDefined(value.State)) throw new InvalidDataException("Runtime record identity mismatch.");
         ValidateRecord(value);
+        if (value.RuntimeData is { } plan && plan.InstallationId != value.InstallationId) throw new InvalidDataException("Runtime data installation mismatch.");
         return value;
     }
     internal static void RequireFields(JsonElement value, params string[] required)
@@ -236,6 +237,8 @@ public sealed class InstallationMutationLease : IDisposable
     private InstallationMutationLease(SingleInstanceLock gate, string installationId) { this.gate = gate; this.installationId = installationId; }
     public static InstallationMutationLease Acquire(LauncherConfig config)
     {
+        // Fail before creating the lock or runtime record when mutable data overlaps an install.
+        RuntimeDataPolicy.ValidateConfiguration(config);
         var gate = SingleInstanceLock.Acquire(LauncherPaths.UpdateLockPath(config));
         try { RuntimeStore.RequireQuiescent(config); RuntimeStore.Initialize(config); return new(gate, RuntimeStore.InstallationId(config)); }
         catch { gate.Dispose(); throw; }

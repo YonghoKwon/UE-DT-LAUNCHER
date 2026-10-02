@@ -5,7 +5,7 @@ using Xunit;
 
 namespace UeDtLauncher.Tests;
 
-public sealed class RuntimeDataTests : IDisposable
+public sealed partial class RuntimeDataTests : IDisposable
 {
     private readonly string root = Path.Combine(Path.GetTempPath(), "uedt-runtime-data-" + Guid.NewGuid().ToString("N"));
     public RuntimeDataTests()

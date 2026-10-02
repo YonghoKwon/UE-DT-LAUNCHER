@@ -42,6 +42,22 @@ public static class LauncherDoctor
                     return new(DateTimeOffset.UtcNow.ToString("O"), false, typeof(LauncherDoctor).Assembly.GetName().Version?.ToString() ?? "0", Environment.OSVersion.ToString(), checks);
                 }
             }
+            if (config.RuntimeData?.Enabled == true)
+            {
+                checks.Add(new("runtime-data-policy", true, "UE per-user/per-release policy; application-specific writers may ignore UserDir. Payload rollback does not restore user data."));
+                if (agentContext && config.IsManagedDeployment)
+                    checks.Add(new("runtime-data-host-preflight", true, "Deferred: service-account diagnostics do not verify user-session access. Authenticated runtime-host performs a write check before each launch."));
+                else
+                {
+                    try
+                    {
+                        RuntimeDataPolicy.InspectUserRootReadOnly(config);
+                        checks.Add(new("runtime-data-permissions", true, "Read-only owner/permission checks passed; actual writes are checked by runtime-host at launch."));
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+                    { checks.Add(new("runtime-data-permissions", false, "User runtime directory is unavailable or unsafe; ask the administrator to check configuration and permissions.")); }
+                }
+            }
             var credential = string.IsNullOrWhiteSpace(config.Security.CredentialName) ? null : DeviceCredentials.Inspect(config.Security.CredentialName, DeviceCredentials.StorageLayout(config));
             var credentialConfigured = credential is null || (credential.Ready && credential.Type == config.Security.AuthenticationMode);
             checks.Add(new DoctorCheck("credential", credentialConfigured,

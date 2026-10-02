@@ -407,9 +407,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     if (backup.BackupRoot is null) return Error(request, "no-backup", "No rollback backup is available.", identity);
                     await BackupManager.RestoreAsync(
                             backup.BackupRoot,
-                            config.InstallDir,
-                            config.InstalledManifestPath,
-                            config.InstallStatePath,
+                            config,
                             message => progress.Add(new ManagedAgentProgress("Rollback", DiagnosticRedactor.Redact(message), null)),
                             cancellationToken);
                     return Success(request, identity, "completed", "Rollback completed.", progress);

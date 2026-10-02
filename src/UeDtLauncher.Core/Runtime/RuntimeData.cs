@@ -16,7 +16,7 @@ public sealed class RuntimeDataOptions
 }
 
 public sealed record RuntimeDataPlan(string Adapter, string Policy, string? RootDirectory,
-    string ReleaseId, string AttemptId, string Owner, string[] ProtectedDirectories);
+    string ReleaseId, string AttemptId, string Owner, string[] ProtectedDirectories, string InstallationId);
 public sealed record RuntimeDataPaths(string Root, string UserDirectory, string LogFile);
 public sealed class RuntimeDataException(Exception? inner = null) : InvalidOperationException(
     "프로그램 저장 경로를 준비할 수 없습니다. 런처 설정과 폴더 권한을 관리자에게 확인해 주세요.", inner);
@@ -63,7 +63,7 @@ public static class RuntimeDataPolicy
         var selection = config.SelectedRelease ?? throw new RuntimeDataException();
         selection.Validate();
         return new(config.RuntimeData.Adapter, config.RuntimeData.Policy, config.RuntimeData.RootDirectory,
-            selection.ReleaseId, attempt, requester.Owner, ProtectedDirectories(config));
+            selection.ReleaseId, attempt, requester.Owner, ProtectedDirectories(config), RuntimeStore.InstallationId(config));
     }
 
     internal static void ValidatePlan(RuntimeDataPlan plan)
@@ -71,10 +71,12 @@ public static class RuntimeDataPolicy
         if (plan.Adapter != "unreal-engine" || plan.Policy != "per-user-per-release" ||
             !Guid.TryParseExact(plan.AttemptId, "N", out _) || string.IsNullOrWhiteSpace(plan.Owner) ||
             plan.ProtectedDirectories is null || plan.ProtectedDirectories.Length is < 1 or > 32 ||
-            plan.ProtectedDirectories.Any(p => string.IsNullOrWhiteSpace(p) || !Path.IsPathFullyQualified(p))) throw new RuntimeDataException();
+            plan.ProtectedDirectories.Any(p => string.IsNullOrWhiteSpace(p) || !Path.IsPathFullyQualified(p)) ||
+            plan.InstallationId is not { Length: 64 } || !plan.InstallationId.All(Uri.IsHexDigit)) throw new RuntimeDataException();
         var parts = plan.ReleaseId?.Split('/') ?? [];
         if (parts.Length != 5) throw new RuntimeDataException();
-        new ReleaseSelection(parts[0], parts[1], parts[2], parts[4], parts[3]).Validate();
+        try { new ReleaseSelection(parts[0], parts[1], parts[2], parts[4], parts[3]).Validate(); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or InvalidDataException) { throw new RuntimeDataException(ex); }
         if (plan.RootDirectory is not null && !Path.IsPathFullyQualified(plan.RootDirectory)) throw new RuntimeDataException();
     }
 
@@ -96,6 +98,16 @@ public static class RuntimeDataPolicy
             Environment.GetEnvironmentVariable("XDG_DATA_HOME") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share");
         if (!Path.IsPathFullyQualified(basePath)) throw new RuntimeDataException();
         return Path.Combine(basePath, "UE-DT Launcher", "RuntimeData");
+    }
+
+    internal static void InspectUserRootReadOnly(LauncherConfig config)
+    {
+        ValidateConfiguration(config);
+        var root = Path.GetFullPath(config.RuntimeData?.RootDirectory ?? DefaultRoot());
+        ValidateSeparation(root, ProtectedDirectories(config)); CheckLinks(root);
+        var existing = new DirectoryInfo(root);
+        while (!existing.Exists) existing = existing.Parent ?? throw new RuntimeDataException();
+        ValidateDirectory(existing.FullName, RuntimeIdentities.Current().Owner);
     }
 
     internal static void ValidateSeparation(string root, IEnumerable<string> protectedPaths)
