@@ -16,7 +16,7 @@ def main():
     args=parser.parse_args(); args.output.mkdir(parents=True,exist_ok=False)
     executable=str(args.server.resolve()); config=args.config.resolve()
     settings=json.loads(config.read_text(encoding='utf-8-sig'))
-    if not str(settings['publicUrl']).startswith('http://127.0.0.1:') or 'publish' not in config.parts:
+    if not str(settings['publicUrl']).startswith('http://127.0.0.1:') or not ('publish' in config.parts or config.parent.parent.name.startswith('uedt-headless-')):
         raise RuntimeError('Only an isolated loopback published fixture is allowed')
     flags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0
     counter=0

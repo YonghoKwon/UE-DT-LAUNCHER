@@ -6,6 +6,8 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 ## 먼저 확인할 진행 현황
 
+최종 로컬 통합: Windows/WSL635개·headless runner·broker/health/native family·Windows36개 종료 경계, 개발 MSI 비설치 추출 및 Ubuntu RPM 생성/권한 조회를 확인했다. C# Release는경고/오류0, RPM 중복 build-id 경고는 별도 남았다. CI 코드만 연결했으며 원격 실행/설치본 실제 수명주기/회사 인증서는 미검증이다. 최신상태50/75% 상한은 유지한다.
+
 PERF-03 최신 cohort-06 재측정은1/10/30 p95가18.16/97.01/365.33ms, 실패0이나 비교 기준 개선 미달이다. 새 signer pool은 제거했고 계측만 남겼다. 75%와 시간 미달을 유지한다. [정제 비교](docs/reference/archive/validation/headless-performance-results.json). 90% 콘텐츠 절감 성공을 API 지연 완료로 합산하지 않는다.
 
 Headless 주요 묶음은 구현·양 OS 회귀/게시 시험을 진행했다. 완료6·부분19·대기3, 열린22개다. 새 취소 GUI·장애 전수·회사 인수가 남아 신규 USER/SEC/OPS/DEV 항목은50%로 보수적으로 유지한다. PERF-03 10연결 개선 미확인, UI 중단/음성/원격CI·실제 인증서 상한도 유지한다. 부분 진행 수가 늘어난 것을 회사 출시 완료율로 해석하지 않는다.

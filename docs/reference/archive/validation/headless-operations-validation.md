@@ -74,5 +74,6 @@ Core 물리 이동, 취소/재개, 인증 수명, 유지보수, 백업/정리, �
 - Ubuntu WSL RPM 생성/메타데이터: credential root:uedt0750, config0640+config(noreplace), state/log uedt0750. 중복 build-id 경고는 남았다. 설치/계정/서비스 시작·RHEL 인수는 하지 않았다.
 - 기존 Ubuntu private nginx HTTPS/Bearer 두 버전/실행 권한/repair·IP/header/Range/폐기를 통과했다. `/var/log/nginx/error.log` 기본 alert는 private config 로그와 분리해 기록한다. 실제 RHEL/nginx 대용량 회사 인수는 아니다.
 - NuGet 현재 소스의 vulnerability 조회: 전 프로젝트 취약 패키지0. Python fixture/회사 플랫폼 보안 인수와 별개다.
+- Disabled scheduler XML/timer·catch-up 금지·RPM config(noreplace)/credential ownership 정적 계약 통과. CI에 동등한 functional runner와 allowlist summary7일 보관을 연결했다. 테스트 root/DB/키/원시 log는 업로드하지 않는다.
 
 새 GUI 취소, 내레이터, 회사 UE/RHEL·서비스 계정·인증서·원격CI, 캐시/복원/정리의 모든 장애 전수는 남는다. USER-02/UI-02/UI-03·OPS-08·09 등의 기존 미완료 조건을 종료하지 않는다.

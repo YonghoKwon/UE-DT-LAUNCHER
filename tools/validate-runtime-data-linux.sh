@@ -8,7 +8,7 @@ work=$(mktemp -d /tmp/uedt-data-safety.XXXXXX)
 case "$work" in /tmp/uedt-data-safety.*) ;; *) exit 2 ;; esac
 test -d "$source_repo/src/UeDtLauncher.Core"
 printf 'VALIDATION_ROOT=%s\n' "$work"
-for folder in src tools examples installer packaging .github docs; do
+for folder in src tools examples installer packaging scripts .github docs; do
     rsync -rt --exclude=bin --exclude=obj --exclude=logs "$source_repo/$folder/" "$work/$folder/"
 done
 for file in Directory.Build.props UeDtLauncher.sln README.md AGENTS.md IMPROVEMENTS.md PROJECT_GOALS.md; do cp "$source_repo/$file" "$work/$file"; done

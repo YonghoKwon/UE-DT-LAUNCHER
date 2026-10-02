@@ -1,8 +1,25 @@
 # DT 배포 시스템 — 기능 지도와 단계별 실행 안내
 
-확인일: 2026-09-28 / `codex/intranet-request-auth`. **현재 구현된 기능**을 설명하며 회사 운영 승인 완료를 뜻하지 않습니다. 신규 HTTP 환경의 A(최초 준비)는 [PC 요청 서명 명령표](intranet-auth.md)를 먼저 따릅니다. 아래 기존 HTTPS/Bearer 준비 예제와 혼용하지 않으며 B~D의 ZIP/승인/실행 흐름은 공통입니다. 먼저 한 문장으로 이해하면:
+확인일: 2026-10-03 / `codex/headless-operations`. **현재 구현된 기능**이며 회사 운영 승인 완료가 아닙니다. HTTP A(최초 준비)는 [PC 서명](intranet-auth.md), HTTPS/Bearer는 해당 모드 예제를 따릅니다. ZIP/검사/승인/개발자 확인/**명시 승격**/권한별 추천은 공통입니다. 먼저 한 문장으로 이해하면:
 
-> 개발자가 ZIP과 설명서를 올리면 서버가 검사합니다. 관리자가 승인하면, 허용된 PC의 사용자가 런처 버튼을 눌러 설치하고 DT 프로그램을 실행합니다.
+> 개발자가 ZIP과 설명서를 올리면 서버가 검사합니다. 관리자가 승인·실행 버전 승격을 하면, 허용된 PC의 사용자가 설치하고 DT 프로그램을 실행합니다.
+
+## 추가 운영 — 마우스 없이 가능한 작업
+
+아래 명령의 서버에는 `--config server.json`, 클라이언트에는 실제 설정/endpoint를 지정한다. 예시 이름은 회사값으로 바꾼다.
+
+| 담당/위치 | 순서와 명령 | 정상 결과 / 보호 |
+|---|---|---|
+| 사용자 CLI | `run --config config.json --no-launch` → 출력된ID로 `operation status --id ID` | 정확한 릴리스 상태 확인. 새 실행은 온라인 인증/권한 필수 |
+| 사용자 CLI | `operation cancel --id ID` → status로종료확인 → `operation resume --id ID` | 요청≠취소 완료. workers/복구 종료 대기, fresh 권한/Manifest 재확인 |
+| portable 사용자 | 위 control 명령에 `--config portable.json` 추가 | Agent 없이 자기 owner/session 기록만 사용. 지속 캐시는 명시 resumeCacheBytes 예산 |
+| 서버 관리자 | 새 자격 등록·연결 확인 → `token-list`/`token-revoke-id --id ...` 또는 `client-key revoke --key-id ...` | 비밀 출력 없이 개별 폐기. `--expires-at` 지정 없으면 기존 무기한 유지 |
+| 서버 관리자 | 서버/watch 중지 → `backup plan` → `backup create --output 새폴더` → `backup verify --backup 폴더` | 일관된 DB/파일 hash, private key 별도 보관 |
+| 서버 관리자 | `restore stage --backup ... --target 빈폴더` → `restore activate --target ... --confirm` | 최신 생존 원본의 보안/승격/순번/파일 대조. 불명·누락은 공개 차단 |
+| 서버 관리자 | `retention inspect` → `retention plan --jobs 실패ID --output 계획.json` → 정지후`retention apply --plan 계획.json --confirm` | public/모든승격/pending/active 보호. stale/재생성은 새확인 |
+| 회사 운영자 | disabled template 검토·명시 주기 설정 → `scheduled-check --config ...` 한 회차 | 조회·설치 상태 검사만. 자동 설치/실행/전환 없음, 현재 호스트 예약 등록0 |
+
+실제 GUI/음성/회사 인수와 성능 미달은 [최신 검증](archive/validation/headless-operations-validation.md)에 따로 기록한다.
 
 ## 1. 무엇이 어디에서 동작하나요?
 

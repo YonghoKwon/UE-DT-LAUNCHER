@@ -23,13 +23,18 @@ public static class RetentionMaintenance
         using (var r = q.ExecuteReader()) while (r.Read())
         {
             var job = (r.GetString(0), r.GetString(1), r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3)); jobs.Add(job);
-            proof.Add(job.Item1 + ":" + job.Item3); // Selected failed snapshot removal does not rewrite approval history.
+            proof.Add(Hash(new{Id=job.Item1,Source=job.Item2,State=job.Item3,Snapshot=job.Item4}));
             if (job.Item3 is not ("failed" or "rejected")) { references.Add(job.Item2); if (job.Item4 is not null) references.Add(job.Item4); }
         }
-        foreach (var sql in new[] { "SELECT id,directory FROM releases ORDER BY id", "SELECT CAST(id AS TEXT),release_id FROM promotions ORDER BY id", "SELECT job,COALESCE(scratch,'')||'|'||COALESCE(snapshot,'') FROM active_work ORDER BY job" })
+        foreach (var sql in new[] { "SELECT id,directory FROM releases ORDER BY id", "SELECT CAST(id AS TEXT),release_id FROM promotions ORDER BY id", "SELECT job,COALESCE(scratch,''),COALESCE(snapshot,'') FROM active_work ORDER BY job" })
         {
             q.CommandText = sql; using var r = q.ExecuteReader();
-            while (r.Read()) { var value = r.GetString(1); proof.Add(r.GetString(0) + ":" + value); foreach (var path in value.Split('|')) if (Path.IsPathRooted(path)) references.Add(Path.GetFullPath(path)); }
+            while (r.Read())
+            {
+                var values=Enumerable.Range(1,r.FieldCount-1).Select(r.GetString).ToArray();
+                proof.Add(Hash(new{Id=r.GetString(0),Values=values}));
+                foreach(var path in values)if(Path.IsPathRooted(path))references.Add(Path.GetFullPath(path));
+            }
         }
         tx.Commit(); return (jobs, references, Hash(proof));
     }

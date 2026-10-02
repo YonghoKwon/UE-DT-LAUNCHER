@@ -14,6 +14,8 @@
 
 ## 현재 위치
 
+이번 회사 인수 준비 결과는 CLI 운영 도구·자동화·게시 프로세스에 한정한다. 실제 GUI 재개, 새 취소/모든 장애조합, 회사 RHEL/UE·서비스 계정·실제 인증서·MSI/RPM 설치 수명주기·remote CI·성능 수용을 완료 조건에서 빼지 않는다.
+
 최신 성능 후보는 기능 정확성/재사용을 유지했으나 시간 수용 미달이다. 회사 성능 목표/운영 승인을 선언하지 않으며 PERF-03의 다음 병목/통제된 환경 재검증이 필요하다.
 
 Core 물리 이동·취소/재개·온라인 실행·자격 수명·통제된 backup/restore·확인형 retention·조회 전용 예약을 구현했다. Windows/WSL635개 및 합성 게시 프로그램 통과는 GUI·회사·정전·성능 수용을 대체하지 않는다. 남은 장애 전수와 실환경 조건을 분리한다. [최신 증거](docs/reference/archive/validation/headless-operations-validation.md)

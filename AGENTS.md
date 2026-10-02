@@ -37,6 +37,8 @@
 
 ## 보존할 경계
 
+- headless CI는 고유 private fixture의 published 프로세스만 사용하고 allowlist summary JSON 하나를7일 보관한다. 실환경 권한 없는 테스트를 서비스/계정/인증서 인수로 바꾸지 않는다. 새 경로 보호·환경 검증이 빠진 checkpoint는 별도로 열린 상태를 유지한다.
+
 - phase 계측의 일부 시간은 겹친다. additive aggregate를 latency 합계나 native SQLite wait로 해석하지 않는다. 프로토콜/후보를 혼합하지 않으며 느려진 결과도 기록한다. 이번 PERF-03 미달과 unadopted signer pool을 실제 개선으로 보고하지 않는다.
 
 - operation의 bounded record 읽기는 atomic replace를 허용하고 기록 잠금 순서를 유지한다. Manifest digest 재결속을 금지한다. IPC correlation은 기존 arbitrary string 계약이며 internal operation ID를 분리해 구 클라이언트를 거부하지 않는다. cancel 이후 CLI는 아직 시작하지 않은 앱 실행을 생략한다. TLS/runtime fixture를 무인증으로 낮춰 제품 정책을 우회하지 않는다.
