@@ -11,7 +11,7 @@ public static class Program
     private static readonly string[] KnownSubcommands =
     {
         "run", "service", "rollback", "runtime", "generate-manifest", "update-catalog", "release-metadata", "import-install",
-        "list-releases", "generate-nginx-acl", "sign-manifest", "generate-signing-key", "sample-config", "publish-release", "doctor", "diagnostics", "agent", "credential", "operation"
+        "list-releases", "generate-nginx-acl", "sign-manifest", "generate-signing-key", "sample-config", "publish-release", "doctor", "diagnostics", "agent", "credential", "operation", "scheduled-check"
     };
 
     [STAThread]
@@ -44,7 +44,7 @@ public static class Program
         // window. For CLI subcommands launched from a terminal, attach to that terminal so output is visible.
         if (!isGui && OperatingSystem.IsWindows()) AttachParentConsole();
 
-        var diagnosticCommand = !isGui && CliArgs(args, wantsCli).FirstOrDefault() is "doctor" or "diagnostics";
+        var diagnosticCommand = !isGui && CliArgs(args, wantsCli).FirstOrDefault() is "doctor" or "diagnostics" or "scheduled-check" or "operation";
         if (!diagnosticCommand && SelfUpdateManager.TryApplyPendingUpdate(args)) return 0;
 
         if (isGui)
@@ -145,6 +145,7 @@ public static class Program
                 "import-install" => await ImportInstallAsync(args.Skip(1).ToArray()),
                 "run" => await RunLauncherAsync(args.Skip(1).ToArray()),
                 "operation" => await RunOperationAsync(args.Skip(1).ToArray()),
+                "scheduled-check" => await RunScheduledCheckAsync(args.Skip(1).ToArray()),
                 "runtime" => await RunRuntimeCommandAsync(args.Skip(1).ToArray()),
                 "service" => await RunServiceAsync(args.Skip(1).ToArray()),
                 "rollback" => await RollbackAsync(args.Skip(1).ToArray()),
@@ -335,6 +336,12 @@ public static class Program
         }
         var response = await new ManagedAgentClient(Get(args, "--endpoint")).SendOperationAsync(action, id);
         Console.WriteLine(JsonSerializer.Serialize(response, JsonFiles.Options)); return response.Success ? 0 : 1;
+    }
+    private static async Task<int> RunScheduledCheckAsync(string[] args)
+    {
+        using var cancellation=new ConsoleCancellation();
+        var result=await ScheduledChecks.RunOnceAsync(Required(args,"--config"),cancellation.Token);
+        Console.WriteLine(JsonSerializer.Serialize(result,JsonFiles.Options));return result.Status=="failed"?1:0;
     }
 
     private static async Task<int> RunAgentClientAsync(string[] args)
@@ -851,6 +858,7 @@ public static class Program
         Console.WriteLine("    [--deployment-mode managed-agent|portable] [--auth request-signature-v1|bearer] [--credential-name name] [--signing-key-id id] [--public-key path]");
         Console.WriteLine("  credential keygen --name name --key-id pc-key --public-out device-public.json [--storage managed|portable]");
         Console.WriteLine("  operation status|cancel|resume|discard --id <operation-id> [--config portable.json] [--endpoint pipe-or-socket]");
+        Console.WriteLine("  scheduled-check --config <config.json> (one query/status cycle; default disabled, explicit interval required; never installs/starts apps)");
         Console.WriteLine("  run --config config.json [--operation-id <32-hex-id>] [--no-launch]; persistent resume requires performance.resumeCacheBytes");
         Console.WriteLine("  credential repair-permissions --name name --dry-run|--apply [--storage managed|portable]");
         Console.WriteLine("  generate-manifest --package-dir <dir> --base-url <url> --entry-point <relative path> --version <version> [--app-id <id>] --output <manifest.json>");

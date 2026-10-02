@@ -1,0 +1,9 @@
+[Unit]
+Description=UE-DT check timer (disabled template; admin must replace interval)
+
+[Timer]
+OnActiveSec=@ADMIN_INTERVAL_SECONDS@s
+OnUnitInactiveSec=@ADMIN_INTERVAL_SECONDS@s
+Persistent=false
+Unit=ue-dt-check.service
+# Intentionally no [Install]: no activation, replay/catch-up, install or service-run.

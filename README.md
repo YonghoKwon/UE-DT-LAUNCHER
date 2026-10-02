@@ -8,6 +8,8 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 
 ## 프로젝트 목표와 처음 읽을 안내
 
+자동 점검은 `scheduledCheck: {"enabled": true, "intervalSeconds": 3600}`처럼 관리자가 명시한 경우에만 `scheduled-check --config ...` 한 회차로 수행합니다. Catalog·설치 상태 조회만 하고 설치/실행/버전 전환은 하지 않습니다. Windows/Linux 비활성 템플릿은 저장소에 있으며 이 PC에는 등록하지 않았습니다.
+
 정리: `retention inspect` → `retention plan --jobs 실패ID --output 계획.json` 또는 `--temporary processing/선택폴더` → 서버/watch 중지 → `retention apply --plan 계획.json --confirm`. 공개판·승격·진행 자료는 지우지 않습니다. 계획/파일이 바뀌면 새 확인이 필요하며 완료 계획으로 재생성 자료를 삭제하지 않습니다.
 
 오프라인 서버 유지보수: `backup plan/create --output 새폴더/verify --backup 폴더`, `restore plan/stage --backup 폴더 --target 빈폴더/activate --target 폴더 --confirm`. 서버/watch/작업자를 먼저 정상 중지하세요. 복원은 최신 원본의 보안·승격·순번 기록과 파일을 확인해야 공개되며, 원본 완전 유실 복구는 이번 범위가 아닙니다. private signing key는 별도로 보관합니다.

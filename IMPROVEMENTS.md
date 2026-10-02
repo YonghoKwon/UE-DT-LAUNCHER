@@ -20,7 +20,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 | 완료 | 부분 진행 | 대기 | 전체 |
 |---:|---:|---:|---:|
-| 6개 | 18개 | 4개 | 28개 |
+| 6개 | 19개 | 3개 | 28개 |
 
 완료를 제외하면 열린 항목은 **22개**입니다. 각 분야 표에서 `진행률`과 `상태`를 먼저 보면 됩니다.
 
@@ -63,6 +63,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 | 항목 | ① 구현/절차 | ② 로컬 검사 | ③ 요구 환경 실행/측정 | ④ 수용 기준 | 진행률 |
 |---|---|---|---|---|---:|
+| OPS-07 | disabled check-only CLI·명시 주기·중복 skip·비활성 template | Windows3개/설치0건 회귀 | 게시 조회/보호 inventory 불변 확인 | 실제 OS 예약/서비스 계정은 별도 | 50% |
 | OPS-04 | explicit plan/confirm·public/승격/active 보호·quarantine journal | Windows5개 stale/중단/재생성 회귀 | 게시 정리·stale 거부 통과 | WSL·링크/복수 프로세스·운영 인수 필요 | 50% |
 | OPS-05 | maintenance 잠금·offline backup/verify·staged restore/latest authority | Windows5개 회귀 | 게시 백업/생존 서버 거부/최신 폐기 보존 통과 | WSL·중단/누락 전수·회사 복구훈련 별도 | 50% |
 | SEC-01 | 자격별 관리/폐기·명시 만료·durable latch/audit | 신규6개 포함29개 회귀 | Windows 게시 만료 키/개별 폐기 확인 | WSL·운영 교체·최종 수용 대기 | 50% |
@@ -112,7 +113,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | OPS-04/P1 | 50% | 부분 진행 · 확인형 비공개 정리 | plan/fingerprint·보호 참조·quarantine/journal/audit | WSL/장애 전수·회사 기간/공개판 삭제 정책 별도 |
 | OPS-05/P1 | 50% | 부분 진행 · 통제된 복원 | offline snapshot/hash·staged fence·최신 authority 재확인 | WSL/장애 전수·회사 RPO/RTO/복구훈련 및 완전 유실 복구는 별도 |
 | OPS-06/P1 | 50% | 부분 · 원격 검증 대기 | HTTPS E2E + Windows/Linux readiness CI·요약1파일7일 보관 구성. 같은 명령 로컬 양 OS 각8개와 요약 허용 필드 검증. [증거](docs/reference/archive/validation/quick-wins-validation.md) | 실제 원격 CI 실행·운영 인수 결과 확인. 공유 runner 시간을 성능 gate로 사용하지 않음 |
-| OPS-07/P1 | 0% | 대기 · 추가 보완 | AgentWorker는 IPC 대기만 하고 service-run은 once=true. CLI는 managed 반복 실행을 거부 | Agent 스케줄러 또는 명시적 외부 스케줄 운영을 확정. 재부팅 후 정기 점검·중복 작업 방지·maintenance window 시험 |
+| OPS-07/P1 | 50% | 부분 진행 · 조회 전용 | opt-in scheduled-check·명시 주기·중복 skip·비활성 외부 template | 실제 OS 예약/서비스 계정 인수 별도. 자동 설치/전환 제외 |
 | OPS-08/P0 | 50% | 부분 · 실제 인증서 대기 | 공식 사전 gate·EXE 선서명·MSI 내장 payload 검증·실행별 WiX intermediate 구현. 계약 11개 및 개발 MSI 추출/hash 비교 통과 | 실제 회사 인증서와 설치된 EXE 서명 검증은 미완료. [기록](docs/reference/archive/validation/deployment-safety-validation.md) |
 | OPS-09/P0 | 75% | 부분 · GUI/현장 검증 대기 | 누락 기록 fail-closed, 서비스 snapshot/barrier·이전/대상 잠금, 위험 migration apply 차단. 기존 각 393개·저장 경계 종료·health/대상 분리·CLI E2E 통과. 이번 portable 자식 수명·실행 중 변경 버튼 차단 추가 | 이전 관리형 복구/rollback과 이번 portable 증거는 게시본별 이력. 새 후보 양 모드 전체 GUI 수용, 모든 진입점/상태 조합의 실제 전수 검증과 회사 UE/계정·원격 CI는 미완료. [기존 기록](docs/reference/archive/validation/managed-gui-safety-validation.md), [이번 기록](docs/reference/archive/validation/ui-acceptance-finalization.md) |
 
@@ -168,6 +169,6 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 3. PERF 기준선·OPS-06: 측정 후 개선, 자동 회귀 검증.
 4. USER/UI·API 범위는 [목표 문서](PROJECT_GOALS.md)에서 확정 후 진행.
 
-PERF-01/02/04·USER-05·UI-01·OPS-03은 100%(UI-01은1920×1080 한정, OPS-03은로컬 승격 범위), PERF-03·SEC-03·SEC-04·OPS-09·UI-02·UI-03·USER-02는 75%, OPS-01·OPS-06·OPS-08·USER-01·USER-03·USER-04·DEV-01·SEC-01·SEC-02·OPS-05·OPS-04는 50%(각 남은 조건 참조)입니다. 나머지 4개는 0%이며 기존 기능 부재를 의미하지 않습니다.
+PERF-01/02/04·USER-05·UI-01·OPS-03은 100%(UI-01은1920×1080 한정, OPS-03은로컬 승격 범위), PERF-03·SEC-03·SEC-04·OPS-09·UI-02·UI-03·USER-02는 75%, OPS-01·OPS-06·OPS-08·USER-01·USER-03·USER-04·DEV-01·SEC-01·SEC-02·OPS-05·OPS-04·OPS-07는 50%(각 남은 조건 참조)입니다. 나머지 3개는 0%이며 기존 기능 부재를 의미하지 않습니다.
 
 진행률을 변경할 때는 상태·체크포인트·커밋/검증 링크·남은 조건·상단 집계를 함께 갱신합니다. 100% 항목은 완료 이력으로 남기고, 새 미달 조건이나 범위 변경이 확인되면 이유를 기록해 다시 열 수 있습니다. 빌드 성공만으로 완료하지 않습니다.

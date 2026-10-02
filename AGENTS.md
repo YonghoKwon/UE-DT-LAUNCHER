@@ -37,6 +37,8 @@
 
 ## 보존할 경계
 
+- scheduled-check는 기본 disabled/주기 명시/중복 skip이며 조회만 한다. SelfUpdateManager·service-run·engine apply·launch를 예약 경로에서 호출하지 않는다. template은 비활성이고 task/service/account를 현재 호스트에 등록하지 않는다. 신뢰 기록/진단 로그 외 payload/state/backup/runtime 변경을 금지한다.
+
 - retention은 명시 선택 failed/rejected·참조 없는 processing 자식만 허용한다. public/모든 promotion/pending/active 보호, 고유 plan/fingerprint·참조·전체 hash 재검사, quarantine/journal을 유지한다. 완료 계획은 재생성 자료에 재사용하지 않는다. 링크/audit/history를 삭제 대상으로 확대하지 않는다.
 
 - serve/watch/긴 파일 작업/DB 변경과 offline backup/restore/정리는 동일 maintenance OS 잠금 계약을 따른다. 프로세스를 도구가 종료하지 않는다. 복원은 새 빈 root·같은 origin/signer·최신 생존 source 대조이며 staged fence 제거가 마지막이다. 순번을 임의로 올리거나 client trust 삭제, 과거 폐기/정책 재활성화는 금지한다. private key를 백업 번들에 넣지 않는다.

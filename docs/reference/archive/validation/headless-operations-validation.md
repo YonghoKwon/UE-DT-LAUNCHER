@@ -18,6 +18,12 @@
 
 ## 3. 이후 기록
 
+### 조회 전용 자동 점검
+
+scheduled-check 한 회차 CLI·기본 disabled 설정·명시 interval·중복 skip·네트워크 제한 재시도·비밀 없는 결과를 추가했다. 이 명령은 self-update/ServiceRunner/engine apply/launch를 호출하지 않는다. Windows task XML/Linux timer는 비활성 placeholder 템플릿이며 이번 호스트에는 등록하지 않았다.
+
+Windows3개 disabled/주기 검증/중복·설치0건 unit, 게시 scheduled/proof-01 opt-in 조회/설치 상태 검사 전후 보호 inventory 불변·disabled 실행 거부 통과. 실제 OS 스케줄/서비스 계정 인수는 별도이다. WSL 중간 후보633개 및 게시 runtime-host 합성 데이터 smoke 통과(최종 cohort 검증과 분리).
+
 ### 確認형 정리
 
 retention inspect/plan/apply: 공개판·모든 승격·pending/active 보호, 명시 선택 failed/rejected 또는 참조 없는 processing 자식만 허용. plan ID/fingerprint·참조·전체 hash 재검사, protected quarantine/journal로 중단 복구, audit/history 보존. legacy cleanup --apply는 새 plan/confirm을 안내하며 거부한다.

@@ -4,6 +4,8 @@
 
 `UeDtLauncher service` 반복 실행과 `UeDtLauncher.Agent` OS 서비스는 서로 다릅니다.
 
+조회 전용 예약(2026-10-03): `scheduledCheck.enabled=true`와 관리자가 정한 `intervalSeconds`를 운영 설정에 명시하고 `UeDtLauncher scheduled-check --config ...`를 한 회차 실행한다. `installer/windows/CheckTask.xml.template`, `packaging/linux/ue-dt-check.timer.template`/service는 disabled placeholder이며 자동 등록하지 않는다. task IgnoreNew·StartWhenAvailable=false, timer Persistent=false로 겹침/누락 회차 몰아 실행을 방지한다. 설정·계정·주기를 검토한 후 관리자만 배포하며 `service-run`을 이 예약에 사용하지 않는다. 이번 PC의 실제 예약 등록/서비스 계정 시험은 하지 않았다.
+
 | 방식 | 현재 동작 |
 |---|---|
 | portable service | 현재 사용자 권한의 점검 반복. 정지 확인된 같은 설치만 적용·선택적 시작 |

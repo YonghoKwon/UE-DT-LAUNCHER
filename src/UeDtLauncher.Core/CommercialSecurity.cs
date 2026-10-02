@@ -61,6 +61,8 @@ public static class LauncherConfigValidator
     public static void Validate(LauncherConfig config)
     {
         RuntimeDataPolicy.ValidateConfiguration(config);
+        if(config.ScheduledCheck is null || (config.ScheduledCheck.Enabled && config.ScheduledCheck.IntervalSeconds is null or <=0))
+            throw new InvalidOperationException("Enabled scheduled checks require an explicit interval; default is disabled.");
         if (config.SchemaVersion is < 1 or > 3)
             throw new InvalidOperationException($"Unsupported launcher config schemaVersion: {config.SchemaVersion}.");
         if (config.DeploymentMode is not ("portable" or "managed-agent"))

@@ -56,6 +56,7 @@ def main():
     parser.add_argument("--benchmark", action="store_true", help="Optional synthetic signed load (requires cryptography)")
     parser.add_argument("--operation-proof", action="store_true", help="Noninteractive owned cancellation/status proof; requires Agent")
     parser.add_argument("--credential-proof", action="store_true", help="Published individual revocation and explicit device expiry")
+    parser.add_argument("--schedule-proof", action="store_true", help="Published opt-in check has zero installation mutation")
     parser.add_argument("--defer-v2", action="store_true", help="GUI-only: retain v2 pending manual approval")
     parser.add_argument("--defer-promotion", action="store_true", help="GUI-only: approve v1 but leave recommendation unassigned")
     parser.add_argument("--readiness-proof", action="store_true", help="Check published read-only diagnostics and selected release readiness")
@@ -427,6 +428,9 @@ http {{
             run(server,'token-revoke-id','--id',rows[-1]['id'],'--config',root/'server.json')
             if not json.loads(run(server,'token-list','--config',root/'server.json'))[-1]['revoked']:raise RuntimeError('Individual revoke failed')
             summary['credential_lifecycle']=True
+        if args.schedule_proof:
+            from scheduled_fixture_support import prove_schedule
+            summary['read_only_scheduled_check']=prove_schedule(run,launcher,client,config)
         if args.hold or args.prepare_gui:
             write(root / "summary.json", summary)
             print(f"READY: {root}", flush=True)

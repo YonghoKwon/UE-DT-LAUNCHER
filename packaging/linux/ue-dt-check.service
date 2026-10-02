@@ -1,0 +1,14 @@
+[Unit]
+Description=UE-DT read-only scheduled check (opt-in)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=uedt
+Group=uedt
+ExecStart=/opt/ue-dt-launcher/UeDtLauncher scheduled-check --config /etc/ue-dt-launcher/launcher.config.json
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/ue-dt-launcher /var/log/ue-dt-launcher
+# No [Install] section: this template is not enabled/registered automatically.
