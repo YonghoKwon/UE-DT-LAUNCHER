@@ -2,7 +2,7 @@
 
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 배포 시스템입니다.
 
-문서 점검: **2026-10-03**, 작업 기준: `codex/launcher-quick-wins`. 진단 근거 누락·모순 검증과 합성을 보강했고 Windows/WSL 각601개 회귀가 통과했습니다. 게시 CLI/Agent의 준비도8개 검증을 양 OS CI에 연결했습니다. [최신 비대화형 검증](docs/reference/archive/validation/quick-wins-validation.md), [이전 실제 GUI 이력](docs/reference/archive/validation/readiness-validation.md). GUI 조작 중단과 실제 UE/회사 인수 조건은 유지합니다.
+문서 점검: **2026-10-03**, 작업 기준: `codex/headless-operations`. Core 물리 이동, 취소·재개/온라인 실행, 자격 수명, 오프라인 백업/통제된 복원, 확인형 정리, 조회 전용 자동 점검을 구현했습니다. Windows/WSL 각635개와 실제 게시 CLI·console Agent·서버 통합을 확인했습니다. [최신 검증/남은 조건](docs/reference/archive/validation/headless-operations-validation.md), [이전 GUI 이력](docs/reference/archive/validation/readiness-validation.md). GUI 조작 중단·성능 미달·회사 인수 조건은 유지합니다.
 
 **현재 판단: 합성 앱 기반 배포·설치·실행·복구는 활용 가능한 단계이며, 회사 정식 운영 인수는 미완료입니다.** 현재 수치와 남은 작업은 [개선 진행 현황](IMPROVEMENTS.md), 상세 명령은 [운영 문서 색인](docs/reference/README.md)을 확인하세요.
 

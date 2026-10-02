@@ -34,7 +34,6 @@ def main():
     config = {"schemaVersion": 1, "deploymentMode": "managed-agent", "projectId": "demo", "targetPlatform": platform,
               "installDir": str(app), "stateRootDir": str(root / "state"), "logDir": str(root / "logs"), "launchArguments": arguments}
     (root / "config").mkdir()
-    (root / "config" / "launcher.config.json").write_text(json.dumps(config))
     state = root / "state" / "demo" / platform; state.mkdir(parents=True)
     manifest = {"appId": "demo", "version": "1.0.0", "platform": platform, "entryPoint": entry,
                 "files": [{"path": entry, "size": (app / entry).stat().st_size, "sha256": hashlib.sha256((app / entry).read_bytes()).hexdigest()}]}
@@ -48,6 +47,10 @@ def main():
     (state / "runtime-state.json").write_text(json.dumps({"schemaVersion": 1, "installationId": hashlib.sha256(canonical.encode()).hexdigest(), "state": 0, "origin": "new-install"}))
     endpoint = "uedt-proof-" + uuid.uuid4().hex if os.name == "nt" else str(root / "agent.sock")
     env = dict(os.environ, UE_DT_AGENT_DATA_ROOT=str(root), UE_DT_AGENT_ENDPOINT=endpoint)
+    from signed_legacy_fixture import configure
+    web=root/'web';web.mkdir();shutil.copy2(app/entry,web/entry)
+    tls_server,manifest=configure(root,launcher,web,manifest,env,config,'broker')
+    (root/'config'/'launcher.config.json').write_text(json.dumps(config))
     flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     log = (root / "agent.log").open("w")
     service = subprocess.Popen([str(agent)], env=env, stdout=log, stderr=log, creationflags=flags)
@@ -147,6 +150,7 @@ def main():
         if host and host.poll() is None:
             host.kill(); host.wait(timeout=5)
         service.terminate(); service.wait(timeout=10); log.close()
+        tls_server.shutdown();tls_server.server_close()
 
 
 if __name__ == "__main__": main()

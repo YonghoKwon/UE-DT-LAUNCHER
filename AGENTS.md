@@ -1,6 +1,6 @@
 # 작업 지침
 
-점검: 2026-10-03 / 작업 기준 codex/launcher-quick-wins. 저장소 전체에 적용합니다.
+점검: 2026-10-03 / 작업 기준 codex/headless-operations. 저장소 전체에 적용합니다.
 
 ## 문서 관리 계약
 
@@ -36,6 +36,8 @@
 | installer/windows/, packaging/linux/, .github/workflows/ | 설치본·nginx·서비스·CI |
 
 ## 보존할 경계
+
+- operation의 bounded record 읽기는 atomic replace를 허용하고 기록 잠금 순서를 유지한다. Manifest digest 재결속을 금지한다. IPC correlation은 기존 arbitrary string 계약이며 internal operation ID를 분리해 구 클라이언트를 거부하지 않는다. cancel 이후 CLI는 아직 시작하지 않은 앱 실행을 생략한다. TLS/runtime fixture를 무인증으로 낮춰 제품 정책을 우회하지 않는다.
 
 - scheduled-check는 기본 disabled/주기 명시/중복 skip이며 조회만 한다. SelfUpdateManager·service-run·engine apply·launch를 예약 경로에서 호출하지 않는다. template은 비활성이고 task/service/account를 현재 호스트에 등록하지 않는다. 신뢰 기록/진단 로그 외 payload/state/backup/runtime 변경을 금지한다.
 

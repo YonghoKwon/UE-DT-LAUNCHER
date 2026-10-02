@@ -43,6 +43,11 @@ def prove_operations(root, client, launcher, env, flags, run, platform):
                 raise RuntimeError('Fresh authorized resume did not complete')
             discarded = json.loads(run(launcher, 'operation', 'discard', '--id', identifier))
             if discarded['operation']['phase'] != 'Discarded': raise RuntimeError('Discard failed')
+            legacy=agent_status(env['UE_DT_AGENT_ENDPOINT'],{'command':'update','correlationId':'legacy-client-request',
+                'projectId':'demo','selection':{'projectId':'demo','environment':'prod','channel':'stable','version':'2.0.0','platform':platform},
+                'clientCapabilities':['runtime-supervision-v1']})
+            if not legacy.get('success') or legacy.get('correlationId')!='legacy-client-request':
+                raise RuntimeError('Legacy arbitrary correlation ID compatibility failed')
         finally:
             if owned.poll() is None:
                 owned.terminate(); owned.wait(timeout=10)

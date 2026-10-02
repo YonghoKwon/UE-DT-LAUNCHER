@@ -72,4 +72,27 @@ public sealed class LauncherOperationTests : IDisposable
     {
         Assert.NotNull(ManagedAgentProtocol.Validate(new() { Command = "operation-cancel", OperationId = id }));
     }
+    [Fact]
+    public void MissingOrDuplicateFieldsNeverAuthorizeResumeOrNormalStatus()
+    {
+        var registry=new OperationRegistry(root);var id=Guid.NewGuid().ToString("N");
+        using(var operation=registry.Begin(id,owner,Release)){operation.Finish(true);}
+        var path=Path.Combine(root,id+".json");var original=File.ReadAllText(path);
+        File.WriteAllText(path,original.Replace("\"command\": \"update\"","\"command\": null"));
+        Assert.Throws<InvalidDataException>(()=>registry.Inspect(id,owner));
+        File.WriteAllText(path,original.Replace("\"schemaVersion\": 1","\"schemaVersion\": 1, \"schemaVersion\": 1"));
+        Assert.Throws<InvalidDataException>(()=>registry.Inspect(id,owner));
+    }
+    [Fact]
+    public async Task ReadersDoNotBlockAtomicCompletionReplacement()
+    {
+        var registry=new OperationRegistry(root);var id=Guid.NewGuid().ToString("N");using var operation=registry.Begin(id,owner,Release);
+        operation.Bind(Release,new string('a',64));
+        Assert.Throws<InvalidDataException>(()=>operation.Bind(Release,new string('b',64)));
+        using var stop=new CancellationTokenSource();
+        var reader=Task.Run(()=>{while(!stop.IsCancellationRequested)registry.Inspect(id,owner);});
+        try{for(var i=0;i<50;i++)operation.Phase(i%2==0?"Downloading":"Applying");operation.Finish(true);}
+        finally{stop.Cancel();await reader;}
+        Assert.Equal("Completed",registry.Inspect(id,owner).Phase);
+    }
 }

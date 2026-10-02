@@ -24,7 +24,7 @@ scheduled-check 한 회차 CLI·기본 disabled 설정·명시 interval·중복 
 
 Windows3개 disabled/주기 검증/중복·설치0건 unit, 게시 scheduled/proof-01 opt-in 조회/설치 상태 검사 전후 보호 inventory 불변·disabled 실행 거부 통과. 실제 OS 스케줄/서비스 계정 인수는 별도이다. WSL 중간 후보633개 및 게시 runtime-host 합성 데이터 smoke 통과(최종 cohort 검증과 분리).
 
-### 確認형 정리
+### 확인형 정리
 
 retention inspect/plan/apply: 공개판·모든 승격·pending/active 보호, 명시 선택 failed/rejected 또는 참조 없는 processing 자식만 허용. plan ID/fingerprint·참조·전체 hash 재검사, protected quarantine/journal로 중단 복구, audit/history 보존. legacy cleanup --apply는 새 plan/confirm을 안내하며 거부한다.
 
@@ -55,3 +55,17 @@ Windows unit13개(소유권/세션/중복/저장 실패/중단 상태/commit 이
 GUI 취소 코드는 연결했지만 실제 클릭은 미검증이다. WSL 및 적용/복구 실패·부분 Range 전수 장애 표는 최종 통합 때 별도 기록한다. 진행률은 수용 전까지 보수적으로 유지한다.
 
 Core 물리 이동, 취소/재개, 인증 수명, 유지보수, 백업/정리, 자동 점검, 최종 재측정 결과는 실제 검증 후 이 문서에 누적한다.
+
+## 4. 최종 로컬 후속 검증
+
+635개 Windows/WSL 회귀 및 Release 게시 통과. cohort-06 Windows GUI/CLI·Agent·서버 SHA-256은 각각 `24d03143cc8482e8aa2b1d45e31a88667f2e2f203014dbfbffbe2e31bf932e42`, `245044785e1f843861c97204d287a1a24e7423d263614847e79f13698097f30e`, `dff439109afdb67ecc96cde1bb53265682a78a56b1a8221187f7385d5bd4a131`이다. 소스 기준은 ab9ada2 + 이번 후속 diff이며 회사/GUI 수용이 아니다.
+
+- Windows/WSL run-headless-operations: 실제 console Agent 취소/재개/기존 arbitrary correlation ID, 만료/폐기, 조회 전용 schedule, 명시 service 선택, offline backup/latest restore/stale retention을 통과했다. 원격 CI는 실행하지 않았다.
+- Windows 동시 읽기/완료 교체 경합을 재현했다. 64KiB bounded record·share-delete·전용 record lock·제한적 replace 재시도로 수정했고 reader/atomic completion 회귀를 추가했다. Manifest digest는 일단 결속되면 변경할 수 없다.
+- runtime broker의 실제 peer 거부/Agent 재시작/host crash Unknown, 표준 후손 수명, health500/timeout/disconnect 및 명시 복구를 양 OS에서 확인했다. legacy 시험 fixture는 무인증이 아니라 별도 합성 HTTPS/Bearer·서명 Manifest로 갱신했다. 제품 실행 검사를 우회하지 않았다.
+- Windows 저장 경계36개 프로세스 종료, readonly inspect/dry-run, 공유 migration apply 거부와 stopped import, 정확한 service 대상A/defaultB 불변 통과. 모든 새 변경 진입점 × 모든 장애 조합의 전수 완료나 정전 내구성은 주장하지 않는다.
+- Windows 개발 MSI 생성·비설치 CAB 추출/hash 확인 및11개 공식 preflight/순서/failure 계약 통과. 실제 인증서/설치/upgrade/repair/uninstall은 하지 않았다.
+- 기존 Ubuntu private nginx HTTPS/Bearer 두 버전/실행 권한/repair·IP/header/Range/폐기를 통과했다. `/var/log/nginx/error.log` 기본 alert는 private config 로그와 분리해 기록한다. 실제 RHEL/nginx 대용량 회사 인수는 아니다.
+- NuGet 현재 소스의 vulnerability 조회: 전 프로젝트 취약 패키지0. Python fixture/회사 플랫폼 보안 인수와 별개다.
+
+새 GUI 취소, 내레이터, 회사 UE/RHEL·서비스 계정·인증서·원격CI, 캐시/복원/정리의 모든 장애 전수는 남는다. USER-02/UI-02/UI-03·OPS-08·09 등의 기존 미완료 조건을 종료하지 않는다.

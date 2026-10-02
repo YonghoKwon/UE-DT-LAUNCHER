@@ -1,10 +1,12 @@
 # 개선 진행 현황과 보완 필요 사항
 
-점검: 2026-10-03 / `codex/launcher-readiness-ux`. USER-02의 준비도 진단·읽기 전용 검사·Agent 선택 결속·조치 안내를 구현하고 Windows/WSL 각587개를 통과했습니다. 합성 GUI 양 모드의 설치·실행·수명·복구·정상 복원·취소·preview 거부·조회 재시도를 직접 확인했습니다. 주 화면 조치 문구를 보강한 뒤 새 게시본의 영향받은 오류 화면을 다시 확인했으며, 이전 후보의 전체 성공을 새 후보 전체 수용으로 합산하지 않습니다. [이번 증거](docs/reference/archive/validation/readiness-validation.md). 실제 UE 데이터·회사 환경은 별도 미완료입니다.
+점검: 2026-10-03 / `codex/headless-operations`. 취소/재개·온라인 실행, 자격 수명, backup/restore, retention, 조회 전용 schedule을 구현하고 Windows/WSL 각635개 및 게시 CLI/console Agent/서버 통합을 통과했습니다. 새 GUI/회사 인수와 성능 개선 미달은 별도로 남깁니다. [이번 증거](docs/reference/archive/validation/headless-operations-validation.md). 진행률은 항목 전체 수용이 아닌 아래 체크포인트 기준입니다.
 
 P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선. 우선순위는 제안이며 일정·수치 목표는 미정입니다. 미검증과 미구현을 구분합니다.
 
 ## 먼저 확인할 진행 현황
+
+Headless 주요 묶음은 구현·양 OS 회귀/게시 시험을 진행했다. 완료6·부분19·대기3, 열린22개다. 새 취소 GUI·장애 전수·회사 인수가 남아 신규 USER/SEC/OPS/DEV 항목은50%로 보수적으로 유지한다. PERF-03 10연결 개선 미확인, UI 중단/음성/원격CI·실제 인증서 상한도 유지한다. 부분 진행 수가 늘어난 것을 회사 출시 완료율로 해석하지 않는다.
 
 2026-10-03 headless 후속 진행: 현재 계약으로 측정 도구를 정상화하고 fe10488 Windows 게시 HTTP 서명 E2E·80MiB 최초/변경 없음/다음 버전/repair·1/10/30 연결을 수행했다. 90% 콘텐츠 재사용 유지. 최종 후보 비교 전 PERF-03/SEC-04 진행률은 유지한다. [현재 검증](docs/reference/archive/validation/headless-operations-validation.md). GUI 수용은 중단 중이다.
 

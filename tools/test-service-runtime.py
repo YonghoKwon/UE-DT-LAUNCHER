@@ -41,6 +41,11 @@ manifest=dict(appId='demo',version='1',platform=platform,entryPoint=entry,baseUr
 (web/'manifest.json').write_text(json.dumps(manifest))
 config=root/'config.json'
 config.write_text(json.dumps(dict(schemaVersion=1,projectId='demo',targetPlatform=platform,manifestUrl=url+'/manifest.json',installDir=str(root/'app'),stateRootDir=str(root/'state'),logDir=str(root/'logs'),launchArguments=arguments,serviceMode=dict(autoRestartApp=True,startupGraceSeconds=0,healthCheckUrl=url+'/health',healthCheckTimeoutSeconds=2))))
+from signed_legacy_fixture import configure
+options=json.loads(config.read_text());environment=dict(os.environ,UE_DT_AGENT_DATA_ROOT=str(root/'credentials'))
+tls_server,manifest=configure(root,launcher,web,manifest,environment,options,'service')
+config.write_text(json.dumps(options))
+os.environ['UE_DT_AGENT_DATA_ROOT']=environment['UE_DT_AGENT_DATA_ROOT']
 snapshot=root/'state'/'service'/'demo'/'prod'/'stable'/platform/'service-state.json'
 runtime=root/'state'/'demo'/platform/'runtime-state.json'
 def run(*a):
@@ -87,3 +92,4 @@ finally:
     release_health.set()
     if child and child.poll() is None: child.kill(); child.wait(timeout=5)
     server.shutdown(); server.server_close()
+    tls_server.shutdown();tls_server.server_close()

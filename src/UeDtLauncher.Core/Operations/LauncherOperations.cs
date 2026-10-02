@@ -12,6 +12,7 @@ public sealed class OperationRegistry(string root)
 {
     public const string Capability = "cancellable-operations-v1";
     private readonly object gate = new();
+    private readonly object recordGate = new();
     private readonly Dictionary<string, OperationHandle> active = new(StringComparer.Ordinal);
     private string PathFor(string id)
     {
@@ -25,14 +26,22 @@ public sealed class OperationRegistry(string root)
     }
     internal void Save(OperationStatus record)
     {
+        lock(recordGate)
+        {
         var path = PathFor(record.Id); Directory.CreateDirectory(root);
         using var writer = AcquireWriter(path + ".write.lock");
         if (File.Exists(path))
         {
-            var prior = JsonFiles.ReadAsync<OperationStatus>(path).GetAwaiter().GetResult();
+            if(new FileInfo(path).Length>64*1024)throw new InvalidDataException("Operation record exceeds limit.");
+            var prior = ReadRecord(path);
             if (prior.CancellationRequested) record = record with { CancellationRequested = true };
         }
-        JsonFiles.WriteAsync(path, record).GetAwaiter().GetResult();
+        for(var attempt=0;;attempt++)
+        {
+            try{RuntimeStatePersistence.Write(path,record);break;}
+            catch(Exception error)when(attempt<4 && error is IOException or UnauthorizedAccessException){Thread.Sleep(20);}
+        }
+        }
     }
     private static FileStream AcquireWriter(string path)
     {
@@ -41,6 +50,17 @@ public sealed class OperationRegistry(string root)
         {
             try { return new(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
             catch (IOException) when (System.Diagnostics.Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(5)) { Thread.Sleep(10); }
+        }
+    }
+    private OperationStatus ReadRecord(string path)
+    {
+        lock(recordGate)
+        {
+        using var file=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.ReadWrite|FileShare.Delete);
+        if(file.Length>64*1024)throw new InvalidDataException("Operation record exceeds limit.");
+        using var document=JsonDocument.Parse(file);
+        RuntimeStore.RequireFields(document.RootElement,"schemaVersion","id","owner","session","phase","cancellationRequested","updatedAtUtc","command");
+        return document.RootElement.Deserialize<OperationStatus>(JsonFiles.Options)??throw new InvalidDataException("Incomplete operation record.");
         }
     }
     private static bool IsOwned(string path)
@@ -77,10 +97,12 @@ public sealed class OperationRegistry(string root)
         {
             var path = PathFor(id);
             if (!File.Exists(path) || new FileInfo(path).Length > 64 * 1024) throw new InvalidDataException("Operation record unavailable.");
-            var record = JsonFiles.ReadAsync<OperationStatus>(path).GetAwaiter().GetResult();
+            var record = ReadRecord(path);
             if (record.SchemaVersion != 1 || record.Id != id || string.IsNullOrWhiteSpace(record.Owner) || string.IsNullOrWhiteSpace(record.Session) ||
                 record.Phase is not ("Pending" or "Downloading" or "Applying" or "Cancelling" or "Completed" or "Cancelled" or "Failed" or "Discarded"))
                 throw new InvalidDataException("Operation record is incomplete.");
+            if(record.Command is not ("update" or "repair") || (record.ManifestSha256 is { } digest && (digest.Length!=64 || !digest.All(Uri.IsHexDigit))))
+                throw new InvalidDataException("Operation binding is incomplete.");
             Authorize(record, peer);
             if (!active.ContainsKey(id) && !IsOwned(path + ".active.lock") && record.Phase is "Pending" or "Downloading" or "Applying" or "Cancelling")
                 record = record with { Phase = "Interrupted" };
@@ -145,6 +167,8 @@ public sealed class OperationHandle : IDisposable
         lock (gate)
         {
             if (Status.Selection is not null && Status.Selection != selection) throw new InvalidDataException("Operation release changed.");
+            if(Status.ManifestSha256 is not null && manifestSha256 is not null && Status.ManifestSha256!=manifestSha256)
+                throw new InvalidDataException("Operation manifest changed.");
             if (Status.Selection == selection && (manifestSha256 is null || Status.ManifestSha256 == manifestSha256)) return;
             Update(Status with { Selection = selection, ManifestSha256 = manifestSha256 ?? Status.ManifestSha256 });
         }

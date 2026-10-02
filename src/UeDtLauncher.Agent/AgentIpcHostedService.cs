@@ -427,7 +427,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     }
                 case "update":
                 case "repair":
-                    using (var operation = _operations.Begin(request.CorrelationId, peer!, request.Selection, cancellationToken, request.Command))
+                    using (var operation = _operations.Begin(Guid.TryParseExact(request.CorrelationId,"N",out _)?request.CorrelationId:Guid.NewGuid().ToString("N"), peer!, request.Selection, cancellationToken, request.Command))
                     {
                     config.LaunchAfterUpdate = false;
                     config.RepairMode = request.Command.Equals("repair", StringComparison.OrdinalIgnoreCase);

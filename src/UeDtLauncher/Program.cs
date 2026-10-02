@@ -283,7 +283,7 @@ public static class Program
             PrintAgentResponse(managedResponse);
             if (!managedResponse.Success) return 1;
             if (selection is not null && managedResponse.SelectedRelease != selection) throw new InvalidDataException("Agent release mismatch.");
-            if (!noLaunch) _ = await ManagedAppLauncher.LaunchAsync(config);
+            if (!noLaunch && !cancel.Token.IsCancellationRequested) _ = await ManagedAppLauncher.LaunchAsync(config);
             return 0;
         }
 

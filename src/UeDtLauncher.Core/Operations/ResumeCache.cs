@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 
 namespace UeDtLauncher;
 
@@ -40,10 +41,10 @@ internal sealed class ResumeCache
         var record = SafePath.ResolveInsideChecked(root, "resume.json");
         if (File.Exists(record))
         {
-            if (new FileInfo(record).Length > 64 * 1024 || JsonFiles.ReadAsync<ResumeRecord>(record).GetAwaiter().GetResult() != expected)
+            if (new FileInfo(record).Length > 64 * 1024 || JsonSerializer.Deserialize<ResumeRecord>(File.ReadAllText(record),JsonFiles.Options) != expected)
                 throw new InvalidDataException("Resume cache ownership or authenticated manifest changed.");
         }
-        else JsonFiles.WriteAsync(record, expected).GetAwaiter().GetResult();
+        else RuntimeStatePersistence.Write(record,expected);
         return new(root);
     }
     internal string Partial(ManifestFile file) => SafePath.ResolveInsideChecked(root, Digest(file.Path) + ".partial");
