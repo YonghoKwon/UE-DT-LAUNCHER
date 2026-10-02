@@ -29,7 +29,7 @@ public sealed partial class MainWindow
             resultBody.Children.Clear(); support.Text = "";
             try
             {
-                var report = await _doctor(path, online, target, cancellation.Token);
+                var report = DoctorResponse.Validate(await _doctor(path, online, target, cancellation.Token), target);
                 if (cancellation.IsCancellationRequested || currentGeneration != generation) return;
                 var currentTarget = _configurationError is null ? DoctorTarget.From(_config) with { ProjectId = _selectedProject.ProjectId } : null;
                 if (path != ConfigPath || target != currentTarget || (report.Target is not null && target != report.Target))
@@ -58,7 +58,6 @@ public sealed partial class MainWindow
                 var safe = LauncherUiError.From(error);
                 summary.Text = "점검을 완료하지 못했습니다"; support.Text = safe.SupportId;
                 resultBody.Children.Add(Txt(safe.Message, 14, false));
-                resultBody.Children.Add(Muted(LauncherGuidance.For(safe.Code).NextAction, 13));
             }
             finally { if (!cancellation.IsCancellationRequested && currentGeneration == generation) onlineButton.IsEnabled = true; }
         }

@@ -57,7 +57,7 @@ public static class LauncherDoctor
                     target = DoctorTarget.From(config);
                     var report = await new ManagedAgentClient().DoctorAsync(online, cancellationToken, target);
                     checks[0] = DoctorPresentation.Normalize(checks[0], "client");
-                    return DoctorPresentation.Complete(report with { Checks = checks.Concat(report.Checks).ToArray(), Target = target });
+                    return DoctorResponse.Merge(report, target, checks);
                 }
                 catch (Exception ex) when (!cancellationToken.IsCancellationRequested && ex is IOException or OperationCanceledException or InvalidOperationException)
                 {

@@ -43,6 +43,24 @@ public sealed class ReadinessUiTests
     }
 
     [AvaloniaFact]
+    public void DiagnosticExceptionShowsActionOnceWithoutSecret()
+    {
+        var model = new LauncherDashboardViewModel { Config = new() { ProjectId = "demo" } };
+        var window = new MainWindow(new("missing.json", LauncherConfigSource.Explicit, false), model, new(), false,
+            doctor: (_, _, _, _) => Task.FromException<DoctorReport>(new HttpRequestException("Bearer sentinel", null, System.Net.HttpStatusCode.Forbidden)));
+        window.Show(); var dialog = window.ShowReadinessDialog();
+        try
+        {
+            Dispatcher.UIThread.RunJobs();
+            var text = string.Join('\n', dialog.GetLogicalDescendants().OfType<TextBlock>().Select(x => x.Text));
+            var action = LauncherGuidance.For("access-denied").NextAction;
+            Assert.Equal(1, text.Split(action, StringSplitOptions.None).Length - 1);
+            Assert.DoesNotContain("sentinel", text);
+        }
+        finally { dialog.Close(); window.Close(); }
+    }
+
+    [AvaloniaFact]
     public async Task LateDiagnosticResultIsDiscardedAfterSelectionChange()
     {
         var pending = new TaskCompletionSource<DoctorReport>(TaskCreationOptions.RunContinuationsAsynchronously);
