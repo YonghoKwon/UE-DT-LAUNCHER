@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-02",
+  "branch": "codex/real-ue-data-safety",
+  "productSourceHead": "64c4ad0b49fa24f66065adcd3b891513ac71ec8c",
+  "productSourceDirty": false,
+  "productSourceHash": "c110d118030da9da3adf6e17e5e1315ae6552b5855dac841eb60a557c34c64e1",
+  "windowsTests": {"passed": 542, "failed": 0, "skipped": 0},
+  "wslTests": {"passed": 542, "failed": 0, "skipped": 0},
+  "pythonFixtureTestsPassed": 11,
+  "releasePublication": {"windows": "passed", "linux": "passed", "warnings": 0, "errors": 0},
+  "publishedSyntheticRuntimeDataSmoke": {"windows": "passed-v1-v2", "linux": "passed-v1-v2"},
+  "authenticationRegression": {"windowsHttpSignature": "passed", "wslHttpSignature": "passed", "wslHttpsBearerNginx": "passed"},
+  "realUeFixture": {
+    "kind": "same-ue-payload-file-delta",
+    "versions": ["0.1.0-ue-test.v1", "0.1.0-ue-test.v2"],
+    "ueBinaryDiffers": false,
+    "sourceFiles": 328,
+    "sourceBytes": 878409923,
+    "releaseManifestFiles": 330,
+    "sourceInventoryHash": "955c6eb1d367a4eb1b5aa1783a6ac73f89390b80ee462877030c915efaddf4db",
+    "managedPreparation": "passed-v1-published-v2-pending-not-installed",
+    "portablePreparation": "passed-v1-published-v2-pending-not-installed",
+    "guiDisplayText": "managed-v1-not-installed-service-normal",
+    "guiInstallationUpdateRecovery": "not-run-input-environment-constraint",
+    "actualUeSavePreservation": "not-run",
+    "customLogsRedirected": false
+  },
+  "progress": {"USER-01": 50, "OPS-01": 50, "UI-01": 100, "UI-02": 75, "UI-03": 75},
+  "companyAcceptance": "not-approved"
+}

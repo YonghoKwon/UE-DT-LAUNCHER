@@ -117,6 +117,36 @@ portable Linux CLI는 같은 설정에서 `deploymentMode=portable`로 지정하
 
 실행 중/Pending/Unknown에서는 update·repair·rollback을 하지 않습니다. 상태 확인과 정지 후 명시적 복구는 [실행 안전성](runtime-safety.md)을 따릅니다. `Agent migrate --apply`는 동일 설치 공유 위험으로 현재 차단되며 dry-run만 지원합니다. `import-install`의 명시적 복사와 사용자 세이브 이전은 서로 다른 작업입니다.
 
+## 선택적 UE 데이터 경로 (2026-10-02)
+
+기존 **schema3 전체 설정에 추가할 블록**입니다. 아래만으로는 서버/credential 설정이 완성되지 않습니다. `sample-config`는 기존처럼 기본 비활성화를 유지합니다.
+
+```json
+{
+  "runtimeData": {
+    "enabled": true,
+    "adapter": "unreal-engine",
+    "policy": "per-user-per-release"
+  }
+}
+```
+
+| 항목 | 계약 |
+|---|---|
+| 미지정/disabled | 기존 LaunchArguments와 경로 동작 유지. schema1/2 자동 변환 없음 |
+| 지원 | schema3 DistributionServer, 위 adapter/policy만 지원 |
+| 기본 루트 | Windows `%LOCALAPPDATA%/UE-DT Launcher/RuntimeData`, Linux `$XDG_DATA_HOME/UE-DT Launcher/RuntimeData`(미설정이면 `~/.local/share`) |
+| 하위 구조 | `users/<OS owner SHA-256>/releases/<project>/<environment>/<channel>/<version>/<platform>/user`, `logs/<launch attempt>.log` |
+| rootDirectory | 선택적 절대 경로. 환경변수/템플릿 확장 없음. 관리형은 보호된 Agent 설정에서 결정 |
+| 실행 | 인증된 사용자 runtime-host가 owner/권한/링크/중첩 검사와 실제 write probe 후 UserDir/abslog 인수 생성 |
+| 충돌 | 기존 `-UserDir`/`-abslog`, 설치/state/backup/credential 경로와 중첩은 거부. 자동 fallback 없음 |
+| 호환 | IPC v1의 선택 필드와 `runtime-data-v1` capability. 새 모드 실행은 지원하는 런처/Agent 동시 갱신 필요 |
+| 데이터 | 버전 간 자동 공유/복사 없음. repair·payload backup 복원·prune은 외부 사용자 데이터 유지 |
+
+`doctor`는 정책을 확인합니다. Portable은 현재 사용자 루트 권한을 읽기 전용으로 검사하며, 관리형 Agent 진단은 **사용자 세션 쓰기 검사를 지연**한다고 명시합니다. 실제 write/flush 접근 검사는 실행 host가 합니다. doctor 성공을 서비스 계정/사용자 계정의 실제 실행 성공으로 확대하지 마세요.
+
+UE 인수는 앱의 독자적인 쓰기 위치를 강제 변경하지 않습니다. ma0t10_dt의 DTCore CustomLogs는 설치 안에 쓰는 한계가 남고, 실제 SaveGame/사용자 설정 보존 수용과 회사 서비스 계정 검증도 남습니다. [이번 증거](archive/validation/real-ue-data-safety-validation.md)
+
 ## 레거시 호환과 검증 범위
 
 `catalogUrl`/직접 `manifestUrl`, `generate-manifest`, `update-catalog`, `publish-release`는 기존 정적 배포 호환 기능입니다. 기본 `sample-config`는 DistributionServer/schema 3 요청 서명 설정을 생성합니다. 정적 예제는 `--mode legacy-catalog`를 명시한 경우에만 사용합니다. 공개 `/catalogs/general` 또는 `/projects` 구조는 현재 통합 서버의 보안 모델이 아닙니다.

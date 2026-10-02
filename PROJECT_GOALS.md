@@ -1,6 +1,6 @@
 # 최종 프로젝트 목표 — 회사용 Unreal Engine DT 배포 시스템
 
-갱신: 2026-09-29 / 작업 기준 `codex/real-ue-package-validation`. **최상위 목표는 확정**됐습니다. 세부 운영 정책·회사 SLA·출시 일정은 아직 미정이며 아래 결정 표에서 별도로 관리합니다.
+갱신: 2026-10-02 / 작업 기준 `codex/real-ue-data-safety`. **최상위 목표는 확정**됐습니다. 세부 운영 정책·회사 SLA·출시 일정은 아직 미정이며 아래 결정 표에서 별도로 관리합니다.
 
 ## 확정한 최종 목표
 
@@ -13,6 +13,8 @@
 현재 사용 방법은 [기능 지도·명령 순서](docs/reference/feature-workflow.md), 현재 구현은 [README](README.md), 작업 목록은 [IMPROVEMENTS](IMPROVEMENTS.md)가 정본입니다.
 
 ## 현재 위치
+
+2026-10-02 런처만 수정하여 schema3 opt-in 사용자/버전별 UE 데이터 경로와 유지보수 보호를 추가했습니다. 후보 `64c4ad0`의 Windows/WSL 각542개, 게시 runtime-host 합성 v1/v2, HTTP 요청 서명·HTTPS/Bearer 회귀를 통과했습니다. 실제 UE 포함 두 릴리스 fixture의 UE 바이너리는 동일하며 시험 텍스트 파일만 다릅니다. GUI 입력 접근 거부로 실제 UE 업데이트/복원/데이터 수용은 미실행입니다. USER-01은50%, OPS-01은50% 유지이며 회사 Gate 완료가 아닙니다. [구현·검증·남은 조건](docs/reference/archive/validation/real-ue-data-safety-validation.md)
 
 2026-09-29 실제 ma0t10_dt Windows Development 패키지의 로컬 접수→승인→GUI 설치/실행→런처 종료 후 수명 유지→정상 종료 증거를 확보했습니다. OPS-01은50%(로컬 증거)이며 G3는 여전히 미완료입니다. 실제 UE 업데이트/복구·Shipping/Linux·회사 TLS/CA/권한/서비스 계정과 데이터 보존은 이 결과로 대체하지 않습니다. [실제 UE 결과](docs/reference/archive/validation/real-ue-package-validation.md)
 
@@ -92,7 +94,7 @@ G1~G6의 증거가 확보된 뒤 전사 확대를 승인합니다. 게시본 `ab
 | D-01 | 실제 지원 OS·RHEL minor·PC 수·동시 다운로드 규모는? | 미정 / OPS-01, PERF-03 |
 | D-02 | 승인이 곧 최신 공개인가, 별도 승격·예약 공개가 필요한가? | 현행 마지막 승인판, 최종 정책 미정 / OPS-03 |
 | D-03 | 버전·원본 ZIP 보관 기간/개수/용량·삭제 권한은? | 미정 / OPS-04 |
-| D-04 | UE 세이브·설정 위치와 이전 책임은? | 미정 / USER-01 |
+| D-04 | UE 세이브·설정 위치와 이전 책임은? | 2026-10-02 확정: 실행 사용자별·정확한 버전별 분리, 프로그램 복원은 사용자 데이터 유지. 자동 공유/이전 없음. 앱 CustomLogs 수정·데이터 이전/호환·보관 정책은 별도 / USER-01 |
 | D-05 | 오프라인·권한 폐기 후 기설치 실행 규칙은? | 미정 / USER-04 |
 | D-06 | 취소·재개·트레이·알림·다국어 필수 범위는? | 미정 / USER/UI |
 | D-07 | 회사 API 인증·권한 응답·장애 정책·담당자는? | 미정 / EXT-01 |

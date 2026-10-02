@@ -2,7 +2,7 @@
 
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 배포 시스템입니다.
 
-문서 점검: **2026-09-29**, 작업 기준: `codex/real-ue-package-validation`, 새 고정 후보 `8ce5060`(상태 수정 `fa87eaa`). 이전 게시본 `ab37fcb`의 실행 증거와 새 후보의 실제 적용 재검증 대기를 구분합니다. 로컬 브랜치 기준이며 main 반영·회사 운영 승인 완료를 뜻하지 않습니다.
+문서 점검: **2026-10-02**, 작업 기준: `codex/real-ue-data-safety`. 데이터 경로 기능의 고정 제품 후보는 `64c4ad0`입니다. Windows/WSL 각542개 회귀와 게시된 runtime-host의 합성 데이터 시험을 통과했습니다. 이전 `8ce5060`의 GUI 수용과 이번 후보의 실제 UE GUI 적용 대기를 구분합니다. 로컬 브랜치 기준이며 main 반영·회사 운영 승인 완료를 뜻하지 않습니다.
 
 **현재 판단: 합성 앱 기반 배포·설치·실행·복구는 활용 가능한 단계이며, 회사 정식 운영 인수는 미완료입니다.** 현재 수치와 남은 작업은 [개선 진행 현황](IMPROVEMENTS.md), 상세 명령은 [운영 문서 색인](docs/reference/README.md)을 확인하세요.
 
@@ -68,6 +68,17 @@ GUI의 general/developer는 표시 정책이지 다운로드 권한이 아닙니
 프로그램이 실행 중이면 정상 종료 후 런처에서 다시 확인하세요. GUI를 닫아도 프로그램은 종료되지 않습니다. 추적 불명 상태는 관리자 점검과 명시적 정지 확인이 필요하며 PID 파일 삭제로 우회하지 않습니다. 런처와 Agent를 함께 갱신하세요. 구형 IPC v1의 조회는 유지하지만 실행 추적 capability 없는 변경 요청은 거부합니다. 기존 직접 EXE 바로가기는 관리자가 이전하고, 새 바로가기는 정확한 버전을 선택한 런처를 호출합니다. [상태별 명령](docs/reference/runtime-safety.md)
 
 서명·권한·해시·실행 수명 안전성을 유지합니다. 사내 HTTP 요청 서명은 암호화가 아니며, Windows LocalService·회사 RHEL/UE와 실제 코드서명 인증서 검증은 별도입니다. [회사 운영 승인 조건](PROJECT_GOALS.md)을 모두 통과하기 전 정식 운영 완료로 보지 않습니다.
+
+## UE 사용자 데이터 분리 — 선택 기능
+
+schema 3의 `runtimeData`를 명시적으로 활성화하면 런처가 실행 사용자·정확한 릴리스별 `-UserDir`와 실행별 `-abslog`를 준비합니다. 기존 설정은 기본 비활성화이며 자동 이전하지 않습니다. 관리형 운영 값은 GUI가 아니라 Agent 설정에서 결정합니다.
+
+- 기본 루트: Windows 실행 사용자의 LocalAppData, Linux 실행 사용자의 XDG 데이터 폴더.
+- 버전별 세이브·설정은 공유하지 않습니다. 새 버전에 이전 설정이 자동 복사되는 기능은 없습니다.
+- 프로그램 repair/backup 복원은 외부 사용자 데이터를 되돌리거나 정리하지 않습니다.
+- **앱 내부가 다른 경로에 쓰면 UE 인수로 강제 이동할 수 없습니다.** 기존 ma0t10_dt의 DTCore CustomLogs는 설치 폴더 쓰기가 남아 있으며, 이번에는 UE·DTCore를 수정하지 않았습니다.
+
+[정확한 설정과 권한 조건](docs/reference/guide-03-launcher-usage.md), [이번 구현·검증·GUI 대기 기록](docs/reference/archive/validation/real-ue-data-safety-validation.md)을 확인하세요. 이번 후보의 실제 UE 업데이트·복구·복원은 Windows 입력 접근 거부로 아직 미실행입니다. CLI 시험을 GUI 수용으로 대체하지 않았습니다.
 
 ## 처음 준비할 것
 

@@ -55,7 +55,7 @@ UeDtLauncher runtime recover --config <config> --version 1.2.0 --confirm-stopped
 - `import-install --apply`는 source 상태를 확인한 뒤 staging에 복사하고 기존 대상에 병합/덮어쓰기하지 않는다. 원본과 사용자 파일은 삭제하지 않는다.
 - `UeDtLauncher.Agent migrate --config <config> --dry-run`은 CanApply=false와 차단 이유를 표시한다. 같은 InstallDir를 공유하는 `--apply`는 단일 설치라도 차단하며 target config/state를 만들지 않는다. 기존 portable 자료를 삭제하거나 이미 공유된 구성을 자동 수정하지 않는다.
 - 새 Windows `.lnk`는 사용자 소유의 정확한 버전 설정으로 런처를 호출한다. 기존 `.url/.lnk`를 자동 교체하지 않으므로 관리자가 사용 여부를 정리한다.
-- 세이브 디렉터리 이동·형식 변환·공유 저장 정책은 구현하지 않았다(USER-01).
+- USER-01의 opt-in 사용자/버전별 UE UserDir/abslog는 추가됐지만 세이브 디렉터리 이전·형식 변환·버전 공유·데이터 snapshot 복원은 구현하지 않았다. payload rollback은 사용자 데이터를 되감지 않는다. [설정·제약](guide-03-launcher-usage.md)
 
 ## 설치본 제작
 

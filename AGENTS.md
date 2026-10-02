@@ -1,6 +1,6 @@
 # 작업 지침
 
-점검: 2026-09-29 / 작업 기준 codex/real-ue-package-validation. 저장소 전체에 적용합니다.
+점검: 2026-10-02 / 작업 기준 codex/real-ue-data-safety. 저장소 전체에 적용합니다.
 
 ## 문서 관리 계약
 
@@ -36,6 +36,14 @@
 | installer/windows/, packaging/linux/, .github/workflows/ | 설치본·nginx·서비스·CI |
 
 ## 보존할 경계
+
+- 이번 USER-01 작업은 런처만 수정한다. UE·DTCore 재패키징/수정은 금지하며 다른 작업에서 발생한 소스 변경을 stage·되돌리지 않는다. 기존 실제 UE 패키지와 현재 UE 소스 revision을 동일하다고 기록하지 않는다.
+- runtimeData는 opt-in schema 3·unreal-engine·per-user-per-release만 지원한다. GUI/IPC 입력으로 임의 경로/인수를 받지 않는다. Agent의 보호 설정으로 만든 plan을 실행 attempt·installation·실제 owner에 결속한다.
+- 실행 사용자 host만 데이터 폴더를 준비한다. Agent 계정의 LocalAppData를 사용자 데이터로 쓰지 않는다. 링크·비보호 권한·설치/state/backup/credential 중첩과 기존 UserDir/abslog 충돌을 거부하며 오류 시 설치 경로로 fallback하지 않는다.
+- 사용자 데이터는 payload backup/prune/rollback 대상이 아니다. 자동 버전 간 복사·공유·데이터 복원을 추가하지 않는다. 새 모드 capability 누락은 실행을 거부하고 구 설정은 그대로 유지한다.
+- 실제 UE 포함 파일-delta fixture는 UE 바이너리가 동일한 두 릴리스다. 별도 UE 빌드 간 호환성으로 보고하지 않는다. 원본 inventory 전후와 ZIP member hash를 확인하고 시험 비실행 파일만 변경한다.
+- 정상 backup 증거는 정상 상태에서 force repair 후 모든 Manifest 파일 hash로 확인한다. subset/빈 backup을 전체 정상 복원 증거로 사용하지 않는다. 알려진 비Manifest CustomLogs는 별도 기록하고 Logs/Saved 전체 해시 제외를 금지한다.
+- 고정 cohort의 제품 출처와 시험 도구 출처를 분리한다. GUI 입력/캡처 오류는 미실행으로 기록하고 설치를 CLI로 대신해 GUI 통과 처리하지 않는다.
 
 - ZIP + 외부 release.json을 비공개 snapshot으로 검사하고 관리자 승인 후 게시합니다. 업로드 프로그램을 서버에서 실행하지 않습니다.
 - .uploading/한 파일만 도착한 상태를 게시하지 않습니다. 동일 릴리스 식별자 덮어쓰기를 허용하지 않습니다.

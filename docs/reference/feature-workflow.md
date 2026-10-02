@@ -356,6 +356,7 @@ Linux도 전체 운영 설정과 읽기/설치 권한을 확인합니다. portab
 | 파일 손상 | 먼저 상태 확인 | GUI 문제 해결 또는 `agent repair --project demo --environment prod --channel stable --version 1.2.0` | 해시 검사·복구 후 정상 |
 | 미설치/아직 받지 않은 새 버전 | 원하는 버전과 설치 안내 확인 | 문제 해결은 조회만 수행. 설치하려면 주 설치/업데이트 버튼 사용 | 동의하지 않은 설치·실행 없음 |
 | 계속 실패 | 복원 가능한 백업 존재 확인 | GUI가 제안한 경우 내용 확인 후 rollback, 없으면 관리자 문의 | 복원 후 상태 확인 |
+| 저장 경로 준비 실패 | 사용자/버전별 데이터 설정·owner/권한·설치 경로 중첩 확인 | 관리자 `doctor --config <설정>`; 실행 host의 write preflight 실패는 수동 점검 | 경로 검사를 유지하고 사용자 host가 안전한 외부 폴더를 준비 |
 | 원인 전달 필요 | 비밀정보 없는 진단 자료 생성 | `diagnostics export --config launcher.config.json --output diagnostics.zip` | 관리자에게 안전하게 전달 |
 
 서버 명령 앞에는 B5의 프로그램 경로·서비스 계정을 붙입니다. PC 명령 앞에는 `UeDtLauncher.exe` 또는 `./UeDtLauncher`를 붙입니다. 일시적 다운로드 오류의 제한된 자동 재시도/Range 기능은 있지만, 프로세스 종료 후 언제나 같은 바이트부터 재개한다고 보장하지 않습니다.
@@ -378,9 +379,11 @@ GUI 문제 해결은 관리형/portable 모두 **점검 → 설치된 선택 버
 | Agent | PC 안에서 설치·복구를 대신 처리하는 업데이트 서비스 | 사용자는 서비스 상태만 확인 |
 | repair / rollback | 파일 복구 / 보관 백업 복원 | 사용자 또는 관리자 |
 
-숫자 버전도 구분합니다. 외부 release.json은 schema1, 런처 운영 설정은 schema2, Catalog/서명 envelope와 내부 DB도 각자의 schema2입니다. 서로 같은 파일이 아닙니다.
+숫자 버전도 구분합니다. 외부 release.json은 schema1이며, 신규 요청 서명 런처 설정은 schema3입니다(기존 schema1/2 HTTPS/Bearer 호환 유지). Catalog·서명·내부 DB는 각각의 형식 버전을 사용하며 서로 같은 파일이 아닙니다.
 
 ## 5. 회사에서 쓰려면 다음에 무엇을 해야 하나요?
+
+2026-10-02 확정: UE 데이터는 실행 사용자·정확한 릴리스별로 분리합니다. 관리자가 opt-in 설정 → 사용자 클릭 → 사용자 runtime-host가 저장/로그 경로 준비 → DT 실행 순서입니다. repair/프로그램 backup 복원은 외부 사용자 데이터를 유지하고, 버전 간 데이터 공유/복사는 자동으로 하지 않습니다. 독자적인 앱 쓰기 경로는 따로 확인해야 합니다. [설정](guide-03-launcher-usage.md) · [이번 실제/미실행 구분](archive/validation/real-ue-data-safety-validation.md)
 
 1. **운영 전 차단 항목 보완:** 설치본 내부 EXE 서명 순서, 동명 프로세스 식별, Linux credential 소유권.
 2. **검증 서버1대·PC1대부터:** 실제 UE ZIP으로 A→B→C→D 전체 과정과 저장 데이터 유지 확인.
