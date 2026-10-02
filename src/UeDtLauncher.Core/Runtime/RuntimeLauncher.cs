@@ -49,6 +49,11 @@ public static class RuntimeLauncher
         await process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(input, JsonFiles.Options).Replace("\r", "").Replace("\n", ""));
         process.StandardInput.Close();
         var ready = await process.StandardOutput.ReadLineAsync(cancellationToken).AsTask().WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
+        if (ready is not null)
+        {
+            using var result = JsonDocument.Parse(ready);
+            if (result.RootElement.TryGetProperty("code", out var code) && code.GetString() == "runtime-data-unavailable") throw new RuntimeDataException();
+        }
         if (ready is null || !ready.Contains("\"state\":\"started\"", StringComparison.Ordinal))
             throw new InvalidOperationException("실행 상태를 확인할 수 없습니다. 일부 프로그램이 실행됐을 수 있으므로 관리자 점검이 필요합니다.");
         return process;

@@ -33,6 +33,7 @@ public static class RuntimeHost
             if (session.AgentEndpoint is not null)
                 launch = (await Send("launch-attach")).RuntimeLaunch ?? throw new InvalidDataException("Missing authorized launch.");
             else launch = RuntimeStore.Attach(session.Config, session.Ticket, identity, Environment.ProcessPath!);
+            launch = RuntimeDataPolicy.PrepareHost(launch, identity);
             var result = NativeProcessFamily.Run(launch, pid =>
             {
                 if (session.AgentEndpoint is not null) Send("launch-started", pid).GetAwaiter().GetResult();
@@ -45,7 +46,7 @@ public static class RuntimeHost
         }
         catch (Exception ex)
         {
-            Emit(new { state="unknown", error=ex.GetType().Name }); return 1;
+            Emit(new { state="unknown", error=ex.GetType().Name, code=LauncherFailure.Code(ex) }); return 1;
         }
     }
     private static void Emit(object value)

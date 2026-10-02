@@ -52,6 +52,7 @@ public sealed class LauncherConfig
     public int HttpTimeoutSeconds { get; set; } = 120;
     public LauncherPerformanceConfig Performance { get; set; } = new();
     public string[]? LaunchArguments { get; set; }
+    public RuntimeDataOptions? RuntimeData { get; set; }
     public List<LauncherPackage> Packages { get; set; } = new();
     public SelfUpdateConfig? SelfUpdate { get; set; }
     public WindowsIntegrationConfig WindowsIntegration { get; set; } = new();

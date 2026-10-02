@@ -17,6 +17,7 @@ public sealed record LauncherUiError(string Code,string Message,string SupportId
             "authentication-failed"=>"PC 인증을 확인할 수 없습니다. 관리자에게 인증키 등록 상태를 문의해 주세요.",
             "access-denied"=>"이 PC에 허용되지 않은 배포입니다. 관리자에게 접근 권한을 문의해 주세요.",
             "integrity-failed"=>"업데이트 보안 검증에 실패했습니다. 검증을 끄지 말고 관리자에게 문의해 주세요.",
+            "runtime-data-unavailable"=>"프로그램 저장 경로를 준비할 수 없습니다. 관리자에게 설정과 폴더 권한 확인을 요청해 주세요.",
             "file-access-denied"=>"파일 접근 권한을 확인해 주세요. 실행 중인 프로그램은 먼저 종료해 주세요.",
             "storage-failed"=>"파일을 처리할 수 없습니다. 저장 공간과 파일 사용 여부를 확인해 주세요.",
             "timeout"=>"연결 또는 작업 대기 시간이 초과됐습니다. 연결 상태를 확인한 뒤 같은 작업을 다시 시도해 주세요.",

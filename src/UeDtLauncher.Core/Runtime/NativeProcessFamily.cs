@@ -5,7 +5,7 @@ using Microsoft.Win32.SafeHandles;
 
 namespace UeDtLauncher;
 
-public sealed record RuntimeHostRequest(string Executable, string WorkingDirectory, string[] Arguments);
+public sealed record RuntimeHostRequest(string Executable, string WorkingDirectory, string[] Arguments, RuntimeDataPlan? RuntimeData = null);
 public sealed record RuntimeFamilyResult(int RootPid, int RootExitCode, int ReapedProcesses, string Mechanism);
 
 /// <summary>Dedicated runtime-host only. Never mix this Linux wait loop with managed child-process APIs.</summary>
@@ -22,6 +22,7 @@ internal static class NativeProcessFamily
     }
     internal static RuntimeFamilyResult Run(RuntimeHostRequest request, Action<int> started)
     {
+        if (request.RuntimeData is not null) throw new InvalidDataException("Runtime data must be prepared by the authenticated host.");
         if (!Path.IsPathFullyQualified(request.Executable) || !File.Exists(request.Executable) || !Path.IsPathFullyQualified(request.WorkingDirectory) ||
             !Directory.Exists(request.WorkingDirectory) || request.Arguments is null || request.Arguments.Length > 256 || request.Arguments.Any(a => a is null || a.Contains('\0')))
             throw new InvalidDataException("Invalid runtime host launch specification.");

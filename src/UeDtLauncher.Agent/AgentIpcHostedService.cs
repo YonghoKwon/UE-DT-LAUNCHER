@@ -172,7 +172,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
             response = Error(request, "invalid-request", ex.Message, identity);
         }
 
-        response.AgentCapabilities = [ManagedAgentProtocol.RuntimeCapability, RollbackPreviewService.Capability];
+        response.AgentCapabilities = [ManagedAgentProtocol.RuntimeCapability, RollbackPreviewService.Capability, RuntimeDataPolicy.Capability];
         await ManagedAgentFrameCodec.WriteAsync(stream, response, cancellationToken);
     }
 
@@ -315,6 +315,8 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
             switch (request.Command.ToLowerInvariant())
             {
                 case "launch-begin":
+                    if (config.RuntimeData?.Enabled == true && request.ClientCapabilities?.Contains(RuntimeDataPolicy.Capability) != true)
+                        return Error(request, "client-upgrade-required", "저장 경로 분리를 지원하는 런처로 업데이트해 주세요.", identity);
                     using (var http = SecureHttpClientFactory.Create(config)) await CatalogResolver.ResolveAsync(config, http, cancellationToken: cancellationToken);
                     var hostPath = Path.Combine(Path.GetDirectoryName(Environment.ProcessPath!)!, OperatingSystem.IsWindows() ? "UeDtLauncher.exe" : "UeDtLauncher");
                     var ticket = RuntimeStore.Begin(config, peer!, hostPath);
@@ -338,6 +340,8 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     var launchTicket = request.RuntimeTicket ?? throw new InvalidDataException("Runtime ticket is required.");
                     if (request.Command == "launch-attach")
                     {
+                        if (config.RuntimeData?.Enabled == true && request.ClientCapabilities?.Contains(RuntimeDataPolicy.Capability) != true)
+                            return Error(request, "client-upgrade-required", "저장 경로 분리를 지원하는 런처로 업데이트해 주세요.", identity);
                         var expectedHost = Path.Combine(Path.GetDirectoryName(Environment.ProcessPath!)!, OperatingSystem.IsWindows() ? "UeDtLauncher.exe" : "UeDtLauncher");
                         var launch = RuntimeStore.Attach(config, launchTicket, peer!, expectedHost);
                         return new() { CorrelationId = request.CorrelationId, Success = true, RuntimeLaunch = launch };

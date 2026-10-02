@@ -60,6 +60,7 @@ public static class LauncherConfigValidator
 {
     public static void Validate(LauncherConfig config)
     {
+        RuntimeDataPolicy.ValidateConfiguration(config);
         if (config.SchemaVersion is < 1 or > 3)
             throw new InvalidOperationException($"Unsupported launcher config schemaVersion: {config.SchemaVersion}.");
         if (config.DeploymentMode is not ("portable" or "managed-agent"))

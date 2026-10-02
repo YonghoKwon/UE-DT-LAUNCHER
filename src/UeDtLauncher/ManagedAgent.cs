@@ -303,13 +303,16 @@ public sealed class ManagedAgentClient(string? endpoint = null)
     public async Task<ManagedAgentResponse> SendRuntimeAsync(string command, LauncherConfig config, RuntimeLaunchTicket? ticket = null, int? payloadPid = null, bool confirm = false, CancellationToken cancellationToken = default, string? serviceVersion = null)
     {
         var request = new ManagedAgentRequest { Command = command, ProjectId = config.ProjectId, Selection = config.SelectedRelease,
-            ClientCapabilities = [ManagedAgentProtocol.RuntimeCapability], RuntimeTicket = ticket, PayloadPid = payloadPid, ConfirmStopped = confirm, ServiceVersion = serviceVersion };
+            ClientCapabilities = [ManagedAgentProtocol.RuntimeCapability, RuntimeDataPolicy.Capability], RuntimeTicket = ticket, PayloadPid = payloadPid, ConfirmStopped = confirm, ServiceVersion = serviceVersion };
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken); timeout.CancelAfter(TimeSpan.FromSeconds(15));
         await using var stream = await ConnectAsync(timeout.Token);
         await ManagedAgentFrameCodec.WriteAsync(stream, request, timeout.Token);
         var response = await ManagedAgentFrameCodec.ReadAsync<ManagedAgentResponse>(stream, timeout.Token);
         if (response.ProtocolVersion != 1 || response.CorrelationId != request.CorrelationId) throw new InvalidDataException("Runtime IPC response mismatch.");
         if (response.AgentCapabilities?.Contains(ManagedAgentProtocol.RuntimeCapability) != true) throw new RuntimeBlockedException(new(RuntimeState.Unknown,"client-upgrade-required","런처와 업데이트 서비스를 함께 업데이트해 주세요."));
+        if ((config.RuntimeData?.Enabled == true || response.RuntimeTicket?.RequiresRuntimeData == true || ticket?.RequiresRuntimeData == true) &&
+            response.AgentCapabilities?.Contains(RuntimeDataPolicy.Capability) != true)
+            throw new RuntimeBlockedException(new(RuntimeState.Unknown,"client-upgrade-required","저장 경로 분리를 지원하는 런처와 업데이트 서비스를 함께 업데이트해 주세요."));
         return response;
     }
 
