@@ -56,6 +56,7 @@ def main():
     parser.add_argument("--benchmark", action="store_true", help="Optional synthetic signed load (requires cryptography)")
     parser.add_argument("--defer-v2", action="store_true", help="GUI-only: retain v2 pending manual approval")
     parser.add_argument("--defer-promotion", action="store_true", help="GUI-only: approve v1 but leave recommendation unassigned")
+    parser.add_argument("--readiness-proof", action="store_true", help="Check published read-only diagnostics and selected release readiness")
     parser.add_argument("--gui-mode", choices=['managed','portable'], default='managed', help="GUI-only deployment, with a fresh isolated credential/install root")
     parser.add_argument("--gui-long-labels", action="store_true", help="GUI-only: deterministic long Korean project name and release notes")
     args = parser.parse_args()
@@ -238,6 +239,10 @@ http {{
             raise RuntimeError("Server did not become ready")
         if not (args.prepare_gui and args.gui_mode=='portable'):
             run(launcher, "doctor", "--config", generated, "--online")
+        readiness_proofs=[]
+        if args.readiness_proof:
+            from readiness_fixture_support import prove_readiness
+            readiness_proofs.append(prove_readiness(run,launcher,client,config,args.defer_promotion))
         if not args.prepare_gui:
             for version in ("1.0.0", "2.0.0"):
                 config["requestedVersion"] = version
@@ -261,6 +266,7 @@ http {{
                 raise RuntimeError("Repair did not restore the expected contents")
         summary = {"platform": platform, "transport": "HTTP request-signature-v1", "published_processes": True,
                    "versions_installed_and_launched": 2, "repair": True, "nginx": bool(args.nginx), "company_or_unreal_validation": False}
+        if args.readiness_proof: summary['readiness_proofs']=readiness_proofs
         if args.service_proof:
             def wait_runtime(version):
                 path = client / "state" / "demo" / "prod" / "stable" / version / platform / "runtime-state.json"
@@ -335,6 +341,8 @@ http {{
             write(client / "developer.json", gui)
             write(root / "test-environment.json", {"UE_DT_AGENT_DATA_ROOT": env["UE_DT_AGENT_DATA_ROOT"], "UE_DT_AGENT_ENDPOINT": env["UE_DT_AGENT_ENDPOINT"]})
             run(launcher, "doctor", "--config", client / "general.json", "--online")
+            if args.readiness_proof:
+                readiness_proofs.append(prove_readiness(run,launcher,client,gui,args.defer_promotion))
             summary["managed_asset_and_doctor"] = True
             if args.promotion_proof:
                 import uuid
@@ -402,6 +410,10 @@ http {{
                 process.wait()
         else:
             run(server, "client-key", "revoke", "--key-id", "pc-test-key", "--config", root / "server.json")
+            if args.readiness_proof:
+                report=json.loads(run(launcher,'doctor','--config',client/'readiness-config.json','--online',expected=1))
+                assert any(c['code']=='authentication-failed' for c in report['checks'])
+                summary['readiness_revocation_rejected']=True
             run(launcher, "run", "--config", client / "config.json", expected=1)
             summary["revoked_key_rejected"] = True
             run(launcher, "credential", "delete", "--name", "device")

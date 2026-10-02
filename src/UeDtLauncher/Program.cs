@@ -44,7 +44,8 @@ public static class Program
         // window. For CLI subcommands launched from a terminal, attach to that terminal so output is visible.
         if (!isGui && OperatingSystem.IsWindows()) AttachParentConsole();
 
-        if (SelfUpdateManager.TryApplyPendingUpdate(args)) return 0;
+        var diagnosticCommand = !isGui && CliArgs(args, wantsCli).FirstOrDefault() is "doctor" or "diagnostics";
+        if (!diagnosticCommand && SelfUpdateManager.TryApplyPendingUpdate(args)) return 0;
 
         if (isGui)
         {

@@ -57,6 +57,48 @@ public sealed class ReadinessDiagnosticsTests
         Assert.Throws<InvalidDataException>(() => (target with { VersionPolicy = "exact", RequestedVersion = null }).Apply(config));
     }
 
+    [Theory]
+    [InlineData("latest", null, "no-promoted-release", "waiting")]
+    [InlineData("exact", "1.0.0", "release-available", "passed")]
+    [InlineData("exact", "9.0.0", "no-authorized-release", "waiting")]
+    public void SelectionReadinessDoesNotFallbackToUnpromotedOrDifferentVersion(string policy, string? version, string code, string state)
+    {
+        var config = new LauncherConfig { ProjectId = "demo", TargetPlatform = "windows-x64", VersionPolicy = policy, RequestedVersion = version };
+        var catalog = new DistributionCatalog { SelectionPolicy = CatalogRecommendation.ExplicitPolicy,
+            Projects = [new() { ProjectId = "demo", Releases = [new() { Version = "1.0.0", Platform = "windows-x64", Environment = "prod", Channel = "stable", AllowedClientProfiles = ["general"] }] }] };
+        var result = DoctorPresentation.ReleaseReadiness(config, catalog);
+        Assert.Equal(code, result.Code); Assert.Equal(state, result.State);
+        config.Environment = "dev";
+        Assert.Equal("no-authorized-release", DoctorPresentation.ReleaseReadiness(config, catalog).Code);
+    }
+
+    [Theory]
+    [InlineData(401, "authentication-failed", "admin")]
+    [InlineData(403, "access-denied", "admin")]
+    [InlineData(503, "server-unavailable", "user")]
+    public async Task OnlineFailuresAreActionableAndDoNotChangeInstallation(int status, string code, string owner)
+    {
+        using var temp = new TestDirectory();
+        var path = Path.Combine(temp.Root, "config.json");
+        await JsonFiles.WriteAsync(path, new LauncherConfig { ProjectId = "demo", InstallDir = "app", StateRootDir = "state", CatalogUrl = "https://localhost:1/catalog", LogDir = "logs" });
+        // Exercise the shared transport-error mapping without changing real server state.
+        var result = DoctorPresentation.Failure("catalog-online", new HttpRequestException("Authorization: Bearer sentinel", null, (System.Net.HttpStatusCode)status), "client");
+        Assert.Equal(code, result.Code); Assert.Equal(owner, result.ActionOwner);
+        Assert.DoesNotContain("sentinel", JsonSerializer.Serialize(result));
+        var before = Inventory(temp.Root);
+        await LauncherDoctor.RunAsync(path, false);
+        Assert.Equal(before, Inventory(temp.Root));
+    }
+
+    [Fact]
+    public void RuntimeDeferredCannotBeReportedAsPassed()
+    {
+        var check = DoctorPresentation.Normalize(new("runtime-data-host-preflight", false, "At launch"), "agent");
+        Assert.Equal("deferred", check.State);
+        var report = DoctorPresentation.Complete(new("now", true, "1", "test", [check]));
+        Assert.Equal("verification-pending", report.PreparationState);
+    }
+
     private static string Inventory(string root) => string.Join('\n', Directory.EnumerateFileSystemEntries(root, "*", SearchOption.AllDirectories)
         .Order(StringComparer.Ordinal).Select(p => Path.GetRelativePath(root, p) + (File.Exists(p) ? ":" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(p))) : "/")));
     private sealed class TestDirectory : IDisposable

@@ -30,13 +30,15 @@ public static class LauncherDoctor
         string configPath,
         bool online,
         CancellationToken cancellationToken = default,
-        bool agentContext = false)
+        bool agentContext = false,
+        DoctorTarget? target = null)
     {
         var checks = new List<DoctorCheck>();
         LauncherConfig? config = null;
         try
         {
             config = await LauncherPaths.LoadResolvedAsync(configPath, cancellationToken, readOnly: true);
+            target?.Apply(config);
             checks.Add(new DoctorCheck("config", true, $"schemaVersion {config.SchemaVersion}"));
         }
         catch (Exception) when (!cancellationToken.IsCancellationRequested)
@@ -48,11 +50,19 @@ public static class LauncherDoctor
         {
             if (config.IsManagedDeployment && !agentContext)
             {
-                try { return await new ManagedAgentClient().DoctorAsync(online, cancellationToken); }
+                try
+                {
+                    target = DoctorTarget.From(config);
+                    var report = await new ManagedAgentClient().DoctorAsync(online, cancellationToken, target);
+                    checks[0] = DoctorPresentation.Normalize(checks[0], "client");
+                    return DoctorPresentation.Complete(report with { Checks = checks.Concat(report.Checks).ToArray(), Target = target });
+                }
                 catch (Exception ex) when (ex is IOException or OperationCanceledException or InvalidOperationException)
                 {
-                    checks.Add(new("agent", false, "Managed diagnostics require a reachable, current update service."));
-                    return new(DateTimeOffset.UtcNow.ToString("O"), false, typeof(LauncherDoctor).Assembly.GetName().Version?.ToString() ?? "0", Environment.OSVersion.ToString(), checks);
+                    checks.Add(DoctorPresentation.Failure("agent", ex, "client"));
+                    return DoctorPresentation.Complete(new(DateTimeOffset.UtcNow.ToString("O"), false,
+                        typeof(LauncherDoctor).Assembly.GetName().Version?.ToString() ?? "0", Environment.OSVersion.ToString(),
+                        checks.Select(c => DoctorPresentation.Normalize(c, "client")).ToArray()) { Target = target });
                 }
             }
             if (config.RuntimeData?.Enabled == true)
@@ -100,18 +110,11 @@ public static class LauncherDoctor
                     using var http = SecureHttpClientFactory.Create(config);
                     var catalog = await CatalogResolver.DownloadCatalogAsync(config, http, cancellationToken: cancellationToken);
                     checks.Add(new DoctorCheck("catalog-online", true, "catalog authentication and signature validation passed"));
-                    checks.Add(new DoctorCheck("authorized-releases", true, catalog.Projects.Any(p => p.Releases.Count > 0) ? "authorized releases are available" : "connection is valid, but no releases are authorized for this PC"));
+                    checks.Add(DoctorPresentation.ReleaseReadiness(config, catalog));
                 }
-                catch (HttpRequestException ex) { checks.Add(new("catalog-online", false, ex.StatusCode == System.Net.HttpStatusCode.Unauthorized ? "authentication failed; check the device key registration/revocation" : ex.StatusCode == System.Net.HttpStatusCode.Forbidden ? "access denied; check the PC address and release policy" : "distribution connection failed")); }
-                catch (Exception ex) { checks.Add(new DoctorCheck("catalog-online", false, ex is System.Security.Cryptography.CryptographicException ? "signed metadata or request binding validation failed" : "distribution metadata validation failed")); }
+                catch (Exception ex) when (!cancellationToken.IsCancellationRequested) { checks.Add(DoctorPresentation.Failure("catalog-online", ex, agentContext ? "agent" : "client")); }
             }
         }
-        if (!agentContext && config?.IsManagedDeployment == true) try
-        {
-            var response = await new ManagedAgentClient().SendAsync("status", timeout: TimeSpan.FromSeconds(1), cancellationToken: cancellationToken);
-            checks.Add(new DoctorCheck("agent", response.Success, response.Message));
-        }
-        catch (Exception ex) { checks.Add(new DoctorCheck("agent", false, DiagnosticRedactor.Redact(ex.Message))); }
         if (config?.IsManagedDeployment == false) checks.Add(new("agent", true, "로컬 모드에서는 업데이트 서비스가 필요하지 않습니다.") { State = "not-applicable", Code = "local-mode", Subject = "client" });
         if (!online) checks.Add(new("catalog-online", false, "온라인 연결은 검사하지 않았습니다.") { State = "deferred", Code = "online-not-checked", Subject = agentContext ? "agent" : "client", ActionOwner = "user", NextAction = "온라인 점검을 실행해 주세요." });
         checks = checks.Select(check => DoctorPresentation.Normalize(check, agentContext ? "agent" : "client")).ToList();
@@ -133,6 +136,7 @@ public static class DiagnosticsExporter
         bool agentContext = false)
     {
         var config = await LauncherPaths.LoadResolvedAsync(configPath, cancellationToken, readOnly: true);
+        if (config.IsManagedDeployment && !agentContext) throw new InvalidOperationException("Managed support export must use the update service.");
         var doctor = await LauncherDoctor.RunAsync(configPath, online: false, cancellationToken, agentContext);
         var fullOutput = Path.GetFullPath(outputPath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullOutput)!);

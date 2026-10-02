@@ -172,7 +172,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
             response = Error(request, "invalid-request", ex.Message, identity);
         }
 
-        response.AgentCapabilities = [ManagedAgentProtocol.RuntimeCapability, RollbackPreviewService.Capability, RuntimeDataPolicy.Capability];
+        response.AgentCapabilities = [ManagedAgentProtocol.RuntimeCapability, RollbackPreviewService.Capability, RuntimeDataPolicy.Capability, DoctorPresentation.Capability];
         await ManagedAgentFrameCodec.WriteAsync(stream, response, cancellationToken);
     }
 
@@ -290,6 +290,13 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
         {
             var layout = ManagedLauncherPathLayout.Current();
             var configPath = Path.Combine(layout.ConfigRoot, "launcher.config.json");
+            if (request.Command.Equals("doctor", StringComparison.OrdinalIgnoreCase))
+            {
+                if (request.Selection is not null || request.ProjectId != request.DoctorTarget?.ProjectId)
+                    return Error(request, "invalid-request", "Diagnostic target does not match request.", identity);
+                var report = await LauncherDoctor.RunAsync(configPath, request.OnlineCheck, cancellationToken, agentContext: true, target: request.DoctorTarget);
+                return new ManagedAgentResponse { CorrelationId = request.CorrelationId, Success = report.Healthy, DoctorReport = report with { SupportId = request.CorrelationId }, AgentVersion = AgentVersion() };
+            }
             if (!File.Exists(configPath)) return Error(request, "not-configured", $"Managed config was not found: {configPath}", identity);
             var config = await LoadProjectConfigAsync(configPath, request.ProjectId, cancellationToken);
             if (request.Selection is not null)
@@ -348,9 +355,6 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     }
                     RuntimeStore.Report(config, launchTicket, peer!, request.Command == "launch-complete", request.PayloadPid);
                     return new() { CorrelationId = request.CorrelationId, Success = true, Runtime = RuntimeStore.Observe(config) };
-                case "doctor":
-                    var report = await LauncherDoctor.RunAsync(configPath, request.OnlineCheck, cancellationToken, agentContext: true);
-                    return new ManagedAgentResponse { CorrelationId = request.CorrelationId, Success = report.Healthy, DoctorReport = report, AgentVersion = AgentVersion() };
                 case "catalog":
                     using (var http = SecureHttpClientFactory.Create(config))
                     {

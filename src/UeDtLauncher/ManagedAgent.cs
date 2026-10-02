@@ -50,6 +50,7 @@ public sealed class ManagedAgentRequest
     public ReleaseSelection? Selection { get; set; }
     public string? AssetKind { get; set; }
     public bool OnlineCheck { get; set; }
+    public DoctorTarget? DoctorTarget { get; set; }
     public List<string> ClientCapabilities { get; set; } = [];
     public RuntimeLaunchTicket? RuntimeTicket { get; set; }
     public int? PayloadPid { get; set; }
@@ -316,15 +317,22 @@ public sealed class ManagedAgentClient(string? endpoint = null)
         return response;
     }
 
-    public async Task<DoctorReport> DoctorAsync(bool online, CancellationToken cancellationToken = default)
+    public async Task<DoctorReport> DoctorAsync(bool online, CancellationToken cancellationToken = default, DoctorTarget? target = null)
     {
-        var request = new ManagedAgentRequest { Command = "doctor", OnlineCheck = online };
+        var status = await SendAsync("status", timeout: TimeSpan.FromSeconds(5), cancellationToken: cancellationToken);
+        if (!status.AgentCapabilities.Contains(DoctorPresentation.Capability))
+            throw new AgentOperationException("client-upgrade-required", status.CorrelationId, "상세 진단을 지원하는 업데이트 서비스로 갱신해 주세요.");
+        var request = new ManagedAgentRequest { Command = "doctor", OnlineCheck = online, DoctorTarget = target, ProjectId = target?.ProjectId };
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken); timeout.CancelAfter(TimeSpan.FromMinutes(2));
         await using var stream = await ConnectAsync(timeout.Token);
         await ManagedAgentFrameCodec.WriteAsync(stream, request, timeout.Token);
         var response = await ManagedAgentFrameCodec.ReadAsync<ManagedAgentResponse>(stream, timeout.Token);
         if (response.CorrelationId != request.CorrelationId || response.ProtocolVersion != ManagedAgentProtocol.Version || response.DoctorReport is null)
             throw new InvalidDataException("Managed diagnostics are unavailable. Check/update the update service.");
+        if (target is not null && response.DoctorReport.Target is not null && response.DoctorReport.Target != target)
+            throw new InvalidDataException("Diagnostic target changed.");
+        if (response.DoctorReport.PreparationState is null || response.DoctorReport.Checks.Any(c => c.State is null))
+            return response.DoctorReport with { PreparationState = "verification-pending" };
         return response.DoctorReport;
     }
 
