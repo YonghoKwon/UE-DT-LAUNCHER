@@ -21,6 +21,7 @@ import struct
 import zlib
 import hashlib
 from gui_fixture_evidence import snapshot_preferences, sha256, wait_agent_ready, wait_server_ready, hold_fixture, verify_cohort, FixtureHarnessLock, copy_server_support
+from promotion_fixture_support import promote
 
 GUI_LONG_DISPLAY_NAME = "포스코DX 디지털 트윈 통합 운영 시뮬레이터 — 제철 공정·설비 상태·안전 점검 및 원격 협업 시험 프로젝트"
 GUI_SECONDARY_DISPLAY_NAME = "포스코DX 보조 검증 프로젝트 — 다중 프로젝트 선택 및 작은 화면 키보드 탐색을 위한 합성 시험"
@@ -53,6 +54,7 @@ def main():
     parser.add_argument("--nginx", help="Optional isolated Linux nginx executable; no system service changes")
     parser.add_argument("--benchmark", action="store_true", help="Optional synthetic signed load (requires cryptography)")
     parser.add_argument("--defer-v2", action="store_true", help="GUI-only: retain v2 pending manual approval")
+    parser.add_argument("--defer-promotion", action="store_true", help="GUI-only: approve v1 but leave recommendation unassigned")
     parser.add_argument("--gui-mode", choices=['managed','portable'], default='managed', help="GUI-only deployment, with a fresh isolated credential/install root")
     parser.add_argument("--gui-long-labels", action="store_true", help="GUI-only: deterministic long Korean project name and release notes")
     args = parser.parse_args()
@@ -155,7 +157,9 @@ def main():
         if job["state"] != "pending":
             raise RuntimeError(f"Expected pending approval, got {job['state']}")
         if (args.defer_v2 or args.prepare_gui) and version == "2.0.0": pending_jobs[version] = job["id"]
-        else: run(server, "approve", job["id"], "--config", root / "server.json")
+        else:
+            run(server, "approve", job["id"], "--config", root / "server.json")
+            if not args.defer_promotion: promote(lambda *a: run(server,*a),root/'server.json','demo',version,platform)
     if args.gui_long_labels:
         # View-only stress data: a separately authorized second project, never preinstalled.
         upload=root/'server'/'incoming'/'demo-secondary-1.0.0';upload.mkdir(parents=True)
@@ -166,6 +170,7 @@ def main():
         secondary=json.loads(run(server,'ingest',upload,'--config',root/'server.json'))
         if secondary['state']!='pending':raise RuntimeError('Secondary stress release did not await approval')
         run(server,'approve',secondary['id'],'--config',root/'server.json')
+        if not args.defer_promotion: promote(lambda *a: run(server,*a),root/'server.json','demo-secondary','1.0.0',platform)
     generated = client / "generated.json"
     run(launcher, "sample-config", "--server-url", origin, "--project-id", "demo", "--profile", "developer", "--platform", platform,
         "--deployment-mode", "portable", "--credential-name", "device", "--public-key", root / "public.pem", "--output", generated)

@@ -18,6 +18,7 @@ import threading
 import time
 import zipfile
 from contextlib import contextmanager
+from promotion_fixture_support import promote
 
 from prepare_real_ue_fixture import validate_package, fixture_endpoint, write, OfflineSink, FLAGS
 from gui_fixture_evidence import (inside, sha256, copy_server_support, wait_server_ready,
@@ -288,7 +289,9 @@ def prepare(args):
             '--version', version, '--platform', 'windows-x64', '--entry-point', 'ma0t10_dt.exe', '--output', upload/'release.json')
         job = json.loads(run('server', 'ingest', upload, '--config', root/'server.json'))
         if job['state'] != 'pending': raise ValueError('Not approval-pending')
-        if index == 1: run('server', 'approve', job['id'], '--config', root/'server.json')
+        if index == 1:
+            run('server', 'approve', job['id'], '--config', root/'server.json')
+            promote(lambda *a: run('server',*a),root/'server.json','ma0t10-dt',version,'windows-x64')
         f['releases'].append({'version': version, 'jobId': job['id'], 'zipSha256': sha256(archive), 'initialState': 'published' if index == 1 else 'pending'})
     run('launcher', 'sample-config', '--server-url', f['origin'], '--project-id', 'ma0t10-dt', '--profile', 'developer', '--platform', 'windows-x64',
         '--deployment-mode', 'managed-agent' if args.mode == 'managed' else 'portable', '--credential-name', 'ue-test-device', '--public-key', root/'public.pem', '--output', root/'generated.json')
@@ -325,7 +328,7 @@ def main():
     p.add_argument('--agent'); p.add_argument('--mode', choices=['managed', 'portable'], default='managed')
     p.add_argument('--cohort'); p.add_argument('--runtime-data', action='store_true')
     p.add_argument('--versions', nargs=2, default=['0.1.0-ue-test.v1', '0.1.0-ue-test.v2']); p.add_argument('--approve', action='store_true')
-    for action in ('resume', 'status', 'open-general', 'open-developer', 'approve-v2', 'stop-services'):
+    for action in ('resume', 'status', 'open-general', 'open-developer', 'approve-v2', 'promote-v2', 'stop-services'):
         sub.add_parser(action)
     for action in ('verify', 'snapshot', 'damage', 'verify-backup', 'invalidate-preview', 'compare', 'observe'):
         p = sub.add_parser(action); p.add_argument('--version', required=True)
@@ -343,6 +346,8 @@ def main():
         print(json.dumps({'guiPid': p.pid, 'profile': profile})); return
     if args.action == 'approve-v2':
         command(root, f, env, 'server', 'approve', f['releases'][1]['jobId'], '--config', root/'server.json'); return
+    if args.action == 'promote-v2':
+        promote(lambda *a: command(root,f,env,'server',*a),root/'server.json',f['projectId'],f['versions'][1],'windows-x64'); return
     if args.action == 'status':
         if f['mode'] == 'managed': print(json.dumps(agent_status(f['endpoint'])))
         for version in f['versions']:

@@ -5,7 +5,7 @@ namespace UeDtLauncher.Gui;
 public sealed partial class MainWindow
 {
     private LauncherRetryContext CurrentContext(LauncherUiOperation kind) => new(kind,_selectedProject.ProjectId,_config.Environment,_config.Channel,_config.VersionPolicy+":"+_config.RequestedVersion,
-        UsesDistributionServer && MatchingReleases().Any() ? CurrentReleaseSelection() : null);
+        UsesDistributionServer && SelectedCatalogRelease() is not null ? CurrentReleaseSelection() : null);
     private void BeginOperation(LauncherUiOperation kind)
     {
         _presentation.Begin(kind); _presentation.Retry=CurrentContext(kind); RefreshPresentation();

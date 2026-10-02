@@ -16,6 +16,7 @@ public static class LauncherFailure
         for(Exception? ex=error;ex is not null;ex=ex.InnerException)
         {
             if(ex is AgentOperationException agent) return agent.ErrorCode;
+            if(ex is NoPromotedReleaseException) return "no-promoted-release";
             if(ex is RuntimeDataException) return "runtime-data-unavailable";
             if(ex is RuntimeBlockedException) return "runtime-blocked";
             if(ex is RollbackPreviewChangedException) return "backup-preview-changed";

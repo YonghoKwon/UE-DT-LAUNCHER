@@ -42,6 +42,11 @@ for version in 1.0.0 2.0.0; do
     job=$(sed -n 's/.*"id": "\([a-z0-9]*\)".*/\1/p' "$root/job.json")
     test -n "$job"
     "$server" approve "$job" --config "$root/server.json" >> "$root/intake.log"
+    if "$server" --help | grep -q 'promotion inspect'; then
+        "$server" promotion inspect --project-id demo --environment prod --channel stable --platform linux-x64 --config "$root/server.json" > "$root/promotion.json"
+        revision=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["revision"])' "$root/promotion.json")
+        "$server" promote --project-id demo --environment prod --channel stable --platform linux-x64 --version "$version" --expected-revision "$revision" --reason 'isolated HTTPS acceptance' --config "$root/server.json" >> "$root/intake.log"
+    fi
 done
 bearer=$("$server" token-issue pc-a --config "$root/server.json")
 export UE_DT_AGENT_DATA_ROOT="$root/client/agent"

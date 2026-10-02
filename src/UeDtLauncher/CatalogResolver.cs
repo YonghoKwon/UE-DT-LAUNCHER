@@ -47,7 +47,7 @@ public static class CatalogResolver
         }
 
         LauncherConfigValidator.ValidateUrl(config, new Uri(config.CatalogUrl, UriKind.Absolute), "catalog");
-        using var response = await httpClient.GetAsync(config.CatalogUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response = await httpClient.GetAsync(CatalogRecommendation.RequestUrl(config), HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         var catalogJson = await SecureHttpClientFactory.ReadBoundedStringAsync(response, config.Security.MaxCatalogBytes, cancellationToken);
 
@@ -78,6 +78,7 @@ public static class CatalogResolver
 
         var catalog = JsonSerializer.Deserialize<DistributionCatalog>(catalogJson, JsonFiles.Options)
             ?? throw new InvalidOperationException("Release catalog JSON was empty or invalid.");
+        CatalogRecommendation.Validate(catalog.SelectionPolicy);
         await CatalogTrustManager.ValidateAndRecordAsync(config, catalog, cancellationToken);
         config.CatalogAuthenticated = signatureVerified;
         config.AuthenticatedCatalog = signatureVerified ? catalog : null;
@@ -135,8 +136,8 @@ public static class CatalogResolver
                 $"No release with version '{config.RequestedVersion}' for {config.ProjectId} ({config.Environment}/{config.Channel}/{config.TargetPlatform}). Available versions: {available}.");
         }
 
-        return matched.FirstOrDefault(release => release.IsLatest)
-               ?? matched.OrderByDescending(release => VersionKey.Parse(release.Version)).First();
+        return CatalogRecommendation.Find(catalog.SelectionPolicy, matched.OrderByDescending(release => VersionKey.Parse(release.Version)), r => r.IsLatest)
+            ?? throw new NoPromotedReleaseException();
     }
 
     private static string BuildNoMatchMessage(DistributionProject project, LauncherConfig config)

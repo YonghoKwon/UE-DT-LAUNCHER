@@ -1,6 +1,7 @@
 """Controls only a prepared synthetic GUI fixture. Never operates on company installations."""
 import argparse, hashlib, json, os, re, subprocess, time, zipfile
 from pathlib import Path
+from promotion_fixture_support import promote
 from gui_fixture_evidence import inside, verify_files, verify_cohort, preference_hash, restore_preferences, snapshot_preferences, fixture_mode, fixture_environment, record_control, agent_status, sha256
 p=argparse.ArgumentParser(); p.add_argument('--root',required=True)
 p.add_argument('action',choices=['smoke','gui-general','gui-developer','snapshot','compare','damage','release','stop-agent','start-agent','stop-server','start-server','stop-all','status','approve-v2','verify','verify-backup','invalidate-preview','prefs-snapshot','prefs-record-owned','prefs-restore','error-401','error-403','error-empty','policy-reset','error-trust','trust-reset'])
@@ -54,6 +55,9 @@ elif a.action=='approve-v2':
     job=fixture['pendingJobs'].get('2.0.0')
     if not job: raise ValueError('No pending v2 in this fixture')
     subprocess.run([fixture['binaries']['server']['path'],'approve',job,'--config',str(root/'server.json')],env=env,check=True,capture_output=True,creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
+    def promotion_run(*values):
+        return subprocess.check_output([fixture['binaries']['server']['path'],*map(str,values)],env=env,text=True,encoding='utf-8')
+    promote(promotion_run,root/'server.json','demo','2.0.0','windows-x64')
     record_control(root,'approve-v2',jobId=job)
     print('Approved fixture v2')
 elif a.action=='error-401':

@@ -772,7 +772,7 @@ public sealed partial class MainWindow : Window
     {
         if (string.Equals(_config.VersionPolicy, "exact", StringComparison.OrdinalIgnoreCase)) return _config.RequestedVersion;
         var releases = MatchingReleases().ToList();
-        return releases.FirstOrDefault(r => r.IsLatest)?.Version ?? releases.FirstOrDefault()?.Version;
+        return CatalogRecommendation.Find(_catalog.SelectionPolicy, releases, r => r.IsLatest)?.Version;
     }
 
     private Control StatusTile()
@@ -1045,7 +1045,7 @@ public sealed partial class MainWindow : Window
 
     private void UpdateReleaseNotes()
     {
-        var release = MatchingReleases().FirstOrDefault(r => _config.VersionPolicy == "exact" ? r.Version.Equals(_config.RequestedVersion, StringComparison.OrdinalIgnoreCase) : r.IsLatest) ?? MatchingReleases().FirstOrDefault();
+        var release = SelectedCatalogRelease();
         _releaseNotes = string.IsNullOrWhiteSpace(release?.Notes) ? _selectedProject.Description ?? "릴리스 노트가 없습니다." : release.Notes!;
     }
 
@@ -1063,11 +1063,23 @@ public sealed partial class MainWindow : Window
     private ReleaseSelection? CurrentReleaseSelection()
     {
         if (!UsesDistributionServer) return null;
-        var release = _config.VersionPolicy == "exact"
-            ? MatchingReleases().FirstOrDefault(r => r.Version == _config.RequestedVersion)
-            : MatchingReleases().FirstOrDefault(r => r.IsLatest) ?? MatchingReleases().FirstOrDefault();
+        var release = SelectedCatalogRelease();
+        if (release is null && _config.VersionPolicy != "exact" && _catalog.SelectionPolicy == CatalogRecommendation.ExplicitPolicy) throw new NoPromotedReleaseException();
         if (release is null) throw new InvalidOperationException("허용된 배포 버전을 먼저 선택해 주세요.");
         return new(release.ProjectId, release.Environment, release.Channel, release.Platform, release.Version);
+    }
+
+    private CatalogReleaseOption? SelectedCatalogRelease() => _config.VersionPolicy == "exact"
+        ? MatchingReleases().FirstOrDefault(r => r.Version.Equals(_config.RequestedVersion, StringComparison.OrdinalIgnoreCase))
+        : CatalogRecommendation.Find(_catalog.SelectionPolicy, MatchingReleases(), r => r.IsLatest);
+
+    private void AwaitPromotion()
+    {
+        _selectedRuntimeConfig = null; _viewModel.ProjectStatus = null;
+        _viewModel.GeneralState = GeneralLauncherState.AwaitingPromotion;
+        _installState = "실행 버전 지정 대기"; _installDetail = "관리자가 실행 버전을 지정하지 않았습니다.";
+        _presentation.ErrorCode = null; _presentation.SupportId = null; _presentation.Retry = null;
+        _presentation.Complete(_installDetail); Build();
     }
 
     private void ApplyManagedSelection(LauncherConfig config, ManagedAgentResponse response, ReleaseSelection? requested)
@@ -1102,6 +1114,8 @@ public sealed partial class MainWindow : Window
     {
         if(_running)return;
         if(!HasProject){await RefreshCatalog(true,suppressDialog:true);return;}
+        if (_catalog.SelectionPolicy == CatalogRecommendation.ExplicitPolicy && _config.VersionPolicy != "exact" && SelectedCatalogRelease() is null)
+        { AwaitPromotion(); return; }
         _running=true;SetBusy(true);
         try
         {
@@ -1282,6 +1296,7 @@ public sealed partial class MainWindow : Window
     private void MarkError(Exception ex, string status = "작업 실패", bool showDialog = true)
     {
         var uiError = LauncherUiError.From(ex);
+        if (uiError.Code == "no-promoted-release") { AwaitPromotion(); return; }
         _presentation.Title=status;
         _presentation.ErrorCode=uiError.Code; _presentation.SupportId=uiError.SupportId;
         var runtimeBlocked = ex.GetBaseException() as RuntimeBlockedException;

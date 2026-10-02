@@ -12,6 +12,7 @@ public sealed record LauncherUiError(string Code,string Message,string SupportId
         }
         var message=code switch
         {
+            "no-promoted-release"=>"관리자가 실행 버전을 지정하지 않았습니다.",
             "service-unavailable"=>"업데이트 서비스에 연결할 수 없습니다. 서비스 상태를 확인해 주세요.",
             "server-unavailable"=>"배포 서버에 연결할 수 없습니다. 네트워크를 확인해 주세요.",
             "authentication-failed"=>"PC 인증을 확인할 수 없습니다. 관리자에게 인증키 등록 상태를 문의해 주세요.",

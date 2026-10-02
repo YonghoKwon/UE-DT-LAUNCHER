@@ -2,6 +2,7 @@ namespace UeDtLauncher.Gui;
 
 public sealed class CatalogSnapshot
 {
+    public string? SelectionPolicy { get; init; }
     public string Status { get; init; } = "카탈로그 미확인";
     public List<CatalogProjectOption> Projects { get; init; } = new();
     public List<CatalogReleaseOption> Releases { get; init; } = new();
@@ -86,6 +87,7 @@ public static class CatalogSnapshotService
 
         return new CatalogSnapshot
         {
+            SelectionPolicy = catalog.SelectionPolicy,
             Status = $"카탈로그 확인 완료 · 프로젝트 {allowedProjects.Count}개 · 릴리스 {allowedReleases.Count}개",
             Projects = allowedProjects
                 .OrderBy(project => project.DisplayName, StringComparer.CurrentCultureIgnoreCase)

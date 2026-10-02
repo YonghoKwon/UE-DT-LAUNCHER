@@ -13,7 +13,8 @@ public enum GeneralLauncherState
     Ready,
     Working,
     RecoverableError,
-    RuntimeBlocked
+    RuntimeBlocked,
+    AwaitingPromotion
 }
 
 public enum PrimaryActionKind
@@ -126,7 +127,7 @@ public sealed class LauncherDashboardViewModel : INotifyPropertyChanged
         PrimaryActionKind.UpdateAndLaunch => "업데이트 후 실행",
         PrimaryActionKind.Launch => "실행",
         PrimaryActionKind.RetryCheck => "다시 확인",
-        _ => GeneralState == GeneralLauncherState.RuntimeBlocked ? "프로그램 종료 후 다시 확인" : "상태 확인 중..."
+        _ => GeneralState == GeneralLauncherState.AwaitingPromotion ? "실행 버전 지정 대기" : GeneralState == GeneralLauncherState.RuntimeBlocked ? "프로그램 종료 후 다시 확인" : "상태 확인 중..."
     };
 
     public void ApplyProjectStatus(ManagedProjectStatus status)
