@@ -406,9 +406,11 @@ public static class Program
 
     private static async Task<int> RunDoctorAsync(string[] args)
     {
+        var format = Get(args, "--format") ?? "json";
+        if (format is not ("json" or "text")) throw new ArgumentException("doctor --format must be json or text.");
         var configPath = Get(args, "--config") ?? "launcher.config.json";
         var report = await LauncherDoctor.RunAsync(configPath, Has(args, "--online"));
-        Console.WriteLine(JsonSerializer.Serialize(report, JsonFiles.Options));
+        Console.WriteLine(format == "text" ? DoctorPresentation.FormatText(report) : DiagnosticRedactor.Redact(JsonSerializer.Serialize(report, JsonFiles.Options)));
         return report.Healthy ? 0 : 1;
     }
 
@@ -807,7 +809,7 @@ public static class Program
         Console.WriteLine("  credential <set|status|delete> --name <credential-name>");
         Console.WriteLine("  publish-release --package-dir <dir> --server-root <dir> --base-url-root <url> --project-id <id> --version <version> --platform <platform> --entry-point <path> --private-key <pem> --key-id <id> [--dry-run] [--replace] [--set-latest]");
         Console.WriteLine("  generate-signing-key --private-key <private.pem> --public-key <public.pem>");
-        Console.WriteLine("  doctor --config launcher.config.json [--online]");
+        Console.WriteLine("  doctor --config launcher.config.json [--online] [--format json|text]");
         Console.WriteLine("  diagnostics export --config launcher.config.json [--output <diagnostics.zip>]");
     }
 }

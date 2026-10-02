@@ -15,7 +15,8 @@ public static partial class LauncherPaths
 {
     public static async Task<LauncherConfig> LoadResolvedAsync(
         string configPath,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool readOnly = false)
     {
         var fullConfigPath = Path.GetFullPath(configPath);
         var config = await JsonFiles.ReadAsync<LauncherConfig>(fullConfigPath, cancellationToken);
@@ -23,7 +24,7 @@ public static partial class LauncherPaths
 
         ResolveInPlace(config, fullConfigPath);
         LauncherConfigValidator.Validate(config);
-        if (string.IsNullOrWhiteSpace(config.DistributionServerUrl)) MigrateLegacySingleProjectState(config, legacy);
+        if (!readOnly && string.IsNullOrWhiteSpace(config.DistributionServerUrl)) MigrateLegacySingleProjectState(config, legacy);
         return config;
     }
 

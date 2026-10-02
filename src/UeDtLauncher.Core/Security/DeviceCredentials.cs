@@ -15,7 +15,6 @@ public static class DeviceCredentials
         if (storage is not ("managed" or "portable")) throw new ArgumentException("--storage must be managed or portable.");
         if (storage == "managed" || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("UE_DT_AGENT_DATA_ROOT"))) return null;
         var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UE-DT Launcher");
-        Directory.CreateDirectory(root);
         return new(root, Path.Combine(root, "config"), Path.Combine(root, "state"), Path.Combine(root, "apps"), Path.Combine(root, "logs"), Path.Combine(root, "credentials"));
     }
     internal static ManagedLauncherPathLayout? StorageLayout(LauncherConfig config) => config.SchemaVersion == 3 && !config.IsManagedDeployment ? StorageLayout("portable") : null;

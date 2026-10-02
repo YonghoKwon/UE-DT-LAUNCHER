@@ -4,13 +4,25 @@ using System.Text.Json;
 
 namespace UeDtLauncher;
 
-public sealed record DoctorCheck(string Name, bool Success, string Message);
+public sealed record DoctorCheck(string Name, bool Success, string Message)
+{
+    public string? State { get; init; }
+    public string? Code { get; init; }
+    public string? Subject { get; init; }
+    public string? ActionOwner { get; init; }
+    public string? NextAction { get; init; }
+}
 public sealed record DoctorReport(
     string GeneratedUtc,
     bool Healthy,
     string LauncherVersion,
     string OperatingSystem,
-    IReadOnlyList<DoctorCheck> Checks);
+    IReadOnlyList<DoctorCheck> Checks)
+{
+    public string? PreparationState { get; init; }
+    public string? SupportId { get; init; }
+    public DoctorTarget? Target { get; init; }
+}
 
 public static class LauncherDoctor
 {
@@ -24,12 +36,13 @@ public static class LauncherDoctor
         LauncherConfig? config = null;
         try
         {
-            config = await LauncherPaths.LoadResolvedAsync(configPath, cancellationToken);
+            config = await LauncherPaths.LoadResolvedAsync(configPath, cancellationToken, readOnly: true);
             checks.Add(new DoctorCheck("config", true, $"schemaVersion {config.SchemaVersion}"));
         }
-        catch (Exception ex)
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
         {
-            checks.Add(new DoctorCheck("config", false, DiagnosticRedactor.Redact(ex.Message)));
+            config = null;
+            checks.Add(new DoctorCheck("config", false, "런처 설정을 읽거나 검증할 수 없습니다."));
         }
         if (config is not null)
         {
@@ -46,7 +59,7 @@ public static class LauncherDoctor
             {
                 checks.Add(new("runtime-data-policy", true, "UE per-user/per-release policy; application-specific writers may ignore UserDir. Payload rollback does not restore user data."));
                 if (agentContext && config.IsManagedDeployment)
-                    checks.Add(new("runtime-data-host-preflight", true, "Deferred: service-account diagnostics do not verify user-session access. Authenticated runtime-host performs a write check before each launch."));
+                    checks.Add(new("runtime-data-host-preflight", false, "사용자 세션의 저장 경로 쓰기 검사는 실행 직전에 수행합니다.") { State = "deferred", Subject = "user-host" });
                 else
                 {
                     try
@@ -75,7 +88,6 @@ public static class LauncherDoctor
                 keysAvailable ? "trusted public keys are available" : "one or more trusted public keys are missing"));
             try
             {
-                Directory.CreateDirectory(config.StateRootDir);
                 var drive = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(config.StateRootDir))!);
                 checks.Add(new DoctorCheck("disk-space", drive.AvailableFreeSpace > 512L * 1024 * 1024,
                     $"{drive.AvailableFreeSpace / (1024 * 1024)} MiB free"));
@@ -94,18 +106,21 @@ public static class LauncherDoctor
                 catch (Exception ex) { checks.Add(new DoctorCheck("catalog-online", false, ex is System.Security.Cryptography.CryptographicException ? "signed metadata or request binding validation failed" : "distribution metadata validation failed")); }
             }
         }
-        if (!agentContext) try
+        if (!agentContext && config?.IsManagedDeployment == true) try
         {
             var response = await new ManagedAgentClient().SendAsync("status", timeout: TimeSpan.FromSeconds(1), cancellationToken: cancellationToken);
             checks.Add(new DoctorCheck("agent", response.Success, response.Message));
         }
         catch (Exception ex) { checks.Add(new DoctorCheck("agent", false, DiagnosticRedactor.Redact(ex.Message))); }
-        return new DoctorReport(
+        if (config?.IsManagedDeployment == false) checks.Add(new("agent", true, "로컬 모드에서는 업데이트 서비스가 필요하지 않습니다.") { State = "not-applicable", Code = "local-mode", Subject = "client" });
+        if (!online) checks.Add(new("catalog-online", false, "온라인 연결은 검사하지 않았습니다.") { State = "deferred", Code = "online-not-checked", Subject = agentContext ? "agent" : "client", ActionOwner = "user", NextAction = "온라인 점검을 실행해 주세요." });
+        checks = checks.Select(check => DoctorPresentation.Normalize(check, agentContext ? "agent" : "client")).ToList();
+        return DoctorPresentation.Complete(new DoctorReport(
             DateTimeOffset.UtcNow.ToString("O"),
-            checks.All(check => check.Success || check.Name == "agent"),
+            checks.All(check => check.State != "failed"),
             typeof(LauncherDoctor).Assembly.GetName().Version?.ToString() ?? "0.0.0.0",
             Environment.OSVersion.ToString(),
-            checks);
+            checks) { Target = config is null ? null : DoctorTarget.From(config) });
     }
 }
 
@@ -117,7 +132,7 @@ public static class DiagnosticsExporter
         CancellationToken cancellationToken = default,
         bool agentContext = false)
     {
-        var config = await LauncherPaths.LoadResolvedAsync(configPath, cancellationToken);
+        var config = await LauncherPaths.LoadResolvedAsync(configPath, cancellationToken, readOnly: true);
         var doctor = await LauncherDoctor.RunAsync(configPath, online: false, cancellationToken, agentContext);
         var fullOutput = Path.GetFullPath(outputPath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullOutput)!);
