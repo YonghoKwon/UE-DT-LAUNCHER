@@ -244,6 +244,7 @@ http {{
             from readiness_fixture_support import prove_readiness
             readiness_proofs.append(prove_readiness(run,launcher,client,config,args.defer_promotion))
         if not args.prepare_gui:
+            if args.readiness_proof: write(root / 'readiness-progress.json', {'phase': 'installation-execution-repair'})
             for version in ("1.0.0", "2.0.0"):
                 config["requestedVersion"] = version
                 write(client / "config.json", config)
@@ -306,6 +307,7 @@ http {{
             summary["versions_installed_and_launched"] = 0; summary["repair"] = False
             summary["gui_prepared_empty"] = True
         if args.agent:
+            if args.readiness_proof: write(root / 'readiness-progress.json', {'phase': 'managed-diagnostics'})
             # Match real MSI/RPM layout: the trusted host is beside the Agent, not an arbitrary GUI path.
             composed = client / "agent"
             composed_launcher = composed / Path(launcher).name
@@ -409,6 +411,7 @@ http {{
             else:
                 process.wait()
         else:
+            if args.readiness_proof: write(root / 'readiness-progress.json', {'phase': 'revocation'})
             run(server, "client-key", "revoke", "--key-id", "pc-test-key", "--config", root / "server.json")
             if args.readiness_proof:
                 report=json.loads(run(launcher,'doctor','--config',client/'readiness-config.json','--online',expected=1))

@@ -83,6 +83,27 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y nginx zip unzip openssl curl
 
+      - name: Published readiness regression without GUI
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            rid=win-x64; suffix=.exe; py=python
+          else
+            rid=linux-x64; suffix=; py=python3
+          fi
+          "$py" tools/run-readiness-regression.py --launcher "publish/$rid/UeDtLauncher$suffix" --agent "publish/agent-$rid/UeDtLauncher.Agent$suffix" --server "publish/distribution-server/UeDtLauncher.DistributionServer$suffix" --output publish/readiness-summary/summary.json
+
+      - name: Save sanitized readiness summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: readiness-summary-${{ runner.os }}
+          path: publish/readiness-summary/summary.json
+          if-no-files-found: ignore
+          retention-days: 7
+        # Exact summary only. Never upload private E2E roots, keys, configs or raw logs.
+
       - name: Signed HTTPS distribution end to end
         if: runner.os == 'Linux'
         timeout-minutes: 10
