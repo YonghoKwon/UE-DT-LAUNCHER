@@ -113,5 +113,7 @@ jobs:
           "$py" tools/test-migration-safety.py --launcher "publish/$rid/UeDtLauncher$suffix" --agent "publish/agent-$rid/UeDtLauncher.Agent$suffix"
           "$py" tools/test-service-runtime.py --launcher "publish/$rid/UeDtLauncher$suffix"
           "$py" tools/test-agent-service-target.py --agent "publish/agent-$rid/UeDtLauncher.Agent$suffix"
+          publish/fault-harness/UeDtLauncher.RuntimeFaultHarness$suffix runtime-data-smoke "$PWD/publish/runtime-data-smoke" "$PWD/publish/$rid/UeDtLauncher$suffix"
+          "$py" -m unittest discover -s tools -p 'test*real_ue_fixture.py'
           "$py" tools/check-improvement-ledger.py
         # Test-only harness/temporary roots are never release artifacts; no keys or raw logs uploaded.

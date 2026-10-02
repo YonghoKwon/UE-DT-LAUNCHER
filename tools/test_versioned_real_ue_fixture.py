@@ -3,7 +3,8 @@ from pathlib import Path
 import tempfile
 import unittest
 import zipfile
-from prepare_versioned_real_ue_fixture import archive_release, inventory, validate_versions, require_stopped, release_paths
+from prepare_versioned_real_ue_fixture import archive_release, inventory, validate_versions, require_stopped, release_paths, validate_cohort
+from gui_fixture_evidence import sha256
 
 
 class VersionedRealFixtureTests(unittest.TestCase):
@@ -35,6 +36,19 @@ class VersionedRealFixtureTests(unittest.TestCase):
             with self.assertRaises(FileNotFoundError): require_stopped(root, 'v1')
             (state/'runtime-state.json').write_text(json.dumps({'schemaVersion': 1, 'state': 0, 'origin': 'supervisor-completed', 'installationId': 'wrong'}))
             with self.assertRaises(ValueError): require_stopped(root, 'v1')
+
+    def test_frozen_cohort_rejects_dirty_source_or_changed_binary(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); binary = root/'UeDtLauncher.exe'; binary.write_bytes(b'fixture binary')
+            record = {'schemaVersion': 1, 'rid': 'win-x64', 'sourceHead': 'a'*40,
+                'productSourceHash': 'b'*64, 'productSourceDirty': False,
+                'binaries': {'launcher': {'path': str(binary), 'sha256': sha256(binary)}}}
+            path = root/'cohort.json'; path.write_text(json.dumps(record))
+            self.assertEqual('a'*40, validate_cohort(path, {'launcher': binary})['sourceHead'])
+            binary.write_bytes(b'changed')
+            with self.assertRaises(ValueError): validate_cohort(path, {'launcher': binary})
+            binary.write_bytes(b'fixture binary'); record['productSourceDirty'] = True; path.write_text(json.dumps(record))
+            with self.assertRaises(ValueError): validate_cohort(path, {'launcher': binary})
 
 
 if __name__ == '__main__': unittest.main()

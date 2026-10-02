@@ -17,6 +17,7 @@ import subprocess
 import threading
 import time
 import zipfile
+from contextlib import contextmanager
 
 from prepare_real_ue_fixture import validate_package, fixture_endpoint, write, OfflineSink, FLAGS
 from gui_fixture_evidence import (inside, sha256, copy_server_support, wait_server_ready,
@@ -44,6 +45,19 @@ def validate_versions(versions):
     if len(versions) != 2 or versions[0] == versions[1] or any(
         not re.fullmatch(r'[0-9A-Za-z][0-9A-Za-z._+-]{0,99}', v) or v in ('.', '..') for v in versions):
         raise ValueError('Two distinct safe release versions are required')
+
+
+def validate_cohort(path, inputs):
+    value = json.loads(Path(path).read_text())
+    if value.get('schemaVersion') != 1 or value.get('rid') != 'win-x64' or value.get('productSourceDirty') is not False:
+        raise ValueError('Frozen clean-source Windows cohort required')
+    if not re.fullmatch(r'[0-9a-f]{40}', value.get('sourceHead', '')) or not re.fullmatch(r'[0-9a-f]{64}', value.get('productSourceHash', '')):
+        raise ValueError('Missing publication source evidence')
+    for role, source in inputs.items():
+        recorded = value['binaries'][role]
+        if Path(recorded['path']).resolve() != source or sha256(source) != recorded['sha256']:
+            raise ValueError('Input is not the recorded published artifact')
+    return value
 
 
 def archive_release(package, archive, version, index, expected):
@@ -103,6 +117,13 @@ def load(root):
         if c['projectId'] != f['projectId'] or c['distributionServerUrl'] != f['origin']: raise ValueError('Client identity changed')
         for field in ('installDir', 'stateRootDir', 'logDir'):
             inside(root, Path(c[field]).relative_to(root))
+    if f.get('runtimeDataEnabled'):
+        for profile in ('general', 'developer'):
+            c = json.loads(inside(root, 'client/'+profile+'.json').read_text())
+            if c.get('runtimeData') != {'enabled': True, 'adapter': 'unreal-engine', 'policy': 'per-user-per-release', 'rootDirectory': str(root/'client/runtime-data')}:
+                raise ValueError('Runtime data policy changed')
+    for name, digest in f.get('configHashes', {}).items():
+        if sha256(inside(root, name)) != digest: raise ValueError('Operational fixture configuration changed')
     env = dict(os.environ, UE_DT_AGENT_DATA_ROOT=str(inside(root, 'client/agent')), UE_DT_AGENT_ENDPOINT=f['endpoint'])
     return root, f, env
 
@@ -119,6 +140,28 @@ def require_stopped(root, version):
     if record.get('schemaVersion') != 1 or record.get('installationId') != expected_id or record.get('state') != 0 or record.get('origin') not in ('supervisor-completed', 'new-install'):
         raise ValueError('Valid supervised Quiescent record required; no guessed stopped state')
     if inside(state, 'transaction.json').exists(): raise ValueError('Unfinished transaction')
+    if record['origin'] == 'supervisor-completed':
+        if not re.fullmatch(r'[a-f0-9]{32}', record.get('attemptId', '')) or any(not record.get(p) for p in ('host', 'requester', 'entryPoint', 'manifestHash', 'tokenHash')):
+            raise ValueError('Incomplete supervised completion record')
+
+
+@contextmanager
+def mutation_lock(root, version):
+    # Same Windows sharing semantics as FileStream(FileShare.None), not a PID assertion.
+    # Keep the lock handle across stopped recheck and the acceptance-only mutation.
+    if os.name != 'nt': raise ValueError('Real UE fixture mutation currently supports Windows only')
+    import ctypes
+    from ctypes import wintypes
+    _, state = release_paths(root, version)
+    path = inside(state, 'update.lock')
+    if not path.exists(): raise ValueError('No existing installation lock; no fixture initialization bypass')
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    kernel.CreateFileW.restype = wintypes.HANDLE; kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = kernel.CreateFileW(str(path), 0xc0000000, 0, None, 3, 0x80, None)
+    if handle == wintypes.HANDLE(-1).value: raise OSError(ctypes.get_last_error(), 'Installation is busy')
+    try: require_stopped(root, version); yield
+    finally: kernel.CloseHandle(handle)
 
 
 def snapshot(root, version):
@@ -133,6 +176,7 @@ def snapshot(root, version):
 
 def hold(root, f, env):
     with FixtureHarnessLock(root):
+        inside(root, 'control/stop-all').unlink(missing_ok=True)
         logs = []; processes = {}
         sink = http.server.ThreadingHTTPServer(('127.0.0.1', int(f['sinkOrigin'].rsplit(':', 1)[1])), OfflineSink)
         sink.daemon_threads = True
@@ -165,6 +209,8 @@ def prepare(args):
     inputs = {n: Path(getattr(args, n)).resolve() for n in ('launcher', 'agent', 'server') if n != 'agent' or args.mode == 'managed'}
     for n, p in inputs.items():
         if p.name != COHORT_FILES[n] or not p.is_file() or p.is_symlink(): raise ValueError('Published executable mismatch')
+    cohort = validate_cohort(args.cohort, inputs) if args.cohort else None
+    if args.runtime_data and cohort is None: raise ValueError('Runtime-data tests require a frozen publication cohort')
     source = inventory(package)
     if not any(p.endswith(('.pak', '.ucas')) and v['size'] > 0 for p, v in source.items()): raise ValueError('Nonempty cooked payload required')
     if any(p.startswith('FixtureAcceptance/') for p in source): raise ValueError('Acceptance files already present in input')
@@ -176,6 +222,10 @@ def prepare(args):
          'toolHead': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
          'toolDiffHash': hashlib.sha256(subprocess.check_output(['git', 'diff', 'HEAD'])).hexdigest(),
          'publishSourceHead': args.publish_source_head}
+    if cohort is not None:
+        if cohort['sourceHead'] != args.publish_source_head: raise ValueError('Publication head mismatch')
+        f['publication'] = cohort
+    f['runtimeDataEnabled'] = args.runtime_data
     for n, p in inputs.items():
         target = root/('cohort/server' if n == 'server' else 'client/agent' if args.mode == 'managed' else 'client/portable')/p.name
         target.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(p, target)
@@ -215,11 +265,19 @@ def prepare(args):
             *[f'-ini:Game:[DTCoreRuntimeOverride]:{key}={f["sinkOrigin"]}' for key in ('BaseApiUrl', 'LocalApiUrl', 'TestApiUrl', 'ProdApiUrl')],
             f'-ini:Game:[DTCoreRuntimeOverride]:WebSocketUrl=ws://127.0.0.1:{f["sinkOrigin"].rsplit(":", 1)[1]}',
             '-ini:Game:[/Script/DTCore.DTCoreSettings]:MaxReconnectAttempts=1'])
+    if args.runtime_data:
+        config['launchArguments'] = [a for a in config['launchArguments'] if not a.startswith(('-UserDir=', '-abslog='))]
+        config['runtimeData'] = {'enabled': True, 'adapter': 'unreal-engine', 'policy': 'per-user-per-release', 'rootDirectory': str(root/'client/runtime-data')}
     if args.mode == 'managed': write(root/'client/agent/config/launcher.config.json', config)
     for profile in ('general', 'developer'):
         gui = dict(config, clientProfile=profile)
         if args.mode == 'managed': gui['security'] = dict(config['security'], credentialName='gui-must-not-read-device-key')
         write(root/('client/'+profile+'.json'), gui)
+    write(root/'versioned-real-fixture.json', f)
+    if args.runtime_data:
+        subprocess.run(['pwsh', '-NoProfile', '-File', str(Path(__file__).with_name('provision-real-fixture-data.ps1')), '-Root', str(root)], check=True, creationflags=FLAGS)
+    config_names = ['server.json'] + (['client/agent/config/launcher.config.json'] if args.mode == 'managed' else [])
+    f['configHashes'] = {name: sha256(inside(root, name)) for name in config_names}
     write(root/'versioned-real-fixture.json', f)
     if (root/'client/apps').exists(): raise ValueError('No CLI preinstallation is permitted')
     hold(root, f, env)
@@ -231,11 +289,13 @@ def main():
     p = sub.add_parser('prepare')
     for n in ('package', 'launcher', 'server', 'publish-source-head'): p.add_argument('--'+n, required=True)
     p.add_argument('--agent'); p.add_argument('--mode', choices=['managed', 'portable'], default='managed')
+    p.add_argument('--cohort'); p.add_argument('--runtime-data', action='store_true')
     p.add_argument('--versions', nargs=2, default=['0.1.0-ue-test.v1', '0.1.0-ue-test.v2']); p.add_argument('--approve', action='store_true')
     for action in ('resume', 'status', 'open-general', 'open-developer', 'approve-v2', 'stop-services'):
         sub.add_parser(action)
-    for action in ('verify', 'snapshot', 'damage', 'verify-backup'):
+    for action in ('verify', 'snapshot', 'damage', 'verify-backup', 'invalidate-preview', 'compare'):
         p = sub.add_parser(action); p.add_argument('--version', required=True)
+        if action in ('snapshot', 'compare'): p.add_argument('--name', required=True)
     args = parser.parse_args()
     if args.action == 'prepare': return prepare(args)
     root, f, env = load(args.root)
@@ -259,14 +319,29 @@ def main():
     app, state = release_paths(root, args.version)
     if args.action == 'verify': print('PASS: Manifest files='+str(verify_files(app, inside(state, 'installed-manifest.json'))))
     if args.action == 'snapshot':
-        value = snapshot(root, args.version); write(root/('evidence/snapshot-'+str(time.time_ns())+'.json'), value)
+        if not re.fullmatch(r'[a-zA-Z0-9-]{1,64}', args.name): raise ValueError('Invalid evidence label')
+        value = snapshot(root, args.version); path = inside(root, 'evidence/'+args.name+'.json')
+        if path.exists(): raise ValueError('Existing snapshot is never overwritten')
+        write(path, value)
         print(json.dumps({'managedHash': fingerprint(value['managed']), 'dataHash': fingerprint(value['data']), 'unmanagedFiles': list(value['unmanaged'])}))
+    if args.action == 'compare':
+        if not re.fullmatch(r'[a-zA-Z0-9-]{1,64}', args.name): raise ValueError('Invalid evidence label')
+        previous = json.loads(inside(root, 'evidence/'+args.name+'.json').read_text())
+        current = snapshot(root, args.version)
+        if previous != current: raise ValueError('Snapshot changed; inspect protected and unmanaged inventories separately')
+        print('PASS: unchanged protected/state/data snapshot')
     if args.action == 'damage':
-        require_stopped(root, args.version)
-        manifest = json.loads(inside(state, 'installed-manifest.json').read_text())
-        name = 'FixtureAcceptance/changed.txt'
-        if name not in {e['path'] for e in manifest['files']}: raise ValueError('Only known installed acceptance text may be damaged')
-        inside(app, name).write_text('intentional isolated acceptance damage\n')
+        with mutation_lock(root, args.version):
+            manifest = json.loads(inside(state, 'installed-manifest.json').read_text())
+            name = 'FixtureAcceptance/changed.txt'
+            if name not in {e['path'] for e in manifest['files']}: raise ValueError('Only known installed acceptance text may be damaged')
+            inside(app, name).write_text('intentional isolated acceptance damage\n')
+    if args.action == 'invalidate-preview':
+        with mutation_lock(root, args.version):
+            backups = sorted(inside(state, 'backups').glob('[0-9]*'), reverse=True)
+            if not backups: raise ValueError('No backup')
+            target = inside(backups[0], '.uedt-meta/backup-info.json')
+            with target.open('a', encoding='utf-8') as stream: stream.write(' ')
     if args.action == 'verify-backup':
         require_stopped(root, args.version)
         backups = sorted(inside(state, 'backups').glob('[0-9]*'), reverse=True)
@@ -275,16 +350,10 @@ def main():
         info = json.loads(inside(backup, '.uedt-meta/backup-info.json').read_text())
         if info['previousVersion'] != args.version or info['newVersion'] != args.version or info['addedPaths']:
             raise ValueError('Not a same-version normal-file backup')
-        manifest = json.loads(inside(backup, '.uedt-meta/installed-manifest.json').read_text())
-        # Engine backs up changed/applied files, not unchanged package files.
-        checked = []
-        for e in manifest['files']:
-            path = inside(backup, e['path'])
-            if path.exists():
-                if path.stat().st_size != e['size'] or sha256(path).lower() != e['sha256'].lower(): raise ValueError('Backup contains damaged payload')
-                checked.append(e['path'])
-        if not checked: raise ValueError('Empty backup is not a normal-file recovery proof')
-        print(json.dumps({'backupId': backup.name, 'normalFiles': checked}))
+        manifest_path = inside(backup, '.uedt-meta/installed-manifest.json')
+        count = verify_files(backup, manifest_path)
+        if not count: raise ValueError('Empty backup is not a normal-file recovery proof')
+        print(json.dumps({'backupId': backup.name, 'normalManifestFiles': count}))
 
 
 if __name__ == '__main__': main()
