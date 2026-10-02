@@ -62,8 +62,28 @@ public static class RuntimeDataPolicy
         if (config.RuntimeData?.Enabled != true) return null;
         var selection = config.SelectedRelease ?? throw new RuntimeDataException();
         selection.Validate();
-        return new(config.RuntimeData.Adapter, config.RuntimeData.Policy, config.RuntimeData.RootDirectory,
+        var plan = new RuntimeDataPlan(config.RuntimeData.Adapter, config.RuntimeData.Policy, config.RuntimeData.RootDirectory,
             selection.ReleaseId, attempt, requester.Owner, ProtectedDirectories(config), RuntimeStore.InstallationId(config));
+        ValidateBinding(config, plan);
+        return plan;
+    }
+
+    internal static void ValidateBinding(LauncherConfig config, RuntimeDataPlan plan)
+    {
+        ValidatePlan(plan);
+        if (plan.InstallationId != RuntimeStore.InstallationId(config) ||
+            (config.SelectedRelease is not null && config.SelectedRelease.ReleaseId != plan.ReleaseId)) throw new RuntimeDataException();
+        var root = config.VersionedInstallRoot;
+        if (root is null)
+        {
+            // Legacy restore overloads retain the complete install path, but not SelectedRelease.
+            // Infer only its parent root and prove all five release components against that path.
+            var parent = new DirectoryInfo(Path.GetFullPath(config.InstallDir));
+            for (var i = 0; i < 5; i++) parent = parent.Parent ?? throw new RuntimeDataException();
+            root = parent.FullName;
+        }
+        if (!SafePath.FileSystemComparer.Equals(Path.GetFullPath(config.InstallDir).TrimEnd(Path.DirectorySeparatorChar),
+            SafePath.ResolveInside(root, plan.ReleaseId).TrimEnd(Path.DirectorySeparatorChar))) throw new RuntimeDataException();
     }
 
     internal static void ValidatePlan(RuntimeDataPlan plan)
@@ -86,6 +106,9 @@ public static class RuntimeDataPolicy
         var root = plan.RootDirectory ?? DefaultRoot();
         root = Path.GetFullPath(root);
         ValidateSeparation(root, plan.ProtectedDirectories);
+        // A service's profile is different from the user host's profile. Protect both.
+        ValidateSeparation(root, [ManagedLauncherPathLayout.Current().CredentialRoot,
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UE-DT Launcher", "credentials")]);
         // Configured test/service roots still partition by the actual authenticated identity.
         var owner = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(plan.Owner))).ToLowerInvariant();
         var release = SafePath.ResolveInside(root, "users/" + owner + "/releases/" + plan.ReleaseId);
@@ -107,7 +130,7 @@ public static class RuntimeDataPolicy
         ValidateSeparation(root, ProtectedDirectories(config)); CheckLinks(root);
         var existing = new DirectoryInfo(root);
         while (!existing.Exists) existing = existing.Parent ?? throw new RuntimeDataException();
-        ValidateDirectory(existing.FullName, RuntimeIdentities.Current().Owner);
+        ValidateDirectory(existing.FullName, RuntimeIdentities.Current().Owner, trustedAncestor: !SafePath.IsInside(root, existing.FullName, SafePath.FileSystemComparison));
     }
 
     internal static void ValidateSeparation(string root, IEnumerable<string> protectedPaths)
@@ -138,14 +161,25 @@ public static class RuntimeDataPolicy
             EnsurePrivateDirectory(paths.UserDirectory, paths.Root, host.Owner);
             EnsurePrivateDirectory(Path.GetDirectoryName(paths.LogFile)!, paths.Root, host.Owner);
             // Demonstrate actual write access; do not silently fall back to the install folder.
-            var probe = Path.Combine(paths.UserDirectory, ".write-check-" + plan.AttemptId);
-            using (var output = new FileStream(probe, FileMode.CreateNew, FileAccess.Write, FileShare.None)) output.Flush(true);
-            File.Delete(probe);
+            ProbeWrite(paths.UserDirectory, plan.AttemptId);
+            ProbeWrite(Path.GetDirectoryName(paths.LogFile)!, plan.AttemptId);
             return request with { Arguments = [.. request.Arguments, "-UserDir=" + paths.UserDirectory.Replace('\\', '/') + "/",
                 "-abslog=" + paths.LogFile.Replace('\\', '/')], RuntimeData = null };
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
         { throw new RuntimeDataException(ex); }
+    }
+
+    private static void ProbeWrite(string directory, string attempt)
+    {
+        var probe = Path.Combine(directory, ".write-check-" + attempt);
+        var created = false;
+        try
+        {
+            using var output = new FileStream(probe, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            created = true; output.Flush(true);
+        }
+        finally { if (created) File.Delete(probe); }
     }
 
     private static void EnsurePrivateDirectory(string path, string root, string owner)
@@ -154,7 +188,7 @@ public static class RuntimeDataPolicy
         var missing = new Stack<string>();
         var current = new DirectoryInfo(path);
         while (!current.Exists) { missing.Push(current.FullName); current = current.Parent ?? throw new RuntimeDataException(); }
-        ValidateDirectory(current.FullName, owner);
+        ValidateDirectory(current.FullName, owner, trustedAncestor: !SafePath.IsInside(root, current.FullName, SafePath.FileSystemComparison));
         while (missing.TryPop(out var next))
         {
             if (OperatingSystem.IsWindows()) CreateWindowsDirectory(next, owner);
@@ -178,7 +212,7 @@ public static class RuntimeDataPolicy
         new DirectoryInfo(path).Create(security);
     }
 
-    internal static void ValidateDirectory(string path, string owner)
+    internal static void ValidateDirectory(string path, string owner, bool trustedAncestor = false)
     {
         CheckLinks(path);
         var actualOwner = RuntimeIdentities.DirectoryOwner(path);
@@ -187,7 +221,8 @@ public static class RuntimeDataPolicy
         {
             var mode = File.GetUnixFileMode(path);
             if (actualOwner != owner && actualOwner != "0") throw new RuntimeDataException();
-            if ((mode & (UnixFileMode.GroupWrite | UnixFileMode.OtherWrite)) != 0 && (mode & UnixFileMode.StickyBit) == 0) throw new RuntimeDataException();
+            if ((mode & (UnixFileMode.GroupWrite | UnixFileMode.OtherWrite)) != 0 &&
+                !(trustedAncestor && actualOwner == "0" && (mode & UnixFileMode.StickyBit) != 0)) throw new RuntimeDataException();
         }
         else throw new PlatformNotSupportedException();
     }

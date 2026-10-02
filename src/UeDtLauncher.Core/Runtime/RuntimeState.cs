@@ -46,11 +46,15 @@ public static class RuntimeStore
         using var document = JsonDocument.Parse(File.ReadAllText(path));
         RequireFields(document.RootElement, "schemaVersion", "installationId", "state", "origin");
         if (document.RootElement.TryGetProperty("runtimeData", out var data) && data.ValueKind != JsonValueKind.Null)
+        {
             RequireFields(data, "adapter", "policy", "releaseId", "attemptId", "owner", "protectedDirectories", "installationId");
+            if (!data.TryGetProperty("rootDirectory", out var root) || root.ValueKind is not (JsonValueKind.Null or JsonValueKind.String))
+                throw new InvalidDataException("Runtime root selection must be explicit.");
+        }
         var value = document.RootElement.Deserialize<RuntimeRecord>(JsonFiles.Options) ?? throw new InvalidDataException("Invalid runtime record.");
         if (value.SchemaVersion != 1 || value.InstallationId != InstallationId(config) || !Enum.IsDefined(value.State)) throw new InvalidDataException("Runtime record identity mismatch.");
         ValidateRecord(value);
-        if (value.RuntimeData is { } plan && plan.InstallationId != value.InstallationId) throw new InvalidDataException("Runtime data installation mismatch.");
+        if (value.RuntimeData is { } plan) RuntimeDataPolicy.ValidateBinding(config, plan);
         return value;
     }
     internal static void RequireFields(JsonElement value, params string[] required)

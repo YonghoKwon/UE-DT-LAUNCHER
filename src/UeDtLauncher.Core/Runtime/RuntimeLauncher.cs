@@ -23,12 +23,28 @@ public static class RuntimeLauncher
             var response = await new ManagedAgentClient().SendRuntimeAsync("launch-begin", config, cancellationToken: cancellationToken);
             if (!response.Success || response.RuntimeTicket is null) throw new RuntimeBlockedException(response.Runtime ?? new(RuntimeState.Unknown, response.Status, response.Message));
             ticket = response.RuntimeTicket;
-            if (config.SelectedRelease is not null && config.SelectedRelease != response.SelectedRelease) throw new InvalidDataException("Runtime release selection mismatch.");
+            PinManagedSelection(config, response);
             var installedHost = Path.Combine(ManagedLauncherPathLayout.Current().InstallRoot, OperatingSystem.IsWindows() ? "UeDtLauncher.exe" : "UeDtLauncher");
             if (!SafePath.FileSystemComparer.Equals(ticket.HostExecutable, Path.GetFullPath(installedHost))) throw new InvalidDataException("Runtime host must use the installed launcher beside the Agent.");
         }
         else ticket = RuntimeStore.Begin(config, RuntimeIdentities.Current(), HostExecutable());
         return await StartHostAsync(new RuntimeHostSession(config, ticket, config.IsManagedDeployment ? ManagedAgentProtocol.ResolveEndpoint() : null, config.SelectedRelease), cancellationToken);
+    }
+
+    internal static void PinManagedSelection(LauncherConfig config, ManagedAgentResponse response)
+    {
+        if (response.SelectedRelease is not { } selection)
+        {
+            if (config.SelectedRelease is not null || !string.IsNullOrWhiteSpace(config.DistributionServerUrl))
+                throw new InvalidDataException("Runtime release selection is missing.");
+            return; // Legacy direct-manifest mode.
+        }
+        selection.Validate();
+        if (config.SelectedRelease is not null && config.SelectedRelease != selection) throw new InvalidDataException("Runtime release selection mismatch.");
+        if (config.ProjectId != selection.ProjectId || config.Environment != selection.Environment ||
+            config.Channel != selection.Channel || config.TargetPlatform != selection.Platform) throw new InvalidDataException("Runtime release track mismatch.");
+        VersionedReleasePaths.Bind(config, selection);
+        config.VersionPolicy = "exact"; config.RequestedVersion = selection.Version;
     }
 
     internal static Task<Process> LaunchServiceAsync(LauncherConfig config, CancellationToken cancellationToken)

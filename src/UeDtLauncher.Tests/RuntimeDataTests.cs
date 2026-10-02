@@ -23,7 +23,9 @@ public sealed partial class RuntimeDataTests : IDisposable
         else Directory.CreateDirectory(root, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
     }
     public void Dispose() => Directory.Delete(root, true);
-    private LauncherConfig Config() => new()
+    private LauncherConfig Config()
+    {
+        var config = new LauncherConfig
     {
         SchemaVersion = 3, Environment = "dev", DistributionServerUrl = "https://distribution.invalid",
         InstallDir = Path.Combine(root, "apps", "v1"), VersionedInstallRoot = Path.Combine(root, "apps"),
@@ -32,7 +34,10 @@ public sealed partial class RuntimeDataTests : IDisposable
         InstallStatePath = Path.Combine(root, "state", "install-state.json"),
         SelectedRelease = new("test", "dev", "stable", OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64", "v1"),
         RuntimeData = new() { Enabled = true, RootDirectory = Path.Combine(root, "data") }
-    };
+        };
+        VersionedReleasePaths.Bind(config, config.SelectedRelease!);
+        return config;
+    }
     private RuntimeDataPlan Plan(LauncherConfig? c = null) => RuntimeDataPolicy.Plan(c ?? Config(), RuntimeIdentities.Current(), Guid.NewGuid().ToString("N"))!;
 
     [Fact]
