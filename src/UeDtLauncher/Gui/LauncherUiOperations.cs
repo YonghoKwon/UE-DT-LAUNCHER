@@ -37,6 +37,8 @@ internal interface ILauncherUiBackend
 }
 internal sealed class LauncherUiBackend : ILauncherUiBackend
 {
+    internal Task<LauncherUiOperationResult> ExecuteCancellableAsync(LauncherUiOperationContext context, LauncherConfig config, bool repair, bool launch,
+        Action<LauncherProgress> progress, FileLogger? logger, CancellationToken token) => LauncherUiOperations.ExecuteAsync(context, config, repair, launch, progress, logger, token);
     public Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext context,LauncherConfig config,Action<LauncherProgress> progress)=>LauncherUiOperations.CheckAsync(context,config,progress);
     public Task<LauncherUiOperationResult> ExecuteAsync(LauncherUiOperationContext context,LauncherConfig config,bool repair,bool launch,Action<LauncherProgress> progress,FileLogger? logger)=>LauncherUiOperations.ExecuteAsync(context,config,repair,launch,progress,logger);
 }
@@ -76,11 +78,15 @@ internal static class LauncherUiOperations
         if(context.Managed)
         {
             var client=new ManagedAgentClient();
+            var operationId=Guid.NewGuid().ToString("N");
+            Task<ManagedAgentResponse>? cancellation=null;
+            using var registration=token.Register(()=>cancellation=client.SendOperationAsync("cancel",operationId));
             var response=await client.SendStreamingAsync(repair?"repair":"update",context.ProjectId,
-                value=>progress(value.ToLauncherProgress()),cancellationToken:token,selection:context.Selection);
+                value=>progress(value.ToLauncherProgress()),selection:context.Selection,operationId:operationId);
+            if(cancellation is not null)await cancellation;
             response.ThrowIfFailed();BindManagedSelection(context,config,response);
             RuntimeObservation? runtime=null;
-            if(launch) _=await ManagedAppLauncher.LaunchAsync(config,token);
+            if(launch&&!token.IsCancellationRequested) _=await ManagedAppLauncher.LaunchAsync(config,token);
             try {var observed=await client.SendRuntimeAsync("runtime-inspect",config,cancellationToken:token);observed.ThrowIfFailed();runtime=observed.Runtime;}
             catch(Exception ex) when(ex is not OperationCanceledException){runtime=LauncherDashboardViewModel.RequireRuntimeObservation(null);}
             return new(config,config.SelectedRelease,response.ProjectStatus ?? throw new InvalidDataException("설치 상태를 확인할 수 없습니다."),runtime);
@@ -89,8 +95,19 @@ internal static class LauncherUiOperations
         {
             using var http=SecureHttpClientFactory.Create(config);
             await CatalogResolver.ResolveAsync(config,http,(s,m,p)=>progress(new(s,m,p)),token);
-            using var engine=new LauncherEngine(config,progress,logger,echoToConsole:false);
-            await engine.RunAsync(token);
+            var registry=new OperationRegistry(Path.Combine(config.StateRootDir,"operations"));
+            using var operation=registry.Begin(Guid.NewGuid().ToString("N"),RuntimeIdentities.Current(),config.SelectedRelease,token,repair?"repair":"update");
+            LauncherEngine? running=null;
+            using var engine=new LauncherEngine(config,value=>
+            {
+                if(running?.ManifestSha256 is { } digest)operation.Bind(config.SelectedRelease,digest);
+                if(value.Stage=="Download")operation.Phase("Downloading");else if(value.Stage=="Apply")operation.Phase("Applying");
+                progress(value);
+            },logger,echoToConsole:false);
+            running=engine;
+            try{await engine.RunAsync(operation.Token);operation.Finish(true);}
+            catch(OperationCanceledException){operation.Finish(engine.InstallationCommitted);throw;}
+            catch{operation.Finish(engine.InstallationCommitted,failed:true);throw;}
             var installed=await JsonFiles.ReadAsync<LauncherManifest>(config.InstalledManifestPath,token);
             var result=new LauncherUiOperationResult(config,config.SelectedRelease,
                 new(true,installed.Version,installed.Version,false,0,0,BackupManager.List(config.BackupDir).Count>0),RuntimeStore.Observe(config));

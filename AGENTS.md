@@ -37,6 +37,8 @@
 
 ## 보존할 경계
 
+- 작업 control은 실제 OS owner/session 또는 관리자만 허용한다. IPC 단절은 취소가 아니다. OS 작업 잠금과 원자적 기록을 유지하며 active 작업을 discard하지 않는다. commit 이후 취소는 완료 상태이며 시작 전 launch만 생략한다. cache는 명시 예산·서명된 Manifest digest·정확한 release/owner에 결속하며 완료 파일도 재검증한다. 새 launch는 온라인 권한 확인 없이 runtime ticket을 만들지 않는다.
+
 - headless 후속 작업에서도 GUI 입력 중단을 유지한다. 측정은 현재 인증/명시적 승격 계약으로 수행하고 시작 실패와 누락 지표를 숨기지 않는다. 새 실행은 온라인 확인, 자동 점검은 조회만, 정리는 관리자 확인 및 공개/승격/활성 작업 보호, 만료는 관리자 명시 지정이다. 회사 설치/계정/인증서와 push/PR은 별도 요청이다.
 
 - 오프라인 doctor의 전체 호출 경로는 설정·설치·state·backup·runtime·legacy 파일/디렉터리/잠금을 생성·변경하지 않는다. 검사 전용 설정 로딩은 legacy migration을 수행하지 않으며 credential 경로 조회는 순수 계산이다.

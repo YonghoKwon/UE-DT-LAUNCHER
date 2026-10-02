@@ -18,6 +18,9 @@ public sealed class LauncherEngine : IDisposable
     private ClientPerformanceCounters _performance = new();
     private bool _performanceReported;
     public LauncherPerformanceMetrics PerformanceMetrics => _performance.Snapshot();
+    public bool InstallationCommitted { get; private set; }
+    public string? ManifestSha256 { get; private set; }
+    private ResumeCache? _resume;
 
     public LauncherEngine(LauncherConfig config, Action<LauncherProgress>? progress = null, FileLogger? fileLogger = null, bool echoToConsole = true)
         : this(config, progress, fileLogger, echoToConsole, httpClient: null)
@@ -54,9 +57,10 @@ public sealed class LauncherEngine : IDisposable
         using (var prepared = await PrepareAsync(cancellationToken))
         {
             _ = await CommitPreparedAsync(prepared, cancellationToken);
+            InstallationCommitted = true;
             manifest = prepared.RemoteManifest;
         }
-        await CompleteRunAsync(manifest, cancellationToken);
+        if (!cancellationToken.IsCancellationRequested) await CompleteRunAsync(manifest, cancellationToken);
     }
 
     internal async Task<PreparedLauncherUpdate> PrepareAsync(CancellationToken cancellationToken = default)
@@ -66,6 +70,13 @@ public sealed class LauncherEngine : IDisposable
         var instanceLock = InstallationMutationLease.Acquire(_config);
         try
         {
+            ManifestDocument? resumedDocument = null;
+            if (_config.ExpectedResumeManifestSha256 is not null)
+            {
+                resumedDocument = await ManifestDownloader.DownloadAsync(_config, _httpClient, cancellationToken: cancellationToken);
+                if (!resumedDocument.SignatureVerified || ResumeCache.Digest(resumedDocument.Json) != _config.ExpectedResumeManifestSha256)
+                    throw new InvalidDataException("Authenticated manifest changed; start a new operation instead of resuming.");
+            }
             var targetExisted = Directory.Exists(_config.InstallDir) || File.Exists(_config.InstallStatePath);
             Directory.CreateDirectory(_config.InstallDir);
             Directory.CreateDirectory(_config.StagingDir);
@@ -76,13 +87,15 @@ public sealed class LauncherEngine : IDisposable
                 cancellationToken, instanceLock);
 
             Log("Manifest", "Downloading remote manifest...", 5);
-            var manifestDocument = await ManifestDownloader.DownloadAsync(
+            var manifestDocument = resumedDocument ?? await ManifestDownloader.DownloadAsync(
                 _config,
                 _httpClient,
                 (stage, message, percent) => Log(stage, message, percent),
                 cancellationToken);
             var remoteManifest = manifestDocument.Manifest;
             var manifestJson = manifestDocument.Json;
+            ManifestSha256 = ResumeCache.Digest(manifestJson);
+            _resume = ResumeCache.Open(_config, manifestDocument);
             var previousInstallations = await PreviousInstallationReuse.DiscoverAsync(
                 _config, manifestDocument, targetExisted, cancellationToken);
 
@@ -386,12 +399,14 @@ public sealed class LauncherEngine : IDisposable
                 token.ThrowIfCancellationRequested();
                 var stagingPath = SafePath.ResolveInsideChecked(_config.StagingDir, file.Path);
                 Directory.CreateDirectory(Path.GetDirectoryName(stagingPath)!);
-                if (previousInstallations is null ||
-                    !await previousInstallations.TryCopyAsync(file, stagingPath, HashMatchesAsync, _performance, token))
+                if (_resume is not null && await _resume.TryCopyAsync(file, stagingPath, token))
+                { _performance.AddReusedBytes(file.Size); progress.Report(index, file.Size, completed: true); return; }
+                if (previousInstallations is null || !await previousInstallations.TryCopyAsync(file, stagingPath, HashMatchesAsync, _performance, token))
                 {
                     var downloadUri = ResolveDownloadUri(remote, file);
                     await DownloadWithRetryAsync(downloadUri, stagingPath, file, bytes => progress.Report(index, bytes), token);
                 }
+                if (_resume is not null) await _resume.StoreAsync(file, stagingPath, token);
                 progress.Report(index, file.Size, completed: true);
             }, cancellationToken);
         }
@@ -416,7 +431,7 @@ public sealed class LauncherEngine : IDisposable
         Exception? lastError = null;
         // A private randomized scratch file cannot alias another manifest entry such as app.download.
         // The same scratch path is retained across retries so Range resume still works.
-        var tempPath = targetPath + ".download-" + Guid.NewGuid().ToString("N");
+        var tempPath = _resume?.Partial(file) ?? targetPath + ".download-" + Guid.NewGuid().ToString("N");
         var maxAttempts = Math.Max(1, _config.MaxRetryCount);
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {

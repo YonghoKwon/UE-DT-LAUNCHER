@@ -14,9 +14,13 @@ namespace UeDtLauncher.Agent;
 internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logger) : BackgroundService
 {
     private readonly SemaphoreSlim _commandGate = new(1, 1);
+    private readonly SemaphoreSlim _connections = new(16, 16);
+    private readonly List<Task> _clients = [];
+    private OperationRegistry _operations = null!;
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var layout = ManagedLauncherPathLayout.Current();
+        _operations = new OperationRegistry(Path.Combine(layout.StateRoot, "operations"));
         foreach (var path in new[] { layout.ConfigRoot, layout.StateRoot, layout.AppsRoot, layout.LogRoot, layout.CredentialRoot })
             Directory.CreateDirectory(path);
 
@@ -26,6 +30,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
             await RunUnixSocketAsync(stoppingToken);
         else
             throw new PlatformNotSupportedException("Managed Agent IPC supports Windows, Linux, and macOS only.");
+        await Task.WhenAll(_clients);
     }
 
     [SupportedOSPlatform("windows")]
@@ -35,19 +40,23 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
         logger.LogInformation("Agent IPC listening on named pipe {Endpoint}", endpoint);
         while (!stoppingToken.IsCancellationRequested)
         {
-            await using var pipe = CreateSecuredPipe(endpoint);
+            await _connections.WaitAsync(stoppingToken);
+            var pipe = CreateSecuredPipe(endpoint);
             try
             {
                 await pipe.WaitForConnectionAsync(stoppingToken);
                 var identity = TryGetClientIdentity(pipe);
-                await HandleClientAsync(pipe, identity, stoppingToken);
+                _clients.RemoveAll(task => task.IsCompleted);
+                _clients.Add(HandleOwnedClientAsync(pipe, identity, stoppingToken));
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
+                pipe.Dispose(); _connections.Release();
                 break;
             }
             catch (Exception ex)
             {
+                pipe.Dispose(); _connections.Release();
                 logger.LogWarning(ex, "Agent named-pipe request failed");
             }
         }
@@ -57,6 +66,9 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
     private static NamedPipeServerStream CreateSecuredPipe(string endpoint)
     {
         var security = new PipeSecurity();
+        // The service/console identity must be able to create additional server instances.
+        // Authenticated clients retain only ReadWrite, not CreateNewInstance/FullControl.
+        security.AddAccessRule(new PipeAccessRule(WindowsIdentity.GetCurrent().User!, PipeAccessRights.FullControl, AccessControlType.Allow));
         security.AddAccessRule(new PipeAccessRule(
             new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
             PipeAccessRights.FullControl,
@@ -72,7 +84,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
         return NamedPipeServerStreamAcl.Create(
             endpoint,
             PipeDirection.InOut,
-            4,
+            16,
             PipeTransmissionMode.Byte,
             PipeOptions.Asynchronous,
             0,
@@ -114,10 +126,11 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
         {
             while (!stoppingToken.IsCancellationRequested)
             {
+                await _connections.WaitAsync(stoppingToken);
                 Socket client;
                 try { client = await listener.AcceptAsync(stoppingToken); }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-                await using var stream = new NetworkStream(client, ownsSocket: true);
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { _connections.Release(); break; }
+                var stream = new NetworkStream(client, ownsSocket: true);
                 RuntimeIdentity? peer = null;
                 if (OperatingSystem.IsLinux())
                 {
@@ -132,13 +145,23 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     }
                     catch (Exception ex) when (ex is SocketException or IOException or UnauthorizedAccessException) { }
                 }
-                await HandleClientAsync(stream, peer, stoppingToken);
+                _clients.RemoveAll(task => task.IsCompleted);
+                _clients.Add(HandleOwnedClientAsync(stream, peer, stoppingToken));
             }
         }
         finally
         {
             if (File.Exists(endpoint)) File.Delete(endpoint);
         }
+    }
+
+    private async Task HandleOwnedClientAsync(Stream stream, RuntimeIdentity? peer, CancellationToken stoppingToken)
+    {
+        try { await HandleClientAsync(stream, peer, stoppingToken); }
+        catch (Exception ex) when (ex is IOException or SocketException or OperationCanceledException or TimeoutException)
+        { logger.LogDebug("Agent connection ended: {Type}", ex.GetType().Name); }
+        catch (Exception ex) { logger.LogWarning("Agent connection rejected: {Type}", ex.GetType().Name); }
+        finally { await stream.DisposeAsync(); _connections.Release(); }
     }
 
     private async Task HandleClientAsync(Stream stream, RuntimeIdentity? peer, CancellationToken cancellationToken)
@@ -148,7 +171,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
         ManagedAgentResponse response;
         try
         {
-            request = await ManagedAgentFrameCodec.ReadAsync<ManagedAgentRequest>(stream, cancellationToken);
+            request = await ManagedAgentFrameCodec.ReadAsync<ManagedAgentRequest>(stream, cancellationToken).WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
             var validationError = ManagedAgentProtocol.Validate(request);
             if (validationError is not null)
             {
@@ -172,7 +195,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
             response = Error(request, "invalid-request", ex.Message, identity);
         }
 
-        response.AgentCapabilities = [ManagedAgentProtocol.RuntimeCapability, RollbackPreviewService.Capability, RuntimeDataPolicy.Capability, DoctorPresentation.Capability];
+        response.AgentCapabilities = [ManagedAgentProtocol.RuntimeCapability, RollbackPreviewService.Capability, RuntimeDataPolicy.Capability, DoctorPresentation.Capability, OperationRegistry.Capability];
         await ManagedAgentFrameCodec.WriteAsync(stream, response, cancellationToken);
     }
 
@@ -219,14 +242,14 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
         RuntimeIdentity? peer,
         CancellationToken cancellationToken)
     {
-        var channel = Channel.CreateUnbounded<ManagedAgentProgress>(new UnboundedChannelOptions
+        var channel = Channel.CreateBounded<ManagedAgentProgress>(new BoundedChannelOptions(256)
         {
             SingleReader = true,
-            SingleWriter = false
+            SingleWriter = false, FullMode = BoundedChannelFullMode.DropOldest
         });
         var writer = Task.Run(async () =>
         {
-            await foreach (var progress in channel.Reader.ReadAllAsync(cancellationToken))
+            try { await foreach (var progress in channel.Reader.ReadAllAsync(cancellationToken))
             {
                 await ManagedAgentFrameCodec.WriteAsync(stream, new ManagedAgentResponse
                 {
@@ -237,7 +260,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     IsFinal = false,
                     Progress = [progress]
                 }, cancellationToken);
-            }
+            } } catch (IOException) { /* A disconnected observer never cancels the operation. */ }
         }, cancellationToken);
 
         try
@@ -267,6 +290,33 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
         Action<ManagedAgentProgress>? progressSink = null)
     {
         var identity = peer?.Owner;
+        string? resumedDigest = null;
+        if (request.Command is "operation-status" or "operation-cancel" or "operation-discard")
+        {
+            if (peer is null) return Error(request, "rejected", "Authenticated OS peer is required.", identity);
+            try
+            {
+                var id = request.OperationId ?? throw new InvalidDataException("Operation ID is required.");
+                var operation = request.Command switch
+                {
+                    "operation-cancel" => _operations.Cancel(id, peer),
+                    "operation-discard" => _operations.Discard(id, peer),
+                    _ => _operations.Inspect(id, peer)
+                };
+                return new() { CorrelationId = request.CorrelationId, Success = true, Status = operation.Phase, Operation = operation };
+            }
+            catch (Exception ex) when (ex is InvalidDataException or UnauthorizedAccessException or InvalidOperationException)
+            { return Error(request, "operation-rejected", "Operation unavailable or not owned by this session.", identity); }
+        }
+        if (request.Command == "operation-resume")
+        {
+            if (peer is null) return Error(request, "rejected", "Authenticated OS peer is required.", identity);
+            var previous = _operations.Inspect(request.OperationId ?? "", peer);
+            if (previous.Phase is not ("Interrupted" or "Cancelled" or "Failed") || previous.Selection is null || previous.ManifestSha256 is null)
+                return Error(request, "resume-rejected", "Operation cannot be resumed.", identity);
+            request.Command = previous.Command; request.ProjectId = previous.Selection.ProjectId; request.Selection = previous.Selection;
+            resumedDigest = previous.ManifestSha256;
+        }
         if (request.Command.Equals("status", StringComparison.OrdinalIgnoreCase))
         {
             return new ManagedAgentResponse
@@ -299,6 +349,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
             }
             if (!File.Exists(configPath)) return Error(request, "not-configured", $"Managed config was not found: {configPath}", identity);
             var config = await LoadProjectConfigAsync(configPath, request.ProjectId, cancellationToken);
+            config.ExpectedResumeManifestSha256 = resumedDigest;
             if (request.Selection is not null)
             {
                 if (string.IsNullOrWhiteSpace(config.DistributionServerUrl)) throw new InvalidOperationException("Explicit selection requires distribution server configuration.");
@@ -325,6 +376,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     if (config.RuntimeData?.Enabled == true && request.ClientCapabilities?.Contains(RuntimeDataPolicy.Capability) != true)
                         return Error(request, "client-upgrade-required", "저장 경로 분리를 지원하는 런처로 업데이트해 주세요.", identity);
                     using (var http = SecureHttpClientFactory.Create(config)) await CatalogResolver.ResolveAsync(config, http, cancellationToken: cancellationToken);
+                    await LaunchPolicy.VerifyOnlineAsync(config, cancellationToken);
                     var hostPath = Path.Combine(Path.GetDirectoryName(Environment.ProcessPath!)!, OperatingSystem.IsWindows() ? "UeDtLauncher.exe" : "UeDtLauncher");
                     var ticket = RuntimeStore.Begin(config, peer!, hostPath);
                     return new() { CorrelationId = request.CorrelationId, Success = true, RuntimeTicket = ticket, SelectedRelease = config.SelectedRelease };
@@ -375,18 +427,41 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     }
                 case "update":
                 case "repair":
+                    using (var operation = _operations.Begin(request.CorrelationId, peer!, request.Selection, cancellationToken, request.Command))
+                    {
                     config.LaunchAfterUpdate = false;
                     config.RepairMode = request.Command.Equals("repair", StringComparison.OrdinalIgnoreCase);
+                    LauncherEngine? runningEngine = null;
+                    try
+                    {
                     using (var http = SecureHttpClientFactory.Create(config))
                     {
                         await CatalogResolver.ResolveAsync(config, http, (stage, message, percent) =>
-                            AddProgress(new LauncherProgress(stage, message, percent)), cancellationToken);
-                        using var engine = new LauncherEngine(config, AddProgress, new FileLogger(layout.LogRoot), echoToConsole: false);
-                            await engine.RunAsync(cancellationToken);
+                            AddProgress(new LauncherProgress(stage, message, percent)), operation.Token);
+                        operation.Bind(config.SelectedRelease);
+                        using var engine = new LauncherEngine(config, value =>
+                        {
+                            if (runningEngine?.ManifestSha256 is { } digest) operation.Bind(config.SelectedRelease, digest);
+                            if (value.Stage == "Apply") operation.Phase("Applying");
+                            else if (value.Stage == "Download") operation.Phase("Downloading");
+                            AddProgress(value);
+                        }, new FileLogger(layout.LogRoot), echoToConsole: false);
+                        runningEngine = engine;
+                        await engine.RunAsync(operation.Token);
                         }
+                    operation.Finish(committed: true);
                     var installed = await JsonFiles.ReadAsync<LauncherManifest>(config.InstalledManifestPath, cancellationToken);
                     var completedStatus = await ManagedProjectStatusInspector.InspectAsync(config, installed, cancellationToken);
-                    return Success(request, identity, "completed", config.RepairMode ? "Repair completed." : "Update completed.", progress, completedStatus, config.SelectedRelease);
+                    var result = Success(request, identity, "completed", config.RepairMode ? "Repair completed." : "Update completed.", progress, completedStatus, config.SelectedRelease);
+                    result.Operation = operation.Status; return result;
+                    }
+                    catch (OperationCanceledException) when (operation.Token.IsCancellationRequested)
+                    {
+                        operation.Finish(runningEngine?.InstallationCommitted == true);
+                        return new() { CorrelationId = request.CorrelationId, Success = operation.Status.Phase == "Completed", Status = operation.Status.Phase, Operation = operation.Status, SelectedRelease = config.SelectedRelease };
+                    }
+                    catch { operation.Finish(runningEngine?.InstallationCommitted == true, failed: true); throw; }
+                    }
                 case "rollback-preview":
                     if (request.Selection is not null) VersionedReleasePaths.Bind(config, request.Selection);
                     var preview = await RollbackPreviewService.ReadAsync(config, cancellationToken);

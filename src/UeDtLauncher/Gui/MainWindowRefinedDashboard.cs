@@ -1098,6 +1098,8 @@ public sealed partial class MainWindow : Window
     {
         if(_running)return;
         _running=true;SetBusy(true);
+        using var operationCancellation = new CancellationTokenSource();
+        _operationCancellation = operationCancellation;
         try
         {
             var context=CaptureUiOperation(expectedSelection);
@@ -1105,12 +1107,15 @@ public sealed partial class MainWindow : Window
             BeginOperation(launch?LauncherUiOperation.Launch:repair?LauncherUiOperation.Repair:LauncherUiOperation.Update);
             _viewModel.GeneralState=GeneralLauncherState.Working;Progress(0);ResetSpeedTracking();
             var config=await RunConfig(repair,launch);
-            var result=await _uiBackend.ExecuteAsync(context,config,repair,launch,PostUiProgress,_fileLogger);
+            var result=_uiBackend is LauncherUiBackend cancellable
+                ? await cancellable.ExecuteCancellableAsync(context,config,repair,launch,PostUiProgress,_fileLogger,operationCancellation.Token)
+                : await _uiBackend.ExecuteAsync(context,config,repair,launch,PostUiProgress,_fileLogger);
             _presentation.Complete(launch?"실행 준비 완료":repair?"파일 복구 완료":"업데이트 확인 완료");
             if(ApplyUiResult(context,result))Build();
         }
+        catch(OperationCanceledException){_presentation.Complete("작업 취소 완료 · 설치 상태를 다시 확인해 주세요.");Build();}
         catch(Exception ex){MarkError(ex);}
-        finally{_running=false;SetBusy(false);}
+        finally{_operationCancellation=null;_running=false;SetBusy(false);}
     }
 
     private async Task RefreshInstallStatusAsync(bool suppressDialog = false)

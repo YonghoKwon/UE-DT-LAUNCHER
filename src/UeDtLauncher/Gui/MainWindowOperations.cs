@@ -3,6 +3,13 @@ namespace UeDtLauncher.Gui;
 
 public sealed partial class MainWindow
 {
+    private CancellationTokenSource? _operationCancellation;
+    private void RequestOperationCancellation()
+    {
+        if (_operationCancellation is null || _operationCancellation.IsCancellationRequested) return;
+        SetStatus("취소 요청 중 · 파일 작업과 안전한 복구가 끝날 때까지 기다려 주세요.");
+        _operationCancellation.Cancel(); Build();
+    }
     private LauncherUiOperationContext CaptureUiOperation(ReleaseSelection? expected=null)
     {
         var selection=CurrentReleaseSelection();

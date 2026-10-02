@@ -18,6 +18,7 @@ public sealed class LauncherConfig
     [JsonIgnore] public ReleaseSelection? SelectedRelease { get; set; }
     [JsonIgnore] internal bool CatalogAuthenticated { get; set; }
     [JsonIgnore] internal DistributionCatalog? AuthenticatedCatalog { get; set; }
+    [JsonIgnore] internal string? ExpectedResumeManifestSha256 { get; set; }
     public string? CatalogSignatureUrl { get; set; }
     public string? CatalogPublicKeyPath { get; set; }
 
@@ -67,6 +68,7 @@ public sealed class LauncherConfig
 
 public sealed class LauncherPerformanceConfig
 {
+    public long? ResumeCacheBytes { get; set; } // Explicit opt-in budget; null preserves per-request retries only.
     public int DownloadConcurrency { get; set; } = 2;
     public int HashConcurrency { get; set; } = 2;
     public bool ReusePreviousInstallations { get; set; } = true;

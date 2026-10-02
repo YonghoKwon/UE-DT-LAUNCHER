@@ -18,4 +18,14 @@
 
 ## 3. 이후 기록
 
+### 작업 조정·취소·재개 (Windows 로컬)
+
+Operation ID/실제 OS owner·session/정확한 릴리스/Manifest SHA-256 기록을 추가했다. Agent는 최대16연결, 변경 gate1개 유지. 단절은 취소가 아니다. 취소 요청과 완료를 구분하고 commit 이후에는 설치 완료·미실행 launch 생략 정책을 적용한다. 런처의 기존 runtime 보호를 우회하지 않는다.
+
+새 운영 명령은 `operation status|cancel|resume|discard --id ...`이며 portable은 `--config ...`를 지정한다. 개인키·token·challenge는 기록하지 않는다. OS 작업 잠금은 종료 시 해제되지만 미완료 기록은 Interrupted로 남는다. 지속 캐시는 명시적 `performance.resumeCacheBytes` 예산과 검증된 Manifest/정확한 릴리스에만 활성화된다. 다른 Manifest/손상 캐시/예산 부족은 자동으로 정상 재사용하지 않는다.
+
+Windows unit13개(소유권/세션/중복/저장 실패/중단 상태/commit 이후 취소/캐시 검증·독립 복사·손상·예산/다른 Manifest) 통과. 게시 proof-04의 console Agent·서버·CLI로 다운로드 단계에서 상태 조회/취소 → 작업 종료 및 설치/Manifest/backup/journal 불변 → fresh auth resume 완료 → discard를 통과했다. 첫 동시 named pipe 시험은 서버 identity의 CreateNewInstance 권한 누락으로 실패했고 ACL을 해당 Agent identity로만 보강했다. CLI control JSON 출력 결함도 수정 후 새 게시본에서 재시험했다.
+
+GUI 취소 코드는 연결했지만 실제 클릭은 미검증이다. WSL 및 적용/복구 실패·부분 Range 전수 장애 표는 최종 통합 때 별도 기록한다. 진행률은 수용 전까지 보수적으로 유지한다.
+
 Core 물리 이동, 취소/재개, 인증 수명, 유지보수, 백업/정리, 자동 점검, 최종 재측정 결과는 실제 검증 후 이 문서에 누적한다.

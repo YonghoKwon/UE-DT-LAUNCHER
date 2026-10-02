@@ -54,12 +54,15 @@ def main():
     parser.add_argument("--prepare-gui", help="Test-only synthetic executable; leave installs empty and hold for GUI")
     parser.add_argument("--nginx", help="Optional isolated Linux nginx executable; no system service changes")
     parser.add_argument("--benchmark", action="store_true", help="Optional synthetic signed load (requires cryptography)")
+    parser.add_argument("--operation-proof", action="store_true", help="Noninteractive owned cancellation/status proof; requires Agent")
     parser.add_argument("--defer-v2", action="store_true", help="GUI-only: retain v2 pending manual approval")
     parser.add_argument("--defer-promotion", action="store_true", help="GUI-only: approve v1 but leave recommendation unassigned")
     parser.add_argument("--readiness-proof", action="store_true", help="Check published read-only diagnostics and selected release readiness")
     parser.add_argument("--gui-mode", choices=['managed','portable'], default='managed', help="GUI-only deployment, with a fresh isolated credential/install root")
     parser.add_argument("--gui-long-labels", action="store_true", help="GUI-only: deterministic long Korean project name and release notes")
     args = parser.parse_args()
+    if args.operation_proof and (not args.agent or args.prepare_gui):
+        parser.error("--operation-proof requires console Agent without GUI")
     if args.gui_long_labels and not args.prepare_gui:
         parser.error("--gui-long-labels requires --prepare-gui")
     if args.defer_v2 and not args.prepare_gui:
@@ -152,6 +155,8 @@ def main():
                 package.writestr(entry, '#!/bin/sh\nsleep "${1:-0}"\nprintf "UE_DT_FAKE_GAME_OK\\n" > runtime-marker.txt\n')
             package.writestr("version.txt", version)
             package.writestr("hero.png", png)
+            if args.operation_proof and version == "2.0.0":
+                package.writestr("cancellation.bin", b"synthetic-download-" * (4 * 1024 * 1024))
         run(launcher, "release-metadata", "--zip", archive, "--project-id", "demo", "--version", version,
             "--platform", platform, "--entry-point", entry, "--executable-paths", entry,
             "--hero-path", "hero.png", "--output", upload / "release.json", *gui_metadata_arguments(args.gui_long_labels, version))
@@ -183,6 +188,7 @@ def main():
     config = json.loads(generated.read_text(encoding="utf-8"))
     config.update(versionPolicy="exact", requestedVersion="1.0.0", installDir=str(client / "apps"), stateRootDir=str(client / "state"),
                   launchArguments=["/c", "echo UE_DT_FAKE_GAME_OK>runtime-marker.txt"] if os.name == "nt" else [])
+    if args.operation_proof: config['performance']={'resumeCacheBytes':256*1024*1024}
     harness_lock=FixtureHarnessLock(root) if args.prepare_gui else None
     if harness_lock is not None:harness_lock.__enter__()
     log = (root / "server.log").open("w", encoding="utf-8")
@@ -346,6 +352,9 @@ http {{
             if args.readiness_proof:
                 readiness_proofs.append(prove_readiness(run,launcher,client,gui,args.defer_promotion))
             summary["managed_asset_and_doctor"] = True
+            if args.operation_proof:
+                from operation_fixture_support import prove_operations
+                summary['owned_operation_cancellation'] = prove_operations(root, client, launcher, env, flags, run, platform)
             if args.promotion_proof:
                 import uuid
                 from gui_fixture_evidence import agent_status

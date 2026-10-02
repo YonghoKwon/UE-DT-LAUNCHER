@@ -69,6 +69,8 @@ public static class LauncherConfigValidator
             throw new InvalidOperationException("performance.downloadConcurrency must be between 1 and 8.");
         if (config.Performance.HashConcurrency is < 1 or > 4)
             throw new InvalidOperationException("performance.hashConcurrency must be between 1 and 4.");
+        if (config.Performance.ResumeCacheBytes is < 0 or > 549755813888L)
+            throw new InvalidOperationException("performance.resumeCacheBytes must be null or between 0 and 512 GiB.");
         if (config.Security.AuthenticationMode is not ("bearer" or "request-signature-v1"))
             throw new InvalidOperationException("Unsupported authentication mode.");
         if (config.Security.AuthenticationMode == "request-signature-v1")

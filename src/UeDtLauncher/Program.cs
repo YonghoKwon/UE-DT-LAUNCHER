@@ -11,7 +11,7 @@ public static class Program
     private static readonly string[] KnownSubcommands =
     {
         "run", "service", "rollback", "runtime", "generate-manifest", "update-catalog", "release-metadata", "import-install",
-        "list-releases", "generate-nginx-acl", "sign-manifest", "generate-signing-key", "sample-config", "publish-release", "doctor", "diagnostics", "agent", "credential"
+        "list-releases", "generate-nginx-acl", "sign-manifest", "generate-signing-key", "sample-config", "publish-release", "doctor", "diagnostics", "agent", "credential", "operation"
     };
 
     [STAThread]
@@ -144,6 +144,7 @@ public static class Program
                 "release-metadata" => await GenerateSidecarAsync(args.Skip(1).ToArray()),
                 "import-install" => await ImportInstallAsync(args.Skip(1).ToArray()),
                 "run" => await RunLauncherAsync(args.Skip(1).ToArray()),
+                "operation" => await RunOperationAsync(args.Skip(1).ToArray()),
                 "runtime" => await RunRuntimeCommandAsync(args.Skip(1).ToArray()),
                 "service" => await RunServiceAsync(args.Skip(1).ToArray()),
                 "rollback" => await RollbackAsync(args.Skip(1).ToArray()),
@@ -242,8 +243,20 @@ public static class Program
         var configPath = Get(args, "--config") ?? "launcher.config.json";
         var repair = Has(args, "--repair");
         var noLaunch = Has(args, "--no-launch");
+        using var cancel = new ConsoleCancellation();
 
-        var config = await LauncherPaths.LoadResolvedAsync(configPath);
+        var config = await LauncherPaths.LoadResolvedAsync(configPath, cancellationToken: cancel.Token);
+        var portableOperations = new OperationRegistry(Path.Combine(config.StateRootDir, "operations"));
+        if (Get(args, "--resume-id") is { } resumeId)
+        {
+            if (config.IsManagedDeployment) throw new ArgumentException("Use operation resume for managed deployments.");
+            var previous = portableOperations.Inspect(resumeId, RuntimeIdentities.Current());
+            if (previous.Phase is not ("Interrupted" or "Cancelled" or "Failed") || previous.Selection is null || previous.ManifestSha256 is null)
+                throw new InvalidOperationException("Operation cannot be resumed.");
+            config.ProjectId = previous.Selection.ProjectId; config.Environment = previous.Selection.Environment; config.Channel = previous.Selection.Channel;
+            config.TargetPlatform = previous.Selection.Platform; config.VersionPolicy = "exact"; config.RequestedVersion = previous.Selection.Version;
+            config.ExpectedResumeManifestSha256 = previous.ManifestSha256; config.RepairMode = previous.Command == "repair";
+        }
         if (repair) config.RepairMode = true;
         if (noLaunch) config.LaunchAfterUpdate = false;
 
@@ -258,8 +271,14 @@ public static class Program
                 selection = new ReleaseSelection(config.ProjectId!, release.Environment, release.Channel, release.Platform, release.Version);
                 VersionedReleasePaths.Bind(config, selection);
             }
+            var operationId = Get(args, "--operation-id") ?? Guid.NewGuid().ToString("N");
+            Console.WriteLine("Operation ID: " + operationId);
+            Task<ManagedAgentResponse>? cancellationRequest = null;
+            using var registration = cancel.Token.Register(() => cancellationRequest = new ManagedAgentClient().SendOperationAsync("cancel", operationId));
             var managedResponse = await new ManagedAgentClient().SendStreamingAsync(repair ? "repair" : "update", config.ProjectId,
-                progress => Console.WriteLine($"[{progress.Stage}] {progress.Message}"), selection: selection);
+                progress => Console.WriteLine($"[{progress.Stage}] {progress.Message}"), selection: selection,
+                operationId: operationId);
+            if (cancellationRequest is not null) await cancellationRequest;
             PrintAgentResponse(managedResponse);
             if (!managedResponse.Success) return 1;
             if (selection is not null && managedResponse.SelectedRelease != selection) throw new InvalidDataException("Agent release mismatch.");
@@ -274,14 +293,48 @@ public static class Program
         try
         {
             await ResolveCatalogForCliAsync(config, (stage, message, percent) => reporter.Report(new LauncherProgress(stage, message, percent)));
-            using var engine = new LauncherEngine(config, reporter.Report, fileLogger, echoToConsole: false);
-            await engine.RunAsync();
+            var id = Get(args, "--operation-id") ?? Guid.NewGuid().ToString("N");
+            Console.WriteLine("Operation ID: " + id);
+            using var operation = portableOperations.Begin(id, RuntimeIdentities.Current(), config.SelectedRelease, cancel.Token, config.RepairMode ? "repair" : "update");
+            LauncherEngine? running = null;
+            using var engine = new LauncherEngine(config, progress =>
+            {
+                if (running?.ManifestSha256 is { } digest) operation.Bind(config.SelectedRelease, digest);
+                if (progress.Stage == "Download") operation.Phase("Downloading");
+                else if (progress.Stage == "Apply") operation.Phase("Applying");
+                reporter.Report(progress);
+            }, fileLogger, echoToConsole: false);
+            running = engine;
+            try { await engine.RunAsync(operation.Token); operation.Finish(true); }
+            catch (OperationCanceledException) { operation.Finish(engine.InstallationCommitted); throw; }
+            catch { operation.Finish(engine.InstallationCommitted, failed: true); throw; }
         }
         finally
         {
             reporter.Finish(); // close an open in-place bar line even if the run threw mid-download
         }
         return 0;
+    }
+
+    private static async Task<int> RunOperationAsync(string[] args)
+    {
+        var action = args.FirstOrDefault() ?? "status";
+        var id = Required(args, "--id");
+        if (Get(args, "--config") is { } path)
+        {
+            var config = await LauncherPaths.LoadResolvedAsync(path, readOnly: true);
+            if (!config.IsManagedDeployment)
+            {
+                var registry = new OperationRegistry(Path.Combine(config.StateRootDir, "operations"));
+                var peer = RuntimeIdentities.Current();
+                if (action == "resume") return await RunLauncherAsync(["--config", path, "--resume-id", id, "--no-launch"]);
+                var status = action switch { "status" => registry.Inspect(id, peer), "cancel" => registry.Cancel(id, peer),
+                    "discard" => registry.Discard(id, peer), _ => throw new ArgumentException("Unknown operation action.") };
+                Console.WriteLine(JsonSerializer.Serialize(status, JsonFiles.Options)); return 0;
+            }
+        }
+        var response = await new ManagedAgentClient(Get(args, "--endpoint")).SendOperationAsync(action, id);
+        Console.WriteLine(JsonSerializer.Serialize(response, JsonFiles.Options)); return response.Success ? 0 : 1;
     }
 
     private static async Task<int> RunAgentClientAsync(string[] args)
@@ -797,6 +850,8 @@ public static class Program
         Console.WriteLine("    [--server-url http://10.20.30.40] [--project-id id] [--platform windows-x64|linux-x64] [--profile general|developer]");
         Console.WriteLine("    [--deployment-mode managed-agent|portable] [--auth request-signature-v1|bearer] [--credential-name name] [--signing-key-id id] [--public-key path]");
         Console.WriteLine("  credential keygen --name name --key-id pc-key --public-out device-public.json [--storage managed|portable]");
+        Console.WriteLine("  operation status|cancel|resume|discard --id <operation-id> [--config portable.json] [--endpoint pipe-or-socket]");
+        Console.WriteLine("  run --config config.json [--operation-id <32-hex-id>] [--no-launch]; persistent resume requires performance.resumeCacheBytes");
         Console.WriteLine("  credential repair-permissions --name name --dry-run|--apply [--storage managed|portable]");
         Console.WriteLine("  generate-manifest --package-dir <dir> --base-url <url> --entry-point <relative path> --version <version> [--app-id <id>] --output <manifest.json>");
         Console.WriteLine("  update-catalog --catalog <catalog.json> --project-id <id> --version <version> --environment <prod|dev> --channel <stable|beta|dev> --platform <windows-x64|linux-x64> --manifest-url <url> [--display-name <name>] [--allowed-profiles general,developer] [--notes <text>] [--set-latest] [--remove] [--remove-project-if-empty]");

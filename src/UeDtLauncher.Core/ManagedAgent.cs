@@ -14,10 +14,10 @@ public static class ManagedAgentProtocol
     public const string DefaultWindowsPipeName = "UeDtLauncher.Agent.v1";
     public const string DefaultLinuxSocketPath = "/run/ue-dt-launcher/agent-v1.sock";
     public const string RuntimeCapability = "runtime-supervision-v1";
-    public static bool RequiresRuntimeCapability(string command) => command.ToLowerInvariant() is "update" or "repair" or "rollback" or "service-run" or "runtime-recover" || command.StartsWith("launch-", StringComparison.OrdinalIgnoreCase);
+    public static bool RequiresRuntimeCapability(string command) => command.ToLowerInvariant() is "update" or "repair" or "rollback" or "service-run" or "runtime-recover" or "operation-resume" || command.StartsWith("launch-", StringComparison.OrdinalIgnoreCase);
 
     public static readonly IReadOnlySet<string> AllowedCommands = new HashSet<string>(
-        ["status", "catalog", "check", "update", "repair", "rollback", "rollback-preview", "service-run", "diagnostics", "project-asset", "doctor", "launch-begin", "launch-attach", "launch-started", "launch-complete", "runtime-inspect", "runtime-recover"],
+        ["status", "catalog", "check", "update", "repair", "rollback", "rollback-preview", "service-run", "diagnostics", "project-asset", "doctor", "launch-begin", "launch-attach", "launch-started", "launch-complete", "runtime-inspect", "runtime-recover", "operation-status", "operation-cancel", "operation-resume", "operation-discard"],
         StringComparer.OrdinalIgnoreCase);
 
     public static string ResolveEndpoint()
@@ -33,6 +33,9 @@ public static class ManagedAgentProtocol
         if (string.IsNullOrWhiteSpace(request.CorrelationId)) return "correlationId is required.";
         if (!AllowedCommands.Contains(request.Command)) return $"Agent command is not allowed: {request.Command}.";
         if (request.ProjectId is { Length: > 128 }) return "projectId is too long.";
+        if (request.Command.StartsWith("operation-", StringComparison.Ordinal) &&
+            (!Guid.TryParseExact(request.OperationId, "N", out _) || request.Selection is not null || request.RuntimeTicket is not null))
+            return "Operation control requires an ID, without release or launch inputs.";
         if (request.Command.Equals("project-asset", StringComparison.OrdinalIgnoreCase) &&
             (!request.StreamProgress || string.IsNullOrWhiteSpace(request.ProjectId) || request.AssetKind is not ("hero" or "thumbnail") || request.Selection is not null))
             return "project-asset requires a project, hero/thumbnail kind and streaming, without release selection.";
@@ -58,12 +61,14 @@ public sealed class ManagedAgentRequest
     public string? ServiceVersion { get; set; }
     public string? ExpectedBackupId { get; set; }
     public string? ExpectedBackupFingerprint { get; set; }
+    public string? OperationId { get; set; }
 }
 
 public sealed class ManagedAgentResponse
 {
     public void ThrowIfFailed()
     {
+        if (Status == "Cancelled") throw new OperationCanceledException("Operation cancelled after workers and recovery completed.");
         if (Success) return;
         if (Runtime is not null) { var blocked=new RuntimeBlockedException(Runtime);blocked.Data["CorrelationId"]=CorrelationId;throw blocked; }
         if (Status == "client-upgrade-required") throw new RuntimeBlockedException(new(RuntimeState.Unknown, Status, "런처와 업데이트 서비스를 함께 업데이트해 주세요."));
@@ -89,6 +94,7 @@ public sealed class ManagedAgentResponse
     public RuntimeLaunchTicket? RuntimeTicket { get; set; }
     public RuntimeHostRequest? RuntimeLaunch { get; set; }
     public RuntimeObservation? Runtime { get; set; }
+    public OperationStatus? Operation { get; set; }
 }
 
 public sealed record ManagedAssetChunk(long Offset, long TotalBytes, string Sha256, string Extension, byte[] Data);
@@ -368,7 +374,8 @@ public sealed class ManagedAgentClient(string? endpoint = null)
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default,
         ReleaseSelection? selection = null,
-        RollbackPreview? expectedBackup = null)
+        RollbackPreview? expectedBackup = null,
+        string? operationId = null)
     {
         if (ManagedAgentProtocol.RequiresRuntimeCapability(command)) await RequireCapabilitiesAsync(cancellationToken);
         ArgumentNullException.ThrowIfNull(onProgress);
@@ -380,6 +387,7 @@ public sealed class ManagedAgentClient(string? endpoint = null)
             Selection = selection,
             ExpectedBackupId = expectedBackup?.BackupId,
             ExpectedBackupFingerprint = expectedBackup?.MetadataFingerprint,
+            CorrelationId = operationId ?? Guid.NewGuid().ToString("N"),
             ClientCapabilities = [ManagedAgentProtocol.RuntimeCapability]
         };
         var validationError = ManagedAgentProtocol.Validate(request);
@@ -390,6 +398,20 @@ public sealed class ManagedAgentClient(string? endpoint = null)
         await using var stream = await ConnectAsync(timeoutCts.Token);
         await ManagedAgentFrameCodec.WriteAsync(stream, request, timeoutCts.Token);
         return await ReadStreamingResponsesAsync(stream, request, onProgress, timeoutCts.Token);
+    }
+
+    public async Task<ManagedAgentResponse> SendOperationAsync(string action, string operationId, CancellationToken token = default)
+    {
+        if (action is not ("status" or "cancel" or "resume" or "discard")) throw new ArgumentException("Unknown operation action.");
+        var capabilities = await SendAsync("status", cancellationToken: token);
+        if (!capabilities.AgentCapabilities.Contains(OperationRegistry.Capability)) throw new InvalidOperationException("Update the Agent to manage operations.");
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+        timeout.CancelAfter(action == "resume" ? TimeSpan.FromMinutes(30) : TimeSpan.FromSeconds(10));
+        var request = new ManagedAgentRequest { Command = "operation-" + action, OperationId = operationId,
+            StreamProgress = action == "resume", ClientCapabilities = [ManagedAgentProtocol.RuntimeCapability, OperationRegistry.Capability] };
+        await using var stream = await ConnectAsync(timeout.Token);
+        await ManagedAgentFrameCodec.WriteAsync(stream, request, timeout.Token);
+        return await ReadStreamingResponsesAsync(stream, request, _ => { }, timeout.Token);
     }
 
     internal static async Task<ManagedAgentResponse> ReadStreamingResponsesAsync(

@@ -27,7 +27,11 @@ public static class RuntimeLauncher
             var installedHost = Path.Combine(ManagedLauncherPathLayout.Current().InstallRoot, OperatingSystem.IsWindows() ? "UeDtLauncher.exe" : "UeDtLauncher");
             if (!SafePath.FileSystemComparer.Equals(ticket.HostExecutable, Path.GetFullPath(installedHost))) throw new InvalidDataException("Runtime host must use the installed launcher beside the Agent.");
         }
-        else ticket = RuntimeStore.Begin(config, RuntimeIdentities.Current(), HostExecutable());
+        else
+        {
+            await LaunchPolicy.VerifyOnlineAsync(config, cancellationToken);
+            ticket = RuntimeStore.Begin(config, RuntimeIdentities.Current(), HostExecutable());
+        }
         return await StartHostAsync(new RuntimeHostSession(config, ticket, config.IsManagedDeployment ? ManagedAgentProtocol.ResolveEndpoint() : null, config.SelectedRelease), cancellationToken);
     }
 
@@ -47,11 +51,12 @@ public static class RuntimeLauncher
         config.VersionPolicy = "exact"; config.RequestedVersion = selection.Version;
     }
 
-    internal static Task<Process> LaunchServiceAsync(LauncherConfig config, CancellationToken cancellationToken)
+    internal static async Task<Process> LaunchServiceAsync(LauncherConfig config, CancellationToken cancellationToken)
     {
+        await LaunchPolicy.VerifyOnlineAsync(config, cancellationToken);
         RuntimeServiceState.RequireLaunch(config, true);
         var ticket = RuntimeStore.BeginUnderServiceLock(config, RuntimeIdentities.Current(), HostExecutable());
-        return StartHostAsync(new(config, ticket, null, config.SelectedRelease), cancellationToken);
+        return await StartHostAsync(new(config, ticket, null, config.SelectedRelease), cancellationToken);
     }
 
     private static async Task<Process> StartHostAsync(RuntimeHostSession input, CancellationToken cancellationToken)
