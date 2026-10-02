@@ -28,6 +28,7 @@ import subprocess
 import threading
 import time
 from urllib.parse import quote, urlsplit
+from benchmark_intranet_auth import run_load
 
 
 CLIENT_COUNTS = (1, 10, 30)
@@ -338,14 +339,11 @@ def main():
     write_json(copied_config, config)
     command = [str(executable), "--config", str(copied_config)]
     process_flags = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {"start_new_session": True}
-    issued = subprocess.run([*command, "token-issue", "bench"], capture_output=True, timeout=60, **process_flags)
-    token = issued.stdout.decode("utf-8-sig").strip()
-    if issued.returncode or not re.fullmatch(r"[0-9a-f]{64}", token):
-        # Do not print stdout/stderr: token-issue stdout is a credential.
-        raise RuntimeError("Could not issue the synthetic bench token; no credential output was saved")
+    if config.get("authenticationMode") != "request-signature-v1":
+        raise ValueError("Historical HTTP/Bearer fixtures are not supported by the hardened server; create a fresh signed fixture")
     report = {
         "schemaVersion": 1, "benchmark": "distribution-api-mixed", "warmups": 1, "measuredRuns": MEASURED_RUNS,
-        "transport": "direct loopback HTTP + Bearer; published server process; HTTPS/nginx tested separately",
+        "transport": "direct loopback HTTP request-signature-v1; independent signature verification",
         "platform": "windows" if os.name == "nt" else "unix", "cacheCondition": "warm process; OS cache not flushed",
         "fixtureReleaseId": selection["releaseId"], "rangeBytes": selection["rangeSize"],
         "authorizationIdentities": 1,
@@ -357,18 +355,24 @@ def main():
         server = subprocess.Popen([*command, "serve"], stdout=log, stderr=subprocess.STDOUT, **process_flags)
         try:
             await_server(server, port)
-            for clients in CLIENT_COUNTS:
-                for iteration in range(MEASURED_RUNS + 1):
-                    row = load(port, token, clients, selection)
-                    row.update(iteration=iteration, warmup=iteration == 0)
-                    report["runs"].append(row)
-                    write_json(output / "results.json", report)
-                    print(f"Mixed API {clients} clients #{iteration}: p95={row['p95Ms']:.2f}ms errors={row['errors']}", flush=True)
+            import shutil
+            shutil.copy2(fixture / "public.pem", output / "public.pem")
+            payload = contained(Path(config["root"]) / "releases" / selection["releaseId"] / "files" / selection["filePath"].split("/files/", 1)[1], Path(config["root"]))
+            with payload.open("rb") as stream:
+                expected = stream.read(3)
+            def register(path):
+                outcome = subprocess.run([*command, "client-key", "add", "--client", "bench", "--public-key", str(path)],
+                                         capture_output=True, timeout=60, **process_flags)
+                if outcome.returncode:
+                    raise RuntimeError("Synthetic load key registration failed")
+            report["signedLoad"] = run_load(config["publicUrl"], output, register,
+                                           "windows-x64" if os.name == "nt" else "linux-x64", server.pid,
+                                           selection["filePath"], expected)
         finally:
             report["serverShutdown"] = stop_server(server)
     report["serverMetrics"] = log_metrics(log_path)
     write_json(output / "results.json", report)
-    (output / "results.md").write_text(markdown(report), encoding="utf-8")
+    (output / "results.md").write_text("# Signed API comparison\n\nSee results.json signedLoad. Historical HTTP/Bearer samples are not a comparable baseline.\n", encoding="utf-8")
     print("Report: " + str(output / "results.json"), flush=True)
 
 

@@ -6,6 +6,8 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 ## 먼저 확인할 진행 현황
 
+2026-10-03 headless 후속 진행: 현재 계약으로 측정 도구를 정상화하고 fe10488 Windows 게시 HTTP 서명 E2E·80MiB 최초/변경 없음/다음 버전/repair·1/10/30 연결을 수행했다. 90% 콘텐츠 재사용 유지. 최종 후보 비교 전 PERF-03/SEC-04 진행률은 유지한다. [현재 검증](docs/reference/archive/validation/headless-operations-validation.md). GUI 수용은 중단 중이다.
+
 2026-10-03 빠른 개선: `4a37061` 문서 정합성, `f215e62` 진단 근거 보존/모순 검증·중복 안내 수정, `9788de1` 준비도 CI 연결을 완료했다. Windows/WSL 각601개, 게시 CLI/Agent 준비도 각8개·요약 계약3개·fixture 계약13개 통과. 세부 체크포인트 완료이며 GUI 중단/원격 CI 조건으로 USER-02·UI-02는75%, OPS-06은50% 유지. [정제 결과와 조건](docs/reference/archive/validation/quick-wins-validation.md)
 
 2026-10-03 최초 연결 진단 후속: USER-02는0%→75%. 최신 소스d665d67 Windows/WSL 각587개와 실제 게시 E2E 통과, 이전 후보의 양 모드/두 프로필 설치·실행·수명·복구·복원·오류/설정 재시도를 직접 확인했다. 일반 오류의 다음 조치를 보강한 새 후보는 양 모드403 화면을 확인했다. 사용자 요청으로 마우스·GUI 자동 검증은 잠시 중단했으며, 새 후보 전체 수용 전까지 USER-02·UI-02는75%다. [게시본별 증거](docs/reference/archive/validation/readiness-validation.md)

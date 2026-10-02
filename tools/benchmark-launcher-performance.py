@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Isolated, deterministic published-process benchmark. Requires Python 3.11+ and psutil.
 
-Loopback HTTP is used ONLY by this synthetic benchmark; signatures and Bearer checks
-remain enabled. HTTPS/nginx correctness is covered by test-distribution-e2e.sh.
+Loopback HTTP uses request-signature-v1 and signed metadata, never HTTP/Bearer.
+HTTPS/Bearer is measured separately; transports are not interchangeable baselines.
 Never pass a company server or installation directory: a fresh output root is required.
 """
 import argparse
@@ -25,6 +25,8 @@ import urllib.request
 import zipfile
 
 import psutil
+from promotion_fixture_support import promote
+from benchmark_intranet_auth import run_load
 
 
 PROFILES = {"small": [(1000, 4096)], "large": [(10, 8 * 1024 * 1024)],
@@ -241,14 +243,15 @@ def main():
          "--public-key", root / "public.pem"], root / "keys.log", env)
     write_json(root / "server.json", {"root": str(root / "server"), "publicUrl": base,
                "listenUrl": f"http://127.0.0.1:{backend}", "signingKeyPath": str(root / "key.pem"),
-               "policyPath": str(root / "policy.json"), "intakeWorkers": args.workers})
+               "policyPath": str(root / "policy.json"), "intakeWorkers": args.workers,
+               "authenticationMode": "request-signature-v1"})
     write_json(root / "policy.json", {"clients": [{"id": "bench", "addresses": ["127.0.0.1"],
                "grants": [{"projectId": "bench-" + p, "environment": "prod", "channel": "stable", "versions": []}
                           for p in profiles]}]})
     server_cli = [args.server, "--config", root / "server.json"]
     platform = "windows-x64" if os.name == "nt" else "linux-x64"
     report = {"schemaVersion": 1, "platform": platform, "runs": args.runs, "warmups": 1,
-              "transport": "loopback HTTP + signed metadata/Bearer; HTTPS validated separately",
+              "transport": "loopback HTTP request-signature-v1 + signed metadata",
               "fileRequestDelayMs": args.latency_ms, "cacheCondition": "fresh app/state per iteration; OS cache not flushed",
               "settings": {"downloads": args.download_concurrency, "hashes": args.hash_concurrency,
                            "reuse": not args.no_reuse, "intakeWorkers": args.workers,
@@ -265,11 +268,15 @@ def main():
             approval = run([*server_cli, "approve", job["id"]], root / "approve.json", env)
             report["intake"].append({"profile": profile, "version": version, "payloadBytes": size,
                                      "ingest": measurement, "approve": approval})
-    run([*server_cli, "token-issue", "bench"], root / "token.tmp", env)
-    token = (root / "token.tmp").read_text(encoding="utf-8-sig").strip()
-    (root / "token.tmp").unlink()
-    run([args.launcher, "credential", "set", "--name", "benchmark"], root / "credential.log",
-        {**env, "UE_DT_CREDENTIAL_TOKEN": token})
+    run([args.launcher, "credential", "keygen", "--name", "benchmark", "--key-id", "bench-cli",
+         "--public-out", root / "device-public.json"], root / "credential.log", env)
+    run([*server_cli, "client-key", "add", "--client", "bench", "--public-key", root / "device-public.json"], root / "register.log", env)
+    for profile in profiles:
+        # Approval never changes recommendations; baseline explicitly records promotion.
+        def execute(*arguments):
+            run([args.server, *arguments], root / "promotion-command.json", env)
+            return (root / "promotion-command.json").read_text(encoding="utf-8-sig")
+        promote(execute, root / "server.json", "bench-" + profile, "2.0.0", platform)
     with (root / "server.log").open("w", encoding="utf-8") as output:
         server = subprocess.Popen([str(x) for x in [*server_cli, "serve"]], stdout=output,
                                   stderr=subprocess.STDOUT, env=env,
@@ -291,7 +298,7 @@ def main():
                     for scenario, version in [("install", "1.0.0"), ("unchanged", "1.0.0"),
                                               ("next-version", "2.0.0"), ("repair", "2.0.0")]:
                         log_dir = client / ("logs-" + scenario)
-                        config = {"schemaVersion": 2, "distributionServerUrl": base,
+                        config = {"schemaVersion": 3, "distributionServerUrl": base,
                                   "projectId": "bench-" + profile, "clientProfile": "developer",
                                   "environment": "prod", "channel": "stable", "versionPolicy": "exact",
                                   "requestedVersion": version, "targetPlatform": platform,
@@ -300,7 +307,7 @@ def main():
                                   "performance": {"downloadConcurrency": args.download_concurrency,
                                                   "hashConcurrency": args.hash_concurrency,
                                                   "reusePreviousInstallations": not args.no_reuse},
-                                  "security": {"requireHttps": False, "credentialName": "benchmark",
+                                  "security": {"requireHttps": False, "credentialName": "benchmark", "authenticationMode": "request-signature-v1",
                                                "allowedDownloadHosts": ["127.0.0.1"],
                                                "trustedSigningKeys": [{"keyId": "release-1", "publicKeyPath": str(root / "public.pem")}]}}
                         write_json(client / "config.json", config)
@@ -327,11 +334,13 @@ def main():
                             raise RuntimeError("Refusing cleanup outside isolated benchmark root")
                         shutil.rmtree(resolved)
                     write_json(root / "results.json", report)
-            for clients in (1, 10, 30):
-                for iteration in range(args.runs + 1):
-                    result = api_load(base, token, clients, 10, "/api/v1/catalog")
-                    report["api"].append({**result, "iteration": iteration, "warmup": iteration == 0})
-                    print(f"API {clients} clients #{iteration}: p95={result['p95Ms']:.1f}ms errors={result['errors']}", flush=True)
+            first = profiles[0]
+            target = f"/releases/bench-{first}/prod/stable/2.0.0/{platform}/files/g0/f00000.bin"
+            # Deterministic changed g0/f0 bytes, identical to fixture().
+            expected = random.Random(999999).randbytes(PROFILES[first][0][1])[:3]
+            report["api"] = run_load(base, root,
+                lambda path: run([*server_cli, "client-key", "add", "--client", "bench", "--public-key", path], root / "load-register.log", env),
+                platform, server.pid, target, expected)["results"]
         finally:
             proxy.shutdown()
             proxy.server_close()
@@ -355,8 +364,8 @@ def main():
             lines.append(f"| {profile} | {scenario} | {statistics.median(r['wallMs'] for r in rows):.1f} | {statistics.median(r['contentNetworkBytes'] for r in rows):.0f} |")
     lines += ["", "| Clients | Median p95 ms | Errors |", "|---|---:|---:|"]
     for clients in (1, 10, 30):
-        rows = [r for r in report["api"] if not r["warmup"] and r["clients"] == clients]
-        lines.append(f"| {clients} | {statistics.median(r['p95Ms'] for r in rows):.1f} | {sum(r['errors'] for r in rows)} |")
+        row = next(r for r in report["api"] if r["clients"] == clients)
+        lines.append(f"| {clients} | {row['median_p95_ms']:.1f} | {row['failed_requests']} |")
     lines += ["", "CPU/RSS are 20ms process samples, not exact counters. Legacy phase times are log boundaries.",
               "SQLite busy duration is unavailable on the baseline; null is not zero. Intake CLI includes process startup.",
               "No real UE, RHEL, WAN, production SLA or cold-OS-cache claim is made."]

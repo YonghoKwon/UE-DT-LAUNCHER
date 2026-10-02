@@ -15,9 +15,10 @@ import secrets
 import statistics
 import time
 from urllib.parse import urlsplit
+from benchmark_resources import ProcessSampler
 
 
-def run_load(origin, root, register, platform, server_pid):
+def run_load(origin, root, register, platform, server_pid, file_path=None, expected_range=b"2.0"):
     from cryptography.hazmat.primitives.asymmetric import ec, utils
     from cryptography.hazmat.primitives import hashes, serialization
     parsed = urlsplit(origin)
@@ -30,15 +31,6 @@ def run_load(origin, root, register, platform, server_pid):
         "publicKeyPem": key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()}))
     register(public_file)
     release_key = serialization.load_pem_public_key((root / "public.pem").read_bytes())
-
-    def metrics():
-        try:
-            fields = Path(f"/proc/{server_pid}/stat").read_text().split(")", 1)[1].split()
-            status = Path(f"/proc/{server_pid}/status").read_text().splitlines()
-            peak = next(int(line.split()[1]) * 1024 for line in status if line.startswith("VmHWM:"))
-            return {"cpu_seconds": (int(fields[11]) + int(fields[12])) / os.sysconf("SC_CLK_TCK"), "peak_rss_bytes": peak if peak > 0 else None}
-        except (OSError, AttributeError, StopIteration):
-            return {"cpu_seconds": None, "peak_rss_bytes": None}
 
     def verify(signature, message):
         raw = base64.b64decode(signature, validate=True)
@@ -60,7 +52,7 @@ def run_load(origin, root, register, platform, server_pid):
         def work(self, count):
             latencies, errors = [], []
             for index in range(count):
-                path = "/api/v1/catalog" if index % 2 == 0 else f"/releases/demo/prod/stable/2.0.0/{platform}/files/version.txt"
+                path = "/api/v1/catalog?selectionPolicy=explicit-promotion-v1" if index % 2 == 0 else (file_path or f"/releases/demo/prod/stable/2.0.0/{platform}/files/version.txt")
                 nonce = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("=")
                 target = origin + path
                 ranged = index % 2 != 0
@@ -83,7 +75,7 @@ def run_load(origin, root, register, platform, server_pid):
                     if response.status != (206 if ranged else 200):
                         raise ValueError("HTTP " + str(response.status))
                     if ranged:
-                        if data != b"2.0":
+                        if data != expected_range:
                             raise ValueError("Range content mismatch")
                     else:
                         envelope = json.loads(data)
@@ -103,10 +95,27 @@ def run_load(origin, root, register, platform, server_pid):
     report = {"transport": "HTTP request-signature-v1", "workload": "alternating fresh catalog and 3-byte Range", "warmup_runs": 1,
               "measured_runs": 3, "requests_per_client_per_run": 20, "includes_client_signing_and_response_verification": True,
               "cache_condition": "same published fixture; OS cache not flushed; challenge/connection reused within each group",
-              "metrics_start": metrics(), "results": []}
+              "source": os.environ.get("UE_DT_BENCHMARK_SOURCE", "unavailable"), "results": []}
+    sampler = ProcessSampler(server_pid)
+    sampler.__enter__()
+    failed = False
     for concurrency in (1, 10, 30):
         time.sleep(1.1)  # Separate startup bursts from the per-IP challenge rate window.
-        clients = [Client() for _ in range(concurrency)]
+        clients, startup_errors = [], []
+        for _ in range(concurrency):
+            try:
+                clients.append(Client())
+            except Exception as error:
+                startup_errors.append(type(error).__name__)
+        if startup_errors:
+            failed = True
+            for client in clients:
+                client.connection.close()
+            report["results"].append({"clients": concurrency, "startup_failures": len(startup_errors),
+                                      "errors": sorted(set(startup_errors)), "runs": [],
+                                      "median_p50_ms": None, "median_p95_ms": None, "failed_requests": None})
+            (root / "load-summary.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+            continue
         measured = []
         with ThreadPoolExecutor(max_workers=concurrency) as pool:
             for repeat in range(4):
@@ -126,9 +135,10 @@ def run_load(origin, root, register, platform, server_pid):
         report["results"].append({"clients": concurrency, "warmup": warmup, "runs": measured,
                                   "median_p50_ms": statistics.median(row["p50_ms"] for row in measured),
                                   "median_p95_ms": statistics.median(row["p95_ms"] for row in measured),
-                                  "failed_requests": sum(row["failures"] for row in measured)})
-    report["metrics_end"] = metrics()
+                                  "startup_failures": 0, "failed_requests": sum(row["failures"] for row in measured)})
+    sampler.__exit__()
+    report["resources"] = sampler.result()
     (root / "load-summary.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
-    if any(row["failed_requests"] or row["warmup"]["failures"] for row in report["results"]):
+    if failed or any(row["failed_requests"] or row.get("warmup", {}).get("failures") for row in report["results"]):
         raise RuntimeError("Signed load validation had failures; retain the report and do not claim success")
     return report

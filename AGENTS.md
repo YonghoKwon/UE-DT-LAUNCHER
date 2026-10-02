@@ -37,6 +37,8 @@
 
 ## 보존할 경계
 
+- headless 후속 작업에서도 GUI 입력 중단을 유지한다. 측정은 현재 인증/명시적 승격 계약으로 수행하고 시작 실패와 누락 지표를 숨기지 않는다. 새 실행은 온라인 확인, 자동 점검은 조회만, 정리는 관리자 확인 및 공개/승격/활성 작업 보호, 만료는 관리자 명시 지정이다. 회사 설치/계정/인증서와 push/PR은 별도 요청이다.
+
 - 오프라인 doctor의 전체 호출 경로는 설정·설치·state·backup·runtime·legacy 파일/디렉터리/잠금을 생성·변경하지 않는다. 검사 전용 설정 로딩은 legacy migration을 수행하지 않으며 credential 경로 조회는 순수 계산이다.
 - 온라인 점검은 기존 인증/서명/요청 결속/sequence 검증과 anti-replay 신뢰 기록을 유지한다. 점검과 조회 재시도가 설치·실행·복원으로 바뀌지 않게 한다.
 - DoctorCheck의 passed/failed/waiting/deferred/not-applicable과 준비도 요약을 구분한다. Healthy/종료0을 설치 가능이나 사용자 쓰기 검증 성공으로 해석하지 않는다. 구형 상세 필드는 미검증이며 read-only-doctor-v1 없는 Agent에 기존 doctor를 우회 호출하지 않는다.
