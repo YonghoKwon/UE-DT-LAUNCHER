@@ -1,6 +1,6 @@
 # 최종 프로젝트 목표 — 회사용 Unreal Engine DT 배포 시스템
 
-갱신: 2026-10-03 / 작업 기준 `codex/launcher-readiness-ux`. **최상위 목표는 확정**됐습니다. 세부 운영 정책·회사 SLA·출시 일정은 아직 미정이며 아래 결정 표에서 별도로 관리합니다.
+갱신: 2026-10-03 / 작업 기준 `codex/launcher-quick-wins`. **최상위 목표는 확정**됐습니다. 세부 운영 정책·회사 SLA·출시 일정은 아직 미정이며 아래 결정 표에서 별도로 관리합니다.
 
 ## 확정한 최종 목표
 
@@ -13,6 +13,8 @@
 현재 사용 방법은 [기능 지도·명령 순서](docs/reference/feature-workflow.md), 현재 구현은 [README](README.md), 작업 목록은 [IMPROVEMENTS](IMPROVEMENTS.md)가 정본입니다.
 
 ## 현재 위치
+
+빠른 개선 묶음은 진단 근거 보존과 모순 검증, 중복 조치 제거, 게시 준비도 검증의 Windows/Linux CI 연결까지 로컬 검증했다. 양 OS601개·준비도 각8개와 정제 요약/실패 기록을 확인했다. GUI 중단 중이므로 USER-02/UI-02는75%, 원격 CI 미확인으로 OPS-06은50%를 유지한다. [비대화형 결과](docs/reference/archive/validation/quick-wins-validation.md)
 
 보류된 최신 후보 GUI 수용은 [한 곳의 체크리스트](docs/reference/guide-03-launcher-usage.md#보류-중인-gui-수용-체크리스트)에서 관리한다. 예전 게시본에서 이미 통과한 작업을 미구현으로 표현하지 않으며, 새 후보의 미실행을 구현 완료와 구분한다.
 

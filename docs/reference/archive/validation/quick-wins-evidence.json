@@ -1,0 +1,34 @@
+{
+  "date": "2026-10-03",
+  "branch": "codex/launcher-quick-wins",
+  "base": "9a87b52",
+  "productSource": "f215e62b76223c74a062b47705100c95b9d6b778",
+  "toolSource": "9788de1",
+  "tests": {
+    "Windows": { "passed": 601, "failed": 0, "skipped": 0 },
+    "WSL": { "passed": 601, "failed": 0, "skipped": 0 },
+    "targeted": 33,
+    "pythonSummaryContracts": 3,
+    "pythonFixtureContracts": 13
+  },
+  "releaseBuild": { "warnings": 0, "errors": 0 },
+  "publishedReadiness": {
+    "Windows": { "passed": 8, "failed": 0, "notRun": 0 },
+    "Linux": { "passed": 8, "failed": 0, "notRun": 0 },
+    "intentionalFailure": { "passed": 0, "failed": 1, "notRun": 7 }
+  },
+  "checks": {
+    "incompleteEvidenceSurvivesMerge": "passed",
+    "malformedContradictoryEvidenceRejected": "passed",
+    "failureCodeSupportIdPreserved": "passed",
+    "legacyCapabilityDoesNotCallDoctor": "passed-real-ipc",
+    "duplicateGuidanceSuppressed": "passed-headless",
+    "sanitizedArtifactAllowlist": "passed",
+    "workflowYaml": "passed-local-parse"
+  },
+  "ciArtifact": { "file": "summary.json", "retentionDays": 7 },
+  "remoteCi": "not-run",
+  "actualGui": "user-paused-no-input",
+  "progress": { "USER-02": 75, "UI-02": 75, "OPS-06": 50 },
+  "companyApproval": false
+}

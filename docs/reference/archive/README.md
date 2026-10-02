@@ -6,6 +6,7 @@
 
 | 기록 | 내용 |
 |---|---|
+| [빠른 비대화형 개선](validation/quick-wins-validation.md) · [정제 JSON](validation/quick-wins-evidence.json) | 양 OS601개·실제 IPC 근거 누락/구형·진단 합성·준비도 CI·양 OS 각8개·원격/GUI 보류 |
 | [최초 연결 진단·오류 해결](validation/readiness-validation.md) · [정제 JSON](validation/readiness-evidence.json) | 양 OS587개·읽기 전용 doctor·선택/승격/구형 호환·게시 E2E·실제 양 모드 설치/복구/복원·게시본별 수용 구분·사용자 GUI 검증 중단 |
 | [승인·승격 분리](validation/release-promotion-validation.md) · [정제 JSON](validation/release-promotion-evidence.json) | a8080ea·양 OS568개·권한별 추천·DB 이전·pending/running 불변·실제 지정 대기 GUI |
 | [데이터 수용 후속](validation/runtime-data-acceptance-completion.md) | cf99ba1 보강·양 OS552개·scope별 비교·사용자 직접 GUI 조작 대기 |

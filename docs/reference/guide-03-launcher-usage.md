@@ -143,6 +143,8 @@ GUI 설정에서 **연결·준비 상태 점검**을 열면 오프라인 설정 
 
 `Healthy`/종료0은 기술적 실패가 없다는 뜻입니다. `preparationState`가 action-required이면 조치, verification-pending이면 미검증, checks-passed이면 현재 검사를 통과한 상태입니다. 실제 설치 용량·파일·사용자 쓰기 검증은 기존 작업 경계에서 수행합니다. CLI 기본 출력은 JSON이며 기존 필드를 유지하고 Code/State/Subject/ActionOwner/NextAction/Target/SupportId를 추가합니다.
 
+확인된 응답 Target이 없으면 요청 Target을 대신 채우지 않습니다. 준비도/state 누락 또는 알 수 없는 state는 추가 검증 필요로 남습니다. 다른 대상·잘못된 검사 목록·성공 모순은 diagnostic-response-invalid이며 관리자 서비스 점검 후 재시도합니다. 설정 실패의 원래 코드와 지원 ID는 보존합니다.
+
 관리형 CLI 지원 ZIP은 표시 설정과 Agent 진단만 받으며 보호 state/로그를 직접 읽지 않습니다. 보호 자료의 관리자 내보내기는 기존 Agent 진단 경로를 사용합니다. GUI 지원 로그 ZIP에는 마지막 확인한 진단 결과가 있으면 `doctor.json`을 함께 넣습니다. 키·토큰·인증 헤더·사용자 경로는 제거하며 자동 외부 전송하지 않습니다.
 
 ### 실행 차단과 이전 제한 안내

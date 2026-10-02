@@ -2,7 +2,7 @@
 
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 배포 시스템입니다.
 
-문서 점검: **2026-10-03**, 작업 기준: `codex/launcher-readiness-ux`. 최초 연결 진단·선택 결속·오류 조치 안내를 추가했고 Windows/WSL 각587개 회귀가 통과했습니다. 관리형·portable 합성 GUI의 설치·업데이트·실행·복구·정상 백업 복원과 오류 재시도는 게시본별로 기록합니다. [최신 진단·GUI 검증](docs/reference/archive/validation/readiness-validation.md). 실제 UE 데이터와 회사 운영 인수 조건은 별도로 남습니다.
+문서 점검: **2026-10-03**, 작업 기준: `codex/launcher-quick-wins`. 진단 근거 누락·모순 검증과 합성을 보강했고 Windows/WSL 각601개 회귀가 통과했습니다. 게시 CLI/Agent의 준비도8개 검증을 양 OS CI에 연결했습니다. [최신 비대화형 검증](docs/reference/archive/validation/quick-wins-validation.md), [이전 실제 GUI 이력](docs/reference/archive/validation/readiness-validation.md). GUI 조작 중단과 실제 UE/회사 인수 조건은 유지합니다.
 
 **현재 판단: 합성 앱 기반 배포·설치·실행·복구는 활용 가능한 단계이며, 회사 정식 운영 인수는 미완료입니다.** 현재 수치와 남은 작업은 [개선 진행 현황](IMPROVEMENTS.md), 상세 명령은 [운영 문서 색인](docs/reference/README.md)을 확인하세요.
 
@@ -46,6 +46,8 @@ flowchart LR
 | 사용자·GUI | 문제 해결 | 이미 설치된 선택 버전의 손상만 복구. 정상 설치는 점검, 미설치는 설치 안내 |
 
 Linux 명령은 `./UeDtLauncher`를 사용합니다. 기본 JSON 출력과 기존 0/1 종료 코드는 유지합니다. `healthy=true`와 종료0은 설치/실행 보장이 아닙니다. 준비도 `action-required`(조치 필요), `verification-pending`(추가 검증 필요), `checks-passed`(점검 완료)를 함께 확인하세요. 관리형 사용자 저장 경로의 실제 쓰기 검사는 사용자 runtime-host가 실행 직전에 수행합니다.
+
+Agent가 확인한 대상·준비도·검사 상태가 누락되면 미검증 근거를 합성 결과에 보존합니다. 요청 대상을 응답에 보충해 정상으로 만들지 않습니다. 다른 대상·null 검사 목록·모순된 성공은 `diagnostic-response-invalid`로 안내하며, 원래 설정 실패의 코드/지원 ID는 유지합니다.
 
 관리형은 업데이트 서비스가 보호 설정과 credential을 검사하며 portable은 Agent 없이 점검합니다. `read-only-doctor-v1`을 지원하지 않는 구형 서비스는 갱신 안내로 처리합니다. 첫 승인만 있는 경우 관리자의 명시적 승격이 필요하며, 빈 배포 목록·401 인증 실패·403 권한 거부·서명 실패와 구분합니다. [명령·오류별 조치](docs/reference/guide-03-launcher-usage.md)
 

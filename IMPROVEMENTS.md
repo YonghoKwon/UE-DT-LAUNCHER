@@ -6,6 +6,8 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 ## 먼저 확인할 진행 현황
 
+2026-10-03 빠른 개선: `4a37061` 문서 정합성, `f215e62` 진단 근거 보존/모순 검증·중복 안내 수정, `9788de1` 준비도 CI 연결을 완료했다. Windows/WSL 각601개, 게시 CLI/Agent 준비도 각8개·요약 계약3개·fixture 계약13개 통과. 세부 체크포인트 완료이며 GUI 중단/원격 CI 조건으로 USER-02·UI-02는75%, OPS-06은50% 유지. [정제 결과와 조건](docs/reference/archive/validation/quick-wins-validation.md)
+
 2026-10-03 최초 연결 진단 후속: USER-02는0%→75%. 최신 소스d665d67 Windows/WSL 각587개와 실제 게시 E2E 통과, 이전 후보의 양 모드/두 프로필 설치·실행·수명·복구·복원·오류/설정 재시도를 직접 확인했다. 일반 오류의 다음 조치를 보강한 새 후보는 양 모드403 화면을 확인했다. 사용자 요청으로 마우스·GUI 자동 검증은 잠시 중단했으며, 새 후보 전체 수용 전까지 USER-02·UI-02는75%다. [게시본별 증거](docs/reference/archive/validation/readiness-validation.md)
 
 2026-10-02 OPS-03 완료(로컬 범위): 승인/승격 분리, revision·감사·schema4 기준선 이전, 현재 권한별 추천·구형 요청 제한, Core/Agent/GUI explicit policy 처리를 검증했다. 후보a8080ea Windows/WSL 각568개·게시본 이력/이전/실행 티켓·Running 불변·HTTP/HTTPS 통과, 실제 일반 GUI의 지정 대기/주 버튼 비활성화 관측. [승격 검증](docs/reference/archive/validation/release-promotion-validation.md)
@@ -66,9 +68,9 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | OPS-01 | 실제 UE 패키징/접수 준비 | 관련 Editor29건/도구6건·Manifest328파일 검증 | 로컬 Windows GUI 설치/실행·UE 수명/정상 종료 확인 | 회사망·Linux/RHEL·업데이트/복구 gate 미완료 | 50% |
 | OPS-03 | approve/promote·revision·감사·기준선 이전·권한별 Catalog/클라이언트 선택 | Windows/WSL 각568개, 동시/저장 실패/구형/명시적 추천 회귀 | 양 OS 게시 CLI/API·HTTP 서명·HTTPS/Bearer·pending/running 불변·실제 GUI 대기 안내 확인 | 합의한 로컬 승격 범위 충족. 회사 인수는 별도 | 100% |
 | USER-01 | schema3 opt-in·릴리스/설치/owner 결속·host 경로/권한/write 보강 | 후속 Windows/WSL 각552개·Root 누락/다른 릴리스/로그 접근 거부 회귀 | 게시 runtime-host 합성 v1/v2·HTTP/HTTPS 확인, 새 실제 UE fixture 사용자 조작 대기 | 실제 UE GUI 보존·앱 CustomLogs·명시적 이전·회사 계정은 미완료 | 50% |
-| OPS-06 | CI의 HTTPS E2E 단계 확인 | 같은 E2E 스크립트 로컬 통과 | **현재 변경의 원격 CI 증거 미확인** | 결과 보관 정책·운영 확인 남음 | 50% |
+| OPS-06 | HTTPS 및 양 OS readiness CI·정제 요약7일 보관 연결 | 동일 readiness 명령 양 OS 각8개·실패 요약/허용필드 확인 | **현재 변경의 원격 CI 증거 미확인** | 원격 CI 실행·운영 인수 필요 | 50% |
 | USER-05 | schema 3 생성기·doctor·설치 예제 확인 | 관련 자동화 통과 | Windows/Linux 생성 설정 연결·실제 MSI/RPM 내용 확인 | 설정 예제 보완 범위 충족, 회사 설치 승인은 별도 | 100% |
-| USER-02 | 상태/대상/조치/지원 ID·읽기 전용 검사·GUI 점검 확인 | Windows/WSL 각587개·무변경/구형/선택·재시도 회귀 | 양 모드 게시 doctor/HTTP/HTTPS·구형 Agent·실제 GUI 오류/재시도·설정 수정 확인 | 마지막 문구 보강 후 새 후보 전체 GUI 수용은 별도. 이력 합산하지 않음 | 75% |
+| USER-02 | 진단 상태/대상/조치·근거 보존·모순 검증·중복 안내 수정 | Windows/WSL 각601개·실제 IPC의 구형/누락·headless 중복 회귀 | 이번 게시 readiness 양 OS 각8개, 이전 GUI는 게시본별 이력 | GUI 중단 유지. 최신 후보 전체 실제 수용은 재개 후 확인 | 75% |
 | SEC-03 | 생성 시 ACL/mode/owner·명시적 repair | Windows/WSL 권한 회귀 통과 | uedt 읽기 성공·nobody 거부 확인 | Windows LocalService 실제 실행 미확인 | 75% |
 | SEC-04 | 요청 서명·nonce·Catalog 결속·Agent 이미지 | 변조/replay/만료 갱신 회귀 통과 | Windows GUI/Agent·Linux HTTP/HTTPS 및 부하 실행 | WSL proxy 간헐 timeout·메모리 계측 공백 남음 | 75% |
 | OPS-08 | 공식 preflight·EXE 선서명·MSI payload gate | 계약 11개·개발 MSI 추출/hash 확인 | 실제 회사 서명 인증서 미확인 | 인증서·설치본 서명 검증 대기 | 50% |
@@ -100,7 +102,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | OPS-03/P1 | 100% | 완료 · 로컬 승격 범위 | `cbb5ba7`·`9350e57`·`a8080ea`: 승인/승격 분리, revision/감사/legacy-baseline, 권한별 추천·구형 목록 제한·Core/GUI fallback 차단. 양 OS568개·게시 프로세스/서명/이전·티켓/Running 불변 통과. [증거](docs/reference/archive/validation/release-promotion-validation.md) | 회사 인수·예약 공개·삭제·자동 앱 전환은 별도. 기존 DB는 offline migration 후 운영 |
 | OPS-04/P1 | 0% | 대기 · 추가 보완 | StorageMaintenance는 scratch만 정리, 공개판·snapshot 누적 | 보관 기간/용량·참조 보호·dry-run·감사 정리. 사용 중 자료 보존 검증 |
 | OPS-05/P1 | 0% | 대기 · 추가 보완 | 수동 백업·복원, catalog sequence 역행 위험 | 일관된 백업/복원 도구·sequence 보호·복구 훈련. 기존 PC 검증 성공, RPO/RTO 별도 합의 |
-| OPS-06/P1 | 50% | 부분 · 원격 검증 대기 | Linux signed HTTPS E2E가 build.yml에 추가됨. 원격 CI 실행·운영 결과 보관은 미확인 | 실제 PR/배포 CI 성공 확인 및 민감정보 없는 결과 보관 정책 확정 |
+| OPS-06/P1 | 50% | 부분 · 원격 검증 대기 | HTTPS E2E + Windows/Linux readiness CI·요약1파일7일 보관 구성. 같은 명령 로컬 양 OS 각8개와 요약 허용 필드 검증. [증거](docs/reference/archive/validation/quick-wins-validation.md) | 실제 원격 CI 실행·운영 인수 결과 확인. 공유 runner 시간을 성능 gate로 사용하지 않음 |
 | OPS-07/P1 | 0% | 대기 · 추가 보완 | AgentWorker는 IPC 대기만 하고 service-run은 once=true. CLI는 managed 반복 실행을 거부 | Agent 스케줄러 또는 명시적 외부 스케줄 운영을 확정. 재부팅 후 정기 점검·중복 작업 방지·maintenance window 시험 |
 | OPS-08/P0 | 50% | 부분 · 실제 인증서 대기 | 공식 사전 gate·EXE 선서명·MSI 내장 payload 검증·실행별 WiX intermediate 구현. 계약 11개 및 개발 MSI 추출/hash 비교 통과 | 실제 회사 인증서와 설치된 EXE 서명 검증은 미완료. [기록](docs/reference/archive/validation/deployment-safety-validation.md) |
 | OPS-09/P0 | 75% | 부분 · GUI/현장 검증 대기 | 누락 기록 fail-closed, 서비스 snapshot/barrier·이전/대상 잠금, 위험 migration apply 차단. 기존 각 393개·저장 경계 종료·health/대상 분리·CLI E2E 통과. 이번 portable 자식 수명·실행 중 변경 버튼 차단 추가 | 이전 관리형 복구/rollback과 이번 portable 증거는 게시본별 이력. 새 후보 양 모드 전체 GUI 수용, 모든 진입점/상태 조합의 실제 전수 검증과 회사 UE/계정·원격 CI는 미완료. [기존 기록](docs/reference/archive/validation/managed-gui-safety-validation.md), [이번 기록](docs/reference/archive/validation/ui-acceptance-finalization.md) |

@@ -1,6 +1,6 @@
 # 작업 지침
 
-점검: 2026-10-03 / 작업 기준 codex/launcher-readiness-ux. 저장소 전체에 적용합니다.
+점검: 2026-10-03 / 작업 기준 codex/launcher-quick-wins. 저장소 전체에 적용합니다.
 
 ## 문서 관리 계약
 
@@ -42,6 +42,8 @@
 - DoctorCheck의 passed/failed/waiting/deferred/not-applicable과 준비도 요약을 구분한다. Healthy/종료0을 설치 가능이나 사용자 쓰기 검증 성공으로 해석하지 않는다. 구형 상세 필드는 미검증이며 read-only-doctor-v1 없는 Agent에 기존 doctor를 우회 호출하지 않는다.
 - 관리형 진단은 표시 설정과 Agent 보호 설정의 주체를 구분하고 GUI가 credential/보호 state를 직접 읽지 않는다. portable은 Agent 요청을 하지 않는다. 진단 대상에는 모드·프로젝트·트랙·OS·정확한 버전 정책만 전달하며 임의 URL/경로는 받지 않는다.
 - 진단 결과와 재시도는 요청 당시 선택에 결속한다. 늦은 결과를 버리고 일반 오류에는 원인·다음 조치·지원 ID를 제공한다. Support ZIP의 JSON/로그에서 비밀과 사용자 경로를 제거한다.
+- DoctorResponse의 envelope/검사/target 검증과 합성을 사용한다. 요청한 target은 Agent가 확인한 target이 아니다. 누락된 target/준비도/state 및 알 수 없는 state의 미검증 근거는 deferred 검사로 보존하고, 상위 Complete로 정상 승격하지 않는다. null 검사 목록/항목·대상 불일치·성공 모순은 정제된 진단 오류다.
+- readiness CI는 고유한 임시 root/endpoint의 CLI·console Agent만 사용한다. 보관은 run-readiness-regression의 허용 필드 요약 JSON 한 파일·7일이며 private root/키/설정/원시 로그/예외 전문 업로드를 금지한다. 로컬 동일 명령 통과는 원격 CI 성공이 아니다.
 - GUI 입력 도구의 캐시/캡처 오류는 제품 실패와 구분한다. 창을 새로 선택·활성화하고 화면과 대상이 일치한 뒤 조작한다. 다른 프로그램의 화면이 캡처되면 그 좌표를 사용하지 않는다.
 
 - approve는 게시만 한다. 첫 버전도 명시적 promote가 필요하며 PC별 추천은 현재 허용된 승격 이력의 마지막 판이다. 프로젝트/환경/채널/플랫폼을 섞거나 미승격판으로 fallback하지 않는다.
