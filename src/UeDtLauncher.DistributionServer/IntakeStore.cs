@@ -50,13 +50,14 @@ public sealed class IntakeStore
         using var command = db.CreateCommand();
         command.CommandText = "PRAGMA user_version";
         var version = Convert.ToInt32(command.ExecuteScalar());
-        if (version > 3) throw new InvalidDataException("Distribution database schema is newer than this server.");
-        if (version == 3) return;
+        if (version > 4) throw new InvalidDataException("Distribution database schema is newer than this server.");
+        if (version == 4) return;
+        using var offline = new AuthenticationProcessLease(Root);
         // SQLite's backup API captures a consistent image, including committed WAL pages, before any schema change.
         if (existed)
         {
             using var backup = new SqliteConnection(new SqliteConnectionStringBuilder
-            { DataSource = Path.Combine(Root, "distribution.pre-v3-" + DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmssfffffff") + ".db"), Pooling = false }.ToString());
+            { DataSource = Path.Combine(Root, "distribution.pre-v4-" + DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmssfffffff") + ".db"), Pooling = false }.ToString());
             backup.Open(); db.BackupDatabase(backup);
         }
         using var transaction = db.BeginTransaction(); command.Transaction = transaction;
@@ -81,7 +82,11 @@ public sealed class IntakeStore
             CREATE TABLE IF NOT EXISTS active_work(job TEXT PRIMARY KEY,owner TEXT NOT NULL,scratch TEXT,snapshot TEXT,started_at TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS releases_job_idx ON releases(job);
             CREATE TABLE IF NOT EXISTS device_keys(key_id TEXT PRIMARY KEY,client TEXT NOT NULL,public_pem TEXT NOT NULL,revoked INTEGER NOT NULL DEFAULT 0);
-            PRAGMA user_version=3;
+            CREATE TABLE IF NOT EXISTS promotion_state(id INTEGER PRIMARY KEY CHECK(id=1),ready INTEGER NOT NULL);
+            INSERT OR IGNORE INTO promotion_state SELECT 1,CASE WHEN COUNT(*)=0 THEN 1 ELSE 0 END FROM releases;
+            CREATE TABLE IF NOT EXISTS promotions(id INTEGER PRIMARY KEY AUTOINCREMENT,track TEXT NOT NULL,release_id TEXT NOT NULL,previous_release TEXT,actor TEXT NOT NULL,at TEXT NOT NULL,reason TEXT NOT NULL,kind TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS promotions_track_idx ON promotions(track,id);
+            PRAGMA user_version=4;
             """;
         command.ExecuteNonQuery(); transaction.Commit();
     }
