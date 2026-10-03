@@ -32,6 +32,7 @@ public sealed partial class MainWindow : Window
     private bool _startupInitialized;
     private Exception? _configurationError;
     private readonly ILauncherUiBackend _uiBackend;
+    private readonly Func<string,Task<LauncherConfig>> _runtimeConfigLoader;
     private readonly Func<LauncherConfig,string,CancellationToken,Task<CatalogSnapshot>> _catalogLoader;
     private readonly Func<string,bool,DoctorTarget?,CancellationToken,Task<DoctorReport>> _doctor;
     private bool _windowMetricsInitialized;
@@ -78,9 +79,11 @@ public sealed partial class MainWindow : Window
 
     internal MainWindow(LauncherStartupOptions startupOptions, LauncherDashboardViewModel? model, LauncherUiPreferences? preferences, bool startServices, ILauncherUiBackend? backend=null,
         Func<LauncherConfig,string,CancellationToken,Task<CatalogSnapshot>>? catalogLoader=null,
-        Func<string,bool,DoctorTarget?,CancellationToken,Task<DoctorReport>>? doctor=null)
+        Func<string,bool,DoctorTarget?,CancellationToken,Task<DoctorReport>>? doctor=null,
+        Func<string,Task<LauncherConfig>>? runtimeConfigLoader=null)
     {
         _uiBackend=backend??new LauncherUiBackend();
+        _runtimeConfigLoader=runtimeConfigLoader??(path=>LauncherPaths.LoadResolvedAsync(path));
         _catalogLoader=catalogLoader??CatalogSnapshotService.LoadAsync;
         _doctor=doctor??((path,online,target,token)=>LauncherDoctor.RunAsync(path,online,token,target:target));
         _startupOptions = startupOptions;
@@ -1056,7 +1059,7 @@ public sealed partial class MainWindow : Window
     {
         var runtimePath = UsesDistributionServer && _config.IsManagedDeployment
             ? Path.Combine(ManagedLauncherPathLayout.Current().ConfigRoot, "launcher.config.json") : ConfigPath;
-        var c = await LauncherPaths.LoadResolvedAsync(runtimePath);
+        var c = await _runtimeConfigLoader(runtimePath);
         c.ProjectId = _selectedProject.ProjectId; c.Environment = _config.Environment; c.Channel = _config.Channel; c.TargetPlatform = CurrentPlatform; c.VersionPolicy = _config.VersionPolicy; c.RequestedVersion = _config.RequestedVersion; c.RepairMode = repair; c.LaunchAfterUpdate = launch;
         c.ClientProfile = _viewModel.EffectiveProfile;
         c.SelfUpdate = null;
@@ -1100,15 +1103,14 @@ public sealed partial class MainWindow : Window
         if(_running)return;
         _running=true;SetBusy(true);
         using var operationCancellation = new CancellationTokenSource();
-        _operationCancellation = operationCancellation;
         try
         {
             var context=CaptureUiOperation(expectedSelection);
             if(IsDeveloper && launch && !await ConfirmDevLaunch(context))return;
             BeginOperation(launch?LauncherUiOperation.Launch:repair?LauncherUiOperation.Repair:LauncherUiOperation.Update);
-            _viewModel.GeneralState=GeneralLauncherState.Working;Progress(0);ResetSpeedTracking();
+            Progress(0);ResetSpeedTracking();StartCancellableUiOperation(operationCancellation);
             var config=await RunConfig(repair,launch);
-            var result=await _uiBackend.ExecuteAsync(context,config,repair,launch,PostUiProgress,_fileLogger,operationCancellation.Token);
+            var result=await _uiBackend.ExecuteAsync(context,config,repair,launch,CreateUiProgress(),_fileLogger,operationCancellation.Token);
             _resumeOperation=null;
             if(result.Completion==LauncherUiCompletion.CommittedRefreshRequired){CommittedUiRefreshRequired();return;}
             _presentation.Complete(result.Completion==LauncherUiCompletion.CommittedLaunchSkipped?"설치 완료 · 프로그램 실행은 생략했습니다.":launch?"실행 준비 완료":repair?"파일 복구 완료":"업데이트 확인 완료");
@@ -1117,7 +1119,7 @@ public sealed partial class MainWindow : Window
         catch(LauncherUiCancelledException cancelled){RecordCancelledOperation(cancelled.Operation);}
         catch(OperationCanceledException){RecordCancelledOperation(null);}
         catch(Exception ex){MarkError(ex);}
-        finally{_operationCancellation=null;_running=false;SetBusy(false);}
+        finally{FinishUiOperation();}
     }
 
     private async Task RefreshInstallStatusAsync(bool suppressDialog = false)
@@ -1131,11 +1133,11 @@ public sealed partial class MainWindow : Window
         {
             var context=CaptureUiOperation();
             BeginOperation(LauncherUiOperation.Check);_viewModel.GeneralState=GeneralLauncherState.Checking;Progress(0);
-            var result=await _uiBackend.CheckAsync(context,await RunConfig(false,false),PostUiProgress);
+            var result=await _uiBackend.CheckAsync(context,await RunConfig(false,false),CreateUiProgress());
             if(ApplyUiResult(context,result)){_presentation.Complete(_installState);Build();}
         }
         catch(Exception ex){MarkError(ex,"상태 확인 실패",showDialog:!suppressDialog);}
-        finally{_running=false;SetBusy(false);}
+        finally{FinishUiOperation();}
     }
 
     private async Task TroubleshootAsync()
@@ -1146,7 +1148,7 @@ public sealed partial class MainWindow : Window
         LauncherConfig? config=null;
         LauncherUiOperationResult? checkedResult=null;
         var repairAttempted=false;
-        using var cancellation=new CancellationTokenSource();_operationCancellation=cancellation;
+        using var cancellation=new CancellationTokenSource();
         try
         {
             if(UsesDistributionServer && _catalog.Releases.Count==0)
@@ -1154,17 +1156,17 @@ public sealed partial class MainWindow : Window
                 if(!await RefreshCatalog(false,suppressDialog:true) || !HasProject)return;
             }
             context=CaptureUiOperation();config=await RunConfig(false,false);
-            BeginOperation(LauncherUiOperation.Troubleshoot);_viewModel.GeneralState=GeneralLauncherState.Working;Progress(0);
-            checkedResult=await _uiBackend.CheckAsync(context,config,PostUiProgress,cancellation.Token);
+            BeginOperation(LauncherUiOperation.Troubleshoot);Progress(0);StartCancellableUiOperation(cancellation);
+            checkedResult=await _uiBackend.CheckAsync(context,config,CreateUiProgress(),cancellation.Token);
             ValidateUiResult(context,checkedResult);_viewModel.RequireRuntimeQuiescent(checkedResult.Runtime);
             var action=LauncherUiOperations.TroubleshootAction(checkedResult.Status);
             if(action==LauncherTroubleshootAction.Repair)
             {
                 repairAttempted=true;
-                var repaired=await _uiBackend.ExecuteAsync(context,config,true,false,PostUiProgress,_fileLogger,cancellation.Token);
+                var repaired=await _uiBackend.ExecuteAsync(context,config,true,false,CreateUiProgress(),_fileLogger,cancellation.Token);
                 if(repaired.Completion==LauncherUiCompletion.CommittedRefreshRequired || cancellation.IsCancellationRequested){CommittedUiRefreshRequired();return;}
                 ValidateUiResult(context,repaired);_viewModel.RequireRuntimeQuiescent(repaired.Runtime);
-                checkedResult=await _uiBackend.CheckAsync(context,config,PostUiProgress);
+                checkedResult=await _uiBackend.CheckAsync(context,config,CreateUiProgress());
                 if(checkedResult.Status.UpdateRequired)throw new InvalidDataException("파일 복구 후 검증을 완료하지 못했습니다.");
             }
             if(ApplyUiResult(context,checkedResult))
@@ -1191,7 +1193,7 @@ public sealed partial class MainWindow : Window
             else if(ex is OperationCanceledException)_presentation.Complete("작업 취소 완료 · 설치 상태를 다시 확인해 주세요.");
             else MarkError(ex,"문제 해결 실패");
         }
-        finally{_operationCancellation=null;_running=false;SetBusy(false);}
+        finally{FinishUiOperation();}
     }
 
     private async Task RollbackLatestAsync()
@@ -1213,7 +1215,7 @@ public sealed partial class MainWindow : Window
             await RestoreUiPreviewAsync(context,config,preview);
         }
         catch(Exception ex){MarkError(ex,"백업 복원 실패");}
-        finally{_running=false;SetBusy(false);}
+        finally{FinishUiOperation();}
     }
 
     private Task<bool> ConfirmRollback(string backupName, BackupInfo? info)

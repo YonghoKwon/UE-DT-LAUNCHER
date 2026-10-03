@@ -195,8 +195,10 @@ public class LauncherRecoveryFlowTests
             Assert.Equal(0, backend.Executions);
             Assert.Equal(GeneralLauncherState.RuntimeBlocked, model.GeneralState);
             Assert.Equal(PrimaryActionKind.Disabled, model.PrimaryAction);
-            Assert.NotNull(Presentation(window).ErrorCode);
-            Assert.Equal(LauncherUiOperation.Check, Presentation(window).Retry?.Operation);
+            if(runtime==RuntimeState.Running)
+            {Assert.Null(Presentation(window).ErrorCode);Assert.Null(Presentation(window).SupportId);Assert.Equal("프로그램 실행 중",Presentation(window).Title);}
+            else
+            {Assert.NotNull(Presentation(window).ErrorCode);Assert.Equal(LauncherUiOperation.Check, Presentation(window).Retry?.Operation);}
         }
         finally { window.Close(); }
     }

@@ -242,8 +242,11 @@ public sealed partial class MainWindow
         if(IsDeveloper)actions.Children.Add(EnterpriseButton("업데이트","update",async (_,_)=>await RunAsync(false,false)));
         var check=EnterpriseButton(_viewModel.GeneralState==GeneralLauncherState.RecoverableError?"문제 해결":"상태 확인","status-check",async (_,_)=>{if(!IsDeveloper&&_viewModel.GeneralState==GeneralLauncherState.RecoverableError)await TroubleshootAsync();else await RefreshSelectionStatusAsync();});
         check.HotKey=new KeyGesture(Key.F6);actions.Children.Add(check);
-        if(_operationCancellation is not null)
-            actions.Children.Add(EnterpriseButton("작업 취소","cancel-operation",(_,_)=>RequestOperationCancellation(),tracked:false));
+        if(_running && _operationCancellation is not null)
+        {
+            var cancel=EnterpriseButton(_operationCancellation.IsCancellationRequested?"취소 요청 중":"작업 취소","cancel-operation",(_,_)=>RequestOperationCancellation(),tracked:false);
+            cancel.IsEnabled=!_operationCancellation.IsCancellationRequested;actions.Children.Add(cancel);
+        }
         if(!_running && CanResumeSelected())actions.Children.Add(EnterpriseButton("다운로드 재개","resume-operation",async(_,_)=>await ResumeUiOperationAsync()));
         if(_viewModel.GeneralState!=GeneralLauncherState.RuntimeBlocked && _presentation.ErrorCode is not null && _presentation.Retry is not null)actions.Children.Add(EnterpriseButton("다시 시도","retry-operation",async (_,_)=>await RetryCurrentAsync()));
         foreach(var item in actions.Children)item.Margin=new Thickness(0,0,8,0);

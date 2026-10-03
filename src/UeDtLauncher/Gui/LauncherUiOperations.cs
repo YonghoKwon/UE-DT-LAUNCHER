@@ -46,11 +46,16 @@ internal sealed class LauncherUiBackend : ILauncherUiBackend
 
 internal static class LauncherUiOperations
 {
+    internal static bool CanResume(OperationStatus? operation, ReleaseSelection? selection) =>
+        selection is not null && operation?.Selection == selection &&
+        operation.Phase is "Cancelled" or "Interrupted" or "Failed" &&
+        operation.ManifestSha256 is { Length: 64 } digest && digest.All(char.IsAsciiHexDigit);
+
     internal static OperationStatus? BindResume(LauncherUiOperationContext context,LauncherConfig config)
     {
         var resumed=config.UiResumeOperation;
         if(resumed is null)return null;
-        if(resumed.Selection!=context.Selection || resumed.ManifestSha256 is null || resumed.Phase is not ("Cancelled" or "Interrupted" or "Failed"))throw new InvalidDataException("재개할 작업과 선택한 배포가 다릅니다.");
+        if(!CanResume(resumed,context.Selection))throw new InvalidDataException("재개할 작업과 선택한 배포가 다릅니다.");
         config.RepairMode=resumed.Command=="repair";config.LaunchAfterUpdate=false;config.ExpectedResumeManifestSha256=resumed.ManifestSha256;
         return resumed;
     }
