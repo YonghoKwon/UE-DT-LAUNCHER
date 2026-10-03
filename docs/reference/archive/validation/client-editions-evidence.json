@@ -16,5 +16,15 @@
   "compatibility": { "commonCli": true, "windowsHeadlessChecks": 3, "windowsDeveloperReadinessChecks": 8, "linuxHeadlessChecks": 3, "linuxDeveloperReadinessChecks": 8, "linuxHttpsBearer": true },
   "gui": { "initialGeneralWindowRead": true, "initialDeveloperControlsRead": true, "initialWindowIsFinalWorkflowBuild": false, "successfulMouseActions": 0, "applyTestsStatus": "environment-blocked", "errorCode": "0x80070005", "errorOperation": "GetCursorPos", "sessionState": "Disconnected", "cliPreinstallationUsedAsGuiProof": false },
   "performance": { "profile": "large-80MiB", "warmupRuns": 1, "measuredRuns": 3, "clientCounts": [1,10,30], "baselineP95Ms": [8.13,11.52,30.17], "candidateP95Ms": [7.90,11.39,30.54], "requestFailures": 0, "networkContentReductionPercent": 90, "fullPerf03Accepted": false },
+  "resumedSessionChecks": {
+    "date": "2026-10-03", "fixture": "accept-managed", "successfulMouseActions": 2,
+    "awaitingPromotionRead": true, "serviceDisconnectErrorAndSupportId": true,
+    "queryRetryRecoveredToAwaitingPromotion": true, "uninstalledSnapshotUnchanged": true,
+    "installedPayloadFiles": 0, "appLaunches": 0,
+    "observedScreenPixels": [1440,900], "renderScaling": 1,
+    "connectionDroppedAgain": true, "lastSessionState": "Disconnected",
+    "lastErrors": ["GetCursorPos 0x80070005","CreateForMonitor 0x80070057"],
+    "installationAndRecoveryAcceptanceComplete": false
+  },
   "remaining": ["actual-four-GUI-workflow-matrix", "actual-download-cancel-resume-clicks", "OS-display-condition-confirmation", "corporate-installer-lifecycle", "remote-CI"]
 }

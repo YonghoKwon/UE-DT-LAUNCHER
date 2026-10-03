@@ -10,6 +10,8 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 
 ## 프로젝트 목표와 처음 읽을 안내
 
+2026-10-03 GUI 재연결 후 관리형 service 단절/재시도를 실제2회 클릭해 오류 복귀·설치0건을 확인했습니다. 이후 세션이 다시 Disc가 되어 설치/복원 수용은 대기입니다. [실제 관측과 환경](docs/reference/archive/validation/client-editions-validation.md)을 확인하세요.
+
 자동 점검의 `checked`는 준비도와 설치 상태 확인이 함께 완료된 경우입니다. `action-required`는 관리자/사용자 조치, `verification-pending`은 보류된 검사이며 종료0을 실행 가능으로 해석하지 않습니다.
 
 명시 요청 한도는 초과 시429/Retry-After를 반환하며 동시 다운로드가 끝나면 자리를 반환합니다. 자격 만료·폐기는 Catalog/Manifest/파일 요청에서도 매번 적용합니다.

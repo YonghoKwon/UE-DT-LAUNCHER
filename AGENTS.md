@@ -131,6 +131,8 @@
 
 ## UI 규칙
 
+- 실제 GUI 입력은 시험 동안 활성·잠금 해제된 데스크톱 연결이 필요하다. 2026-10-03 재연결에서 관리형 조회2건만 클릭했고 이후 Disc로 돌아왔다. 관측1440×900/scale1을1920×1080 시험으로 계산하지 않는다.
+
 - 최신 GUI 수용의 남은 목록은 guide-03-launcher-usage의 단일 체크리스트를 정본으로 사용한다. readiness final/final-02 및 이전8ce5060 이력을 섞지 않으며 현재 요약/항목표/체크포인트는 최신 검증 범위를 함께 반영한다.
 
 - programmatic View와 LauncherVisualTokens·ViewModel을 사용합니다. 현행 레이아웃은 MainWindowEnterprise, 대화창은 MainWindowAccessibility, 피드백은 MainWindowFeedback입니다.

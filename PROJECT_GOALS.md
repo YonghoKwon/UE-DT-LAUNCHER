@@ -14,6 +14,8 @@
 
 ## 현재 위치
 
+GUI 재연결 후 실제 조회/재시도2건과 미설치 불변을 확인했지만 세션이 다시 Disc로 전환됐다. 현재 실제 설치/복원 수용은 대기이며 관측1440×900은1920×1080 수용 증거가 아니다. 회사 Gate와 USER/UI 완료 조건을 상향하지 않는다.
+
 2026-10-03 결정: 일반/개발자 클라이언트는 별도 빌드·실행 파일로 고정한다. 일반 MSI와 개발자 MSI(일반 포함)는 Agent를 공유하고, Linux developer RPM은 동일 버전 base RPM을 요구한다. GUI 설정의 clientProfile로 화면을 전환하지 않으며 기존 운영 CLI는 공통으로 유지한다.
 
 667개 양 OS 회귀·게시 CLI/Agent·MSI/RPM 비설치 검증은 확인했다. 실제 마우스 검증을 재개했으나 Windows 세션 Disc/GetCursorPos 접근 거부로 적용 시험은 미실행이다. USER-02/UI-02·음성 보류의 UI-03은75%를 유지한다. [이번 기록](docs/reference/archive/validation/client-editions-validation.md)

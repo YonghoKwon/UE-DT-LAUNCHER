@@ -6,6 +6,8 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 ## 먼저 확인할 진행 현황
 
+GUI 재연결 추가: 관리형 추천 대기·service 단절 오류/지원 ID·재시도 복귀를 실제2회 클릭했고 설치 파일/marker0건을 확인했다. 이후 연결이 다시 Disc가 되어 설치/실행/복구 수용은 미실행이다. USER-02/UI-02 진행률과 전체 집계는 유지한다. [관측 기록](docs/reference/archive/validation/client-editions-validation.md)
+
 최신 에디션 후속: 별도 General/Developer 빌드·MSI 두 종·base/developer RPM, 공통 CLI/Agent/runtime-host, GUI 취소 완료/재개 결속을 구현했다. Windows/WSL 각667개·게시 headless/readiness·비설치 payload 검증 통과. 실제 마우스는 사용자 요청으로 재개했으나 세션 Disc/0x80070005로 미실행이다. USER-02/UI-02는75%, USER-03은50%, 완료6/부분19/대기3 집계를 유지한다. [에디션 검증](docs/reference/archive/validation/client-editions-validation.md)
 
 최신 요약: Windows/WSL 각각664개 회귀·게시 CLI/console Agent/서버·HTTP/HTTPS·준비도·수명/장애·개발 MSI/RPM 비설치 검증을 진행했습니다. 새로운 실제 GUI/음성·회사 UE/RHEL/서비스 계정·실제 인증서·원격 CI는 미실행입니다. 따라서 **완료6·부분19·대기3, 열린22개**를 유지합니다. 대부분의 headless 기능은 구현돼 있지만 열린 항목이 전부 미구현이라는 뜻은 아닙니다.

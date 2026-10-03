@@ -2,6 +2,12 @@
 
 [정제 실행 근거](client-editions-evidence.json). GUI의 환경 제약은 미실행으로 보존하며 과거 CLI 설치 결과를 실제 클릭 증거로 사용하지 않는다.
 
+## 데스크톱 연결 재개 시도
+
+사용자 재연결 후 세션 Active와 최신 accept-managed 창을 확인했다. 추천 미지정/주 버튼 비활성, service 단절 후 상태 확인 클릭, 친화적인 오류·지원 ID·재시도 표시, service 재연결 후 다시 시도 클릭→오류가 정리된 추천 대기 복귀를 확인했다. 설치 앱/marker 생성0건과 미설치 보호 snapshot 불변을 대조했다. 실제 성공한 마우스 동작은2건이다.
+
+v1을 관리자 promote한 뒤 상태 확인을 진행하려는 중 세션이 다시 Disc로 바뀌었다. GetCursorPos0x80070005, CreateForMonitor0x80070057로 입력/캡처가 차단돼 설치/실행/복구/복원은 미실행이다. 사용자는 시험 동안 원격 데스크톱 창을 연결·잠금 해제 상태로 유지해야 한다. 실제 관측 화면은1440×900·RenderScaling1이며1920×1080 수용으로 기록하지 않는다. 현재 서버/Agent와 fixture는 이어서 사용할 수 있도록 보존했다.
+
 2026-10-03, 기준 eea1dd3, codex/client-editions-ux-acceptance. 일반/개발자 GUI는 컴파일된 에디션으로 결정하고 기존 CLI는 공통으로 유지한다.
 
 ## 초기 빌드 확인
