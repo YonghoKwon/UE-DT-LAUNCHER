@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory=$true)][string]$Msi,
     [Parameter(Mandatory=$true)][string]$Gui,
     [Parameter(Mandatory=$true)][string]$Agent,
-    [Parameter(Mandatory=$true)][string]$OutputDirectory
+    [Parameter(Mandatory=$true)][string]$OutputDirectory,
+    [string]$Developer
 )
 $ErrorActionPreference = 'Stop'
 foreach ($file in @($Msi,$Gui,$Agent)) { if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing payload verification input: $file" } }
@@ -49,7 +50,8 @@ namespace UeDt {
 }
 $cabinets = [UeDt.MsiStreams]::ExtractCabinets([IO.Path]::GetFullPath($Msi), [IO.Path]::GetFullPath($OutputDirectory))
 $extracted = @{}
-foreach ($id in @('LauncherGuiExe','LauncherAgentExe')) {
+$ids=@('LauncherGuiExe','LauncherAgentExe'); if($Developer){$ids+='LauncherDeveloperExe'}
+foreach ($id in $ids) {
     foreach ($cabinet in $cabinets) {
         & "$env:SystemRoot\System32\expand.exe" "-F:$id" $cabinet $OutputDirectory | Out-Host
         if ($LASTEXITCODE -ne 0) { throw 'Cabinet extraction failed.' }
@@ -59,10 +61,11 @@ foreach ($id in @('LauncherGuiExe','LauncherAgentExe')) {
     $extracted[$id] = $path
 }
 $hashes = @{}
-foreach ($pair in @(@($Gui,'LauncherGuiExe'), @($Agent,'LauncherAgentExe'))) {
+$pairs=@(@($Gui,'LauncherGuiExe'), @($Agent,'LauncherAgentExe')); if($Developer){$pairs+=,@($Developer,'LauncherDeveloperExe')}
+foreach ($pair in $pairs) {
     $expected = (Get-FileHash -LiteralPath $pair[0] -Algorithm SHA256).Hash
     $actual = (Get-FileHash -LiteralPath $extracted[$pair[1]] -Algorithm SHA256).Hash
     if ($actual -ne $expected) { throw "MSI embedded payload differs: $($pair[1])" }
     $hashes[$pair[1]] = $actual.ToLowerInvariant()
 }
-[pscustomobject]@{ Gui=$extracted.LauncherGuiExe; Agent=$extracted.LauncherAgentExe; Hashes=$hashes }
+[pscustomobject]@{ Gui=$extracted.LauncherGuiExe; Agent=$extracted.LauncherAgentExe; Developer=$extracted['LauncherDeveloperExe']; Hashes=$hashes }

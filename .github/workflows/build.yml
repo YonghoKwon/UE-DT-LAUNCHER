@@ -65,6 +65,13 @@ jobs:
         if: runner.os == 'Windows'
         run: dotnet publish src/UeDtLauncher.Agent/UeDtLauncher.Agent.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish/agent-win-x64
 
+      - name: Publish compiled Developer client
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then rid=win-x64; suffix=.exe; else rid=linux-x64; suffix=; fi
+          dotnet publish src/UeDtLauncher/UeDtLauncher.csproj -c Release -r "$rid" --self-contained true -p:PublishSingleFile=true -p:LauncherEdition=Developer -o "publish/developer-$rid"
+          publish/developer-$rid/UeDtLauncher.Developer$suffix --build-info
+
       - name: Publish Linux
         if: runner.os == 'Linux'
         run: dotnet publish src/UeDtLauncher/UeDtLauncher.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -o publish/linux-x64

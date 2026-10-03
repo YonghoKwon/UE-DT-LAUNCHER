@@ -46,40 +46,51 @@ function Publish-LauncherPayload($Context) {
     foreach ($item in @(@('UeDtLauncher','gui'), @('UeDtLauncher.Agent','agent'))) {
         Invoke-PackageTool 'dotnet' @('publish', (Join-Path $Context.Repo "src/$($item[0])/$($item[0]).csproj"), '-c', $Context.Configuration,
             '-r','win-x64','--self-contained','true','-p:PublishSingleFile=true',"-p:LauncherVersion=$($Context.Version)",
-            "-p:LauncherOfficialBuild=$($Context.Official.ToString().ToLowerInvariant())",'-o',(Join-Path $Context.Payload $item[1]))
+            "-p:LauncherOfficialBuild=$($Context.Official.ToString().ToLowerInvariant())",'-p:LauncherEdition=General','-o',(Join-Path $Context.Payload $item[1]))
+    }
+    if ($Context.Edition -eq 'Developer') {
+        Invoke-PackageTool 'dotnet' @('publish',(Join-Path $Context.Repo 'src/UeDtLauncher/UeDtLauncher.csproj'),'-c',$Context.Configuration,
+            '-r','win-x64','--self-contained','true','-p:PublishSingleFile=true',"-p:LauncherVersion=$($Context.Version)",
+            "-p:LauncherOfficialBuild=$($Context.Official.ToString().ToLowerInvariant())",'-p:LauncherEdition=Developer','-o',(Join-Path $Context.Payload 'developer'))
     }
     Set-Content -LiteralPath (Join-Path $Context.Payload 'BUILD-INFO.txt') -Encoding UTF8 -Value $(if ($Context.Official) { 'OFFICIAL BUILD - SIGNATURE VALIDATION REQUIRED' } else { 'UNSIGNED DEVELOPMENT BUILD - NOT FOR PRODUCTION' })
     Copy-Item -LiteralPath (Join-Path $Context.Repo 'examples/configs/distribution-general-windows.config.json') -Destination (Join-Path $Context.Payload 'launcher.config.example.json')
+    $example=Get-Content -LiteralPath (Join-Path $Context.Payload 'launcher.config.example.json') -Raw | ConvertFrom-Json
+    $example.PSObject.Properties.Remove('clientProfile')
+    $example | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $Context.Payload 'launcher.config.example.json') -Encoding UTF8
 }
 
 function New-LauncherMsi($Context) {
     Invoke-PackageTool 'dotnet' @('build',(Join-Path $Context.Repo 'installer/windows/UeDtLauncher.Installer.wixproj'),'-c',$Context.Configuration,
-        "-p:ProductVersion=$($Context.Version)","-p:PublishRoot=$($Context.Payload)","-p:BuildLabel=$($Context.Label)",
+        "-p:ProductVersion=$($Context.Version)","-p:PublishRoot=$($Context.Payload)","-p:BuildLabel=$($Context.Label)","-p:LauncherEdition=$($Context.Edition)",
         "-p:BaseIntermediateOutputPath=$(Join-Path $Context.Run 'wix-obj')/",'-o',$Context.Output)
     if (-not (Test-Path -LiteralPath $Context.Msi -PathType Leaf)) { throw 'This run did not produce its expected MSI.' }
 }
 
 function Test-LauncherMsiPayload($Context) {
     $arguments = @{ Msi = $Context.Msi; Gui = $Context.Gui; Agent = $Context.Agent; OutputDirectory = (Join-Path $Context.Run 'extracted') }
+    if($Context.Edition -eq 'Developer') { $arguments.Developer = $Context.Developer }
     $report = & (Join-Path $Context.Repo 'scripts/verify-msi-payload.ps1') @arguments
-    if ($Context.Official) { Invoke-LauncherSigning @($report.Gui, $report.Agent) $Context.Signer -VerifyOnly }
+    if ($Context.Official) { Invoke-LauncherSigning @($report.Gui, $report.Agent) $Context.Signer -VerifyOnly; if($Context.Edition -eq 'Developer'){Invoke-LauncherSigning @($report.Developer) $Context.Signer -VerifyOnly} }
     return $report
 }
 
 # Private command seams are replaced only inside test module sessions. No public bypass flag.
-function Invoke-LauncherPackageBuild([string]$Repo, [string]$Artifacts, [string]$Version, [string]$Configuration, [bool]$Official) {
+function Invoke-LauncherPackageBuild([string]$Repo, [string]$Artifacts, [string]$Version, [string]$Configuration, [bool]$Official, [ValidateSet('General','Developer')][string]$Edition='General') {
     if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'MSI Version must be numeric major.minor.patch.' }
     $signer = if ($Official) { Get-LauncherSigner } else { $null }
     $run = Join-Path $Artifacts ('runs/' + [guid]::NewGuid().ToString('N'))
     $label = if ($Official) { 'SIGNED' } else { 'UNSIGNED-DEV' }
     $context = @{ Repo=$Repo; Run=$run; Payload=(Join-Path $run 'payload'); Output=(Join-Path $run 'output');
-        Version=$Version; Configuration=$Configuration; Official=$Official; Label=$label; Signer=$signer }
+        Version=$Version; Configuration=$Configuration; Official=$Official; Label=$label; Signer=$signer; Edition=$Edition }
     $context.Gui = Join-Path $context.Payload 'gui/UeDtLauncher.exe'
     $context.Agent = Join-Path $context.Payload 'agent/UeDtLauncher.Agent.exe'
-    $context.Msi = Join-Path $context.Output "UeDtLauncher-$Version-$label-x64.msi"
+    $context.Developer=Join-Path $context.Payload 'developer/UeDtLauncher.Developer.exe'
+    $context.Msi = Join-Path $context.Output "UeDtLauncher-$Version-$Edition-$label-x64.msi"
     New-Item -ItemType Directory -Force $context.Payload, $context.Output | Out-Null
     Publish-LauncherPayload $context
     if ($Official) { Invoke-LauncherSigning @($context.Gui,$context.Agent) $signer }
+    if ($Official -and $Edition -eq 'Developer') {Invoke-LauncherSigning @($context.Developer) $signer}
     New-LauncherMsi $context
     if ($Official) { Invoke-LauncherSigning @($context.Msi) $signer }
     $verification = Test-LauncherMsiPayload $context
@@ -88,7 +99,8 @@ function Invoke-LauncherPackageBuild([string]$Repo, [string]$Artifacts, [string]
     foreach ($file in @($context.Gui,$context.Agent,$context.Msi,(Join-Path $context.Payload 'BUILD-INFO.txt'),(Join-Path $context.Payload 'launcher.config.example.json'))) {
         Copy-Item -LiteralPath $file -Destination $release
     }
-    $result = [ordered]@{ version=$Version; label=$label; official=$Official; artifactDirectory=$release;
+    if($Edition -eq 'Developer'){Copy-Item -LiteralPath $context.Developer -Destination $release}
+    $result = [ordered]@{ version=$Version; edition=$Edition; label=$label; official=$Official; artifactDirectory=$release;
         msi=(Join-Path $release (Split-Path $context.Msi -Leaf)); payloadVerified=$true; payloadHashes=$verification.Hashes }
     $result | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $release 'package-result.json') -Encoding UTF8
     if ($env:GITHUB_ENV) { "UE_DT_PACKAGE_DIR=$release" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding UTF8 }

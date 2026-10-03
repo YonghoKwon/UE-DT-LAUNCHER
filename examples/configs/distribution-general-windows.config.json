@@ -3,7 +3,6 @@
   "deploymentMode": "managed-agent",
   "distributionServerUrl": "http://10.20.30.40",
   "projectId": "ue-dt-simulator",
-  "clientProfile": "general",
   "environment": "prod",
   "channel": "stable",
   "versionPolicy": "latest",

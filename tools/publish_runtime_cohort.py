@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import subprocess
 import shutil
+import zipfile
 from gui_fixture_evidence import sha256
 
 REPO = Path(__file__).resolve().parents[1]
@@ -37,9 +38,15 @@ def main():
         executable = output/(('UeDtLauncher.Developer' if role=='developer' else project)+suffix)
         binaries[role] = {'path': str(executable), 'sha256': sha256(executable)}
     shutil.copy2(binaries['launcher']['path'],root/'developer'/('UeDtLauncher'+suffix))
+    packages={}
+    for edition,roles in [('General',['launcher']),('Developer',['launcher','developer'])]:
+        path=root/('UeDtLauncher-'+edition+'-'+args.rid+'-UNSIGNED-DEV.zip')
+        with zipfile.ZipFile(path,'w',zipfile.ZIP_DEFLATED) as archive:
+            for role in roles:archive.write(binaries[role]['path'],Path(binaries[role]['path']).name)
+        packages[edition]={'path':str(path),'sha256':sha256(path)}
     if before != source_inventory(): raise ValueError('Product source changed during publication; cohort is invalid')
     record = {'schemaVersion': 1, 'sourceHead': head, 'productSourceDirty': dirty,
-        'productSourceHash': hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest(), 'rid': args.rid, 'binaries': binaries}
+        'productSourceHash': hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest(), 'rid': args.rid, 'binaries': binaries,'packages':packages}
     (root/'cohort.json').write_text(json.dumps(record, indent=2), encoding='utf-8')
     print(json.dumps(record))
 

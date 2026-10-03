@@ -43,53 +43,54 @@ def entries(data):
     raise ValueError('Missing archive trailer')
 
 
-def verify(rpm, payload, version):
+def verify(rpm, payload, version, developer=False):
     def query(format):
         return subprocess.check_output(['rpm', '-qp', '--qf', format, str(rpm)], stderr=subprocess.DEVNULL, text=True)
-    if query('%{NAME}|%{VERSION}|%{RELEASE}|%{ARCH}') != f'ue-dt-launcher|{version}|1|x86_64':
+    name='ue-dt-launcher-developer' if developer else 'ue-dt-launcher'
+    if query('%{NAME}|%{VERSION}|%{RELEASE}|%{ARCH}') != f'{name}|{version}|1|x86_64':
         raise ValueError('Unexpected RPM identity')
     paths = {}
     for line in query('[%{FILENAMES}\t%{FILEMODES:octal}\t%{FILEUSERNAME}\t%{FILEGROUPNAME}\t%{FILEFLAGS}\n]').splitlines():
         name, mode, user, group, flags = line.split('\t')
         paths[name] = (int(mode, 8) & 0o7777, user, group, int(flags))
-    config = paths['/etc/ue-dt-launcher/launcher.config.json']
+    config = paths.get('/etc/ue-dt-launcher/launcher.config.json')
+    if developer:
+        requirements=query('[%{REQUIRENAME} %{REQUIREFLAGS:depflags} %{REQUIREVERSION}\n]')
+        if f'ue-dt-launcher = {version}-1' not in requirements:raise ValueError('Developer RPM base-version dependency is missing')
+    else:
+        verify_base_permissions(paths)
+    process = subprocess.Popen(['rpm2cpio', str(rpm)], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    try:
+        data = process.stdout.read(512*1024*1024+1)
+        if len(data) > 512*1024*1024: raise ValueError('RPM payload exceeds extraction cap')
+        if process.wait(timeout=60) != 0: raise ValueError('rpm2cpio failed')
+    finally:
+        if process.poll() is None:process.kill();process.wait()
+    expected = {'opt/ue-dt-launcher/UeDtLauncher.Developer':payload/'UeDtLauncher.Developer'} if developer else {
+        'opt/ue-dt-launcher/UeDtLauncher': payload/'UeDtLauncher',
+        'opt/ue-dt-launcher/UeDtLauncher.Agent': payload/'UeDtLauncher.Agent',
+        'etc/ue-dt-launcher/launcher.config.json': payload/'launcher.config.json',
+        'usr/lib/systemd/system/ue-dt-launcher-agent.service': payload/'ue-dt-launcher-agent.service'}
+    hashes={}
+    for name,mode,body in entries(data):
+        if stat.S_ISDIR(mode):continue
+        if name not in expected or name in hashes:raise ValueError('Unapproved RPM file')
+        with expected[name].open('rb') as source:original=sha256_stream(source)
+        actual=hashlib.sha256(body).hexdigest()
+        if actual!=original:raise ValueError('RPM payload hash mismatch')
+        if name.startswith('opt/') and paths['/'+name][:3]!=(0o755,'root','root'):raise ValueError('Executable permission mismatch')
+        hashes[name]=actual
+    if hashes.keys()!=expected.keys():raise ValueError('RPM payload missing a required file')
+    return hashes
+
+
+def verify_base_permissions(paths):
+    config=paths['/etc/ue-dt-launcher/launcher.config.json']
     if config[:3] != (0o640, 'root', 'uedt') or config[3] & 17 != 17:
         raise ValueError('Config permissions/noreplace changed')
     for name, owner in [('etc/ue-dt-launcher/credentials', 'root'), ('var/lib/ue-dt-launcher/state', 'uedt'), ('var/log/ue-dt-launcher', 'uedt')]:
         if paths['/'+name][:3] != (0o750, owner, 'uedt'):
             raise ValueError('Managed directory ownership changed')
-    process = subprocess.Popen(['rpm2cpio', str(rpm)], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    try:
-        data = process.stdout.read(512*1024*1024+1)
-        if len(data) > 512*1024*1024:
-            raise ValueError('RPM payload exceeds extraction cap')
-        if process.wait(timeout=60) != 0:
-            raise ValueError('rpm2cpio failed')
-    finally:
-        if process.poll() is None:
-            process.kill(); process.wait()
-    expected = {
-        'opt/ue-dt-launcher/UeDtLauncher': payload/'UeDtLauncher',
-        'opt/ue-dt-launcher/UeDtLauncher.Agent': payload/'UeDtLauncher.Agent',
-        'etc/ue-dt-launcher/launcher.config.json': payload/'launcher.config.json',
-        'usr/lib/systemd/system/ue-dt-launcher-agent.service': payload/'ue-dt-launcher-agent.service'}
-    hashes = {}
-    for name, mode, body in entries(data):
-        if stat.S_ISDIR(mode):
-            continue
-        if name not in expected or name in hashes:
-            raise ValueError('Unapproved RPM file')
-        with expected[name].open('rb') as source:
-            original = sha256_stream(source)
-        digest = hashlib.sha256(body).hexdigest()
-        if digest != original:
-            raise ValueError('RPM payload hash mismatch')
-        if name.startswith('opt/') and paths['/'+name][:3] != (0o755, 'root', 'root'):
-            raise ValueError('Executable permission mismatch')
-        hashes[name] = digest
-    if hashes.keys() != expected.keys():
-        raise ValueError('RPM payload missing a required file')
-    return hashes
 
 
 def main():
@@ -98,12 +99,13 @@ def main():
     parser.add_argument('--payload', type=Path, required=True)
     parser.add_argument('--version', required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--developer',action='store_true')
     args = parser.parse_args()
-    hashes = verify(args.rpm, args.payload, args.version)
+    hashes = verify(args.rpm, args.payload, args.version,args.developer)
     head = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True)
     with args.rpm.open('rb') as stream:
         digest = sha256_stream(stream)
-    atomic(args.output, {'schemaVersion': 1, 'version': args.version, 'classification': 'UNSIGNED-DEV',
+    atomic(args.output, {'schemaVersion': 1, 'version': args.version, 'edition':'Developer' if args.developer else 'General', 'classification': 'UNSIGNED-DEV',
         'source': head.stdout.strip() if head.returncode == 0 else 'unavailable',
         'rpmFile': args.rpm.name, 'rpmSha256': digest,
         'payloadSha256': hashes, 'nonInstallingVerification': True})
