@@ -6,8 +6,8 @@ release.json and its deterministic ZIP. All work uses fresh child server roots;
 the source fixture is read-only. One warmup plus three measured runs per setting
 are the default. No operating-system cache flush is attempted.
 
-This is synthetic, loopback-only HTTP. Bearer authorization and signed release
-publication remain enabled; this is not a production HTTPS/UE/RHEL benchmark.
+This is synthetic, loopback-only request-signature-v1 HTTP. Request binding,
+catalog signatures and Range content are verified; this is not HTTPS/UE/RHEL.
 Generated data is retained for inspection. Never use a company server directory.
 """
 import argparse
@@ -31,6 +31,11 @@ import urllib.parse
 import zipfile
 
 import psutil
+from benchmark_signed_client import Device, Client
+from fixture_contract import claim, seal
+from evidence_contract import provenance, atomic
+from promotion_fixture_support import promote
+from stream_hash import sha256_stream
 
 
 JOBS = 4
@@ -65,7 +70,7 @@ def load_fixture(directory):
     if package.is_symlink() or package.resolve(strict=True).parent != directory:
         raise ValueError("Fixture ZIP must be an ordinary file directly inside the fixture directory")
     with package.open("rb") as stream:
-        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        digest = sha256_stream(stream)
     if package.stat().st_size != metadata["packageSize"] or digest.lower() != metadata["packageSha256"].lower():
         raise ValueError("Fixture ZIP does not match release.json size/SHA-256")
     prefix = "" if metadata.get("payloadRoot", ".") == "." else metadata["payloadRoot"].replace("\\", "/").rstrip("/") + "/"
@@ -77,7 +82,9 @@ def load_fixture(directory):
         if not relative or any(part in ("", ".", "..") for part in relative.split("/")):
             raise ValueError("Fixture probe path is unsafe")
         probe_size = probe.file_size
-    return package, metadata, relative, probe_size
+        with archive.open(probe) as stream:
+            expected = stream.read(min(4096, probe_size))
+    return package, metadata, relative, probe_size, expected
 
 
 def cli(command, log_path, env, secret=False):
@@ -124,21 +131,21 @@ def intake_states(connection, sources):
                                    [str(source.resolve()) for source in sources]).fetchall())
 
 
-def wait_http_ready(server, server_port, token, deadline):
+def wait_http_ready(server, origin, device, deadline):
     while time.monotonic() < deadline:
         if server.poll() is not None:
             raise RuntimeError("Published server exited before HTTP readiness")
-        connection = http.client.HTTPConnection("127.0.0.1", server_port, timeout=1)
+        client = None
         try:
-            connection.request("GET", "/api/v1/catalog", headers={"Authorization": "Bearer " + token})
-            response = connection.getresponse()
-            response.read()
-            if response.status == 200:
+            client = Client(origin, device)
+            status, valid = client.get('/api/v1/catalog?selectionPolicy=explicit-promotion-v1')
+            if status == 200 and valid:
                 return
         except (OSError, http.client.HTTPException):
             pass
         finally:
-            connection.close()
+            if client is not None:
+                client.close()
         time.sleep(.1)
     raise TimeoutError("HTTP readiness timed out")
 
@@ -149,16 +156,16 @@ class ProcessSampler:
         self.stop = threading.Event()
         times = self.process.cpu_times()
         self.initial_cpu = times.user + times.system
-        self.cpu_seconds = 0.0
-        self.peak_rss = 0
+        self.cpu_seconds = None
+        self.peak_rss = None
         self.samples = 0
         self.thread = threading.Thread(target=self._loop, daemon=True)
 
     def _sample(self):
         try:
-            self.peak_rss = max(self.peak_rss, self.process.memory_info().rss)
+            self.peak_rss = max(self.peak_rss or 0, self.process.memory_info().rss)
             times = self.process.cpu_times()
-            self.cpu_seconds = max(self.cpu_seconds, times.user + times.system - self.initial_cpu)
+            self.cpu_seconds = max(self.cpu_seconds or 0, times.user + times.system - self.initial_cpu)
             self.samples += 1
         except psutil.NoSuchProcess:
             pass
@@ -176,44 +183,39 @@ class ProcessSampler:
         self.thread.join(timeout=2)
         self._sample()
         return {"cpuSecondsSampled": self.cpu_seconds, "peakRssBytesSampled": self.peak_rss,
-                "resourceSamples": self.samples, "sampleIntervalMs": 20}
+                "resourceSamples": self.samples, "sampleIntervalMs": 20,
+                "missingMetricReason": None if self.samples else 'no-owned-process-samples'}
 
 
-def traffic_worker(server_port, token, file_path, range_bytes, start, stop, ready, pause):
+def traffic_worker(origin, device, file_path, expected, full_size, start, stop, ready, pause):
     samples = []
-    connection = http.client.HTTPConnection("127.0.0.1", server_port, timeout=10)
-    ready.wait(timeout=30)
-    start.wait()
+    client = None
     try:
+        try:
+            client = Client(origin, device)
+        except Exception:
+            ready.abort()
+            raise RuntimeError('Signed client startup failed') from None
+        ready.wait(timeout=30)
+        start.wait()
         index = 0
         while not stop.is_set():
             kind = "catalog" if index % 2 == 0 else "range"
-            path = "/api/v1/catalog" if kind == "catalog" else file_path
-            headers = {"Authorization": "Bearer " + token}
-            if kind == "range":
-                headers["Range"] = f"bytes=0-{range_bytes - 1}"
+            path = "/api/v1/catalog?selectionPolicy=explicit-promotion-v1" if kind == "catalog" else file_path
             began = time.perf_counter()
             status, valid = 0, False
             try:
-                connection.request("GET", path, headers=headers)
-                response = connection.getresponse()
-                body = response.read()
-                status = response.status
-                valid = status == 200 if kind == "catalog" else (
-                    status == 206 and len(body) == range_bytes
-                    and (response.getheader("Content-Range") or "").startswith(f"bytes 0-{range_bytes - 1}/"))
-                if kind == "catalog" and valid:
-                    envelope = json.loads(body)
-                    valid = isinstance(envelope.get("payload"), str) and isinstance(envelope.get("signatureDocument"), str)
-            except (OSError, http.client.HTTPException, ValueError):
-                connection.close()
-                connection = http.client.HTTPConnection("127.0.0.1", server_port, timeout=10)
+                status, valid = client.get(path, expected if kind == 'range' else None, full_size)
+            except Exception:
+                # Record failures, including signature errors. Do not downgrade authentication.
+                valid = False
             samples.append({"kind": kind, "milliseconds": (time.perf_counter() - began) * 1000,
                             "status": status, "ok": valid})
             index += 1
             stop.wait(pause)
     finally:
-        connection.close()
+        if client is not None:
+            client.close()
     return samples
 
 
@@ -238,9 +240,10 @@ def stop_owned_process(process):
         process.wait(timeout=10)
 
 
-def measure_run(args, root, workers, iteration, package, metadata, probe, probe_size, platform):
+def measure_run(args, root, workers, iteration, package, metadata, probe, probe_size, expected, platform):
     run_root = root / f"workers-{workers}-run-{iteration}"
     run_root.mkdir(exist_ok=False)
+    claim(run_root)
     server_root = run_root / "server"
     server_port = free_port()
     base = f"http://127.0.0.1:{server_port}"
@@ -251,7 +254,9 @@ def measure_run(args, root, workers, iteration, package, metadata, probe, probe_
                "grants": [{"projectId": "bench-intake", "environment": "prod", "channel": "stable", "versions": []}]}]})
     write_json(run_root / "server.json", {"root": str(server_root), "publicUrl": base,
                "listenUrl": base, "signingKeyPath": str(run_root / "key.pem"),
-               "policyPath": str(run_root / "policy.json"), "intakeWorkers": workers})
+               "policyPath": str(run_root / "policy.json"), "intakeWorkers": workers,
+               "authenticationMode": "request-signature-v1"})
+    seal(run_root, {'server': args.server, 'launcher': args.launcher}, run_root / 'server.json')
     command = [args.server, "--config", run_root / "server.json"]
     incoming = server_root / "incoming"
     seed = prepare_upload(incoming, "seed", package, metadata, "0.0.0", platform, held=False)
@@ -259,9 +264,10 @@ def measure_run(args, root, workers, iteration, package, metadata, probe, probe_
     if job.get("state") != "pending":
         raise RuntimeError("Seed intake did not become pending")
     cli([*command, "approve", job["id"]], run_root / "seed-approve.json", env)
-    token = cli([*command, "token-issue", "bench"], run_root / "unused-token-log", env, secret=True)
-    if not token or any(character.isspace() for character in token):
-        raise RuntimeError("Token issuance did not return one token")
+    promote(lambda *arguments: cli([args.server, *arguments], run_root / 'promotion.json', env),
+            run_root / 'server.json', 'bench-intake', '0.0.0', platform)
+    device = Device(run_root, lambda path: cli([*command, 'client-key', 'add', '--client', 'bench',
+                    '--public-key', path], run_root / 'registration.json', env))
     sources = [prepare_upload(incoming, f"job-{index}", package, metadata, f"1.0.{index}", platform, held=True)
                for index in range(JOBS)]
     release = f"bench-intake/prod/stable/0.0.0/{platform}"
@@ -277,10 +283,10 @@ def measure_run(args, root, workers, iteration, package, metadata, probe, probe_
             server = subprocess.Popen([str(part) for part in [*command, "serve"]], stdout=log,
                                       stderr=subprocess.STDOUT, env=env,
                                       creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
-            wait_http_ready(server, server_port, token, time.monotonic() + 30)
+            wait_http_ready(server, base, device, time.monotonic() + 30)
             with contextlib.closing(open_readonly_database(server_root / "distribution.db")) as database:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=CLIENTS) as pool:
-                    futures = [pool.submit(traffic_worker, server_port, token, file_path, min(4096, probe_size),
+                    futures = [pool.submit(traffic_worker, base, device, file_path, expected, probe_size,
                                            start, stop, ready, args.request_pause_ms / 1000) for _ in range(CLIENTS)]
                     try:
                         ready.wait(timeout=30)
@@ -323,6 +329,8 @@ def measure_run(args, root, workers, iteration, package, metadata, probe, probe_
             stop.set()
             start.set()
             stop_owned_process(server)
+            # Save partial progress on watcher/HTTP/timeout failures too.
+            atomic(run_root / 'measurement.json', result)
     result["payloadZipBytesPerJob"] = package.stat().st_size
     result["rangeBytes"] = min(4096, probe_size)
     result["probeFullFileBytes"] = probe_size
@@ -337,10 +345,12 @@ def aggregate(measurements, workers):
     def median_available(kind):
         values = [row["traffic"][kind]["p95Ms"] for row in rows if row["traffic"][kind]["p95Ms"] is not None]
         return statistics.median(values) if values else None
+    cpu = [row['cpuSecondsSampled'] for row in rows if row.get('cpuSecondsSampled') is not None]
+    rss = [row['peakRssBytesSampled'] for row in rows if row.get('peakRssBytesSampled') is not None]
     return {"workers": workers, "samples": len(rows),
             "medianWallMs": statistics.median(row["wallMs"] for row in rows),
-            "medianCpuSecondsSampled": statistics.median(row["cpuSecondsSampled"] for row in rows),
-            "maxPeakRssBytesSampled": max(row["peakRssBytesSampled"] for row in rows),
+            "medianCpuSecondsSampled": statistics.median(cpu) if cpu else None,
+            "maxPeakRssBytesSampled": max(rss) if rss else None,
             "medianCatalogP95Ms": median_available("catalog"),
             "medianRangeP95Ms": median_available("range"),
             "errors": sum(row["traffic"]["all"]["errors"] for row in rows),
@@ -359,11 +369,12 @@ def save_report(root, report):
     for row in report["aggregate"]:
         catalog_p95 = "n/a" if row["medianCatalogP95Ms"] is None else f"{row['medianCatalogP95Ms']:.1f}"
         range_p95 = "n/a" if row["medianRangeP95Ms"] is None else f"{row['medianRangeP95Ms']:.1f}"
-        lines.append(f"| {row['workers']} | {row['samples']} | {row['medianWallMs']:.1f} | {row['medianCpuSecondsSampled']:.3f} | "
-                     f"{row['maxPeakRssBytesSampled'] / 1048576:.1f} | {catalog_p95} | {range_p95} | {row['errors']} |")
+        cpu = 'n/a' if row['medianCpuSecondsSampled'] is None else f"{row['medianCpuSecondsSampled']:.3f}"
+        rss = 'n/a' if row['maxPeakRssBytesSampled'] is None else f"{row['maxPeakRssBytesSampled'] / 1048576:.1f}"
+        lines.append(f"| {row['workers']} | {row['samples']} | {row['medianWallMs']:.1f} | {cpu} | {rss} | {catalog_p95} | {range_p95} | {row['errors']} |")
     lines += ["", "Timing starts before .uploading file renames and ends when all four exact jobs are pending.",
               "Watcher scan latency (up to its 2-second interval), hash/copy/extraction and concurrent HTTP load are included.",
-              "Seed publication, fixture copying, signing-key/token setup and process startup are excluded.",
+              "Seed approval/promotion, fixture copying, device-key setup and process startup are excluded.",
               "CPU/RSS use 20-ms samples of the server process only; API p95 includes failed requests and in-flight completions.",
               "SQLite observation is read-only with a 50-ms poll/busy timeout; observer retries are not server busy duration.",
               "Workers are configured values; older published binaries may ignore intakeWorkers. Do not label those as a 1-vs-2 comparison.",
@@ -395,12 +406,14 @@ def main():
         parser.error("Runs/timeout must be positive and request pause nonnegative")
     args.server = args.server.resolve(strict=True)
     args.launcher = args.launcher.resolve(strict=True)
-    package, metadata, probe, probe_size = load_fixture(args.fixture)
+    package, metadata, probe, probe_size, expected = load_fixture(args.fixture)
     root = args.output.resolve()
     root.mkdir(parents=True, exist_ok=False)
+    claim(root)
     platform = "windows-x64" if os.name == "nt" else "linux-x64"
     report = {"schemaVersion": 1, "complete": False, "platform": platform, "warmups": 1, "runs": args.runs,
-              "transport": "Loopback HTTP only; signed release publication and Bearer authorization enabled.",
+              "transport": "Loopback HTTP request-signature-v1; catalog signature/binding/sequence and Range bytes verified.",
+              **provenance({'launcher': args.launcher, 'server': args.server}),
               "cacheCondition": "Fresh server root per iteration; OS cache is not flushed; fixture ZIP content is identical.",
               "settings": {"workers": workers, "jobs": JOBS, "clients": CLIENTS, "requestPauseMs": args.request_pause_ms},
               "fixtureZipBytes": package.stat().st_size, "measurements": []}
@@ -409,7 +422,7 @@ def main():
         # Alternate settings within each iteration to reduce fixed-order OS-cache bias.
         for iteration in range(args.runs + 1):
             for worker_count in workers if iteration % 2 == 0 else list(reversed(workers)):
-                measurement = measure_run(args, root, worker_count, iteration, package, metadata, probe, probe_size, platform)
+                measurement = measure_run(args, root, worker_count, iteration, package, metadata, probe, probe_size, expected, platform)
                 report["measurements"].append(measurement)
                 save_report(root, report)
                 print(f"workers={worker_count} iteration={iteration} warmup={iteration == 0}: "

@@ -12,6 +12,16 @@ Windows fixture 계약3개 및 d756af2의 기존 cohort-06 CLI/console Agent/서
 
 ## 이후 묶음
 
+## 8. 測定/순번 병목 (합성 로컬 범위)
+
+측정 도구의 HTTP/Bearer 가정을 요청 서명·명시 승격으로 바꾸고 Catalog 서명/binding/sequence와 Range 실제 바이트를 검증했다. source/diff/binary hash·부분 실패·null 자원 지표를 보존한다. Python3.10에서도 bounded streaming SHA-256을 사용한다. 미측정을0으로 보충하지 않는다.
+
+Windows original d756af2와 최적화 직전 final-02, 후보 final-03에 작은/큰/혼합 데이터·준비1/측정3·1/10/30을 적용했다. 90% 바이트 재사용/요청 실패0 유지. 최적화 직전→후보 API p95는7.71/26.20/109.92→8.53/11.47/30.24ms. d756af2 대비 모든 관측 중앙값은10% 이내지만, 직전 후보의1연결은10.6% 악화해 엄격한 추가 비교 gate는 미달이다. PERF-03은75%를 유지하고 유리한 부하 평균으로 덮지 않는다.
+
+.NET counter 프로파일에서 sequence wait의 관측 p95 최대116.62ms, 실제 sequence DB 구간 p95 최대4.39ms였다(프로파일 자체는 타이밍에 영향을 줌). 한 인증 서버/루트의 수명 안에서64개 순번을 durable high-water commit 후 발급하는 후보로 대기를 줄였다. 응답·권한은 캐시하지 않으며 재시작 시 남은 번호는 건너뛴다. 정상 순번 예약은 복원 때 임의 순번 증가를 허용하는 우회 기능이 아니다. concurrent/저장 실패/commit 후 실패/재시작·취소/overflow·잘못된 DB형식 회귀와 actual published server 강제 종료→이전 challenge 거부·high-water 초과 발급을 확인했다.
+
+Windows worker1/2(각 준비1/측정3, 동시10클라이언트) 접수 중앙값13207/6068ms, Catalog p95 175/181ms, Range p95 160/159ms, HTTP 실패0. worker2는 선택 기능이고 기본1을 유지한다. 계측 일부 시간은 겹치며 native SQLite wait나 회사 SLA가 아니다.
+
 ## 복원 활성화의 독립 서명 검사
 
 원본/복사본이 동일하게 손상된 경우에도 공개되지 않도록 복원 릴리스의 Manifest 서명·서명 ID·릴리스 tuple·파일 전체 hash/inventory를 별도로 검사한다. 현재 signing identity로 확인할 수 없는 과거 키는 자동 신뢰하지 않고 staged 상태로 남긴다. 회전된 과거 공개키의 운영 인수는 별도다.

@@ -29,6 +29,9 @@ import threading
 import time
 from urllib.parse import quote, urlsplit
 from benchmark_intranet_auth import run_load
+from metric_contract import sanitize
+from fixture_contract import verify, claim
+from evidence_contract import provenance, atomic
 
 
 CLIENT_COUNTS = (1, 10, 30)
@@ -65,11 +68,12 @@ def loopback_url(value):
             and uri.path in ("", "/"))
 
 
-def validate_fixture(config_path):
+def validate_fixture(config_path, server):
     config_path = config_path.resolve(strict=True)
     if config_path.name != "server.json":
         raise ValueError("Expected the synthetic benchmark server.json")
     fixture = config_path.parent
+    verify(fixture, config_path, server)
     report = read_json(fixture / "results.json")
     if report.get("schemaVersion") != 1 or not str(report.get("transport", "")).startswith("loopback HTTP"):
         raise ValueError("Missing synthetic benchmark results.json marker")
@@ -290,8 +294,8 @@ def log_metrics(path):
                 try:
                     value = json.loads(line.split(marker, 1)[1])
                     # The aggregate contract contains numeric counters only, never identities or paths.
-                    if isinstance(value, dict) and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in value.values()):
-                        summary = value
+                    accepted=sanitize(value)
+                    if accepted is not None:summary=accepted
                 except ValueError:
                     pass
     return {"busyErrorLogLines": busy_lines, "gracefulShutdownAggregate": summary,
@@ -325,14 +329,16 @@ def main():
     parser.add_argument("--server", required=True, type=Path, help="Published server executable")
     parser.add_argument("--config", required=True, type=Path, help="Completed synthetic benchmark server.json")
     parser.add_argument("--output", required=True, type=Path, help="New result directory; must not exist")
+    parser.add_argument('--diagnostic-tool', type=Path, help='Optional dotnet-counters; profiled timings are not mixed with unprofiled baselines')
     args = parser.parse_args()
     executable = args.server.resolve(strict=True)
-    config, selection = validate_fixture(args.config)
+    config, selection = validate_fixture(args.config, executable)
     output = args.output.resolve()
     fixture = args.config.resolve(strict=True).parent
     if output == fixture or fixture in output.parents:
         parser.error("Supplemental output must be outside the existing fixture directory")
     output.mkdir(parents=True, exist_ok=False)
+    claim(output)
     port = free_port()
     config = {**config, "listenUrl": f"http://127.0.0.1:{port}", "publicUrl": f"http://127.0.0.1:{port}"}
     copied_config = output / "server.json"
@@ -342,7 +348,8 @@ def main():
     if config.get("authenticationMode") != "request-signature-v1":
         raise ValueError("Historical HTTP/Bearer fixtures are not supported by the hardened server; create a fresh signed fixture")
     report = {
-        "schemaVersion": 1, "benchmark": "distribution-api-mixed", "warmups": 1, "measuredRuns": MEASURED_RUNS,
+        "schemaVersion": 1, "complete": False, **provenance({'server': executable}),
+        "benchmark": "distribution-api-mixed", "warmups": 1, "measuredRuns": MEASURED_RUNS,
         "transport": "direct loopback HTTP request-signature-v1; independent signature verification",
         "platform": "windows" if os.name == "nt" else "unix", "cacheCondition": "warm process; OS cache not flushed",
         "fixtureReleaseId": selection["releaseId"], "rangeBytes": selection["rangeSize"],
@@ -351,10 +358,15 @@ def main():
         "serverShutdown": None, "serverMetrics": None,
     }
     log_path = output / "server.log"
+    counters = None
+    atomic(output / 'results.json', report)
     with log_path.open("w", encoding="utf-8") as log:
         server = subprocess.Popen([*command, "serve"], stdout=log, stderr=subprocess.STDOUT, **process_flags)
         try:
             await_server(server, port)
+            if args.diagnostic_tool:
+                from benchmark_runtime_counters import Counters
+                counters = Counters(args.diagnostic_tool, server.pid, output)
             import shutil
             shutil.copy2(fixture / "public.pem", output / "public.pem")
             payload = contained(Path(config["root"]) / "releases" / selection["releaseId"] / "files" / selection["filePath"].split("/files/", 1)[1], Path(config["root"]))
@@ -369,9 +381,14 @@ def main():
                                            "windows-x64" if os.name == "nt" else "linux-x64", server.pid,
                                            selection["filePath"], expected)
         finally:
+            if counters is not None:
+                report['runtimeProfiling'] = counters.finish()
             report["serverShutdown"] = stop_server(server)
+            report["serverMetrics"] = log_metrics(log_path)
+            atomic(output / 'results.json', report)
     report["serverMetrics"] = log_metrics(log_path)
-    write_json(output / "results.json", report)
+    report['complete'] = True
+    atomic(output / "results.json", report)
     (output / "results.md").write_text("# Signed API comparison\n\nSee results.json signedLoad. Historical HTTP/Bearer samples are not a comparable baseline.\n", encoding="utf-8")
     print("Report: " + str(output / "results.json"), flush=True)
 

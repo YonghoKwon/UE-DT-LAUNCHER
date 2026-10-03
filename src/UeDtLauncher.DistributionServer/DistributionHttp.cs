@@ -53,7 +53,7 @@ public static class DistributionHttp
         var deviceKeys = new DistributionDeviceKeys(store,hooks?.Clock);
         var assets = new PublishedAssetCache();
         var limits = new DistributionRequestLimits(store.Settings,hooks?.Clock);
-        var sequenceGate = new SemaphoreSlim(1, 1);
+        var sequences = new CatalogSequenceAllocator(store);
         var databaseGate = store.DatabaseGate;
         IAccessPolicyProvider provider = new FileAccessPolicyProvider(store.Settings.PolicyPath);
         app.Lifetime.ApplicationStopped.Register(() => app.Logger.LogInformation("DistributionPerformance {Metrics}",
@@ -188,7 +188,7 @@ public static class DistributionHttp
         app.MapMethods("/api/v1/catalog", new[] { "GET", "HEAD" }, async (HttpContext context) =>
         {
             var releases = (List<PublishedRelease>)context.Items["allowed"]!;
-            var sequence = await NextSequenceAsync(store, sequenceGate, databaseGate, context.RequestAborted);
+            var sequence = await sequences.NextAsync(context.RequestAborted);
             var now = DateTimeOffset.UtcNow;
             using var catalogMeasurement=DistributionPerformance.MeasurePhase("catalog-build");
             var catalog = PromotionCatalog.Build((PromotionSnapshot)context.Items["promotion-snapshot"]!, releases,
@@ -222,31 +222,6 @@ public static class DistributionHttp
                 catch (InvalidDataException) { return Results.NotFound(); }
             });
         return app;
-    }
-    private static async Task<long> NextSequenceAsync(IntakeStore store, SemaphoreSlim gate, ReaderWriterLockSlim databaseGate, CancellationToken token)
-    {
-        // Only serialize local sequence writes; authentication, policy reads and signing stay request-local.
-        using (DistributionPerformance.MeasureSequenceWait()) await gate.WaitAsync(token);
-        try
-        {
-            databaseGate.EnterWriteLock();
-            try
-            {
-                using var measurement = DistributionPerformance.MeasureDatabase("catalog-sequence");
-                using var db = store.Open();
-                // RETURNING's implicit commit can raise SQLITE_BUSY while its reader is disposed. An explicit
-                // short transaction puts commit on the provider's normal busy-retry path, without changing WAL.
-                using var transaction = db.BeginTransaction(deferred: false);
-                using var command = db.CreateCommand(); command.Transaction = transaction;
-                command.CommandText = "UPDATE sequence SET value=value+1 WHERE id=1 RETURNING value";
-                var sequence = Convert.ToInt64(command.ExecuteScalar() ?? throw new InvalidDataException("Missing catalog sequence."));
-                transaction.Commit();
-                return sequence;
-            }
-            finally { databaseGate.ExitWriteLock(); }
-        }
-        catch (SqliteException ex) { DistributionPerformance.RecordDatabaseBusy(ex.SqliteErrorCode); throw; }
-        finally { gate.Release(); }
     }
     public static bool TryGetReleaseId(string path, out string releaseId)
     {

@@ -28,6 +28,9 @@ import psutil
 import ssl
 from promotion_fixture_support import promote
 from benchmark_intranet_auth import run_load
+from fixture_contract import claim, seal
+from evidence_contract import provenance, atomic
+from stream_hash import sha256_stream
 
 
 PROFILES = {"small": [(1000, 4096)], "large": [(10, 8 * 1024 * 1024)],
@@ -47,25 +50,35 @@ def port():
 
 def run(command, log, env=None):
     started = time.perf_counter()
+    arguments = [str(x) for x in command]
+    secret = 'token-issue' in arguments or ('credential' in arguments and ('keygen' in arguments or 'set' in arguments))
+    if secret:
+        result = subprocess.run(arguments, capture_output=True, env=env, timeout=120,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+        log.write_text('sensitive provisioning output omitted\n', encoding='utf-8')
+        if result.returncode:
+            raise RuntimeError('Sensitive provisioning failed')
+        return {'wallMs': (time.perf_counter()-started)*1000, 'cpuSecondsSampled': None,
+                'peakRssBytesSampled': None, '_secretOutput': result.stdout.decode('utf-8-sig').strip()}
     with log.open("w", encoding="utf-8") as output:
         process = subprocess.Popen([str(x) for x in command], stdout=output,
                                    stderr=subprocess.STDOUT, env=env,
                                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         watched = psutil.Process(process.pid)
-        peak = cpu = 0
+        peak = cpu = None
         while process.poll() is None:
             try:
                 memory = watched.memory_info()
-                peak = max(peak, getattr(memory, "peak_wset", memory.rss))
+                peak = max(peak or 0, getattr(memory, "peak_wset", memory.rss))
                 t = watched.cpu_times()
-                cpu = max(cpu, t.user + t.system)
+                cpu = max(cpu or 0, t.user + t.system)
             except psutil.NoSuchProcess:
                 pass
             time.sleep(.02)
     if process.returncode:
         raise RuntimeError(f"Process failed ({process.returncode}); inspect {log}")
     return {"wallMs": (time.perf_counter() - started) * 1000,
-            "cpuSecondsSampled": cpu, "peakRssBytesSampled": peak}
+            "cpuSecondsSampled": cpu, "peakRssBytesSampled": peak,"missingMetricReason":"no-owned-process-samples" if peak is None else None}
 
 
 class Proxy(http.server.BaseHTTPRequestHandler):
@@ -135,7 +148,7 @@ def fixture(upload, profile, version, platform):
                     unchanged += size
     package = upload / "Package.zip"
     with package.open("rb") as stream:
-        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        digest = sha256_stream(stream)
     write_json(upload / "release.json", {
         "schemaVersion": 1, "packageFile": package.name, "packageSize": package.stat().st_size,
         "packageSha256": digest, "projectId": "bench-" + profile, "displayName": "Benchmark " + profile,
@@ -234,6 +247,7 @@ def main():
     args.server = args.server.resolve(strict=True)
     root = args.output.resolve()
     root.mkdir(parents=True, exist_ok=False)
+    claim(root)
     backend = port()
     proxy = ProxyServer(("127.0.0.1", 0), Proxy)
     proxy.upstream, proxy.delay = backend, args.latency_ms / 1000
@@ -254,15 +268,18 @@ def main():
     write_json(root / "policy.json", {"clients": [{"id": "bench", "addresses": ["127.0.0.1"],
                "grants": [{"projectId": "bench-" + p, "environment": "prod", "channel": "stable", "versions": []}
                           for p in profiles]}]})
+    seal(root, {'launcher': args.launcher, 'server': args.server}, root / 'server.json')
     server_cli = [args.server, "--config", root / "server.json"]
     platform = "windows-x64" if os.name == "nt" else "linux-x64"
-    report = {"schemaVersion": 1, "platform": platform, "runs": args.runs, "warmups": 1,
+    report = {"schemaVersion": 1, "complete": False, **provenance({'launcher': args.launcher, 'server': args.server}),
+              "platform": platform, "runs": args.runs, "warmups": 1,
               "transport": "loopback HTTPS/Bearer + signed metadata" if tls else "loopback HTTP request-signature-v1 + signed metadata",
               "fileRequestDelayMs": args.latency_ms, "cacheCondition": "fresh app/state per iteration; OS cache not flushed",
               "settings": {"downloads": args.download_concurrency, "hashes": args.hash_concurrency,
                            "reuse": not args.no_reuse, "intakeWorkers": args.workers,
                            "corruptSourceRecord": args.corrupt_source_record},
               "client": [], "api": [], "intake": [], "sqliteBusyWaitMs": None}
+    atomic(root / 'results.json', report)
     for profile in profiles:
         for version in ("1.0.0", "2.0.0"):
             upload = root / "server/incoming" / (profile + "-" + version)
@@ -274,13 +291,13 @@ def main():
             approval = run([*server_cli, "approve", job["id"]], root / "approve.json", env)
             report["intake"].append({"profile": profile, "version": version, "payloadBytes": size,
                                      "ingest": measurement, "approve": approval})
+            atomic(root / 'results.json', report)
     if not tls:
         run([args.launcher, "credential", "keygen", "--name", "benchmark", "--key-id", "bench-cli",
              "--public-out", root / "device-public.json"], root / "credential.log", env)
         run([*server_cli, "client-key", "add", "--client", "bench", "--public-key", root / "device-public.json"], root / "register.log", env)
     if tls:
-        run([*server_cli,'token-issue','bench'],root/'token-private.log',env)
-        token=(root/'token-private.log').read_text(encoding='utf-8-sig').strip()
+        token=run([*server_cli,'token-issue','bench'],root/'token-private.log',env).pop('_secretOutput')
         run([args.launcher,'credential','set','--name','benchmark'],root/'bearer.log',{**env,'UE_DT_CREDENTIAL_TOKEN':token})
     for profile in profiles:
         # Approval never changes recommendations; baseline explicitly records promotion.
@@ -338,6 +355,7 @@ def main():
                                        scenario=scenario, contentNetworkBytes=proxy.content_bytes - before,
                                        stages=phase_metrics(log_dir))
                         report["client"].append(metrics)
+                        atomic(root / 'results.json', report)
                         print(f"{profile} {iteration} {scenario}: {metrics['wallMs']:.0f}ms / {metrics['contentNetworkBytes']} bytes", flush=True)
                     # Only delete generated app/state inside this fresh, owned output root.
                     for directory in (client / "apps", client / "state"):
@@ -357,6 +375,7 @@ def main():
                 lambda path: run([*server_cli, "client-key", "add", "--client", "bench", "--public-key", path], root / "load-register.log", env),
                 platform, server.pid, target, expected)["results"]
         finally:
+            atomic(root / 'results.json', report)
             proxy.shutdown()
             proxy.server_close()
             while not proxy.connections.empty():
@@ -370,7 +389,8 @@ def main():
     server_log = (root / "server.log").read_text(encoding="utf-8", errors="replace")
     report["sqliteBusyErrorLines"] = sum("database is locked" in line.lower() or "SQLite Error 5" in line
                                         for line in server_log.splitlines())
-    write_json(root / "results.json", report)
+    report['complete'] = True
+    atomic(root / "results.json", report)
     lines = ["# Synthetic launcher benchmark", "", report["transport"], "", report["cacheCondition"],
              "", "| Profile | Scenario | Median ms | Median content bytes |", "|---|---|---:|---:|"]
     for profile in profiles:
