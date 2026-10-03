@@ -14,11 +14,11 @@
 
 ## 현재 위치
 
-GUI 재연결 후 실제 조회/재시도2건과 미설치 불변을 확인했지만 세션이 다시 Disc로 전환됐다. 현재 실제 설치/복원 수용은 대기이며 관측1440×900은1920×1080 수용 증거가 아니다. 회사 Gate와 USER/UI 완료 조건을 상향하지 않는다.
+GUI 재연결 후 관리형 일반의 실제 v1 설치·v2 업데이트/실행·해시·v1 보존·창 종료 후 자식 수명·정상 종료를 확인했다. 개발자 exact v2 실행 확인 취소도 무변경을 통과했다. 완료 후 취소 버튼 잔존 표시 결함과 잔여 복구/복원·portable 수용은 열린 상태이며 관측1440×900은1920×1080 증거가 아니다. 회사 Gate와 USER/UI 완료 조건을 상향하지 않는다.
 
 2026-10-03 결정: 일반/개발자 클라이언트는 별도 빌드·실행 파일로 고정한다. 일반 MSI와 개발자 MSI(일반 포함)는 Agent를 공유하고, Linux developer RPM은 동일 버전 base RPM을 요구한다. GUI 설정의 clientProfile로 화면을 전환하지 않으며 기존 운영 CLI는 공통으로 유지한다.
 
-667개 양 OS 회귀·게시 CLI/Agent·MSI/RPM 비설치 검증은 확인했다. 실제 마우스 검증을 재개했으나 Windows 세션 Disc/GetCursorPos 접근 거부로 적용 시험은 미실행이다. USER-02/UI-02·음성 보류의 UI-03은75%를 유지한다. [이번 기록](docs/reference/archive/validation/client-editions-validation.md)
+667개 양 OS 회귀·게시 CLI/Agent·MSI/RPM 비설치 검증과 위 실제 관리형 부분 수용을 확인했다. 전체 기능 수용은 아직 남아 USER-02/UI-02·음성 보류의 UI-03은75%를 유지한다. [이번 기록](docs/reference/archive/validation/client-editions-validation.md)
 
 예약 점검은 정확한 허용 선택/준비도를 표시하고 query-only로 유지한다. 실제 예약 등록/사용자 실행 준비는 별도 증거가 필요하다.
 

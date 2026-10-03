@@ -26,5 +26,18 @@
     "lastErrors": ["GetCursorPos 0x80070005","CreateForMonitor 0x80070057"],
     "installationAndRecoveryAcceptanceComplete": false
   },
-  "remaining": ["actual-four-GUI-workflow-matrix", "actual-download-cancel-resume-clicks", "OS-display-condition-confirmation", "corporate-installer-lifecycle", "remote-CI"]
+  "activeSessionAcceptance": {
+    "date": "2026-10-03", "fixture": "accept-managed", "sameFrozenProductCohort": true,
+    "generalV1InstallLaunch": true, "generalV2UpdateLaunch": true,
+    "installedManifestFilesPerVersion": 3, "v2AllManifestHashesPassed": true,
+    "v1PayloadAndStateSnapshotUnchanged": true,
+    "childSurvivedGuiClose": true, "exactChildNaturalExit": true,
+    "runtimeAfterNaturalExit": "Quiescent",
+    "developerExactV2Selection": true, "developerLaunchDialogExactV2": true,
+    "developerLaunchCancelSnapshotUnchanged": true, "developerLaunchCancelNewMarkers": 0,
+    "observedScreenPixels": [1440,900], "renderScaling": 1,
+    "knownDefects": ["cancel-operation button remains visible after completed launch; UI cleanup fix pending"],
+    "fullAcceptanceComplete": false
+  },
+  "remaining": ["remaining-developer-and-portable-GUI-workflows", "normal-backup-repair-restore-preview-acceptance", "completed-operation-cancel-button-cleanup", "actual-download-cancel-resume-clicks", "OS-display-condition-confirmation", "corporate-installer-lifecycle", "remote-CI"]
 }

@@ -2,7 +2,7 @@
 
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 배포 시스템입니다.
 
-문서 점검: **2026-10-03**, 작업 기준: `codex/client-editions-ux-acceptance`. 일반 `UeDtLauncher.exe`와 개발자 `UeDtLauncher.Developer.exe`를 별도 빌드합니다. 설정으로 GUI 종류를 바꿀 수 없습니다. Windows/WSL 각각667개 회귀·Release 경고/오류0, 두 MSI와 기본/개발자 추가 RPM의 비설치 검증을 확인했습니다. [이번 검증·남은 마우스 시험](docs/reference/archive/validation/client-editions-validation.md). Windows 세션이 Disc 상태여서 실제 클릭이 접근 거부로 미실행입니다.
+문서 점검: **2026-10-03**, 작업 기준: `codex/client-editions-ux-acceptance`. 일반 `UeDtLauncher.exe`와 개발자 `UeDtLauncher.Developer.exe`를 별도 빌드합니다. 설정으로 GUI 종류를 바꿀 수 없습니다. Windows/WSL 각각667개 회귀·Release 경고/오류0, 두 MSI와 기본/개발자 추가 RPM의 비설치 검증을 확인했습니다. 연결 복구 후 관리형 일반 GUI의 v1 설치·v2 업데이트/실행·해시·v1 보존·창 종료 후 자식 수명, 개발자 exact v2 확인/취소 불변을 실제 마우스로 확인했습니다. [이번 검증·남은 마우스 시험](docs/reference/archive/validation/client-editions-validation.md).
 
 기본 빌드는 `LauncherEdition=General`입니다. 개발자는 `dotnet publish src/UeDtLauncher -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:LauncherEdition=Developer`로 생성합니다. `--build-info`에서 에디션을 확인하세요. Developer 배포에는 공통 runtime-host인 일반 실행 파일도 포함해야 하며, `tools/publish_runtime_cohort.py --output <새폴더> --rid win-x64`는 두 EXE·Agent·서버와 두 클라이언트 ZIP을 함께 생성합니다.
 
@@ -10,7 +10,7 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 
 ## 프로젝트 목표와 처음 읽을 안내
 
-2026-10-03 GUI 재연결 후 관리형 service 단절/재시도를 실제2회 클릭해 오류 복귀·설치0건을 확인했습니다. 이후 세션이 다시 Disc가 되어 설치/복원 수용은 대기입니다. [실제 관측과 환경](docs/reference/archive/validation/client-editions-validation.md)을 확인하세요.
+2026-10-03 GUI 재연결 후 관리형 service 단절/재시도·미설치 불변에 더해 실제 설치/업데이트를 확인했습니다. 완료 후 작업 취소 버튼이 남는 표시 결함과 개발자/portable 복구·복원 등 잔여 수용은 열려 있습니다. 관측1440×900은1920×1080 시험을 대신하지 않습니다. [실제 관측과 환경](docs/reference/archive/validation/client-editions-validation.md)을 확인하세요.
 
 자동 점검의 `checked`는 준비도와 설치 상태 확인이 함께 완료된 경우입니다. `action-required`는 관리자/사용자 조치, `verification-pending`은 보류된 검사이며 종료0을 실행 가능으로 해석하지 않습니다.
 
@@ -42,7 +42,7 @@ Catalog 순번은64개를 먼저 durable high-water로 예약하고 요청마다
 
 런타임 엔진·보안·transaction·IPC 소스는 이제 `src/UeDtLauncher.Core/`에 직접 위치합니다. 링크 컴파일을 제거했으며 기존 CLI/IPC 계약은 유지합니다.
 
-마우스·키보드·실제 GUI 검증 중단을 유지합니다. MSI/RPM은 정확한 실행별 package와 payload hash를 확인하며, 현재 호스트에 설치/서비스/계정을 생성하지 않았습니다. 회사 인수용 미실행 계획은 `tools/prepare-company-acceptance.py`로 생성합니다. [설치본과 인수 준비](docs/reference/commercial-deployment.md)
+이 headless 묶음 당시에는 마우스·키보드·실제 GUI 검증을 중단했고, 현재 에디션 수용에서는 격리된 합성 앱 GUI 검증을 재개했습니다. MSI/RPM은 정확한 실행별 package와 payload hash를 확인하며, 현재 호스트에 설치/서비스/계정을 생성하지 않았습니다. 회사 인수용 미실행 계획은 `tools/prepare-company-acceptance.py`로 생성합니다. [설치본과 인수 준비](docs/reference/commercial-deployment.md)
 
 최종 목표는 **Unreal Engine DT 프로그램의 패키징 결과를 안전하게 배포하고, 회사에서 안정적으로 설치·업데이트·실행·복구할 수 있는 배포 시스템**입니다. 목표는 확정됐지만 회사 운영 승인 조건을 모두 충족한 상태는 아닙니다.
 
