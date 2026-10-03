@@ -11,4 +11,10 @@
     <Product>UE-DT Launcher</Product>
     <Copyright>Copyright © UE-DT 2026</Copyright>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'UeDtLauncher'">
+    <LauncherEdition Condition="'$(LauncherEdition)' == ''">General</LauncherEdition>
+    <BaseIntermediateOutputPath>obj/$(LauncherEdition)/</BaseIntermediateOutputPath>
+    <BaseOutputPath>bin/$(LauncherEdition)/</BaseOutputPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**</DefaultItemExcludes>
+  </PropertyGroup>
 </Project>

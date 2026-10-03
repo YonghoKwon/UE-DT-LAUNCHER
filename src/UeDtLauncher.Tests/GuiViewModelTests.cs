@@ -153,7 +153,7 @@ public class GuiViewModelTests
     [Fact]
     public void DeveloperProfile_ExposesCapabilitiesAndSanitizedTechnicalError()
     {
-        var model = new LauncherDashboardViewModel
+        var model = new LauncherDashboardViewModel(LauncherEdition.Developer)
         {
             Config = new LauncherConfig { ClientProfile = "developer" }
         };

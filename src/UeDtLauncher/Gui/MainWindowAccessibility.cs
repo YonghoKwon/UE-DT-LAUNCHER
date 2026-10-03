@@ -80,6 +80,7 @@ public sealed partial class MainWindow
         if(developer){body.Children.Add(DeveloperKeyValue("설정 파일",ConfigPath));body.Children.Add(DeveloperKeyValue("선택",_config.Environment+" / "+_config.Channel));}
         body.Children.Add(EnterpriseButton("지원 로그 ZIP 저장","settings-export",(_,_)=>ExportLogsZip(),tracked:false));
         body.Children.Add(EnterpriseButton("연결·준비 상태 점검","settings-readiness",(_,_)=>ShowReadinessDialog(),tracked:false));
+        if(_config.SelfUpdate?.Enabled==true || File.Exists(SelfUpdateManager.PendingFilePath))body.Children.Add(Muted(LauncherBuildInfo.UpdateNotice,12));
         Window? dialog=null;
         var close=Identify(SecondaryButton("닫기",(_,_)=>dialog!.Close(),40),"dialog-cancel","닫기");
         var apply=Identify(PrimaryButton("적용",async (sender,_)=>

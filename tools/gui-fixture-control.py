@@ -117,7 +117,8 @@ elif a.action=='invalidate-preview':
     print('Changed fixture preview fingerprint only')
 elif a.action.startswith('gui-'):
     profile=a.action[4:]
-    process=subprocess.Popen([str(exe),'--gui','--config',str(root/'client'/(profile+'.json'))],env=env)
+    selected=fixture['binaries'].get('developer',fixture['binaries']['launcher']) if profile=='developer' else fixture['binaries']['launcher']
+    process=subprocess.Popen([selected['path'],'--gui','--config',str(root/'client'/(profile+'.json'))],env=env)
     print(json.dumps(dict(pid=process.pid,profile=profile)))
 elif a.action in ('snapshot','compare'):
     assert re.fullmatch(r'[a-zA-Z0-9-]+',a.name)

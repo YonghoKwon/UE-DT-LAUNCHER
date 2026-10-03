@@ -40,6 +40,6 @@ public class PreviousInstallationStatusTests
         var hint=new PreviousInstallation(new("demo","prod","stable","windows-x64","1"),"2026-09-28T00:00:00Z");
         model.ApplyProjectStatus(old with {PreviousInstallation=hint});Assert.Equal(PrimaryActionKind.UpdateAndLaunch,model.PrimaryAction);
         model.ApplyProjectStatus(old with {IsInstalled=true,InstalledVersion="2",UpdateRequired=false,PreviousInstallation=hint});Assert.Equal(PrimaryActionKind.Launch,model.PrimaryAction);
-        model.Config.ClientProfile="developer";model.ApplyProjectStatus(old with {PreviousInstallation=hint});Assert.Equal(GeneralLauncherState.NotInstalled,model.GeneralState);
+        model=new LauncherDashboardViewModel(LauncherEdition.Developer);model.ApplyProjectStatus(old with {PreviousInstallation=hint});Assert.Equal(GeneralLauncherState.NotInstalled,model.GeneralState);
     }
 }

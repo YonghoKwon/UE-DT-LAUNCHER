@@ -214,8 +214,7 @@ public sealed class LauncherEngine : IDisposable
 
         if (_config.SelfUpdate?.Enabled == true)
         {
-            Log("SelfUpdate", "Preparing launcher self update if available...", 94);
-            await SelfUpdateManager.PrepareAsync(_config.SelfUpdate, _config, Log, cancellationToken);
+            Log("SelfUpdate", "Launcher updates require a new installer or ZIP. Existing self-update settings and pending files are preserved.", 94);
         }
 
         if (_config.LaunchAfterUpdate)

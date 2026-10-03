@@ -21,7 +21,7 @@ public class EnterpriseAccessibilityTests
     private static MainWindow Create(bool developer, double scale=2, bool contrast=false,
         GeneralLauncherState state=GeneralLauncherState.Ready)
     {
-        var model=new LauncherDashboardViewModel
+        var model=new LauncherDashboardViewModel(developer?LauncherEdition.Developer:LauncherEdition.General)
         {
             Config=new LauncherConfig
             {
@@ -211,7 +211,7 @@ public class EnterpriseAccessibilityTests
     [AvaloniaTheory][InlineData(false)][InlineData(true)]
     public void EmptyCatalogAtLargeTextKeepsRefreshKeyboardReachable(bool developer)
     {
-        var model=new LauncherDashboardViewModel {Config=new LauncherConfig {ClientProfile=developer?"developer":"general"},GeneralState=GeneralLauncherState.RecoverableError};
+        var model=new LauncherDashboardViewModel(developer?LauncherEdition.Developer:LauncherEdition.General) {Config=new LauncherConfig {ClientProfile=developer?"developer":"general"},GeneralState=GeneralLauncherState.RecoverableError};
         var window=new MainWindow(new("/nonexistent/accessibility-empty.json",LauncherConfigSource.Missing,false),model,new(2,true),false);
         window.Show();window.Width=640;window.Height=360;Dispatcher.UIThread.RunJobs();
         try

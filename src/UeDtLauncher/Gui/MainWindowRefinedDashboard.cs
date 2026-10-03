@@ -1058,7 +1058,8 @@ public sealed partial class MainWindow : Window
             ? Path.Combine(ManagedLauncherPathLayout.Current().ConfigRoot, "launcher.config.json") : ConfigPath;
         var c = await LauncherPaths.LoadResolvedAsync(runtimePath);
         c.ProjectId = _selectedProject.ProjectId; c.Environment = _config.Environment; c.Channel = _config.Channel; c.TargetPlatform = CurrentPlatform; c.VersionPolicy = _config.VersionPolicy; c.RequestedVersion = _config.RequestedVersion; c.RepairMode = repair; c.LaunchAfterUpdate = launch;
-        c.ClientProfile = _config.ClientProfile;
+        c.ClientProfile = _viewModel.EffectiveProfile;
+        c.SelfUpdate = null;
         LauncherPaths.ResolveInPlace(c, runtimePath, UsesDistributionServer ? null : _selectedProject.InstallPath);
         return c;
     }

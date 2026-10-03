@@ -83,6 +83,10 @@ public sealed record LauncherUiCapabilities(
 
 public sealed class LauncherDashboardViewModel : INotifyPropertyChanged
 {
+    private readonly LauncherEdition _edition;
+    public LauncherDashboardViewModel() : this(LauncherBuildInfo.Edition) { }
+    internal LauncherDashboardViewModel(LauncherEdition edition) => _edition=edition;
+    public string EffectiveProfile => _edition==LauncherEdition.Developer?"developer":"general";
     private LauncherConfig _config = new();
     private ProjectUiConfig _selectedProject = new();
     private CatalogSnapshot _catalog = new();
@@ -97,7 +101,7 @@ public sealed class LauncherDashboardViewModel : INotifyPropertyChanged
     private LauncherWorkflowStage _workflowStage;
     private bool _running;
 
-    public LauncherConfig Config { get => _config; set => Set(ref _config, value); }
+    public LauncherConfig Config { get => _config; set { value.ClientProfile=EffectiveProfile; Set(ref _config, value); } }
     public ProjectUiConfig SelectedProject { get => _selectedProject; set => Set(ref _selectedProject, value); }
     public CatalogSnapshot Catalog { get => _catalog; set => Set(ref _catalog, value); }
     public string Search { get => _search; set => Set(ref _search, value); }
@@ -111,7 +115,7 @@ public sealed class LauncherDashboardViewModel : INotifyPropertyChanged
     public LauncherWorkflowStage WorkflowStage { get => _workflowStage; set => Set(ref _workflowStage, value); }
     public bool Running { get => _running; set => Set(ref _running, value); }
     public bool IsDeveloper => Capabilities.CanViewTechnicalErrors;
-    public LauncherUiCapabilities Capabilities => LauncherUiCapabilities.ForProfile(Config.ClientProfile);
+    public LauncherUiCapabilities Capabilities => LauncherUiCapabilities.ForProfile(EffectiveProfile);
     public PrimaryActionKind PrimaryAction => GeneralState switch
     {
         GeneralLauncherState.NotInstalled => PrimaryActionKind.InstallAndLaunch,
@@ -201,7 +205,7 @@ public sealed class LauncherDashboardViewModel : INotifyPropertyChanged
     {
         return Config.Projects
             .Where(project => project.VisibleToProfiles.Count == 0 ||
-                              project.VisibleToProfiles.Any(profile => profile.Equals(Config.ClientProfile, StringComparison.OrdinalIgnoreCase)))
+                              project.VisibleToProfiles.Any(profile => profile.Equals(EffectiveProfile, StringComparison.OrdinalIgnoreCase)))
             .OrderByDescending(project => project.IsPinned)
             .ThenBy(project => project.SortOrder)
             .ThenBy(project => project.DisplayName, StringComparer.CurrentCultureIgnoreCase);

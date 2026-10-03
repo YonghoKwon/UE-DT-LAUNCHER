@@ -20,6 +20,11 @@ public static class Program
         if (args.SequenceEqual(new[] { "runtime-host", "--capability-probe" })) return RuntimeHost.RunProbe();
         if (args.SequenceEqual(new[] { "runtime-host" })) return RuntimeHost.RunSessionAsync().GetAwaiter().GetResult();
         CrashReporter.Install(Path.Combine(AppContext.BaseDirectory, "logs"));
+        if (args.SequenceEqual(new[] { "--build-info" }))
+        {
+            Console.WriteLine(JsonSerializer.Serialize(new { version=LauncherBuildInfo.Version, edition=LauncherBuildInfo.Edition.ToString(), platform=LauncherBuildInfo.Platform },JsonFiles.Options));
+            return 0;
+        }
         if (args.Length == 1 && args[0].Equals("--version", StringComparison.OrdinalIgnoreCase))
         {
             Console.WriteLine(typeof(Program).Assembly.GetCustomAttributes(false)
@@ -45,7 +50,7 @@ public static class Program
         if (!isGui && OperatingSystem.IsWindows()) AttachParentConsole();
 
         var diagnosticCommand = !isGui && CliArgs(args, wantsCli).FirstOrDefault() is "doctor" or "diagnostics" or "scheduled-check" or "operation";
-        if (!diagnosticCommand && SelfUpdateManager.TryApplyPendingUpdate(args)) return 0;
+        if (File.Exists(SelfUpdateManager.PendingFilePath)) Console.Error.WriteLine(LauncherBuildInfo.UpdateNotice);
 
         if (isGui)
         {

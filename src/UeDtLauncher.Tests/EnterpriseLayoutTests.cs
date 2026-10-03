@@ -23,7 +23,7 @@ public class EnterpriseLayoutTests
         select new object[]{dev,pixels.Item1,pixels.Item2,scale};
     private static MainWindow Create(bool developer,double textScale=1)
     {
-        var model=new LauncherDashboardViewModel { Config=new LauncherConfig {ClientProfile=developer?"developer":"general",Projects=[new(){ProjectId="demo",DisplayName="포스코DX 디지털 트윈 프로젝트 — 긴 프로젝트 이름 접근성 확인",Description="릴리스 설명"}]},GeneralState=GeneralLauncherState.Ready };
+        var model=new LauncherDashboardViewModel(developer?LauncherEdition.Developer:LauncherEdition.General) { Config=new LauncherConfig {ClientProfile=developer?"developer":"general",Projects=[new(){ProjectId="demo",DisplayName="포스코DX 디지털 트윈 프로젝트 — 긴 프로젝트 이름 접근성 확인",Description="릴리스 설명"}]},GeneralState=GeneralLauncherState.Ready };
         return new(new("/nonexistent/fixture.json",LauncherConfigSource.Missing,false),model,new(textScale,false),false);
     }
     [AvaloniaTheory][MemberData(nameof(Viewports))]
@@ -60,7 +60,7 @@ public class EnterpriseLayoutTests
     [AvaloniaTheory][InlineData(false)][InlineData(true)]
     public void LargeTextAndHighContrastPreservePrimaryAndAutomation(bool developer)
     {
-        var model=new LauncherDashboardViewModel {Config=new LauncherConfig {ClientProfile=developer?"developer":"general",Projects=[new(){ProjectId="demo",DisplayName="긴 한글 프로젝트 이름 접근성"}]},GeneralState=GeneralLauncherState.Ready};
+        var model=new LauncherDashboardViewModel(developer?LauncherEdition.Developer:LauncherEdition.General) {Config=new LauncherConfig {ClientProfile=developer?"developer":"general",Projects=[new(){ProjectId="demo",DisplayName="긴 한글 프로젝트 이름 접근성"}]},GeneralState=GeneralLauncherState.Ready};
         var window=new MainWindow(new("/nonexistent/fixture.json",LauncherConfigSource.Missing,false),model,new(2,true),false);
         window.Show();window.Width=854;window.Height=480;Dispatcher.UIThread.RunJobs();
         try
@@ -79,7 +79,7 @@ public class EnterpriseLayoutTests
     [AvaloniaFact]
     public void KeyboardProjectSelectionKeepsFocusOnNewSelection()
     {
-        var model=new LauncherDashboardViewModel {Config=new LauncherConfig {ClientProfile="developer",Projects=[new(){ProjectId="a",DisplayName="A"},new(){ProjectId="b",DisplayName="B"}]},GeneralState=GeneralLauncherState.Ready};
+        var model=new LauncherDashboardViewModel(LauncherEdition.Developer) {Config=new LauncherConfig {ClientProfile="developer",Projects=[new(){ProjectId="a",DisplayName="A"},new(){ProjectId="b",DisplayName="B"}]},GeneralState=GeneralLauncherState.Ready};
         var window=new MainWindow(new("/nonexistent/fixture.json",LauncherConfigSource.Missing,false),model,new(),false);
         window.Show();window.Width=1280;Dispatcher.UIThread.RunJobs();
         try
@@ -128,7 +128,7 @@ public class EnterpriseLayoutTests
     [AvaloniaFact]
     public void RuntimeBlockedKeepsDeveloperMutationsDisabled()
     {
-        var model=new LauncherDashboardViewModel {Config=new LauncherConfig {ClientProfile="developer",Projects=[new(){ProjectId="demo",DisplayName="demo"}]},GeneralState=GeneralLauncherState.RuntimeBlocked};
+        var model=new LauncherDashboardViewModel(LauncherEdition.Developer) {Config=new LauncherConfig {ClientProfile="developer",Projects=[new(){ProjectId="demo",DisplayName="demo"}]},GeneralState=GeneralLauncherState.RuntimeBlocked};
         var window=new MainWindow(new("/nonexistent/fixture.json",LauncherConfigSource.Missing,false),model,new(),false);
         window.Show();Dispatcher.UIThread.RunJobs();
         try
@@ -142,7 +142,7 @@ public class EnterpriseLayoutTests
     [AvaloniaFact]
     public void InitialExactVersionAttachmentDoesNotStartAnOperation()
     {
-        var model=new LauncherDashboardViewModel {Config=new LauncherConfig {ClientProfile="developer",DistributionServerUrl="https://fixture.invalid",VersionPolicy="exact",RequestedVersion="1.0.0",Projects=[new(){ProjectId="demo",DisplayName="demo"}]},GeneralState=GeneralLauncherState.Ready};
+        var model=new LauncherDashboardViewModel(LauncherEdition.Developer) {Config=new LauncherConfig {ClientProfile="developer",DistributionServerUrl="https://fixture.invalid",VersionPolicy="exact",RequestedVersion="1.0.0",Projects=[new(){ProjectId="demo",DisplayName="demo"}]},GeneralState=GeneralLauncherState.Ready};
         var window=new MainWindow(new("/nonexistent/fixture.json",LauncherConfigSource.Missing,false),model,new(),false);
         window.Show();Dispatcher.UIThread.RunJobs();
         try {Assert.Equal(GeneralLauncherState.Ready,model.GeneralState);Assert.False(model.Running);}

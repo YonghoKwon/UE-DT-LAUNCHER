@@ -52,6 +52,7 @@ def main():
     parser.add_argument("--service-proof", action="store_true", help="Verify explicit versioned portable service selection using synthetic payloads")
     parser.add_argument("--promotion-proof", action="store_true", help="Verify promotion cannot retarget pending or running managed launches")
     parser.add_argument("--agent")
+    parser.add_argument('--developer-launcher',help='Compiled Developer client for edition GUI acceptance')
     parser.add_argument("--prepare-gui", help="Test-only synthetic executable; leave installs empty and hold for GUI")
     parser.add_argument("--nginx", help="Optional isolated Linux nginx executable; no system service changes")
     parser.add_argument("--benchmark", action="store_true", help="Optional synthetic signed load (requires cryptography)")
@@ -98,8 +99,8 @@ def main():
     gui_binaries={}
     gui_support_files={}
     if args.prepare_gui:
-        for kind, source in [('launcher',launcher),('server',server),('synthetic',args.prepare_gui)]+([('agent',args.agent)] if args.agent else []):
-            destination=(client/('agent' if args.gui_mode=='managed' else 'portable') if kind in ('launcher','agent') else root/'cohort'/kind)/Path(source).name
+        for kind, source in [('launcher',launcher),('server',server),('synthetic',args.prepare_gui)]+([('agent',args.agent)] if args.agent else [])+([('developer',args.developer_launcher)] if args.developer_launcher else []):
+            destination=(client/('agent' if args.gui_mode=='managed' else 'portable') if kind in ('launcher','agent','developer') else root/'cohort'/kind)/Path(source).name
             destination.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(Path(source).resolve(),destination)
             if kind=='server':gui_support_files.update(copy_server_support(source,destination))

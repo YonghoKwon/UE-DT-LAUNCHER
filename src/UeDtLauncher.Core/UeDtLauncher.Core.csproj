@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="UeDtLauncher" />
+    <InternalsVisibleTo Include="UeDtLauncher.Developer" />
     <InternalsVisibleTo Include="UeDtLauncher.Agent" />
     <InternalsVisibleTo Include="UeDtLauncher.Tests" />
     <InternalsVisibleTo Include="UeDtLauncher.RuntimeFaultHarness" />

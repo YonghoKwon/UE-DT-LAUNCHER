@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import shutil
 from gui_fixture_evidence import sha256
 
 REPO = Path(__file__).resolve().parents[1]
@@ -25,15 +26,17 @@ def main():
     root.mkdir(parents=True)
     suffix = '.exe' if args.rid == 'win-x64' else ''
     binaries = {}
-    for role, project in [('launcher', 'UeDtLauncher'), ('agent', 'UeDtLauncher.Agent'), ('server', 'UeDtLauncher.DistributionServer')]:
+    for role, project in [('launcher', 'UeDtLauncher'), ('developer','UeDtLauncher'), ('agent', 'UeDtLauncher.Agent'), ('server', 'UeDtLauncher.DistributionServer')]:
         output = root/role
         result = subprocess.run(['dotnet', 'publish', str(REPO/'src'/project/(project+'.csproj')), '-c', 'Release', '-r', args.rid,
-            '--self-contained', 'true', '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true', '-o', str(output)], cwd=REPO,
+            '--self-contained', 'true', '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true',
+            '-p:LauncherEdition='+('Developer' if role=='developer' else 'General'), '-o', str(output)], cwd=REPO,
             capture_output=True, text=True, encoding='utf-8', errors='replace')
         (root/(role+'-publish.log')).write_text(result.stdout+result.stderr, encoding='utf-8')
         if result.returncode: raise RuntimeError('Publication failed; inspect private publication log')
-        executable = output/(project+suffix)
+        executable = output/(('UeDtLauncher.Developer' if role=='developer' else project)+suffix)
         binaries[role] = {'path': str(executable), 'sha256': sha256(executable)}
+    shutil.copy2(binaries['launcher']['path'],root/'developer'/('UeDtLauncher'+suffix))
     if before != source_inventory(): raise ValueError('Product source changed during publication; cohort is invalid')
     record = {'schemaVersion': 1, 'sourceHead': head, 'productSourceDirty': dirty,
         'productSourceHash': hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest(), 'rid': args.rid, 'binaries': binaries}

@@ -151,7 +151,7 @@ public sealed partial class MainWindow
     }
     private Control EnterpriseHeader()
     {
-        _brandLogo ??= new Bitmap(AssetLoader.Open(new Uri("avares://UeDtLauncher/Assets/Branding/posco-dx-korean.png")));
+        _brandLogo ??= new Bitmap(AssetLoader.Open(new Uri($"avares://{typeof(App).Assembly.GetName().Name}/Assets/Branding/posco-dx-korean.png")));
         var grid=new Grid {ColumnDefinitions=new("Auto,*,Auto"),ColumnSpacing=14};
         var logo=Identify(new Image {Source=_brandLogo,Width=128,Height=36,Stretch=Stretch.Uniform},"brand-logo","포스코DX");
         grid.Children.Add(new Border {Background=Brushes.White,Padding=new Thickness(12,8),CornerRadius=new CornerRadius(6),Child=logo});

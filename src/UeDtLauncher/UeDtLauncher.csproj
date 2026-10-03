@@ -4,7 +4,9 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <AssemblyName>UeDtLauncher</AssemblyName>
+    <AssemblyName Condition="'$(LauncherEdition)' == 'General'">UeDtLauncher</AssemblyName>
+    <AssemblyName Condition="'$(LauncherEdition)' == 'Developer'">UeDtLauncher.Developer</AssemblyName>
+    <DefineConstants Condition="'$(LauncherEdition)' == 'Developer'">$(DefineConstants);LAUNCHER_DEVELOPER</DefineConstants>
     <RootNamespace>UeDtLauncher</RootNamespace>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
@@ -24,4 +26,7 @@
     <PackageReference Include="Avalonia.Desktop" Version="11.3.14" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.14" />
   </ItemGroup>
+  <Target Name="ValidateLauncherEdition" BeforeTargets="Restore;PrepareForBuild;Publish">
+    <Error Condition="'$(LauncherEdition)' != 'General' and '$(LauncherEdition)' != 'Developer'" Text="LauncherEdition must be General or Developer." />
+  </Target>
 </Project>

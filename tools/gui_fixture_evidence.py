@@ -48,6 +48,7 @@ def verify_cohort(root):
     if fixture.get('schemaVersion') == 2:
         if fixture.get('deploymentMode') not in ('managed', 'portable'): raise ValueError('Invalid GUI fixture mode')
         required = {'launcher', 'server', 'synthetic'} | ({'agent'} if fixture['deploymentMode'] == 'managed' else set())
+        if 'developer' in fixture['binaries']: required.add('developer')
         if set(fixture['binaries']) != required: raise ValueError('Wrong binary set for fixture mode')
     for value in fixture['binaries'].values():
         if fixture.get('schemaVersion') == 2: inside(root, Path(value['path']).relative_to(Path(root).resolve()))
