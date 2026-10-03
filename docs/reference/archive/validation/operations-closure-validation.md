@@ -12,6 +12,12 @@ Windows fixture 계약3개 및 d756af2의 기존 cohort-06 CLI/console Agent/서
 
 ## 이후 묶음
 
+## 복원 활성화의 독립 서명 검사
+
+원본/복사본이 동일하게 손상된 경우에도 공개되지 않도록 복원 릴리스의 Manifest 서명·서명 ID·릴리스 tuple·파일 전체 hash/inventory를 별도로 검사한다. 현재 signing identity로 확인할 수 없는 과거 키는 자동 신뢰하지 않고 staged 상태로 남긴다. 회전된 과거 공개키의 운영 인수는 별도다.
+
+Windows 관련14개(정상/동일 손상 서명 사례 포함)와 final-02 게시 CLI·console Agent·서버의 backup/restore→인증된 설치 통과. 제품 변경 뒤 새 cohort로 재검증했고 이전 후보 결과를 대체하지 않았다. 전체 Windows/WSL 회귀는 각각660개 통과했다.
+
 ## 7. 선택/준비도 점검
 
 Doctor의 authenticated selected release를 optional 응답에 보존·target 검증하고 schedule 설치 검사에 동일 선택을 전달한다. defaultB와 exactA를 혼합하지 않으며 preparation/inspection으로 checked/action-required/verification-pending을 결정한다. protected config default1과 schedule exact2를 실제 게시 fixture로 대조했고 설치 inventory는 불변이다. Windows 관련21개 및 boundaries-01 publish 통과. GUI actual input은 중단 상태다.

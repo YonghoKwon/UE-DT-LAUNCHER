@@ -96,4 +96,30 @@ public sealed class DistributionBackupTests : IDisposable
         var backup=Path.Combine(root,"staged-backup");await DistributionBackup.CreateAsync(settings,backup);var target=Path.Combine(root,"staged-target");await DistributionBackup.StageAsync(backup,target,settings);
         Assert.Throws<InvalidDataException>(()=>new IntakeStore(new(){Root=target}));
     }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ActivationVerifiesSignedManifestEvenWhenCopiesMatch(bool corrupt)
+    {
+        var upload = Path.Combine(settings.Root, "incoming", "published"); Directory.CreateDirectory(upload);
+        var zip = Path.Combine(upload, "game.zip");
+        using (var archive = System.IO.Compression.ZipFile.Open(zip, System.IO.Compression.ZipArchiveMode.Create))
+        using (var writer = new StreamWriter(archive.CreateEntry("game.exe").Open())) writer.Write("synthetic");
+        await SidecarPackageValidator.GenerateAsync(zip, Path.Combine(upload, "release.json"), new ReleaseSidecar
+            { ProjectId="demo", Version="1.0.0", Platform="windows-x64", EntryPoint="game.exe" });
+        var job = await store.IngestAsync(upload); var release = await new ApprovedPublisher(store).ApproveAsync(job.Id);
+        if (corrupt) File.AppendAllText(Path.Combine(release.Directory, "manifest.json"), " ");
+        var backup = Path.Combine(root, "signed-backup"); await DistributionBackup.CreateAsync(settings, backup);
+        var target = Path.Combine(root, "signed-target"); await DistributionBackup.StageAsync(backup, target, settings);
+        if (corrupt)
+        {
+            await Assert.ThrowsAsync<CryptographicException>(()=>DistributionBackup.ActivateAsync(target,settings,true));
+            Assert.True(File.Exists(Path.Combine(target,"restore-staged.json")));
+        }
+        else
+        {
+            await DistributionBackup.ActivateAsync(target,settings,true);
+            Assert.False(File.Exists(Path.Combine(target,"restore-staged.json")));
+        }
+    }
 }

@@ -35,6 +35,49 @@ public static class DistributionBackup
         using var key = ECDsa.Create(); key.ImportFromPem(File.ReadAllText(settings.SigningKeyPath));
         return Convert.ToHexString(SHA256.HashData(key.ExportSubjectPublicKeyInfo())).ToLowerInvariant();
     }
+    private static async Task VerifyPublishedReleaseAsync(string directory, string releaseId, ReleaseSidecar metadata, DistributionSettings settings)
+    {
+        metadata.Validate();
+        if (metadata.ReleaseId != releaseId) throw new InvalidDataException("Release identity differs from its metadata.");
+        // Matching two corrupted copies is not a cryptographic verification.
+        var document = System.Text.Encoding.UTF8.GetString(await ReadBoundedAsync(Path.Combine(directory, "manifest.json"), 8 * 1024 * 1024));
+        var signature = JsonSerializer.Deserialize<DetachedSignatureEnvelope>(await ReadBoundedAsync(Path.Combine(directory, "manifest.json.sig"), 64 * 1024), JsonFiles.Options)
+            ?? throw new InvalidDataException("Missing release signature.");
+        if (signature.SchemaVersion != 2 || signature.Algorithm != "ECDSA-P256-SHA256" || signature.KeyId != settings.SigningKeyId)
+            throw new InvalidDataException("Release signing identity is unavailable; keep restore staged for operator review.");
+        using var signer = ECDsa.Create(); signer.ImportFromPem(await File.ReadAllTextAsync(settings.SigningKeyPath));
+        ManifestSignatureVerifier.Verify(document, signature.Signature, signer.ExportSubjectPublicKeyInfoPem());
+        if (signature.PayloadSha256 is not null && !string.Equals(signature.PayloadSha256, Digest(System.Text.Encoding.UTF8.GetBytes(document)), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Release signature payload digest differs.");
+        var manifest = JsonSerializer.Deserialize<LauncherManifest>(document, JsonFiles.Options)
+            ?? throw new InvalidDataException("Missing release manifest.");
+        if (manifest.AppId != metadata.ProjectId || manifest.Version != metadata.Version || manifest.Channel != metadata.Channel ||
+            manifest.Platform != metadata.Platform || manifest.EntryPoint != metadata.EntryPoint ||
+            manifest.BaseUrl != settings.PublicUrl.TrimEnd('/') + "/releases/" + releaseId + "/files" ||
+            manifest.Files is null || manifest.Files.Count is < 1 or > 250000)
+            throw new InvalidDataException("Release manifest no longer matches the approved identity.");
+        var filesRoot = Path.Combine(directory, "files");
+        var expected = new HashSet<string>(metadata.Platform == "windows-x64" ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        foreach (var file in manifest.Files)
+        {
+            if (file is null) throw new InvalidDataException("Null release file.");
+            var relative = ReleaseSidecar.Relative(file.Path);
+            if (!expected.Add(relative) || file.Size < 0 || file.Sha256.Length != 64 || !file.Sha256.All(Uri.IsHexDigit) || file.Url != relative)
+                throw new InvalidDataException("Invalid release file metadata.");
+            var path = SafePath.ResolveInsideChecked(filesRoot, relative);
+            if (!File.Exists(path) || new FileInfo(path).Length != file.Size || !await Hashing.Sha256MatchesAsync(path, file.Sha256))
+                throw new InvalidDataException("Release content fails its signed manifest.");
+        }
+        if (!expected.Contains(manifest.EntryPoint) || !expected.SetEquals(Files(filesRoot).Select(path => Path.GetRelativePath(filesRoot, path).Replace('\\', '/'))))
+            throw new InvalidDataException("Release payload inventory differs from its signed manifest.");
+    }
+    private static async Task<byte[]> ReadBoundedAsync(string path, int limit)
+    {
+        await using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (input.Length > limit) throw new InvalidDataException("Release metadata exceeds its limit.");
+        var bytes = new byte[checked((int)input.Length)]; await input.ReadExactlyAsync(bytes);
+        return bytes;
+    }
     public static object Plan(DistributionSettings settings) => new
     {
         Root = Path.GetFullPath(settings.Root), Mode = "offline-manual", PrivateSigningKeyIncluded = false,
@@ -191,12 +234,15 @@ public static class DistributionBackup
         }
         using (var q = source.CreateCommand())
         {
-            q.CommandText = "SELECT directory FROM releases"; using var r = q.ExecuteReader();
+            q.CommandText = "SELECT directory,id,metadata FROM releases"; using var r = q.ExecuteReader();
             while (r.Read())
             {
                 var directory = r.GetString(0); var relative = Path.GetRelativePath(Path.GetFullPath(current.Root), Path.GetFullPath(directory));
                 await MatchDirectory(directory);
                 var restored = SafePath.ResolveInsideChecked(target, relative);
+                var metadata = JsonSerializer.Deserialize<ReleaseSidecar>(r.GetString(2), JsonFiles.Options)
+                    ?? throw new InvalidDataException("Missing release metadata.");
+                await VerifyPublishedReleaseAsync(restored, r.GetString(1), metadata, current);
                 foreach (var file in Files(directory))
                 {
                     var counterpart = SafePath.ResolveInsideChecked(restored, Path.GetRelativePath(directory, file));
