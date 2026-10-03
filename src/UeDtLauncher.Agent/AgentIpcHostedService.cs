@@ -436,6 +436,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     using (var operation = _operations.Begin(Guid.TryParseExact(request.CorrelationId,"N",out _)?request.CorrelationId:Guid.NewGuid().ToString("N"), peer!, request.Selection, cancellationToken, request.Command))
                     {
                     AddProgress(new LauncherProgress("OperationRegistered",operation.Status.Id,0));
+                    config.TrustedOperationOwner=peer;
                     config.LaunchAfterUpdate = false;
                     config.RepairMode = request.Command.Equals("repair", StringComparison.OrdinalIgnoreCase);
                     LauncherEngine? runningEngine = null;

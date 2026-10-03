@@ -6,6 +6,8 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 ## 먼저 확인할 진행 현황
 
+closure 캐시/기록 수명: requester partition·쓰기 예약·copy temporary 정리·discard archive/슬롯 회복을 구현했다. Windows18개 및 게시 headless 확인. USER-03 전체 수용/GUI·회사 계정 조건은 후속으로 유지한다.
+
 closure 취소 보완: 등록 ACK·취소 보존·commit 결과·unstarted launch abort·Backend token을 구현하고 관련18개/게시 headless를 확인했다. 실제 GUI 취소와 회사 계정 조건은 유지한다. 후속 cohort로 최종 token/결과 흐름을 재검증한다.
 
 후속 closure 시작: fixture 실제 소유/경로/게시본 확인과 비밀 stdout 비보관, 실패 checkpoint를 추가했다. Windows 계약3개와 기존 게시본의 headless 실행 통과. 항목 전체 진행률은 새 결함 수정·후속 게시 검증 후 판단한다. [현재 기록](docs/reference/archive/validation/operations-closure-validation.md)

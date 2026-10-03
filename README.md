@@ -8,6 +8,8 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 
 ## 프로젝트 목표와 처음 읽을 안내
 
+재개 캐시는 요청자별로 분리되며 partial·검증 파일·임시 복사를 합산해 예산을 지킵니다. 비활성 작업 discard는 이력을 보존하는 archive로 이동해 목록 자리를 회복합니다.
+
 취소 후 표시는 작업 결과를 따릅니다. 적용 전 취소는 안전 종료를 기다리고, 이미 설치가 완료됐다면 실행 생략 또는 상태 재확인 안내를 제공합니다. 실행이 시작되기 전 티켓만 해당 시도에 맞춰 중단할 수 있습니다.
 
 현재 후속 작업은 `codex/operations-hardening-closure`에서 진행합니다. 시험 root 소유/경로·게시본 확인, 비밀 stdout 제외, 단계별 결과 기록을 보강했습니다. [후속 검증](docs/reference/archive/validation/operations-closure-validation.md).

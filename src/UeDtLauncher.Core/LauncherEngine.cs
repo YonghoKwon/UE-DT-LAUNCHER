@@ -432,7 +432,8 @@ public sealed class LauncherEngine : IDisposable
         Exception? lastError = null;
         // A private randomized scratch file cannot alias another manifest entry such as app.download.
         // The same scratch path is retained across retries so Range resume still works.
-        var tempPath = _resume?.Partial(file) ?? targetPath + ".download-" + Guid.NewGuid().ToString("N");
+        using var cacheReservation=_resume?.ReservePartial(file);
+        var tempPath = cacheReservation?.Path ?? targetPath + ".download-" + Guid.NewGuid().ToString("N");
         var maxAttempts = Math.Max(1, _config.MaxRetryCount);
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {

@@ -14,6 +14,8 @@
 
 ## 현재 위치
 
+작업 재개 자료는 실제 owner/session에 결속하고 명시 content 예산 내에서 유지한다. 기록 수명은 기간 자동 삭제 대신 사용자가 요청한 비활성 archive/discard로 관리한다.
+
 취소 정책은 적용 전 안전 종료, commit 이후 설치 완료/미시작 실행 생략이다. 이미 시작된 앱을 취소 요청으로 종료하지 않는다. requester와 실행 시도를 확정할 수 없는 경우 runtime 보호를 유지한다.
 
 운영 후속은 확인된 코드 결함과 장애 조합을 마무리한다. fixture/결과 검증만으로 회사/GUI 인수를 종료하지 않는다. [closure 증거](docs/reference/archive/validation/operations-closure-validation.md)

@@ -95,4 +95,15 @@ public sealed class LauncherOperationTests : IDisposable
         finally{stop.Cancel();await reader;}
         Assert.Equal("Completed",registry.Inspect(id,owner).Phase);
     }
+    [Fact]
+    public void ExplicitDiscardArchivesHistoryAndRestoresCapacityWithoutReusingIds()
+    {
+        var registry=new OperationRegistry(root){RecordLimit=1};var first=Guid.NewGuid().ToString("N");
+        using(var operation=registry.Begin(first,owner,Release)){operation.Finish(true);}
+        Assert.Throws<IOException>(()=>registry.Begin(Guid.NewGuid().ToString("N"),owner,Release));
+        registry.Discard(first,owner);Assert.Equal("Discarded",registry.Inspect(first,owner).Phase);
+        Assert.Throws<InvalidOperationException>(()=>registry.Begin(first,owner,Release));
+        using var next=registry.Begin(Guid.NewGuid().ToString("N"),owner,Release);
+        Assert.Throws<InvalidOperationException>(()=>registry.Discard(next.Status.Id,owner));
+    }
 }

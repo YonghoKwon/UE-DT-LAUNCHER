@@ -19,6 +19,7 @@ public sealed class LauncherConfig
     [JsonIgnore] internal bool CatalogAuthenticated { get; set; }
     [JsonIgnore] internal DistributionCatalog? AuthenticatedCatalog { get; set; }
     [JsonIgnore] internal string? ExpectedResumeManifestSha256 { get; set; }
+    [JsonIgnore] internal RuntimeIdentity? TrustedOperationOwner { get; set; }
     public string? CatalogSignatureUrl { get; set; }
     public string? CatalogPublicKeyPath { get; set; }
 

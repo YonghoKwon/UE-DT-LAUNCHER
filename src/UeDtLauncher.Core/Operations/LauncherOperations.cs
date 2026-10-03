@@ -69,13 +69,17 @@ public sealed class OperationRegistry(string root)
         try { using var lease = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None); return false; }
         catch (IOException) { return true; }
     }
+    internal int RecordLimit {get;init;}=4096;
+    private string Archived(string id)=>SafePath.ResolveInsideChecked(root,"archive/"+id+".json");
     public OperationHandle Begin(string id, RuntimeIdentity peer, ReleaseSelection? selection, CancellationToken shutdown = default, string command = "update")
     {
         lock (gate)
         {
             var path = PathFor(id);
-            if (File.Exists(path) || active.Count >= 8) throw new InvalidOperationException("Operation already exists or capacity reached.");
-            if (Directory.Exists(root) && Directory.EnumerateFiles(root, "*.json").Take(4096).Count() >= 4096)
+            if (File.Exists(path) || File.Exists(Archived(id)) || active.Count >= 8) throw new InvalidOperationException("Operation already exists or capacity reached.");
+            Directory.CreateDirectory(root);
+            using var index=AcquireWriter(SafePath.ResolveInsideChecked(root,"registry-index.lock"));
+            if (Directory.Exists(root) && Directory.EnumerateFiles(root, "*.json").Take(RecordLimit).Count() >= RecordLimit)
                 throw new IOException("Operation record limit reached; review and discard old records.");
             selection?.Validate();
             if (command is not ("update" or "repair")) throw new ArgumentException("Unsupported operation kind.");
@@ -96,6 +100,7 @@ public sealed class OperationRegistry(string root)
         lock (gate)
         {
             var path = PathFor(id);
+            if(!File.Exists(path))path=Archived(id);
             if (!File.Exists(path) || new FileInfo(path).Length > 64 * 1024) throw new InvalidDataException("Operation record unavailable.");
             var record = ReadRecord(path);
             if (record.SchemaVersion != 1 || record.Id != id || string.IsNullOrWhiteSpace(record.Owner) || string.IsNullOrWhiteSpace(record.Session) ||
@@ -126,7 +131,12 @@ public sealed class OperationRegistry(string root)
         {
             var current = Inspect(id, peer);
             if (active.ContainsKey(id) || IsOwned(PathFor(id) + ".active.lock")) throw new InvalidOperationException("Cancel and wait before discarding an active operation.");
+            if(current.Phase=="Discarded" && File.Exists(Archived(id)))return current;
+            using var index=AcquireWriter(SafePath.ResolveInsideChecked(root,"registry-index.lock"));
+            using var ownership=new FileStream(PathFor(id)+".active.lock",FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
             Save(current with { Phase = "Discarded", UpdatedAtUtc = DateTimeOffset.UtcNow.ToString("O") });
+            Directory.CreateDirectory(Path.GetDirectoryName(Archived(id))!);
+            File.Move(PathFor(id),Archived(id),false);
             return Inspect(id, peer);
         }
     }

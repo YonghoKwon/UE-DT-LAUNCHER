@@ -12,6 +12,12 @@ Windows fixture 계약3개 및 d756af2의 기존 cohort-06 CLI/console Agent/서
 
 ## 이후 묶음
 
+## 3. 재개 캐시/기록 수명
+
+Cache schema2는 trusted IPC requester 또는 portable 현재 owner/session별 partition에 저장한다. Agent 서비스 계정으로 사용자 캐시를 결속하지 않는다. 이전 cache는 자동 채택/삭제하지 않는다. 설치별 content quota에 partial/verified/new를 예약하며, 소유가 확인된 copy temporary만 정리한다. 사용 불가/예산 부족은 네트워크 처리로 전환한다.
+
+명시 discard는 비활성 기록을 archive로 옮겨 live4096 슬롯을 회복한다. archived ID 재사용·활성 discard는 거부하고 OS lock inode/감사 이력을 유지한다. Windows 관련18개, resume-01 게시 CLI/Agent/서버 흐름 통과.
+
 ## 2. 취소와 실행 경계
 
 작업 등록 ACK capability와 공통 coordinator로 등록 전 취소 의도를 보존한다. 서버가 취소를 승인하고 workers/복구가 끝나야 terminal을 반환한다. 설치 commit은 transaction 경계에서 확정하고 이후 상태 조회 실패를 설치 취소로 표시하지 않는다. Backend 인터페이스에 token/결과 종류를 넣어 실행·문제 해결 repair에서 같은 경로를 사용한다.
