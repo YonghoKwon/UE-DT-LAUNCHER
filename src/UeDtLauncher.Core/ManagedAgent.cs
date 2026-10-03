@@ -34,8 +34,15 @@ public static class ManagedAgentProtocol
         if (!AllowedCommands.Contains(request.Command)) return $"Agent command is not allowed: {request.Command}.";
         if (request.ProjectId is { Length: > 128 }) return "projectId is too long.";
         if (request.Command.StartsWith("operation-", StringComparison.Ordinal) &&
-            (!Guid.TryParseExact(request.OperationId, "N", out _) || request.Selection is not null || request.RuntimeTicket is not null))
+            (!Guid.TryParseExact(request.OperationId, "N", out _) ||
+             (request.Selection is not null && request.Command!="operation-resume") || request.RuntimeTicket is not null))
             return "Operation control requires an ID, without release or launch inputs.";
+        if(request.Command=="operation-resume" && request.Selection is { } resumedSelection)
+        {
+            try{resumedSelection.Validate();}
+            catch(InvalidDataException){return "Resume selection is invalid.";}
+            if(request.ProjectId is not null && request.ProjectId!=resumedSelection.ProjectId)return "Resume project does not match selection.";
+        }
         if (request.Command.Equals("project-asset", StringComparison.OrdinalIgnoreCase) &&
             (!request.StreamProgress || string.IsNullOrWhiteSpace(request.ProjectId) || request.AssetKind is not ("hero" or "thumbnail") || request.Selection is not null))
             return "project-asset requires a project, hero/thumbnail kind and streaming, without release selection.";

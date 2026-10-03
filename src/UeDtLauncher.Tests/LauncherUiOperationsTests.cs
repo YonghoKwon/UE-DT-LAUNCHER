@@ -5,6 +5,19 @@ namespace UeDtLauncher.Tests;
 public class LauncherUiOperationsTests
 {
     [Fact]
+    public void ResumeProtocolAllowsOnlyValidatedExpectedSelectionAndNoLaunchInput()
+    {
+        var request=new ManagedAgentRequest{Command="operation-resume",OperationId=Guid.NewGuid().ToString("N"),ProjectId="demo",Selection=new("demo","prod","stable","windows-x64","1")};
+        Assert.Null(ManagedAgentProtocol.Validate(request));
+        request.ProjectId="another";Assert.NotNull(ManagedAgentProtocol.Validate(request));request.ProjectId="demo";
+        request.Selection=request.Selection with{Version="../bad"};Assert.NotNull(ManagedAgentProtocol.Validate(request));
+        request.Selection=new("demo","prod","stable","windows-x64","1");
+        request.Command="operation-cancel";Assert.NotNull(ManagedAgentProtocol.Validate(request));
+        request.Command="operation-status";Assert.NotNull(ManagedAgentProtocol.Validate(request));
+        request.Command="operation-discard";Assert.NotNull(ManagedAgentProtocol.Validate(request));
+        request.Command="operation-resume";request.Selection=null;request.ProjectId=null;Assert.Null(ManagedAgentProtocol.Validate(request));
+    }
+    [Fact]
     public void ResumePinsManifestAndDoesNotLaunchOrAcceptAnotherSelection()
     {
         var selection=new ReleaseSelection("demo","prod","stable","windows-x64","1");
