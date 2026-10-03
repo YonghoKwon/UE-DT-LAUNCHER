@@ -27,7 +27,10 @@ public class LauncherRecoveryFlowTests
             Assert.Contains(window.GetVisualDescendants().OfType<Avalonia.Controls.TextBlock>(),t=>t.Text=="사용 가능한 프로젝트가 없습니다");
             Assert.Equal(0,backend.Checks);Assert.Equal(0,backend.Executions);
             Assert.Contains("이 PC에 허용된 배포가 없습니다",Presentation(window).Title);
-            allowed=true;await InvokeAsync(window,"RefreshSelectionStatusAsync");Dispatcher.UIThread.RunJobs();
+            allowed=true;
+            window.GetVisualDescendants().OfType<Avalonia.Controls.Button>().Single(b=>Avalonia.Automation.AutomationProperties.GetAutomationId(b)=="empty-refresh")
+                .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
+            await backend.Checked.Task.WaitAsync(TimeSpan.FromSeconds(10));Dispatcher.UIThread.RunJobs();
             Assert.Equal("demo",model.SelectedProject.ProjectId);Assert.Equal(1,backend.Checks);Assert.Equal(0,backend.Executions);
             Assert.False(Directory.Exists(Path.Combine(fixture.Root,"app")));Assert.False(Directory.Exists(Path.Combine(fixture.Root,"state")));
         }
@@ -239,6 +242,7 @@ public class LauncherRecoveryFlowTests
 
     private sealed class RecordingBackend(ManagedProjectStatus status) : ILauncherUiBackend
     {
+        public TaskCompletionSource Checked { get; }=new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int Checks { get; private set; }
         public int Executions { get; private set; }
         public Exception? CheckError { get; set; }
@@ -252,6 +256,7 @@ public class LauncherRecoveryFlowTests
             if (CheckError is not null) return Task.FromException<LauncherUiOperationResult>(CheckError);
             context.Pin(config);
             VersionedReleasePaths.Bind(config, context.Selection!);
+            Checked.TrySetResult();
             return Task.FromResult(new LauncherUiOperationResult(config, context.Selection, status, Runtime));
         }
 

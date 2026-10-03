@@ -99,7 +99,7 @@ public sealed partial class MainWindow
             if(IsDeveloper) content.Children.Add(EnterpriseFilters());
             if(!HasProject)
             {
-                content.Children.Add(EnterpriseCard(new StackPanel {Spacing=12,Children={Txt("사용 가능한 프로젝트가 없습니다",24,true),Muted("이 PC에 허용된 배포를 확인하거나 관리자에게 문의해 주세요.",14),EnterpriseButton("배포 다시 확인","empty-refresh",async (_,_)=>await RefreshCatalog(true))}}));
+                content.Children.Add(EnterpriseCard(new StackPanel {Spacing=12,Children={Txt("사용 가능한 프로젝트가 없습니다",24,true),Muted("이 PC에 허용된 배포를 확인하거나 관리자에게 문의해 주세요.",14),EnterpriseButton("배포 다시 확인","empty-refresh",async (_,_)=>await RefreshSelectionStatusAsync())}}));
             }
             else
             {
