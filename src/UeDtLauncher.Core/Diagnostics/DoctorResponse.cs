@@ -16,6 +16,12 @@ internal static class DoctorResponse
         var id = correlationId ?? report.SupportId ?? Guid.NewGuid().ToString("N");
         if (report.Checks is null || report.Checks.Any(c => c is null)) throw Invalid(id);
         if (expected is not null && report.Target is not null && report.Target != expected) throw Invalid(id);
+        if(report.SelectedRelease is { } release && expected is not null)
+        {
+            release.Validate();
+            if(release.ProjectId!=expected.ProjectId || release.Environment!=expected.Environment || release.Channel!=expected.Channel || release.Platform!=expected.Platform ||
+               expected.VersionPolicy=="exact" && release.Version!=expected.RequestedVersion)throw Invalid(id);
+        }
         var incomplete = report.Checks.Count == 0 || (expected is not null && report.Target is null) ||
             report.PreparationState is not ("checks-passed" or "verification-pending" or "action-required");
         var checks = new List<DoctorCheck>();

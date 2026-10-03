@@ -22,6 +22,7 @@ public sealed record DoctorReport(
     public string? PreparationState { get; init; }
     public string? SupportId { get; init; }
     public DoctorTarget? Target { get; init; }
+    public ReleaseSelection? SelectedRelease {get;init;}
 }
 
 public static class LauncherDoctor
@@ -35,6 +36,7 @@ public static class LauncherDoctor
     {
         var checks = new List<DoctorCheck>();
         LauncherConfig? config = null;
+        ReleaseSelection? selected=null;
         try
         {
             config = await LauncherPaths.LoadResolvedAsync(configPath, cancellationToken, readOnly: true);
@@ -113,6 +115,11 @@ public static class LauncherDoctor
                     var catalog = await CatalogResolver.DownloadCatalogAsync(config, http, cancellationToken: cancellationToken);
                     checks.Add(new DoctorCheck("catalog-online", true, "catalog authentication and signature validation passed"));
                     checks.Add(DoctorPresentation.ReleaseReadiness(config, catalog));
+                    if(checks.Last().State=="passed")
+                    {
+                        var release=CatalogResolver.SelectRelease(catalog,config);
+                        selected=new(config.ProjectId!,release.Environment,release.Channel,release.Platform,release.Version);
+                    }
                 }
                 catch (Exception ex) when (!cancellationToken.IsCancellationRequested) { checks.Add(DoctorPresentation.Failure("catalog-online", ex, agentContext ? "agent" : "client")); }
             }
@@ -125,7 +132,7 @@ public static class LauncherDoctor
             checks.All(check => check.State != "failed"),
             typeof(LauncherDoctor).Assembly.GetName().Version?.ToString() ?? "0.0.0.0",
             Environment.OSVersion.ToString(),
-            checks) { Target = config is null ? null : DoctorTarget.From(config) });
+            checks) { Target = config is null ? null : DoctorTarget.From(config),SelectedRelease=selected });
     }
 }
 

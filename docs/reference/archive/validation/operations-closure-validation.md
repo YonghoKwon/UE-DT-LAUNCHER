@@ -12,6 +12,10 @@ Windows fixture 계약3개 및 d756af2의 기존 cohort-06 CLI/console Agent/서
 
 ## 이후 묶음
 
+## 7. 선택/준비도 점검
+
+Doctor의 authenticated selected release를 optional 응답에 보존·target 검증하고 schedule 설치 검사에 동일 선택을 전달한다. defaultB와 exactA를 혼합하지 않으며 preparation/inspection으로 checked/action-required/verification-pending을 결정한다. protected config default1과 schedule exact2를 실제 게시 fixture로 대조했고 설치 inventory는 불변이다. Windows 관련21개 및 boundaries-01 publish 통과. GUI actual input은 중단 상태다.
+
 ## 6. 인증/한도 게시 경계
 
 Request limit에 내부 monotonic clock, actual Kestrel 파일 dispatch barrier seam을 추가했다(제품 설정/환경변수로 활성화 불가). held download N/N+1의429/Retry-After·정상 완료 슬롯 반환·폐기 후401, window 회복, endpoint 만료/clock rollback·expiry audit rollback/동시1회 latch를 확인했다.

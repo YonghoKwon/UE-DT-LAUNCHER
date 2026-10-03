@@ -3,6 +3,11 @@ using Xunit;
 namespace UeDtLauncher.Tests;
 public sealed class ScheduledCheckTests
 {
+    [Theory][InlineData("action-required",true,"action-required")][InlineData("verification-pending",true,"verification-pending")][InlineData("checks-passed",false,"verification-pending")][InlineData("checks-passed",true,"checked")]
+    public void HealthyDoesNotReplacePreparationOrInspection(string preparation,bool inspected,string expected)
+    {
+        var report=new DoctorReport("now",true,"1","test",[]){PreparationState=preparation};Assert.Equal(expected,ScheduledChecks.Outcome(report,inspected));
+    }
     [Fact]
     public async Task DisabledDefaultDoesNotCreateInstallationOrLogs()
     {

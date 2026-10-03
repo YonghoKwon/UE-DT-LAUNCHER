@@ -37,6 +37,8 @@
 
 ## 보존할 경계
 
+- Doctor selected release는 target/권한 확인을 거친 optional 정보다. schedule 진단/설치 상태에 같은 선택을 사용하고 default config로 다시 선택하지 않는다. Healthy와 preparation/status를 혼동하지 않는다.
+
 - limit 시간/HTTP file barrier는 내부 시험 seam만 사용한다. 정상 동시성·429·슬롯 반환·만료/audit 원자성을 actual HTTP로 검증하고 검사 우회 CLI를 만들지 않는다.
 
 - stage 전체 exclusive target reservation, live lease 이후 staged fence 검사, source/target canonical lock ordering을 유지한다. 필수 source/snapshot/active/release의 양방향 inventory/hash와 policy를 검증한다. incomplete retention backup·staged authority·기록 없는 누락은 거부하고 fence 제거는 마지막이다.
