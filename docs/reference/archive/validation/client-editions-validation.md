@@ -1,5 +1,7 @@
 # 클라이언트 에디션 분리 검증
 
+[정제 실행 근거](client-editions-evidence.json). GUI의 환경 제약은 미실행으로 보존하며 과거 CLI 설치 결과를 실제 클릭 증거로 사용하지 않는다.
+
 2026-10-03, 기준 eea1dd3, codex/client-editions-ux-acceptance. 일반/개발자 GUI는 컴파일된 에디션으로 결정하고 기존 CLI는 공통으로 유지한다.
 
 ## 초기 빌드 확인

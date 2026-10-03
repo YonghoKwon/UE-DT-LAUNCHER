@@ -172,7 +172,7 @@ sudo -u uedt-distribution /opt/ue-dt-distribution/UeDtLauncher.DistributionServe
 | 파일/설정 | 정할 것 | 누가 관리 |
 |---|---|---|
 | Agent 보호 설정 | 서버 URL, 저장소 이름, 공개키, 설치/상태/로그 루트, OS | 관리자 |
-| 런처 표시 설정 | `deploymentMode=managed-agent`, `distributionServerUrl`, `clientProfile=general` 또는 `developer` | 관리자 또는 배포 담당 |
+| 런처 표시 설정 | `deploymentMode=managed-agent`, `distributionServerUrl`, 프로젝트 표시 정보. 일반/개발자는 별도 EXE로 배포 | 관리자 또는 배포 담당 |
 
 Windows 관리 설정은 보통 `C:\ProgramData\UE-DT Launcher\config\launcher.config.json`, Linux는 `/etc/ue-dt-launcher/launcher.config.json`입니다. GUI 설정 탐색은 명시한 `--config` → 실행 파일 옆 → 관리 설정 순서입니다. [전체 설정 예시](guide-03-launcher-usage.md)
 

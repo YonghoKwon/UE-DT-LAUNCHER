@@ -27,6 +27,8 @@
 
 ## 검증 증거와 과거 자료
 
+최신 에디션 분리: [일반/개발자 빌드·설치본·사용 흐름](archive/validation/client-editions-validation.md). 두 실행 파일과667개 회귀, 실제 마우스 입력의 환경 제약을 구분합니다.
+
 최신 추가: [운영 안전성·게시 프로그램 검증](archive/validation/operations-closure-validation.md). 취소/캐시/정리/복원/인증/점검·설치본과 실제 GUI/회사 미검증을 구분합니다. 이전 [UE 데이터 경로](archive/validation/real-ue-data-safety-validation.md)는 당시 후보의 이력입니다.
 
 [아카이브 색인](archive/README.md)에서 찾습니다. **보관된 검증 결과는 유효한 이력**이지만 해당 날짜·환경·범위를 넘는 보장은 아닙니다.

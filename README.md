@@ -2,7 +2,9 @@
 
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 배포 시스템입니다.
 
-문서 점검: **2026-10-03**, 작업 기준: `codex/operations-hardening-closure`. 취소/실행·요청자별 재개 캐시, 정리/복원·서명, 인증/한도·정확한 예약 점검을 보강했습니다. Windows/WSL 각각664개 회귀·Release 경고/오류0, 게시 CLI·console Agent·서버, 개발 MSI/RPM 비설치 추출을 확인했습니다. [최신 결과와 남은 조건](docs/reference/archive/validation/operations-closure-validation.md), [이전 GUI 이력](docs/reference/archive/validation/readiness-validation.md). GUI 입력 중단·원격 CI/회사 인수 미완료를 유지합니다.
+문서 점검: **2026-10-03**, 작업 기준: `codex/client-editions-ux-acceptance`. 일반 `UeDtLauncher.exe`와 개발자 `UeDtLauncher.Developer.exe`를 별도 빌드합니다. 설정으로 GUI 종류를 바꿀 수 없습니다. Windows/WSL 각각667개 회귀·Release 경고/오류0, 두 MSI와 기본/개발자 추가 RPM의 비설치 검증을 확인했습니다. [이번 검증·남은 마우스 시험](docs/reference/archive/validation/client-editions-validation.md). Windows 세션이 Disc 상태여서 실제 클릭이 접근 거부로 미실행입니다.
+
+기본 빌드는 `LauncherEdition=General`입니다. 개발자는 `dotnet publish src/UeDtLauncher -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:LauncherEdition=Developer`로 생성합니다. `--build-info`에서 에디션을 확인하세요. Developer 배포에는 공통 runtime-host인 일반 실행 파일도 포함해야 하며, `tools/publish_runtime_cohort.py --output <새폴더> --rid win-x64`는 두 EXE·Agent·서버와 두 클라이언트 ZIP을 함께 생성합니다.
 
 **현재 판단: 합성 앱 기반 배포·설치·실행·복구는 활용 가능한 단계이며, 회사 정식 운영 인수는 미완료입니다.** 현재 수치와 남은 작업은 [개선 진행 현황](IMPROVEMENTS.md), 상세 명령은 [운영 문서 색인](docs/reference/README.md)을 확인하세요.
 
@@ -111,7 +113,7 @@ Agent가 확인한 대상·준비도·검사 상태가 누락되면 미검증 �
 | 개발자 화면 | 포스코DX 다크 화면, 허용 배포/정확한 버전 선택, 접히는 유지보수·복사 가능한 정보/로그 |
 | 운영 | Windows/Linux Agent·IPC·CLI, 진단 내보내기, 무인 서비스 모드, MSI/RPM 제작 구성 |
 
-GUI의 general/developer는 표시 정책이지 다운로드 권한이 아닙니다. 기존 HTTPS/Bearer와 명시적인 schema 3 사내 HTTP/요청 서명을 지원하며, 둘 다 Metadata 서명·해시·권한 검증을 유지합니다. HTTP/Bearer나 무인증으로 자동 후퇴하지 않습니다. nginx 뒤 API는 loopback에만 바인딩하고 공개 정적 경로와 혼합하지 않습니다.
+일반/개발자 GUI는 컴파일된 에디션으로 결정합니다. 두 빌드의 기존 CLI는 공통이며 서버가 다운로드 권한을 결정합니다. 기존 HTTPS/Bearer와 schema3 HTTP 요청 서명을 지원하며 Metadata 서명·해시·권한 검증을 유지합니다. nginx 뒤 API는 loopback에 바인딩합니다.
 
 일반 GUI는 자동 점검만 하며 설치는 사용자 클릭 후 수행합니다. 무인 서비스 자동 업데이트와 구분합니다. 관리형 런처 자체 갱신은 MSI/RPM, 게임 콘텐츠 갱신은 Agent 책임입니다. Portable은 현재 계정의 로컬 엔진과 runtime 기록을 사용하며 Agent 연결을 요구하지 않습니다. 두 모드 모두 실행 중·Pending·Unknown 상태에서는 설치 변경을 차단합니다.
 
@@ -140,7 +142,7 @@ schema 3의 `runtimeData`를 명시적으로 활성화하면 런처가 실행 �
 2. 서버 서명 개인키와 PC별 IP/배포 권한 등록. 공개키만 PC에 배포.
 3. PC별 개인키를 보호 저장하고 공개키만 서버에 등록합니다. 기존 HTTPS/Bearer 환경은 기존 토큰 절차를 유지합니다.
 4. PC에 런처·Agent 설치, sample-config로 보호된 운영 설정을 생성하고 doctor로 확인합니다.
-5. 런처 옆 설정에서 general/developer 화면 선택.
+5. 일반 또는 개발자 빌드의 실행 파일을 배포하고, 런처 옆 설정에는 서버·프로젝트·표시 정보만 지정.
 
 신규 사내 HTTP 명령은 [요청 서명 안내](docs/reference/intranet-auth.md), 기존 HTTPS/Bearer와 공통 게시 과정은 [통합 운영 가이드](docs/reference/distribution-workflow.md)를 따릅니다. 예시 IP·계정·공개키를 실제 값으로 바꾸세요.
 

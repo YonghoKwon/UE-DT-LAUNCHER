@@ -14,6 +14,10 @@
 
 ## 현재 위치
 
+2026-10-03 결정: 일반/개발자 클라이언트는 별도 빌드·실행 파일로 고정한다. 일반 MSI와 개발자 MSI(일반 포함)는 Agent를 공유하고, Linux developer RPM은 동일 버전 base RPM을 요구한다. GUI 설정의 clientProfile로 화면을 전환하지 않으며 기존 운영 CLI는 공통으로 유지한다.
+
+667개 양 OS 회귀·게시 CLI/Agent·MSI/RPM 비설치 검증은 확인했다. 실제 마우스 검증을 재개했으나 Windows 세션 Disc/GetCursorPos 접근 거부로 적용 시험은 미실행이다. USER-02/UI-02·음성 보류의 UI-03은75%를 유지한다. [이번 기록](docs/reference/archive/validation/client-editions-validation.md)
+
 예약 점검은 정확한 허용 선택/준비도를 표시하고 query-only로 유지한다. 실제 예약 등록/사용자 실행 준비는 별도 증거가 필요하다.
 
 자격/요청 경계의 local acceptance는 actual HTTP와 내부 clock/fault 시험으로 확인하며, 회사 IP 경로/위험 수용과 혼합하지 않는다.

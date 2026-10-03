@@ -45,7 +45,7 @@ portable은 `sample-config --deployment-mode portable`과 `credential keygen ...
 ZIP + 외부 release.json 생성·접수·수동 승인 순서는 [기능 지도](feature-workflow.md)의 B와 동일하다. ZIP마다 PC 키를 만들지 않는다.
 
 - 일반 사용자는 런처를 열어 상태 확인 후 설치/업데이트/실행 버튼을 사용한다. 자동 설치하지 않는다.
-- 개발자 화면은 `clientProfile=developer`로 바꾸되 서버 허용 범위는 늘어나지 않는다.
+- 개발자 화면은 별도 `UeDtLauncher.Developer` 빌드로 실행한다. 같은 PC의 서버 허용 범위는 그대로 적용된다.
 - 관리형 GUI는 목록·이미지·설치·진단을 Agent에 요청한다. GUI에 개인키 접근 권한을 부여하지 않는다.
 - UI 설정과 Agent 운영 설정은 별개다. GUI는 `--config → 실행 파일 옆 → 관리 설정` 우선순위를 사용한다. exe 옆 파일로 Agent의 보호된 설정을 바꾸지 않는다.
 - MSI는 `launcher.config.example.json`만 설치한다. 활성 설정을 자동 덮어쓰지 않는다. RPM은 `%config(noreplace)`로 기존 관리 설정을 보존한다.

@@ -1,6 +1,6 @@
 # GUI 표시 설정·이미지 커스터마이징
 
-> 현재 가이드 / 문서 점검 2026-10-03 / 작업 기준 codex/operations-hardening-closure. 포스코DX 디자인/표시 설정은 유지했습니다. 현재 GUI 입력 중단 중이므로 문서 점검을 새 DPI/키보드/음성 수용으로 계산하지 않습니다. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
+> 현재 가이드 / 문서 점검 2026-10-03 / codex/client-editions-ux-acceptance. 일반/개발자 종류는 별도 빌드로 고정됩니다. 새 마우스 적용은 세션 Disc/입력 거부로 미실행이며 문서 점검은 DPI/음성 수용이 아닙니다. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
 
 이 문서는 이름·이미지·정렬을 다룹니다. 서버 접근 권한, 서명키, 설치 루트는 Agent 보호 설정과 서버 정책이 담당합니다. [설정 레퍼런스](guide-03-launcher-usage.md)의 설정 선택 순서를 먼저 확인하세요.
 
@@ -12,7 +12,6 @@
 {
   "deploymentMode": "managed-agent",
   "distributionServerUrl": "https://updates.example.com",
-  "clientProfile": "developer",
   "projects": [
     {
       "projectId": "demo",
@@ -59,7 +58,7 @@ PNG, JPG/JPEG, WebP, 파일당 최대 20 MiB를 지원합니다. 확장자·시�
 
 ## 화면과 소스
 
-`general`은 단순한 밝은 화면, `developer`는 배포·유지보수·진단을 추가한 어두운 화면입니다. 플랫폼은 두 프로필 모두 현재 OS에 고정됩니다.
+일반 빌드는 밝은 화면, 개발자 빌드는 배포·유지보수·진단이 있는 어두운 화면입니다. 설정으로 빌드 종류를 바꾸지 않습니다. 플랫폼은 현재 OS에 고정됩니다.
 
 실제 레이아웃은 `src/UeDtLauncher/Gui/MainWindowEnterprise.cs`, 대화창은 `MainWindowAccessibility.cs`, 작업 피드백은 `MainWindowFeedback.cs`에서 구성하며 `MainWindow.axaml`은 최소 Window입니다. 공통 값은 `LauncherVisualTokens.cs`, 상태·노출 기능은 `LauncherDashboardViewModel.cs`, 이미지 검사는 `ProjectVisualResolver.cs`를 확인합니다. 예전 `MainWindow.axaml.cs` 경로를 편집 대상으로 사용하지 않습니다.
 

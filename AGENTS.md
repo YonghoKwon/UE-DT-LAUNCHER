@@ -1,6 +1,6 @@
 # 작업 지침
 
-점검: 2026-10-03 / 작업 기준 codex/operations-hardening-closure. 저장소 전체에 적용합니다.
+점검: 2026-10-03 / 작업 기준 codex/client-editions-ux-acceptance. 저장소 전체에 적용합니다.
 
 ## 문서 관리 계약
 
@@ -37,6 +37,11 @@
 
 ## 보존할 경계
 
+- 일반/개발자 GUI는 LauncherBuildInfo의 컴파일 에디션으로 결정한다. config/env/실행 옵션/파일명으로 바꾸지 않는다. Core clientProfile는 CLI/legacy 선택 호환용이며 서버 권한과 혼용하지 않는다.
+- General/Developer GUI의 obj/bin·assembly를 분리하고 Developer의 브랜드 URI는 실제 assembly로 해석한다. 공통 runtime-host UeDtLauncher는 developer ZIP/설치본에도 포함한다. 런처 self-update 자동 교체는 사용하지 않고 원본 설정/pending을 보존한다.
+- 일반 MSI는 일반/Agent, 개발자 MSI는 일반/개발자/Agent이며 같은 제품 계열의 동일 버전 중복을 차단한다. RPM developer addon은 exact base version 의존성과 별도 파일 소유권을 가진다. 실제 설치/계정은 별도 인수다.
+- 2026-10-03 사용자가 GUI 마우스 검증 재개를 승인했다. 새 합성 fixture에만 적용한다. 현재 세션 Disc/GetCursorPos0x80070005는 환경 제약이며 입력 가능 상태가 복구되기 전 실제 클릭 통과로 기록하지 않는다. CLI 설치로 GUI 시험을 대신하지 않는다.
+
 - Catalog sequence reservation은 exclusive 인증 서버 수명 안에서 최대64개 high-water를 commit한 뒤 발급한다. 실패/재시작으로 번호를 재사용하지 않고 overflow/잘못된 DB형식은 차단한다. 정상 예약은 복원 순번 우회가 아니며 Catalog/권한 캐시와 혼용하지 않는다. 비교의 느려진1연결·누락 지표를 숨기지 않는다.
 - 복원 활성화는 원본 일치만으로 충분하지 않다. 릴리스 tuple·Manifest 서명 ID/알고리즘·전체 파일 hash/inventory를 별도 검사한다. 확인할 수 없는 이전 signing identity는 staged 점검 대상으로 남긴다.
 - RPM은 고유 실행 폴더·정확한 파일 경로·data-only newc 검사·payload hash/권한 확인을 지킨다. stale wildcard/미검증 publish 생략을 금지한다. stable은 같은 commit functional gate와 signer/fingerprint 검증 후에만 공개하며 실제 인증서/설치 인수와 구분한다.
@@ -72,7 +77,7 @@
 
 - 작업 control은 실제 OS owner/session 또는 관리자만 허용한다. IPC 단절은 취소가 아니다. OS 작업 잠금과 원자적 기록을 유지하며 active 작업을 discard하지 않는다. commit 이후 취소는 완료 상태이며 시작 전 launch만 생략한다. cache는 명시 예산·서명된 Manifest digest·정확한 release/owner에 결속하며 완료 파일도 재검증한다. 새 launch는 온라인 권한 확인 없이 runtime ticket을 만들지 않는다.
 
-- headless 후속 작업에서도 GUI 입력 중단을 유지한다. 측정은 현재 인증/명시적 승격 계약으로 수행하고 시작 실패와 누락 지표를 숨기지 않는다. 새 실행은 온라인 확인, 자동 점검은 조회만, 정리는 관리자 확인 및 공개/승격/활성 작업 보호, 만료는 관리자 명시 지정이다. 회사 설치/계정/인증서와 push/PR은 별도 요청이다.
+- 과거 headless 작업의 GUI 중단은2026-10-03 합성 fixture 마우스 시험 재개 요청으로 해제됐다. 실제 입력 환경 제약은 별도 기록한다. 측정은 현재 인증/명시 승격으로 수행하고 실패/누락을 보존한다. 새 실행은 온라인 확인, 예약은 조회만, 정리는 공개/승격/활성 보호·확인형, 만료는 명시 지정이다. 회사 설치/계정/인증서와 push/PR은 별도 요청이다.
 
 - 오프라인 doctor의 전체 호출 경로는 설정·설치·state·backup·runtime·legacy 파일/디렉터리/잠금을 생성·변경하지 않는다. 검사 전용 설정 로딩은 legacy migration을 수행하지 않으며 credential 경로 조회는 순수 계산이다.
 - 온라인 점검은 기존 인증/서명/요청 결속/sequence 검증과 anti-replay 신뢰 기록을 유지한다. 점검과 조회 재시도가 설치·실행·복원으로 바뀌지 않게 한다.

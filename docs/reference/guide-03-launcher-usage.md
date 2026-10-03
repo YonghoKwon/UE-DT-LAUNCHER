@@ -13,7 +13,7 @@
 | 설정 | 역할 |
 | --- | --- |
 | Agent 보호 설정 | 서버 URL, credential 이름, 공개키, 설치·상태 루트와 실행 설정 |
-| GUI 표시 설정 | `clientProfile`, 프로젝트 이름·이미지·정렬, 화면의 릴리스 선택 |
+| GUI 표시 설정 | 프로젝트 이름·이미지·정렬과 릴리스 선택 기본값. 화면 종류는 실행 파일의 빌드 에디션 |
 | portable 설정 | Agent 없이 현재 사용자 권한으로 업데이트하는 전체 설정 |
 
 GUI는 `gui --config <경로>` → 실행 파일 옆 `launcher.config.json` → 관리 설정 순으로 찾습니다. 명시한 파일이 없다고 다음 설정으로 넘어가지는 않습니다. 현재 작업 폴더 자동 탐색은 없으며 명시한 상대 경로만 현재 작업 폴더 기준입니다.
@@ -51,7 +51,7 @@ Linux 경로 예시입니다. Windows에서는 경로를 Windows 관리 디렉�
 }
 ```
 
-`distributionServerUrl`에서 `/api/v1/catalog` 주소가 구성됩니다. 서버는 토큰 + 실제 IP + 프로젝트/환경/채널/버전 grant로 접근을 제한합니다. `clientProfile=developer`는 UI 선택지를 늘릴 뿐 서버 접근 권한이 아닙니다.
+`distributionServerUrl`에서 `/api/v1/catalog` 주소가 구성됩니다. 서버는 PC 인증 + 실제 IP + 배포 grant로 접근을 제한합니다. 새 GUI의 clientProfile 값은 종류 결정에 사용하지 않습니다. 아래 기존 CLI/운영 설정의 필드는 레거시 선택 호환용이며 서버 접근 권한이 아닙니다.
 
 `installDir`은 버전 설치 루트이며 실제 설치는 `{project}/{environment}/{channel}/{version}/{platform}`으로 분리됩니다. 상태·staging·백업도 릴리스 단위입니다. 예전 단일 설치의 `stagingDir`, `backupDir`, `installedManifestPath`를 버전별 경로로 직접 조립하지 마세요.
 
@@ -153,7 +153,7 @@ GUI 설정에서 **연결·준비 상태 점검**을 열면 오프라인 설정 
 
 ### 보류 중인 GUI 수용 체크리스트
 
-마우스·키보드·실제 GUI 조작은 사용자 요청으로 중단 상태입니다. 아래는 재개 후 **같은 최종 게시본**의 관리형/portable·일반/개발자에서 확인할 단일 목록입니다. 이전 readiness final의 성공은 이력이며, final-02의403 확인만으로 아래 전체를 완료하지 않습니다.
+마우스 검증은2026-10-03 재개 요청을 받았으며 현재 Windows 세션 Disc/입력 접근 거부로 적용 시험이 대기 중입니다. 아래는 **같은 게시본**의 관리형/portable·별도 일반/개발자 EXE에서 확인할 단일 목록입니다. 과거 성공은 이력이며 현재 전체 수용으로 합산하지 않습니다.
 
 | 사례 | 재개 후 확인 기준 | 현재 최신 후보 전체 판정 |
 |---|---|---|

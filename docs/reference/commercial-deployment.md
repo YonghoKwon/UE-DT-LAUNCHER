@@ -18,9 +18,12 @@ Windows 개발 패키지:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 -Version 1.0.0
+.\scripts\build-windows-installer.ps1 -Version 1.0.0 -Edition Developer
 ```
 
 기본은 `UNSIGNED-DEV`입니다. 출력은 `artifacts/windows-installer/runs/<실행ID>/release`이며 성공한 `package-result.json`의 정확한 파일만 사용합니다. `-OfficialBuild`는 publish 전 인증서/개인키/EKU/유효기간/도구를 확인하고 EXE 선서명·검증, MSI 생성·서명·검증, CAB payload 비교를 강제합니다. 개발 빌드는 인증서 환경변수만으로 공식 빌드로 승격되지 않습니다.
+
+General MSI는 일반 EXE/Agent, Developer MSI는 일반/개발자 EXE/Agent를 포함합니다. 같은 제품 계열의 동일 버전 다른 설치본을 중복 설치하려 하면 전환 안내로 거부하며, 관리자 정비 후 재설치 또는 새 버전 업그레이드로 전환합니다. 내용/설정/state/사용자 데이터 보존은 실제 VM 인수에서 확인해야 합니다. 에디션은 설정에서 선택하지 않습니다.
 
 Linux RPM:
 
@@ -29,6 +32,8 @@ Linux RPM:
 ```
 
 출력은 `artifacts/linux-rpm/run.<고유ID>/artifacts/`이며 스크립트의 `RPM_PATH`와 `package-result.json`으로 이번 실행의 정확한 RPM을 선택합니다. 예전 산출물을 wildcard로 다시 서명하지 않습니다. `rpmbuild`, `rpm2cpio`, Python3.10+가 필요합니다. spec은 번들 strip·중복 build-id 링크를 막고 설정을 `%config(noreplace)`로 보존합니다. data-only CAB/RPM 추출과 GUI·Agent hash/권한 확인까지 성공해야 공개합니다. RPM 원본 검증 결과는 `UNSIGNED-DEV`이며 실제 서명 후 CI가 별도로 검증해야 합니다.
+
+동시에 `ue-dt-launcher-developer` 추가 RPM을 생성하며 정확히 같은 version-release의 `ue-dt-launcher`를 요구합니다. 기본 RPM은 일반/runtime-host/Agent/config/service, 추가 RPM은 개발자 EXE만 소유합니다. 개발자 배포에는 두 RPM을 사용하며 서비스가 두 번 설치되지 않습니다.
 
 `UE_DT_SKIP_DOTNET_PUBLISH=1` 재사용 경로는 거부합니다. 새 버전의 GUI/Agent를 항상 publish하며 예시 설정은 회사 주소/계정/권한으로 provision해야 합니다. 현재 개발 PC/WSL에서 실제 설치나 scriptlet·계정 생성을 실행한 것은 아닙니다.
 
