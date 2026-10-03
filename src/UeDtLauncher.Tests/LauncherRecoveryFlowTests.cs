@@ -219,7 +219,7 @@ public class LauncherRecoveryFlowTests
         public RuntimeObservation Runtime { get; init; } = new(RuntimeState.Quiescent, "stopped", "stopped");
         public LauncherUiOperationContext? LastContext { get; private set; }
 
-        public Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext context, LauncherConfig config, Action<LauncherProgress> progress)
+        public Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext context, LauncherConfig config, Action<LauncherProgress> progress,CancellationToken token=default)
         {
             Checks++;
             LastContext = context;
@@ -229,7 +229,7 @@ public class LauncherRecoveryFlowTests
             return Task.FromResult(new LauncherUiOperationResult(config, context.Selection, status, Runtime));
         }
 
-        public Task<LauncherUiOperationResult> ExecuteAsync(LauncherUiOperationContext context, LauncherConfig config, bool repair, bool launch, Action<LauncherProgress> progress, FileLogger? logger)
+        public Task<LauncherUiOperationResult> ExecuteAsync(LauncherUiOperationContext context, LauncherConfig config, bool repair, bool launch, Action<LauncherProgress> progress, FileLogger? logger,CancellationToken token=default)
         {
             Executions++;
             throw new InvalidOperationException("These recovery checks must not install, launch or repair.");

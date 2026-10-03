@@ -1107,10 +1107,9 @@ public sealed partial class MainWindow : Window
             BeginOperation(launch?LauncherUiOperation.Launch:repair?LauncherUiOperation.Repair:LauncherUiOperation.Update);
             _viewModel.GeneralState=GeneralLauncherState.Working;Progress(0);ResetSpeedTracking();
             var config=await RunConfig(repair,launch);
-            var result=_uiBackend is LauncherUiBackend cancellable
-                ? await cancellable.ExecuteCancellableAsync(context,config,repair,launch,PostUiProgress,_fileLogger,operationCancellation.Token)
-                : await _uiBackend.ExecuteAsync(context,config,repair,launch,PostUiProgress,_fileLogger);
-            _presentation.Complete(launch?"실행 준비 완료":repair?"파일 복구 완료":"업데이트 확인 완료");
+            var result=await _uiBackend.ExecuteAsync(context,config,repair,launch,PostUiProgress,_fileLogger,operationCancellation.Token);
+            if(result.Completion==LauncherUiCompletion.CommittedRefreshRequired){CommittedUiRefreshRequired();return;}
+            _presentation.Complete(result.Completion==LauncherUiCompletion.CommittedLaunchSkipped?"설치 완료 · 프로그램 실행은 생략했습니다.":launch?"실행 준비 완료":repair?"파일 복구 완료":"업데이트 확인 완료");
             if(ApplyUiResult(context,result))Build();
         }
         catch(OperationCanceledException){_presentation.Complete("작업 취소 완료 · 설치 상태를 다시 확인해 주세요.");Build();}
@@ -1144,6 +1143,7 @@ public sealed partial class MainWindow : Window
         LauncherConfig? config=null;
         LauncherUiOperationResult? checkedResult=null;
         var repairAttempted=false;
+        using var cancellation=new CancellationTokenSource();_operationCancellation=cancellation;
         try
         {
             if(UsesDistributionServer && _catalog.Releases.Count==0)
@@ -1152,13 +1152,14 @@ public sealed partial class MainWindow : Window
             }
             context=CaptureUiOperation();config=await RunConfig(false,false);
             BeginOperation(LauncherUiOperation.Troubleshoot);_viewModel.GeneralState=GeneralLauncherState.Working;Progress(0);
-            checkedResult=await _uiBackend.CheckAsync(context,config,PostUiProgress);
+            checkedResult=await _uiBackend.CheckAsync(context,config,PostUiProgress,cancellation.Token);
             ValidateUiResult(context,checkedResult);_viewModel.RequireRuntimeQuiescent(checkedResult.Runtime);
             var action=LauncherUiOperations.TroubleshootAction(checkedResult.Status);
             if(action==LauncherTroubleshootAction.Repair)
             {
                 repairAttempted=true;
-                var repaired=await _uiBackend.ExecuteAsync(context,config,true,false,PostUiProgress,_fileLogger);
+                var repaired=await _uiBackend.ExecuteAsync(context,config,true,false,PostUiProgress,_fileLogger,cancellation.Token);
+                if(repaired.Completion==LauncherUiCompletion.CommittedRefreshRequired || cancellation.IsCancellationRequested){CommittedUiRefreshRequired();return;}
                 ValidateUiResult(context,repaired);_viewModel.RequireRuntimeQuiescent(repaired.Runtime);
                 checkedResult=await _uiBackend.CheckAsync(context,config,PostUiProgress);
                 if(checkedResult.Status.UpdateRequired)throw new InvalidDataException("파일 복구 후 검증을 완료하지 못했습니다.");
@@ -1172,6 +1173,7 @@ public sealed partial class MainWindow : Window
         catch(Exception ex)
         {
             var offer=LauncherDashboardViewModel.CanOfferRecoveryRollback(repairAttempted,checkedResult?.Status.HasBackup==true,ex);
+            if(ex is OperationCanceledException){_presentation.Complete("작업 취소 완료 · 설치 상태를 다시 확인해 주세요.");return;}
             if(offer && context is not null && config is not null)
             {
                 try
@@ -1182,9 +1184,10 @@ public sealed partial class MainWindow : Window
                 }
                 catch(Exception rollbackError){MarkError(rollbackError,"문제 해결 실패");}
             }
+            else if(ex is OperationCanceledException)_presentation.Complete("작업 취소 완료 · 설치 상태를 다시 확인해 주세요.");
             else MarkError(ex,"문제 해결 실패");
         }
-        finally{_running=false;SetBusy(false);}
+        finally{_operationCancellation=null;_running=false;SetBusy(false);}
     }
 
     private async Task RollbackLatestAsync()

@@ -84,6 +84,8 @@ public static class RuntimeStore
         if (value.State == RuntimeState.Unknown) return;
         if (value.State == RuntimeState.Quiescent && value.Origin == "new-install" && value.AttemptId is null && value.Host is null) return;
         if (value.State == RuntimeState.Quiescent && value.Origin == "operator-confirmed" && ValidIdentity(value.Requester) && value.AttemptId is null && value.Host is null) return;
+        if(value.State==RuntimeState.Quiescent && value.Origin=="launch-aborted" && ValidIdentity(value.Requester) && value.Host is null &&
+           Guid.TryParseExact(value.AttemptId,"N",out _) && HashValue(value.TokenHash) && HashValue(value.ManifestHash))return;
         if (!Guid.TryParseExact(value.AttemptId, "N", out _) || !HashValue(value.TokenHash) || !HashValue(value.ManifestHash) ||
             !ValidIdentity(value.Requester) || string.IsNullOrWhiteSpace(value.EntryPoint) || !Path.IsPathFullyQualified(value.EntryPoint) ||
             value.Arguments is null || value.Arguments.Any(a => a is null || a.Contains('\0')) ||
@@ -166,6 +168,16 @@ public static class RuntimeStore
             throw new InvalidDataException("Installed manifest changed during launch.");
         record.Host = peer; Write(config, record);
         return new(record.EntryPoint!, Path.GetDirectoryName(record.EntryPoint!)!, record.Arguments, record.RuntimeData);
+    }
+    public static void AbortBeforeStart(LauncherConfig config,RuntimeLaunchTicket ticket,RuntimeIdentity requester)
+    {
+        using var gate=SingleInstanceLock.Acquire(LauncherPaths.UpdateLockPath(config));
+        var record=Authenticate(config,ticket);
+        if(record.Requester!=requester || record.Host is not null || record.State is not (RuntimeState.LaunchPending or RuntimeState.Quiescent))
+            throw new UnauthorizedAccessException("Only the original unstarted launch can be aborted.");
+        if(record.State==RuntimeState.Quiescent && record.Origin=="launch-aborted")return;
+        if(record.State!=RuntimeState.LaunchPending)throw new InvalidOperationException("Launch has already committed.");
+        record.State=RuntimeState.Quiescent;record.Origin="launch-aborted";Write(config,record);
     }
 
     public static void Report(LauncherConfig config, RuntimeLaunchTicket ticket, RuntimeIdentity peer, bool completed, int? payloadPid = null)

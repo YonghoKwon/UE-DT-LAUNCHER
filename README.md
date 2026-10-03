@@ -8,6 +8,8 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 
 ## 프로젝트 목표와 처음 읽을 안내
 
+취소 후 표시는 작업 결과를 따릅니다. 적용 전 취소는 안전 종료를 기다리고, 이미 설치가 완료됐다면 실행 생략 또는 상태 재확인 안내를 제공합니다. 실행이 시작되기 전 티켓만 해당 시도에 맞춰 중단할 수 있습니다.
+
 현재 후속 작업은 `codex/operations-hardening-closure`에서 진행합니다. 시험 root 소유/경로·게시본 확인, 비밀 stdout 제외, 단계별 결과 기록을 보강했습니다. [후속 검증](docs/reference/archive/validation/operations-closure-validation.md).
 
 현재 **완료6·부분19·대기3(총28, 열린22)** 항목입니다. 주요 headless 구현은 진행했지만 GUI/음성·장애 전수·원격 CI·회사 인수 및 PERF-03 미달은 남아 있습니다. [작업별 명령 표](docs/reference/feature-workflow.md)를 따라 실행하고, 이 숫자를 제품 전체 완성률로 해석하지 마세요.

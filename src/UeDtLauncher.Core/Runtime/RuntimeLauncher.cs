@@ -7,6 +7,7 @@ public sealed record RuntimeHostSession(LauncherConfig Config, RuntimeLaunchTick
 
 public static class RuntimeLauncher
 {
+    internal static readonly AsyncLocal<Action<string>?> Boundary=new(); // Tests only; no product option activates it.
     public static string HostExecutable()
     {
         var current = Environment.ProcessPath ?? throw new InvalidOperationException("Published launcher path is unavailable.");
@@ -17,10 +18,12 @@ public static class RuntimeLauncher
 
     public static async Task<Process> LaunchAsync(LauncherConfig config, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         RuntimeLaunchTicket ticket;
         if (config.IsManagedDeployment)
         {
-            var response = await new ManagedAgentClient().SendRuntimeAsync("launch-begin", config, cancellationToken: cancellationToken);
+            // Once sent, retain the ticket acknowledgement so cancellation can abort that exact unstarted attempt.
+            var response = await new ManagedAgentClient().SendRuntimeAsync("launch-begin", config, cancellationToken: CancellationToken.None);
             if (!response.Success || response.RuntimeTicket is null) throw new RuntimeBlockedException(response.Runtime ?? new(RuntimeState.Unknown, response.Status, response.Message));
             ticket = response.RuntimeTicket;
             PinManagedSelection(config, response);
@@ -30,9 +33,16 @@ public static class RuntimeLauncher
         else
         {
             await LaunchPolicy.VerifyOnlineAsync(config, cancellationToken);
+            Boundary.Value?.Invoke("authorized");cancellationToken.ThrowIfCancellationRequested();
             ticket = RuntimeStore.Begin(config, RuntimeIdentities.Current(), HostExecutable());
         }
-        return await StartHostAsync(new RuntimeHostSession(config, ticket, config.IsManagedDeployment ? ManagedAgentProtocol.ResolveEndpoint() : null, config.SelectedRelease), cancellationToken);
+        try{return await StartHostAsync(new RuntimeHostSession(config, ticket, config.IsManagedDeployment ? ManagedAgentProtocol.ResolveEndpoint() : null, config.SelectedRelease), cancellationToken);}
+        catch(OperationCanceledException)
+        {
+            if(config.IsManagedDeployment)(await new ManagedAgentClient().SendRuntimeAsync("launch-abort",config,ticket,cancellationToken:CancellationToken.None)).ThrowIfFailed();
+            else RuntimeStore.AbortBeforeStart(config,ticket,RuntimeIdentities.Current());
+            throw;
+        }
     }
 
     internal static void PinManagedSelection(LauncherConfig config, ManagedAgentResponse response)
@@ -54,22 +64,27 @@ public static class RuntimeLauncher
     internal static async Task<Process> LaunchServiceAsync(LauncherConfig config, CancellationToken cancellationToken)
     {
         await LaunchPolicy.VerifyOnlineAsync(config, cancellationToken);
+        Boundary.Value?.Invoke("authorized");cancellationToken.ThrowIfCancellationRequested();
         RuntimeServiceState.RequireLaunch(config, true);
         var ticket = RuntimeStore.BeginUnderServiceLock(config, RuntimeIdentities.Current(), HostExecutable());
-        return await StartHostAsync(new(config, ticket, null, config.SelectedRelease), cancellationToken);
+        try{return await StartHostAsync(new(config, ticket, null, config.SelectedRelease), cancellationToken);}
+        catch(OperationCanceledException){RuntimeStore.AbortBeforeStart(config,ticket,RuntimeIdentities.Current());throw;}
     }
 
     private static async Task<Process> StartHostAsync(RuntimeHostSession input, CancellationToken cancellationToken)
     {
         var ticket = input.Ticket;
+        Boundary.Value?.Invoke("ticket-created");
         var info = new ProcessStartInfo(ticket.HostExecutable) { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
         info.ArgumentList.Add("runtime-host");
         SanitizeEnvironment(info);
+        Boundary.Value?.Invoke("before-host-start");cancellationToken.ThrowIfCancellationRequested();
         var process = Process.Start(info) ?? throw new InvalidOperationException("Runtime host did not start; launch state requires inspection.");
         // Ticket goes through a private inherited pipe, never the command line or logs.
         await process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(input, JsonFiles.Options).Replace("\r", "").Replace("\n", ""));
         process.StandardInput.Close();
-        var ready = await process.StandardOutput.ReadLineAsync(cancellationToken).AsTask().WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
+        // Process.Start is the start commitment: cancellation cannot claim the app was never started afterward.
+        var ready = await process.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(30));
         if (ready is not null)
         {
             using var result = JsonDocument.Parse(ready);

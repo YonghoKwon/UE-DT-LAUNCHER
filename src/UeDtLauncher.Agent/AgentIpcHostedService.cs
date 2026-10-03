@@ -195,7 +195,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
             response = Error(request, "invalid-request", ex.Message, identity);
         }
 
-        response.AgentCapabilities = [ManagedAgentProtocol.RuntimeCapability, RollbackPreviewService.Capability, RuntimeDataPolicy.Capability, DoctorPresentation.Capability, OperationRegistry.Capability];
+        response.AgentCapabilities = [ManagedAgentProtocol.RuntimeCapability, RollbackPreviewService.Capability, RuntimeDataPolicy.Capability, DoctorPresentation.Capability, OperationRegistry.Capability, ManagedOperationCoordinator.Capability];
         await ManagedAgentFrameCodec.WriteAsync(stream, response, cancellationToken);
     }
 
@@ -381,6 +381,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     var ticket = RuntimeStore.Begin(config, peer!, hostPath);
                     return new() { CorrelationId = request.CorrelationId, Success = true, RuntimeTicket = ticket, SelectedRelease = config.SelectedRelease };
                 case "launch-attach":
+                case "launch-abort":
                 case "launch-started":
                 case "launch-complete":
                 case "runtime-inspect":
@@ -397,6 +398,11 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                         return new() { CorrelationId = request.CorrelationId, Success = true, Runtime = recovered };
                     }
                     var launchTicket = request.RuntimeTicket ?? throw new InvalidDataException("Runtime ticket is required.");
+                    if(request.Command=="launch-abort")
+                    {
+                        RuntimeStore.AbortBeforeStart(config,launchTicket,peer!);
+                        return new(){CorrelationId=request.CorrelationId,Success=true,Runtime=RuntimeStore.Observe(config)};
+                    }
                     if (request.Command == "launch-attach")
                     {
                         if (config.RuntimeData?.Enabled == true && request.ClientCapabilities?.Contains(RuntimeDataPolicy.Capability) != true)
@@ -429,6 +435,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                 case "repair":
                     using (var operation = _operations.Begin(Guid.TryParseExact(request.CorrelationId,"N",out _)?request.CorrelationId:Guid.NewGuid().ToString("N"), peer!, request.Selection, cancellationToken, request.Command))
                     {
+                    AddProgress(new LauncherProgress("OperationRegistered",operation.Status.Id,0));
                     config.LaunchAfterUpdate = false;
                     config.RepairMode = request.Command.Equals("repair", StringComparison.OrdinalIgnoreCase);
                     LauncherEngine? runningEngine = null;
@@ -453,14 +460,20 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     var installed = await JsonFiles.ReadAsync<LauncherManifest>(config.InstalledManifestPath, cancellationToken);
                     var completedStatus = await ManagedProjectStatusInspector.InspectAsync(config, installed, cancellationToken);
                     var result = Success(request, identity, "completed", config.RepairMode ? "Repair completed." : "Update completed.", progress, completedStatus, config.SelectedRelease);
-                    result.Operation = operation.Status; return result;
+                    result.Operation = operation.Status; result.InstallationCommitted=true; return result;
                     }
                     catch (OperationCanceledException) when (operation.Token.IsCancellationRequested)
                     {
                         operation.Finish(runningEngine?.InstallationCommitted == true);
-                        return new() { CorrelationId = request.CorrelationId, Success = operation.Status.Phase == "Completed", Status = operation.Status.Phase, Operation = operation.Status, SelectedRelease = config.SelectedRelease };
+                        return new() { CorrelationId = request.CorrelationId, Success = operation.Status.Phase == "Completed", Status = operation.Status.Phase, Operation = operation.Status, InstallationCommitted=runningEngine?.InstallationCommitted==true, SelectedRelease = config.SelectedRelease };
                     }
-                    catch { operation.Finish(runningEngine?.InstallationCommitted == true, failed: true); throw; }
+                    catch
+                    {
+                        operation.Finish(runningEngine?.InstallationCommitted == true, failed: true);
+                        if(runningEngine?.InstallationCommitted==true)
+                            return new(){CorrelationId=request.CorrelationId,Success=true,Status="completed-status-unavailable",InstallationCommitted=true,Operation=operation.Status,SelectedRelease=config.SelectedRelease};
+                        throw;
+                    }
                     }
                 case "rollback-preview":
                     if (request.Selection is not null) VersionedReleasePaths.Bind(config, request.Selection);

@@ -57,7 +57,6 @@ public sealed class LauncherEngine : IDisposable
         using (var prepared = await PrepareAsync(cancellationToken))
         {
             _ = await CommitPreparedAsync(prepared, cancellationToken);
-            InstallationCommitted = true;
             manifest = prepared.RemoteManifest;
         }
         if (!cancellationToken.IsCancellationRequested) await CompleteRunAsync(manifest, cancellationToken);
@@ -170,6 +169,7 @@ public sealed class LauncherEngine : IDisposable
                     prepared.Packages.SkippedOptionalPackages,
                     cancellationToken);
             }
+            InstallationCommitted=true;
             return null;
         }
 
@@ -192,6 +192,7 @@ public sealed class LauncherEngine : IDisposable
                 prepared.Packages.SkippedOptionalPackages,
                 cancellationToken);
             await transaction.CommitAsync(cancellationToken);
+            InstallationCommitted=true;
         }
         catch
         {

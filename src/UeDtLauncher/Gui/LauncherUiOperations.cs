@@ -27,20 +27,19 @@ internal sealed record LauncherUiOperationContext(bool Managed, string ProjectId
 }
 
 internal sealed record LauncherUiOperationResult(LauncherConfig Config, ReleaseSelection? Selection,
-    ManagedProjectStatus Status, RuntimeObservation? Runtime);
+    ManagedProjectStatus Status, RuntimeObservation? Runtime,LauncherUiCompletion Completion=LauncherUiCompletion.Checked);
+internal enum LauncherUiCompletion{Checked,Completed,CommittedLaunchSkipped,CommittedRefreshRequired}
 internal enum LauncherTroubleshootAction { OfferInstall, Complete, Repair }
 
 internal interface ILauncherUiBackend
 {
-    Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext context,LauncherConfig config,Action<LauncherProgress> progress);
-    Task<LauncherUiOperationResult> ExecuteAsync(LauncherUiOperationContext context,LauncherConfig config,bool repair,bool launch,Action<LauncherProgress> progress,FileLogger? logger);
+    Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext context,LauncherConfig config,Action<LauncherProgress> progress,CancellationToken token=default);
+    Task<LauncherUiOperationResult> ExecuteAsync(LauncherUiOperationContext context,LauncherConfig config,bool repair,bool launch,Action<LauncherProgress> progress,FileLogger? logger,CancellationToken token=default);
 }
 internal sealed class LauncherUiBackend : ILauncherUiBackend
 {
-    internal Task<LauncherUiOperationResult> ExecuteCancellableAsync(LauncherUiOperationContext context, LauncherConfig config, bool repair, bool launch,
-        Action<LauncherProgress> progress, FileLogger? logger, CancellationToken token) => LauncherUiOperations.ExecuteAsync(context, config, repair, launch, progress, logger, token);
-    public Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext context,LauncherConfig config,Action<LauncherProgress> progress)=>LauncherUiOperations.CheckAsync(context,config,progress);
-    public Task<LauncherUiOperationResult> ExecuteAsync(LauncherUiOperationContext context,LauncherConfig config,bool repair,bool launch,Action<LauncherProgress> progress,FileLogger? logger)=>LauncherUiOperations.ExecuteAsync(context,config,repair,launch,progress,logger);
+    public Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext context,LauncherConfig config,Action<LauncherProgress> progress,CancellationToken token=default)=>LauncherUiOperations.CheckAsync(context,config,progress,token);
+    public Task<LauncherUiOperationResult> ExecuteAsync(LauncherUiOperationContext context,LauncherConfig config,bool repair,bool launch,Action<LauncherProgress> progress,FileLogger? logger,CancellationToken token=default)=>LauncherUiOperations.ExecuteAsync(context,config,repair,launch,progress,logger,token);
 }
 
 internal static class LauncherUiOperations
@@ -78,18 +77,22 @@ internal static class LauncherUiOperations
         if(context.Managed)
         {
             var client=new ManagedAgentClient();
-            var operationId=Guid.NewGuid().ToString("N");
-            Task<ManagedAgentResponse>? cancellation=null;
-            using var registration=token.Register(()=>cancellation=client.SendOperationAsync("cancel",operationId));
-            var response=await client.SendStreamingAsync(repair?"repair":"update",context.ProjectId,
-                value=>progress(value.ToLauncherProgress()),selection:context.Selection,operationId:operationId);
-            if(cancellation is not null)await cancellation;
+            var response=await client.SendCancellableAsync(repair?"repair":"update",context.ProjectId,
+                value=>progress(value.ToLauncherProgress()),selection:context.Selection,token:token);
             response.ThrowIfFailed();BindManagedSelection(context,config,response);
             RuntimeObservation? runtime=null;
-            if(launch&&!token.IsCancellationRequested) _=await ManagedAppLauncher.LaunchAsync(config,token);
-            try {var observed=await client.SendRuntimeAsync("runtime-inspect",config,cancellationToken:token);observed.ThrowIfFailed();runtime=observed.Runtime;}
-            catch(Exception ex) when(ex is not OperationCanceledException){runtime=LauncherDashboardViewModel.RequireRuntimeObservation(null);}
-            return new(config,config.SelectedRelease,response.ProjectStatus ?? throw new InvalidDataException("설치 상태를 확인할 수 없습니다."),runtime);
+            var committed=response.InstallationCommitted==true || response.Operation?.Phase=="Completed";
+            var completed=token.IsCancellationRequested?LauncherUiCompletion.CommittedLaunchSkipped:LauncherUiCompletion.Completed;
+            if(launch&&!token.IsCancellationRequested)
+            {
+                try{_=await ManagedAppLauncher.LaunchAsync(config,token);}
+                catch(OperationCanceledException)when(committed){completed=LauncherUiCompletion.CommittedLaunchSkipped;}
+            }
+            if(response.ProjectStatus is null && committed)
+                return new(config,config.SelectedRelease,new(true,config.SelectedRelease?.Version,null,false,0,0,false),null,LauncherUiCompletion.CommittedRefreshRequired);
+            try {var observed=await client.SendRuntimeAsync("runtime-inspect",config);observed.ThrowIfFailed();runtime=observed.Runtime;}
+            catch(Exception)when(committed){return new(config,config.SelectedRelease,response.ProjectStatus!,null,LauncherUiCompletion.CommittedRefreshRequired);}
+            return new(config,config.SelectedRelease,response.ProjectStatus ?? throw new InvalidDataException("설치 상태를 확인할 수 없습니다."),runtime,completed);
         }
         return await Task.Run(async ()=>
         {
@@ -106,11 +109,14 @@ internal static class LauncherUiOperations
             },logger,echoToConsole:false);
             running=engine;
             try{await engine.RunAsync(operation.Token);operation.Finish(true);}
-            catch(OperationCanceledException){operation.Finish(engine.InstallationCommitted);throw;}
+            catch(OperationCanceledException)when(engine.InstallationCommitted){operation.Finish(true);}
+            catch(OperationCanceledException){operation.Finish(false);throw;}
             catch{operation.Finish(engine.InstallationCommitted,failed:true);throw;}
-            var installed=await JsonFiles.ReadAsync<LauncherManifest>(config.InstalledManifestPath,token);
+            LauncherManifest installed;
+            try{installed=await JsonFiles.ReadAsync<LauncherManifest>(config.InstalledManifestPath);}
+            catch(Exception)when(engine.InstallationCommitted){return new(config,config.SelectedRelease,new(true,config.SelectedRelease?.Version,null,false,0,0,false),null,LauncherUiCompletion.CommittedRefreshRequired);}
             var result=new LauncherUiOperationResult(config,config.SelectedRelease,
-                new(true,installed.Version,installed.Version,false,0,0,BackupManager.List(config.BackupDir).Count>0),RuntimeStore.Observe(config));
+                new(true,installed.Version,installed.Version,false,0,0,BackupManager.List(config.BackupDir).Count>0),RuntimeStore.Observe(config),token.IsCancellationRequested?LauncherUiCompletion.CommittedLaunchSkipped:LauncherUiCompletion.Completed);
             context.Validate(result);return result;
         },token);
     }

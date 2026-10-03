@@ -17,7 +17,7 @@ public static class ManagedAgentProtocol
     public static bool RequiresRuntimeCapability(string command) => command.ToLowerInvariant() is "update" or "repair" or "rollback" or "service-run" or "runtime-recover" or "operation-resume" || command.StartsWith("launch-", StringComparison.OrdinalIgnoreCase);
 
     public static readonly IReadOnlySet<string> AllowedCommands = new HashSet<string>(
-        ["status", "catalog", "check", "update", "repair", "rollback", "rollback-preview", "service-run", "diagnostics", "project-asset", "doctor", "launch-begin", "launch-attach", "launch-started", "launch-complete", "runtime-inspect", "runtime-recover", "operation-status", "operation-cancel", "operation-resume", "operation-discard"],
+        ["status", "catalog", "check", "update", "repair", "rollback", "rollback-preview", "service-run", "diagnostics", "project-asset", "doctor", "launch-begin", "launch-abort", "launch-attach", "launch-started", "launch-complete", "runtime-inspect", "runtime-recover", "operation-status", "operation-cancel", "operation-resume", "operation-discard"],
         StringComparer.OrdinalIgnoreCase);
 
     public static string ResolveEndpoint()
@@ -95,6 +95,7 @@ public sealed class ManagedAgentResponse
     public RuntimeHostRequest? RuntimeLaunch { get; set; }
     public RuntimeObservation? Runtime { get; set; }
     public OperationStatus? Operation { get; set; }
+    public bool? InstallationCommitted { get; set; }
 }
 
 public sealed record ManagedAssetChunk(long Offset, long TotalBytes, string Sha256, string Extension, byte[] Data);
@@ -412,6 +413,19 @@ public sealed class ManagedAgentClient(string? endpoint = null)
         await using var stream = await ConnectAsync(timeout.Token);
         await ManagedAgentFrameCodec.WriteAsync(stream, request, timeout.Token);
         return await ReadStreamingResponsesAsync(stream, request, _ => { }, timeout.Token);
+    }
+    public async Task<ManagedAgentResponse> SendCancellableAsync(string command,string? projectId,Action<ManagedAgentProgress> progress,
+        ReleaseSelection? selection=null,CancellationToken token=default,string? operationId=null)
+    {
+        token.ThrowIfCancellationRequested();
+        var status=await SendAsync("status",cancellationToken:token);
+        if(!status.AgentCapabilities.Contains(ManagedOperationCoordinator.Capability))
+            throw new AgentOperationException("client-upgrade-required",status.CorrelationId,"취소를 지원하는 업데이트 서비스로 갱신해 주세요.");
+        token.ThrowIfCancellationRequested();
+        var id=operationId??Guid.NewGuid().ToString("N");
+        return await ManagedOperationCoordinator.RunAsync(id,
+            callback=>SendStreamingAsync(command,projectId,callback,selection:selection,operationId:id),
+            ()=>SendOperationAsync("cancel",id),progress,token);
     }
 
     internal static async Task<ManagedAgentResponse> ReadStreamingResponsesAsync(

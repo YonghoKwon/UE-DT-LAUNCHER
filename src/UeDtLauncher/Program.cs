@@ -274,16 +274,12 @@ public static class Program
             }
             var operationId = Get(args, "--operation-id") ?? Guid.NewGuid().ToString("N");
             Console.WriteLine("Operation ID: " + operationId);
-            Task<ManagedAgentResponse>? cancellationRequest = null;
-            using var registration = cancel.Token.Register(() => cancellationRequest = new ManagedAgentClient().SendOperationAsync("cancel", operationId));
-            var managedResponse = await new ManagedAgentClient().SendStreamingAsync(repair ? "repair" : "update", config.ProjectId,
-                progress => Console.WriteLine($"[{progress.Stage}] {progress.Message}"), selection: selection,
-                operationId: operationId);
-            if (cancellationRequest is not null) await cancellationRequest;
+            var managedResponse = await new ManagedAgentClient().SendCancellableAsync(repair ? "repair" : "update", config.ProjectId,
+                progress => Console.WriteLine($"[{progress.Stage}] {progress.Message}"), selection: selection,token:cancel.Token,operationId: operationId);
             PrintAgentResponse(managedResponse);
             if (!managedResponse.Success) return 1;
             if (selection is not null && managedResponse.SelectedRelease != selection) throw new InvalidDataException("Agent release mismatch.");
-            if (!noLaunch && !cancel.Token.IsCancellationRequested) _ = await ManagedAppLauncher.LaunchAsync(config);
+            if (!noLaunch && !cancel.Token.IsCancellationRequested) _ = await ManagedAppLauncher.LaunchAsync(config,cancel.Token);
             return 0;
         }
 

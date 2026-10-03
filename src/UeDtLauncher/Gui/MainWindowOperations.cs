@@ -4,6 +4,11 @@ namespace UeDtLauncher.Gui;
 public sealed partial class MainWindow
 {
     private CancellationTokenSource? _operationCancellation;
+    private void CommittedUiRefreshRequired()
+    {
+        _presentation.Retry=CurrentContext(LauncherUiOperation.Check);
+        MarkError(new AgentOperationException("status-refresh-required",Guid.NewGuid().ToString("N"),"설치는 완료됐습니다. 설치 상태를 다시 확인해 주세요."),"설치 완료 · 상태 재확인 필요",showDialog:false);
+    }
     private void RequestOperationCancellation()
     {
         if (_operationCancellation is null || _operationCancellation.IsCancellationRequested) return;

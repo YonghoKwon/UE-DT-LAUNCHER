@@ -54,6 +54,20 @@ public sealed class RuntimeStoreTests : IDisposable
         Assert.Equal(before,File.ReadAllBytes(RuntimeStore.RecordPath(config)));
     }
     [Fact]
+    public async Task AbortIsAttemptBoundAndCannotClearAnAttachedHost()
+    {
+        using(InstallationMutationLease.Acquire(config)){}
+        Directory.CreateDirectory(config.InstallDir);File.WriteAllText(Path.Combine(config.InstallDir,"game.exe"),"fixture");
+        await JsonFiles.WriteAsync(config.InstalledManifestPath,new LauncherManifest{AppId="demo",Version="1",Platform=config.TargetPlatform,EntryPoint="game.exe",Files=[new(){Path="game.exe",Size=7,Sha256=new string('a',64)}]});
+        var peer=RuntimeIdentities.Current();var ticket=RuntimeStore.Begin(config,peer,peer.Executable);
+        Assert.Throws<UnauthorizedAccessException>(()=>RuntimeStore.AbortBeforeStart(config,ticket,peer with{CreationId="different"}));
+        RuntimeStore.AbortBeforeStart(config,ticket,peer);RuntimeStore.AbortBeforeStart(config,ticket,peer);
+        Assert.Equal(RuntimeState.Quiescent,RuntimeStore.Observe(config).State);
+        var next=RuntimeStore.Begin(config,peer,peer.Executable);RuntimeStore.Attach(config,next,peer,peer.Executable);
+        Assert.Throws<UnauthorizedAccessException>(()=>RuntimeStore.AbortBeforeStart(config,next,peer));
+        Assert.Equal(RuntimeState.LaunchPending,RuntimeStore.Observe(config).State);
+    }
+    [Fact]
     public void MissingOrReusedHostNeverMeansStopped()
     {
         using (InstallationMutationLease.Acquire(config)) { }
