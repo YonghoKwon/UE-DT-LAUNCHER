@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 from evidence_contract import Evidence
+from fixture_contract import claim
 
 
 def main():
@@ -15,8 +16,9 @@ def main():
     for name in ('launcher','agent','server','output'):parser.add_argument('--'+name,required=True)
     args=parser.parse_args();tools=Path(__file__).resolve().parent
     private=Path(tempfile.mkdtemp(prefix='uedt-headless-'));fixture=private/'fixture'
+    claim(private)
     binaries={name:str(Path(getattr(args,name)).resolve()) for name in ('launcher','agent','server')}
-    evidence_report=Evidence(args.output,binaries,['auth-operations-schedule','offline-maintenance'])
+    evidence_report=Evidence(args.output,binaries,['auth-operations-schedule','offline-maintenance','catalog-restart'])
     try:
         def run(name,command):
             evidence_report.start(name)
@@ -33,6 +35,8 @@ def main():
             raise RuntimeError('Incomplete evidence')
         run('offline-maintenance',[sys.executable,str(tools/'test-distribution-maintenance.py'),'--server',binaries['server'],
             '--config',str(fixture/'server.json'),'--output',str(private/'maintenance'),'--launcher',binaries['launcher']])
+        run('catalog-restart',[sys.executable,str(tools/'test-catalog-sequence-restart.py'),'--server',binaries['server'],
+            '--config',str(fixture/'server.json'),'--output',str(private/'sequence-restart'),'--client-id','pc-test'])
         success=True
     except (OSError,ValueError,subprocess.TimeoutExpired,RuntimeError):
         success=False

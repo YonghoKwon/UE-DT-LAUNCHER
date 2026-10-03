@@ -1,5 +1,6 @@
 Name:           ue-dt-launcher
 %global __os_install_post %{nil}
+%global _build_id_links none
 Version:        %{launcher_version}
 Release:        1%{?dist}
 Summary:        UE-DT managed application launcher and update agent

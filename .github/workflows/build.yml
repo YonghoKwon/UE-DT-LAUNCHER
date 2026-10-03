@@ -1,6 +1,7 @@
 name: build
 
 on:
+  workflow_call:
   push:
     branches:
       - main
@@ -29,6 +30,20 @@ jobs:
 
       - name: Restore
         run: dotnet restore UeDtLauncher.sln
+
+      - name: Synthetic fixture dependencies and fast contracts
+        shell: bash
+        run: |
+          python -m pip install cryptography psutil
+          python tools/test-fixture-contract.py
+          python tools/test-metric-contract.py
+          python tools/test-performance-summary.py
+          python tools/test-evidence-contract.py
+          python tools/test-readiness-summary.py
+          python tools/test-rpm-contract.py
+          python tools/check-headless-artifacts.py
+          python tools/check-documentation.py
+          python tools/check-improvement-ledger.py
 
       - name: Linux headless rendering prerequisites
         if: runner.os == 'Linux'
@@ -114,9 +129,6 @@ jobs:
             rid=linux-x64; suffix=; py=python3
           fi
           "$py" tools/run-headless-operations.py --launcher "publish/$rid/UeDtLauncher$suffix" --agent "publish/agent-$rid/UeDtLauncher.Agent$suffix" --server "publish/distribution-server/UeDtLauncher.DistributionServer$suffix" --output publish/headless-summary/summary.json
-
-      - name: Synthetic TLS fixture dependencies
-        run: python -m pip install cryptography psutil
 
       - name: Save sanitized headless summary
         if: always()

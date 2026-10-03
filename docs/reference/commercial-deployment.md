@@ -1,6 +1,6 @@
 # 관리형 배포·패키징 준비
 
-> 참고 가이드 / 문서 점검 2026-09-28 / 구현 기준 codex/launcher-deployment-safety. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
+> 현재 가이드 / 문서 점검 2026-10-03 / codex/operations-hardening-closure. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
 
 현재 기본 경로는 DistributionServer의 ZIP + 외부 `release.json` 접수·승인 → 서버 권한 확인 → 서명된 메타데이터/파일 다운로드 → 버전별 설치입니다. 서버·토큰 준비는 [통합 운영](distribution-workflow.md)을 따릅니다.
 
@@ -28,9 +28,19 @@ Linux RPM:
 ./scripts/build-rpm.sh 1.0.0
 ```
 
-출력은 `artifacts/linux-rpm/rpmbuild/RPMS/x86_64`입니다. `rpmbuild`가 필요하며 spec은 single-file 번들 strip을 막고 관리 설정을 `%config(noreplace)`로 보존합니다. 빌드 스크립트에 포함된 예시 설정은 실제 회사 DistributionServer 설정으로 교체·검증해야 합니다.
+출력은 `artifacts/linux-rpm/run.<고유ID>/artifacts/`이며 스크립트의 `RPM_PATH`와 `package-result.json`으로 이번 실행의 정확한 RPM을 선택합니다. 예전 산출물을 wildcard로 다시 서명하지 않습니다. `rpmbuild`, `rpm2cpio`, Python3.10+가 필요합니다. spec은 번들 strip·중복 build-id 링크를 막고 설정을 `%config(noreplace)`로 보존합니다. data-only CAB/RPM 추출과 GUI·Agent hash/권한 확인까지 성공해야 공개합니다. RPM 원본 검증 결과는 `UNSIGNED-DEV`이며 실제 서명 후 CI가 별도로 검증해야 합니다.
 
-`.github/workflows/release.yml`은 `launcher-v*` tag에서 Windows PFX·RPM GPG 비밀값을 검사합니다. 코드에 gate가 있다는 사실과 실제 서명된 설치 결과 검증은 다릅니다. 배포 전 MSI 내부에 설치되는 EXE의 서명까지 검사하세요.
+`UE_DT_SKIP_DOTNET_PUBLISH=1` 재사용 경로는 거부합니다. 새 버전의 GUI/Agent를 항상 publish하며 예시 설정은 회사 주소/계정/권한으로 provision해야 합니다. 현재 개발 PC/WSL에서 실제 설치나 scriptlet·계정 생성을 실행한 것은 아닙니다.
+
+`.github/workflows/release.yml`은 같은 tag source의 Windows/Linux functional gate와 Windows PFX·RPM GPG 조건을 모두 요구합니다. RPM은 정확한 primary fingerprint·격리된 GPG/RPM key DB로 검사하고 재추출한 payload를 대조합니다. SBOM·checksum은 검증된 이번 package 폴더만 사용합니다. CI 코드 연결은 실제 원격 성공이나 인증서 인수가 아닙니다.
+
+## 회사 인수 계획 생성 — 실행하지 않는 도구
+
+```powershell
+python tools/prepare-company-acceptance.py --platform windows --package <정확한-MSI> --next-package <다음-MSI> --output <새-비공개-계획폴더>
+```
+
+Linux는 `--platform rhel8 --package <정확한-RPM>`을 사용합니다. 도구는 package SHA-256과 **미실행** 체크리스트만 생성하고 install/서비스/계정/재부팅 명령은 실행하지 않습니다. 다음 package가 없으면 upgrade는 자료 대기입니다. 승인된 격리 VM snapshot과 별도 백업을 준비한 뒤, 담당자가 각 적용 직전에 확인하고 설치→연결/권한→upgrade→repair→재부팅→uninstall·설정/콘텐츠/데이터 보존을 점검하세요. `UNSIGNED-DEV` 계획 생성은 회사 서명 합격이 아닙니다.
 
 현재 순서는 **EXE 서명·검증 → MSI 생성·서명·검증 → 비설치 CAB 추출·EXE hash/signer 확인 → artifact 공개**입니다. 실행별 WiX intermediate를 분리하며 CI는 검증된 정확한 release 폴더만 사용합니다. 실제 개발 MSI 추출은 통과했지만 회사 인증서·설치된 EXE 검증은 미완료이므로 OPS-08은 50%입니다. [상세 기록](archive/validation/deployment-safety-validation.md)
 

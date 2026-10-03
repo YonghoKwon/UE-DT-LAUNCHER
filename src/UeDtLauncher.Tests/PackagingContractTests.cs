@@ -45,7 +45,10 @@ public class PackagingContractTests
         Assert.Contains("-OfficialBuild", workflow);
         Assert.Contains("UE_DT_PACKAGE_DIR", workflow);
         Assert.DoesNotContain("Sign executables and MSI", workflow);
-        Assert.Contains("rpmsign --addsign", workflow);
+        Assert.Contains("rpmsign --define", workflow);
+        Assert.Contains("--addsign \"$UE_DT_RPM_PATH\"", workflow);
+        Assert.Contains("needs: [verify-signing-gate, functional-gate]", workflow);
+        Assert.DoesNotContain("find artifacts/linux-rpm", workflow);
     }
 
     private static string RepositoryRoot()
