@@ -16,6 +16,10 @@ Ubuntu WSL에서 base/developer RPM을 생성하고 newc 안전 검사·payload 
 
 ## 사용자 작업 조정
 
+## 성능 재확인
+
+같은80MiB large 데이터·동일 도구/Windows 호스트·준비1/측정3·1/10/30 연결로 기존 closure/final-04와 에디션 후보를 비교했다. API p95 약8.1/11.5/30.2→7.9/11.4/30.5ms, 실패0·다음 버전 콘텐츠90% 절감 유지. 이번 단일 연결 악화는 재현되지 않았고 서버 병목 코드는 변경하지 않았다. 과거 전체 작은/혼합 시나리오·측정 순서/부하·회사 proxy 인수를 대신하지 않으므로 PERF-03은75%를 유지한다.
+
 취소 결과에 operation record를 보존하고, 같은 릴리스/Manifest의 GUI 재개 버튼을 추가했다. 새 권한 확인과 digest 일치가 필요하며 재개는 자동 실행하지 않는다. 서버도 요청한 선택과 이전 operation의 선택이 다르면 거부한다. 실행 중 차단/선택 변경/완료 후 stale resume를 보호한다.
 
 관련15개 및 추가 resume 결속 회귀 통과. Windows/WSL 전체667개 통과. 게시 CLI·console Agent·서버의 headless3개, 일반/개발자 CLI readiness8개와 WSL HTTPS/Bearer를 확인했다. 개발자 CLI 시험은 일반 runtime-host가 있는 공유 설치 구조에서 수행한다. 직접 마우스 수용은 세션 Disc에 따른 입력 거부로 미실행이다.
