@@ -12,6 +12,12 @@ Windows fixture 계약3개 및 d756af2의 기존 cohort-06 CLI/console Agent/서
 
 ## 이후 묶음
 
+## 5. 복원 정합성
+
+target 전체 stage를 private directory/exclusive lease로 예약하고 shared live lease는 staged fence를 검사한다. 모든 store/serve/watch/쓰기 진입점이 보호된다. source/target 잠금은 canonical path 순서다. 복사 후 hash, current DB integrity, jobs.source/snapshot·active_work·release의 양방향 파일 목록/hash, latest policy를 검증한다. 의도된 삭제 ledger는 source 부재와 함께 인정하고 이전 backup으로 삭제 자료를 다시 공개하지 않는다. incomplete retention은 backup을 거부한다.
+
+Windows16개 정리/복원 회귀 및 restore-01 실제 게시 흐름 통과. 도구는 staged serve 거부와 private signing key 내용 부재를 assertion으로 확인하며, 새로운 허용 키로 활성화된 서버의 Catalog/Manifest/파일 설치를 인증·서명 검증해 확인했다. 회사 복구/완전 유실은 별도다.
+
 ## 4. 정리 상태/삭제 이력
 
 move intent/quarantined/delete intent/deleted를 후보별로 원자 기록한다. OS directory identity에 결속하고 이동 후에는 source를 재수집하지 않는다. 부분 삭제는 승인 목록의 잔여 파일만 hash 검사하고 진행한다. quarantine parent는 신규 생성 시 비공개 owner/ACL/mode, 기존 영역은 검증한다. 완료한 삭제는 schema6 maintenance_deletions에 유지한다.

@@ -29,6 +29,8 @@ public sealed class DistributionMaintenanceLease : IDisposable
         { file.Dispose(); throw new IOException("Server/workers are active or another maintenance operation owns this root."); }
         if (!OperatingSystem.IsLinux() && !OperatingSystem.IsWindows())
         { file.Dispose(); throw new PlatformNotSupportedException("Maintenance locking supports Windows/Linux only."); }
+        if(!exclusive && File.Exists(SafePath.ResolveInsideChecked(root,"restore-staged.json")))
+        {file.Dispose();throw new InvalidDataException("Staged restored root rejects live operations.");}
         return new(file);
     }
     public void Dispose() => stream.Dispose();

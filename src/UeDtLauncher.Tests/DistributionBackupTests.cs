@@ -68,4 +68,32 @@ public sealed class DistributionBackupTests : IDisposable
         _ = DistributionBackup.Plan(missing); Assert.False(Directory.Exists(missing.Root));
         await Assert.ThrowsAnyAsync<Exception>(() => DistributionBackup.VerifyAsync(missing.Root)); Assert.False(Directory.Exists(missing.Root));
     }
+    [Fact]
+    public async Task CleanupThenBackupRestoreRecognizesIntentionalMissingSnapshot()
+    {
+        var source=Path.Combine(settings.Root,"incoming/failed");var snapshot=Path.Combine(settings.Root,"processing/snapshot");Directory.CreateDirectory(source);Directory.CreateDirectory(snapshot);
+        File.WriteAllText(Path.Combine(source,"zip"),"zip");File.WriteAllText(Path.Combine(snapshot,"zip"),"zip");store.Save(new("failed",source,"failed",snapshot,null));
+        var plan=await RetentionMaintenance.PlanAsync(settings,["failed"],[]);await RetentionMaintenance.ApplyAsync(settings,plan,true);
+        var backup=Path.Combine(root,"after-cleanup");await DistributionBackup.CreateAsync(settings,backup);
+        var target=Path.Combine(root,"restored-after-cleanup");await DistributionBackup.StageAsync(backup,target,settings);await DistributionBackup.ActivateAsync(target,settings,true);
+        Assert.False(Directory.Exists(Path.Combine(target,"processing/snapshot")));Assert.False(File.Exists(Path.Combine(target,"restore-staged.json")));
+    }
+    [Fact]
+    public async Task ExtraReleasedFileAndNewWaitingSourceKeepRestoreBlocked()
+    {
+        var upload=Path.Combine(settings.Root,"incoming/waiting");Directory.CreateDirectory(upload);File.WriteAllText(Path.Combine(upload,"zip"),"zip");store.Save(new("waiting",upload,"waiting",null,null));
+        var backup=Path.Combine(root,"waiting-backup");await DistributionBackup.CreateAsync(settings,backup);
+        var target=Path.Combine(root,"waiting-restore");await DistributionBackup.StageAsync(backup,target,settings);
+        File.WriteAllText(Path.Combine(target,"incoming/waiting/unlisted"),"extra");
+        await Assert.ThrowsAsync<InvalidDataException>(()=>DistributionBackup.ActivateAsync(target,settings,true));Assert.True(File.Exists(Path.Combine(target,"restore-staged.json")));
+    }
+    [Fact]
+    public async Task IncompleteRetentionBlocksBackupAndStagedRootRejectsAllStoreEntryPoints()
+    {
+        File.WriteAllText(Path.Combine(settings.Root,"retention-interrupted.json"),"{\"phase\":\"Deleting\"}");
+        await Assert.ThrowsAsync<InvalidDataException>(()=>DistributionBackup.CreateAsync(settings,Path.Combine(root,"must-not-create")));
+        Assert.False(Directory.Exists(Path.Combine(root,"must-not-create")));File.Delete(Path.Combine(settings.Root,"retention-interrupted.json"));
+        var backup=Path.Combine(root,"staged-backup");await DistributionBackup.CreateAsync(settings,backup);var target=Path.Combine(root,"staged-target");await DistributionBackup.StageAsync(backup,target,settings);
+        Assert.Throws<InvalidDataException>(()=>new IntakeStore(new(){Root=target}));
+    }
 }

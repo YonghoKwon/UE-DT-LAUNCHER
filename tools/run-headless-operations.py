@@ -32,7 +32,7 @@ def main():
         if not all(evidence.get(name) is True for name in ('owned_operation_cancellation','credential_lifecycle','read_only_scheduled_check','explicit_service_selection_proof','revoked_key_rejected')):
             raise RuntimeError('Incomplete evidence')
         run('offline-maintenance',[sys.executable,str(tools/'test-distribution-maintenance.py'),'--server',binaries['server'],
-            '--config',str(fixture/'server.json'),'--output',str(private/'maintenance')])
+            '--config',str(fixture/'server.json'),'--output',str(private/'maintenance'),'--launcher',binaries['launcher']])
         success=True
     except (OSError,ValueError,subprocess.TimeoutExpired,RuntimeError):
         success=False

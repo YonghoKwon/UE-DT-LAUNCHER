@@ -6,6 +6,8 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 ## 먼저 확인할 진행 현황
 
+OPS-05 closure: stage/live 공통 차단·전체 예약, 삭제 ledger 연결, 필수 그래프 양방향 대조와 latest policy 검증을 보강했다. Windows16개 및 활성화한 게시 서버의 인증된 실제 설치 확인. 회사 RPO/RTO/완전 유실/계정 인수는 유지한다.
+
 OPS-04 closure: 후보별 durable 상태·directory identity·잔여 파일 삭제·private quarantine·schema6 삭제 이력을 구현했다. Windows16개/게시 통과. 실제 계정·전체 경합/후속 복원 연결 검증 전 전체 수용 완료로 올리지 않는다.
 
 closure 캐시/기록 수명: requester partition·쓰기 예약·copy temporary 정리·discard archive/슬롯 회복을 구현했다. Windows18개 및 게시 headless 확인. USER-03 전체 수용/GUI·회사 계정 조건은 후속으로 유지한다.
