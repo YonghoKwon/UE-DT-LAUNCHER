@@ -15,11 +15,15 @@ class DownloadProxy:
         self.upstream=upstream_port;self.rate=bytes_per_second
         self.lock=threading.Lock();self.slots=threading.BoundedSemaphore(16)
         self.stop=threading.Event()
+        self.last_persist=0.0
         self.metrics=dict(fileRequests=0,rangeRequests=0,rangeStarts=[],fileBytes=0,throttledBytes=0,activeFiles=0,configuredBytesPerSecond=bytes_per_second)
         owner=self
         class Handler(http.server.BaseHTTPRequestHandler):
             protocol_version='HTTP/1.1'
             def log_message(self,*_):pass
+            def handle(self):
+                try:super().handle()
+                except OSError:pass # A client cancellation can abort the next keep-alive read.
             def forward(self):
                 if not owner.slots.acquire(blocking=False):
                     self.send_response(429);self.send_header('Content-Length','0');self.end_headers();return
@@ -64,7 +68,7 @@ class DownloadProxy:
                                 with owner.lock:
                                     owner.metrics['fileBytes']+=len(chunk)
                                     if throttled:owner.metrics['throttledBytes']+=len(chunk)
-                                    owner.persist()
+                                    owner.persist(force=False)
                 except (OSError,http.client.HTTPException,ValueError):self.close_connection=True
                 finally:
                     if registered:
@@ -76,7 +80,10 @@ class DownloadProxy:
         self.server=http.server.ThreadingHTTPServer(('127.0.0.1',public_port),Handler)
         self.server.daemon_threads=True
         self.thread=threading.Thread(target=self.server.serve_forever,daemon=True)
-    def persist(self):
+    def persist(self,force=True):
+        now=time.monotonic()
+        if not force and now-self.last_persist<.2:return
+        self.last_persist=now
         temporary=self.control/'proxy-metrics.tmp'
         temporary.write_text(json.dumps(self.metrics),encoding='utf-8')
         for attempt in range(20):

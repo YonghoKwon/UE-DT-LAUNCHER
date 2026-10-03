@@ -4,9 +4,11 @@ from pathlib import Path
 from promotion_fixture_support import promote
 from gui_fixture_evidence import inside, verify_files, verify_cohort, preference_hash, restore_preferences, snapshot_preferences, fixture_mode, fixture_environment, record_control, agent_status, sha256
 p=argparse.ArgumentParser(); p.add_argument('--root',required=True)
-p.add_argument('action',choices=['smoke','gui-general','gui-developer','snapshot','compare','damage','release','stop-agent','start-agent','stop-server','start-server','stop-all','status','approve-v2','promote-v1','diagnostics','verify','verify-backup','invalidate-preview','prefs-snapshot','prefs-record-owned','prefs-restore','error-401','error-403','error-empty','error-config','config-reset','policy-reset','error-trust','trust-reset','proxy-status','proxy-fast','proxy-throttle','proxy-fail-version','proxy-reset-errors'])
+p.add_argument('action',choices=['smoke','gui-general','gui-developer','snapshot','compare','damage','release','stop-agent','start-agent','stop-server','start-server','stop-all','status','approve-v2','promote-v1','diagnostics','verify','verify-backup','invalidate-preview','prefs-snapshot','prefs-record-owned','prefs-restore','error-401','error-403','error-empty','error-config','config-reset','policy-reset','error-trust','trust-reset','proxy-status','proxy-fast','proxy-throttle','proxy-fail-version','proxy-reset-errors','cache-off'])
 p.add_argument('--version',choices=['1.0.0','2.0.0'],default='1.0.0'); p.add_argument('--name',default='before')
+p.add_argument('--scope',choices=['all','protected'],default='all',help='protected excludes transient staging/cache/runtime while retaining payload, manifests, state, backups and transaction journal')
 p.add_argument('--attempt', help='Exact synthetic child marker id to release')
+p.add_argument('--damage-cached-download',action='store_true',help='Test-only: corrupt the portable fixture synthetic cancellation.bin cache before an explicit repair')
 a=p.parse_args(); root=Path(a.root).resolve()
 assert (root/'summary.json').exists() and json.loads((root/'summary.json').read_text())['gui_prepared_empty']
 fixture=verify_cohort(root)
@@ -25,9 +27,10 @@ def latest_backup():
             return inside(root,str(path.relative_to(root)))
     raise ValueError('No fixture backup exists')
 def snapshot():
-    roots=[app,state]
-    return {str(f.relative_to(root)):hashlib.sha256(inside(root,str(f.relative_to(root))).read_bytes()).hexdigest() for folder in roots if folder.exists()
-            for f in folder.rglob('*') if f.is_file() and not f.name.endswith('.lock')}
+    roots=[app,state] if a.scope=='all' else [app,state/'backups']
+    files=[f for folder in roots if folder.exists() for f in folder.rglob('*') if f.is_file() and not f.name.endswith('.lock')]
+    if a.scope=='protected':files += [state/name for name in ('installed-manifest.json','install-state.json','transaction.json') if (state/name).is_file()]
+    return {str(f.relative_to(root)):hashlib.sha256(inside(root,str(f.relative_to(root))).read_bytes()).hexdigest() for f in files}
 
 def atomic_bytes(path,data):
     path=inside(root,str(path.relative_to(root)))
@@ -40,11 +43,37 @@ def require_stopped():
     if runtime.exists() and json.loads(runtime.read_text())['state']!=0:
         raise ValueError('Fixture mutation requires a quiescent selected runtime')
 
+def read_proxy_metrics():
+    path=inside(root,'control/proxy-metrics.json')
+    for attempt in range(20):
+        try:return path.read_text()
+        except PermissionError:
+            if attempt==19:raise
+            time.sleep(.01)
+
 if a.action in ('stop-agent','start-agent') and mode=='portable':
     raise ValueError('Portable fixture has no Agent process or IPC')
-if a.action.startswith('proxy-'):
+if a.damage_cached_download:
+    if a.action!='status' or mode!='portable' or not fixture.get('guiDownloadProof'):raise ValueError('Only a quiescent portable synthetic download cache is eligible')
+    require_stopped()
+    target_id='demo/prod/stable/'+a.version+'/'+platform
+    records=[path for path in (state/'resume-cache').rglob('resume.json') if json.loads(inside(root,str(path.relative_to(root))).read_text()).get('releaseId')==target_id]
+    candidates=[path.parent/(hashlib.sha256(b'cancellation.bin').hexdigest()+'.verified') for path in records]
+    candidates=[inside(root,str(path.relative_to(root))) for path in candidates if path.is_file()]
+    if len(candidates)!=1 or candidates[0].stat().st_size!=64*1024*1024:raise ValueError('Exact synthetic cache not found')
+    with candidates[0].open('r+b') as stream:stream.write(b'fixture-cache-corruption')
+    record_control(root,'damage-cached-download',version=a.version);print('Corrupted only the exact portable synthetic cached download')
+elif a.action=='cache-off':
+    require_stopped()
+    paths=[root/'client/general.json',root/'client/developer.json']
+    if mode=='managed':paths.append(root/'client/agent/config/launcher.config.json')
+    for path in paths:
+        value=json.loads(path.read_text());value.setdefault('performance',{})['resumeCacheBytes']=0
+        atomic_bytes(path,json.dumps(value,indent=2).encode())
+    record_control(root,a.action);print('Disabled only fixture resume cache; existing cache files preserved')
+elif a.action.startswith('proxy-'):
     if not fixture.get('guiDownloadProof'):raise ValueError('Not a synthetic throttled-download fixture')
-    if a.action=='proxy-status':print(inside(root,'control/proxy-metrics.json').read_text())
+    if a.action=='proxy-status':print(read_proxy_metrics())
     elif a.action=='proxy-fast':inside(root,'control/proxy-unthrottle').touch();record_control(root,a.action);print('Disabled only synthetic transfer throttling')
     elif a.action=='proxy-fail-version':inside(root,'control/proxy-fail-version').touch();record_control(root,a.action);print('Test-only version.txt HTTP503 after upstream authorization')
     elif a.action=='proxy-reset-errors':inside(root,'control/proxy-fail-version').unlink(missing_ok=True);record_control(root,a.action);print('Removed test-only HTTP fault')
@@ -130,8 +159,14 @@ elif a.action.startswith('gui-'):
 elif a.action in ('snapshot','compare'):
     assert re.fullmatch(r'[a-zA-Z0-9-]+',a.name)
     path=control/(a.name+'.snapshot.json')
-    if a.action=='snapshot': path.write_text(json.dumps(snapshot(),indent=2)); print('SNAPSHOT '+str(path))
-    else: assert json.loads(path.read_text())==snapshot(),'Protected file set/hash changed'; print('PASS: protected snapshot unchanged')
+    if a.action=='snapshot': path.write_text(json.dumps({'scope':a.scope,'files':snapshot()},indent=2)); print('SNAPSHOT '+str(path))
+    else:
+        record=json.loads(path.read_text())
+        if 'scope' in record:
+            if record['scope']!=a.scope:raise ValueError('Snapshot scope mismatch')
+            record=record['files']
+        elif a.scope!='all':raise ValueError('Legacy snapshot is all-scope only')
+        assert record==snapshot(),'Protected file set/hash changed';print('PASS: protected snapshot unchanged')
 elif a.action=='damage':
     require_stopped()
     target=app/'version.txt'

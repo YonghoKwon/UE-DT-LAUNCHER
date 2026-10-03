@@ -23,11 +23,24 @@ def make_fixture(root,mode='portable'):
     (root/'device-public.json').write_text(json.dumps({'publicKeyPem':'different-public'}))
     return fixture
 
-def control(root,action):
-    with patch.object(sys,'argv',['gui-fixture-control.py','--root',str(root),action]),contextlib.redirect_stdout(io.StringIO()):
+def control(root,action,*arguments):
+    with patch.object(sys,'argv',['gui-fixture-control.py','--root',str(root),action,*arguments]),contextlib.redirect_stdout(io.StringIO()):
         runpy.run_path(str(TOOLS/'gui-fixture-control.py'),run_name='__main__')
 
 class EvidenceTests(unittest.TestCase):
+    def test_protected_inventory_excludes_cache_runtime_but_never_payload_or_scope(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)/'fixture';make_fixture(root)
+            app=root/'client/apps/demo/prod/stable/1.0.0/windows-x64';state=root/'client/state/demo/prod/stable/1.0.0/windows-x64'
+            app.mkdir(parents=True);state.mkdir(parents=True)
+            (app/'version.txt').write_text('good');(state/'installed-manifest.json').write_text('{}')
+            control(root,'snapshot','--scope','protected')
+            (state/'runtime-state.json').write_text('runtime changed');(state/'resume-cache').mkdir();(state/'resume-cache/file').write_text('cache changed')
+            control(root,'compare','--scope','protected')
+            with self.assertRaises(ValueError):control(root,'compare')
+            (app/'version.txt').write_text('changed')
+            with self.assertRaises(AssertionError):control(root,'compare','--scope','protected')
+
     def test_long_labels_are_deterministic_bounded_and_opt_in(self):
         spec=importlib.util.spec_from_file_location('intranet_long_labels',TOOLS/'test-intranet-auth.py')
         module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
