@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using UeDtLauncher.Gui;
 using Xunit;
 
@@ -9,6 +10,29 @@ namespace UeDtLauncher.Tests;
 
 public class LauncherRecoveryFlowTests
 {
+    [AvaloniaTheory][InlineData(false)][InlineData(true)]
+    public async Task EmptyCatalogRemovesPreviousProjectAndRestoredPermissionOnlyQueries(bool developer)
+    {
+        using var fixture=new RecoveryFixture();
+        var backend=new RecordingBackend(new(false,null,"1.0.0",true,1,0,false));
+        var model=new LauncherDashboardViewModel(developer?LauncherEdition.Developer:LauncherEdition.General)
+        {Config=fixture.Model().Config,Catalog=fixture.Catalog,GeneralState=GeneralLauncherState.Ready,ProjectStatus=new(true,"1.0.0","1.0.0",false,0,0,true)};
+        var allowed=false;
+        var window=fixture.Window(model,backend,(_,_,_)=>Task.FromResult(allowed?fixture.Catalog:new CatalogSnapshot()));
+        window.Show();
+        try
+        {
+            await InvokeAsync(window,"RefreshSelectionStatusAsync");Dispatcher.UIThread.RunJobs();
+            Assert.Equal("unavailable",model.SelectedProject.ProjectId);Assert.Null(model.ProjectStatus);
+            Assert.Contains(window.GetVisualDescendants().OfType<Avalonia.Controls.TextBlock>(),t=>t.Text=="사용 가능한 프로젝트가 없습니다");
+            Assert.Equal(0,backend.Checks);Assert.Equal(0,backend.Executions);
+            Assert.Contains("이 PC에 허용된 배포가 없습니다",Presentation(window).Title);
+            allowed=true;await InvokeAsync(window,"RefreshSelectionStatusAsync");Dispatcher.UIThread.RunJobs();
+            Assert.Equal("demo",model.SelectedProject.ProjectId);Assert.Equal(1,backend.Checks);Assert.Equal(0,backend.Executions);
+            Assert.False(Directory.Exists(Path.Combine(fixture.Root,"app")));Assert.False(Directory.Exists(Path.Combine(fixture.Root,"state")));
+        }
+        finally{window.Close();}
+    }
     [AvaloniaTheory]
     [InlineData("service-unavailable")]
     [InlineData("server-unavailable")]

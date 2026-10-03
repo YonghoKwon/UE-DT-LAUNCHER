@@ -1018,7 +1018,7 @@ public sealed partial class MainWindow : Window
             MarkError(ex,"카탈로그 확인 실패",showDialog: !suppressDialog);
             return false;
         }
-        finally { if (ownsBusy) { _running=false; SetBusy(false); } if (rebuild) Build(); }
+        finally { if (ownsBusy) { _running=false; SetBusy(false); } if (rebuild || !HasProject) Build(); }
     }
 
     private void MergeCatalogProjects()
@@ -1039,11 +1039,13 @@ public sealed partial class MainWindow : Window
         if (_config.Projects.Count > 0) SelectProject();
         else
         {
+            _selectedRuntimeConfig=null;_viewModel.ProjectStatus=null;_resumeOperation=null;
             _selectedProject = new ProjectUiConfig { ProjectId = "unavailable", DisplayName = "사용 가능한 프로젝트가 없습니다" };
             _viewModel.GeneralState = GeneralLauncherState.RecoverableError;
             _presentation.Title = "허용된 배포가 없습니다"; _presentation.Percent = null;
             _installState = "허용된 배포 없음";
             _installDetail = "이 PC에 허용된 배포가 없습니다. 관리자에게 문의해 주세요.";
+            _presentation.Complete("이 PC에 허용된 배포가 없습니다. 관리자에게 문의해 주세요.");
         }
     }
 
