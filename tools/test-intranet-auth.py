@@ -326,6 +326,8 @@ http {{
             composed_launcher = composed / Path(launcher).name
             composed_agent = composed / Path(args.agent).name
             if Path(launcher).resolve()!=composed_launcher.resolve(): shutil.copy2(launcher, composed_launcher)
+            canonical=Path(launcher).parent/('UeDtLauncher.exe' if os.name=='nt' else 'UeDtLauncher')
+            if canonical.is_file() and canonical.name!=Path(launcher).name:shutil.copy2(canonical,composed/canonical.name)
             if Path(args.agent).resolve()!=composed_agent.resolve(): shutil.copy2(Path(args.agent).resolve(), composed_agent)
             launcher = str(composed_launcher)
             config["deploymentMode"] = "managed-agent"

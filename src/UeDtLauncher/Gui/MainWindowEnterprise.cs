@@ -244,6 +244,7 @@ public sealed partial class MainWindow
         check.HotKey=new KeyGesture(Key.F6);actions.Children.Add(check);
         if(_operationCancellation is not null)
             actions.Children.Add(EnterpriseButton("작업 취소","cancel-operation",(_,_)=>RequestOperationCancellation(),tracked:false));
+        if(!_running && CanResumeSelected())actions.Children.Add(EnterpriseButton("다운로드 재개","resume-operation",async(_,_)=>await ResumeUiOperationAsync()));
         if(_viewModel.GeneralState!=GeneralLauncherState.RuntimeBlocked && _presentation.ErrorCode is not null && _presentation.Retry is not null)actions.Children.Add(EnterpriseButton("다시 시도","retry-operation",async (_,_)=>await RetryCurrentAsync()));
         foreach(var item in actions.Children)item.Margin=new Thickness(0,0,8,0);
         panel.Children.Add(actions);

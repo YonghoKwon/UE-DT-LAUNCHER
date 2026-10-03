@@ -376,7 +376,8 @@ public sealed class ManagedAgentClient(string? endpoint = null)
         CancellationToken cancellationToken = default,
         ReleaseSelection? selection = null,
         RollbackPreview? expectedBackup = null,
-        string? operationId = null)
+        string? operationId = null,
+        string? resumeOperationId = null)
     {
         if (ManagedAgentProtocol.RequiresRuntimeCapability(command)) await RequireCapabilitiesAsync(cancellationToken);
         ArgumentNullException.ThrowIfNull(onProgress);
@@ -389,6 +390,7 @@ public sealed class ManagedAgentClient(string? endpoint = null)
             ExpectedBackupId = expectedBackup?.BackupId,
             ExpectedBackupFingerprint = expectedBackup?.MetadataFingerprint,
             CorrelationId = operationId ?? Guid.NewGuid().ToString("N"),
+            OperationId = resumeOperationId,
             ClientCapabilities = [ManagedAgentProtocol.RuntimeCapability]
         };
         var validationError = ManagedAgentProtocol.Validate(request);
@@ -415,7 +417,7 @@ public sealed class ManagedAgentClient(string? endpoint = null)
         return await ReadStreamingResponsesAsync(stream, request, _ => { }, timeout.Token);
     }
     public async Task<ManagedAgentResponse> SendCancellableAsync(string command,string? projectId,Action<ManagedAgentProgress> progress,
-        ReleaseSelection? selection=null,CancellationToken token=default,string? operationId=null)
+        ReleaseSelection? selection=null,CancellationToken token=default,string? operationId=null,string? resumeOperationId=null)
     {
         token.ThrowIfCancellationRequested();
         var status=await SendAsync("status",cancellationToken:token);
@@ -424,7 +426,7 @@ public sealed class ManagedAgentClient(string? endpoint = null)
         token.ThrowIfCancellationRequested();
         var id=operationId??Guid.NewGuid().ToString("N");
         return await ManagedOperationCoordinator.RunAsync(id,
-            callback=>SendStreamingAsync(command,projectId,callback,selection:selection,operationId:id),
+            callback=>SendStreamingAsync(command,projectId,callback,selection:selection,operationId:id,resumeOperationId:resumeOperationId),
             ()=>SendOperationAsync("cancel",id),progress,token);
     }
 

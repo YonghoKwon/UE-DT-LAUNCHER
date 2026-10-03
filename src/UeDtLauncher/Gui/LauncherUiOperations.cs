@@ -30,6 +30,8 @@ internal sealed record LauncherUiOperationResult(LauncherConfig Config, ReleaseS
     ManagedProjectStatus Status, RuntimeObservation? Runtime,LauncherUiCompletion Completion=LauncherUiCompletion.Checked);
 internal enum LauncherUiCompletion{Checked,Completed,CommittedLaunchSkipped,CommittedRefreshRequired}
 internal enum LauncherTroubleshootAction { OfferInstall, Complete, Repair }
+internal sealed class LauncherUiCancelledException(OperationStatus operation):OperationCanceledException("Launcher operation cancelled")
+{internal OperationStatus Operation {get;}=operation;}
 
 internal interface ILauncherUiBackend
 {
@@ -44,6 +46,14 @@ internal sealed class LauncherUiBackend : ILauncherUiBackend
 
 internal static class LauncherUiOperations
 {
+    internal static OperationStatus? BindResume(LauncherUiOperationContext context,LauncherConfig config)
+    {
+        var resumed=config.UiResumeOperation;
+        if(resumed is null)return null;
+        if(resumed.Selection!=context.Selection || resumed.ManifestSha256 is null || resumed.Phase is not ("Cancelled" or "Interrupted" or "Failed"))throw new InvalidDataException("재개할 작업과 선택한 배포가 다릅니다.");
+        config.RepairMode=resumed.Command=="repair";config.LaunchAfterUpdate=false;config.ExpectedResumeManifestSha256=resumed.ManifestSha256;
+        return resumed;
+    }
     internal static LauncherTroubleshootAction TroubleshootAction(ManagedProjectStatus status) =>
         !status.IsInstalled ? LauncherTroubleshootAction.OfferInstall : status.UpdateRequired ? LauncherTroubleshootAction.Repair : LauncherTroubleshootAction.Complete;
 
@@ -74,11 +84,17 @@ internal static class LauncherUiOperations
         LauncherConfig config,bool repair,bool launch,Action<LauncherProgress> progress,FileLogger? logger,CancellationToken token=default)
     {
         context.Pin(config);config.RepairMode=repair;config.LaunchAfterUpdate=launch;
+        var resumed=BindResume(context,config);
+        if(resumed is not null)
+        {
+            repair=resumed.Command=="repair";config.RepairMode=repair;config.LaunchAfterUpdate=false;launch=false;
+        }
         if(context.Managed)
         {
             var client=new ManagedAgentClient();
-            var response=await client.SendCancellableAsync(repair?"repair":"update",context.ProjectId,
-                value=>progress(value.ToLauncherProgress()),selection:context.Selection,token:token);
+            var response=await client.SendCancellableAsync(resumed is null?repair?"repair":"update":"operation-resume",context.ProjectId,
+                value=>progress(value.ToLauncherProgress()),selection:context.Selection,token:token,resumeOperationId:resumed?.Id);
+            if(response.Operation is {Phase:"Cancelled"} cancelled)throw new LauncherUiCancelledException(cancelled);
             response.ThrowIfFailed();BindManagedSelection(context,config,response);
             RuntimeObservation? runtime=null;
             var committed=response.InstallationCommitted==true || response.Operation?.Phase=="Completed";
@@ -110,7 +126,7 @@ internal static class LauncherUiOperations
             running=engine;
             try{await engine.RunAsync(operation.Token);operation.Finish(true);}
             catch(OperationCanceledException)when(engine.InstallationCommitted){operation.Finish(true);}
-            catch(OperationCanceledException){operation.Finish(false);throw;}
+            catch(OperationCanceledException){operation.Finish(false);throw new LauncherUiCancelledException(operation.Status);}
             catch{operation.Finish(engine.InstallationCommitted,failed:true);throw;}
             LauncherManifest installed;
             try{installed=await JsonFiles.ReadAsync<LauncherManifest>(config.InstalledManifestPath);}

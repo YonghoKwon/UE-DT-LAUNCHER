@@ -4,6 +4,34 @@ namespace UeDtLauncher.Gui;
 public sealed partial class MainWindow
 {
     private CancellationTokenSource? _operationCancellation;
+    private OperationStatus? _resumeOperation;
+    private void RecordCancelledOperation(OperationStatus? operation)
+    {
+        _resumeOperation=operation;
+        _viewModel.GeneralState=GeneralLauncherState.RecoverableError;
+        _presentation.Complete("작업 취소 완료 · 다시 확인하거나 다운로드를 이어받으세요.");Build();
+    }
+    private bool CanResumeSelected()
+    {try{return _viewModel.GeneralState!=GeneralLauncherState.RuntimeBlocked && _resumeOperation?.Selection is not null && _resumeOperation.Selection==CurrentReleaseSelection();}catch{return false;}}
+    private async Task ResumeUiOperationAsync()
+    {
+        if(_running || !CanResumeSelected())return;
+        var previous=_resumeOperation!;_running=true;
+        using var cancellation=new CancellationTokenSource();_operationCancellation=cancellation;
+        try
+        {
+            var context=CaptureUiOperation(previous.Selection);var config=await RunConfig(false,false);config.UiResumeOperation=previous;
+            BeginOperation(LauncherUiOperation.Update);_viewModel.GeneralState=GeneralLauncherState.Working;Build();SetBusy(true);
+            var result=await _uiBackend.ExecuteAsync(context,config,previous.Command=="repair",false,PostUiProgress,_fileLogger,cancellation.Token);
+            _resumeOperation=null;
+            if(result.Completion==LauncherUiCompletion.CommittedRefreshRequired){CommittedUiRefreshRequired();return;}
+            if(ApplyUiResult(context,result)){_presentation.Complete("다운로드 재개 및 검증 완료");Build();}
+        }
+        catch(LauncherUiCancelledException cancelled){RecordCancelledOperation(cancelled.Operation);}
+        catch(OperationCanceledException){RecordCancelledOperation(previous);}
+        catch(Exception error){MarkError(error,"작업 재개 실패");}
+        finally{_operationCancellation=null;_running=false;SetBusy(false);}
+    }
     private void CommittedUiRefreshRequired()
     {
         _presentation.Retry=CurrentContext(LauncherUiOperation.Check);

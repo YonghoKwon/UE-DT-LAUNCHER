@@ -1109,11 +1109,13 @@ public sealed partial class MainWindow : Window
             _viewModel.GeneralState=GeneralLauncherState.Working;Progress(0);ResetSpeedTracking();
             var config=await RunConfig(repair,launch);
             var result=await _uiBackend.ExecuteAsync(context,config,repair,launch,PostUiProgress,_fileLogger,operationCancellation.Token);
+            _resumeOperation=null;
             if(result.Completion==LauncherUiCompletion.CommittedRefreshRequired){CommittedUiRefreshRequired();return;}
             _presentation.Complete(result.Completion==LauncherUiCompletion.CommittedLaunchSkipped?"설치 완료 · 프로그램 실행은 생략했습니다.":launch?"실행 준비 완료":repair?"파일 복구 완료":"업데이트 확인 완료");
             if(ApplyUiResult(context,result))Build();
         }
-        catch(OperationCanceledException){_presentation.Complete("작업 취소 완료 · 설치 상태를 다시 확인해 주세요.");Build();}
+        catch(LauncherUiCancelledException cancelled){RecordCancelledOperation(cancelled.Operation);}
+        catch(OperationCanceledException){RecordCancelledOperation(null);}
         catch(Exception ex){MarkError(ex);}
         finally{_operationCancellation=null;_running=false;SetBusy(false);}
     }
@@ -1174,7 +1176,8 @@ public sealed partial class MainWindow : Window
         catch(Exception ex)
         {
             var offer=LauncherDashboardViewModel.CanOfferRecoveryRollback(repairAttempted,checkedResult?.Status.HasBackup==true,ex);
-            if(ex is OperationCanceledException){_presentation.Complete("작업 취소 완료 · 설치 상태를 다시 확인해 주세요.");return;}
+            if(ex is LauncherUiCancelledException cancelled){RecordCancelledOperation(cancelled.Operation);return;}
+            if(ex is OperationCanceledException){RecordCancelledOperation(null);return;}
             if(offer && context is not null && config is not null)
             {
                 try
@@ -1269,7 +1272,7 @@ public sealed partial class MainWindow : Window
         foreach (var button in _actionButtons)
         {
             var id = AutomationProperties.GetAutomationId(button);
-            var mutation = id is "primary-action" or "update" or "repair" or "rollback" or "cache-clear" or "backup-cleanup";
+            var mutation = id is "primary-action" or "update" or "repair" or "rollback" or "resume-operation" or "cache-clear" or "backup-cleanup";
             button.IsEnabled = !busy && (!mutation || (HasProject && _viewModel.GeneralState != GeneralLauncherState.RuntimeBlocked)) &&
                 (!Equals(button.Tag, "general-primary-action") || (HasProject && (IsDeveloper || _viewModel.PrimaryAction != PrimaryActionKind.Disabled)));
             if (_config.IsManagedDeployment && id is "cache-clear" or "backup-cleanup")

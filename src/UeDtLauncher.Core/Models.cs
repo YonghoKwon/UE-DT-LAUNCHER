@@ -20,6 +20,7 @@ public sealed class LauncherConfig
     [JsonIgnore] internal DistributionCatalog? AuthenticatedCatalog { get; set; }
     [JsonIgnore] internal string? ExpectedResumeManifestSha256 { get; set; }
     [JsonIgnore] internal RuntimeIdentity? TrustedOperationOwner { get; set; }
+    [JsonIgnore] internal OperationStatus? UiResumeOperation { get; set; }
     public string? CatalogSignatureUrl { get; set; }
     public string? CatalogPublicKeyPath { get; set; }
 

@@ -312,6 +312,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
         {
             if (peer is null) return Error(request, "rejected", "Authenticated OS peer is required.", identity);
             var previous = _operations.Inspect(request.OperationId ?? "", peer);
+            if(request.Selection is not null && request.Selection!=previous.Selection)return Error(request,"resume-rejected","Selected release differs from the interrupted operation.",identity);
             if (previous.Phase is not ("Interrupted" or "Cancelled" or "Failed") || previous.Selection is null || previous.ManifestSha256 is null)
                 return Error(request, "resume-rejected", "Operation cannot be resumed.", identity);
             request.Command = previous.Command; request.ProjectId = previous.Selection.ProjectId; request.Selection = previous.Selection;

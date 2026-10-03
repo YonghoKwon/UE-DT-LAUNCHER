@@ -4,6 +4,20 @@ namespace UeDtLauncher.Tests;
 
 public class LauncherUiOperationsTests
 {
+    [Fact]
+    public void ResumePinsManifestAndDoesNotLaunchOrAcceptAnotherSelection()
+    {
+        var selection=new ReleaseSelection("demo","prod","stable","windows-x64","1");
+        var context=new LauncherUiOperationContext(false,"demo","prod","stable","windows-x64","exact","1",selection);
+        var record=new OperationStatus(1,Guid.NewGuid().ToString("N"),"owner","session",selection,"Cancelled",true,DateTimeOffset.UtcNow.ToString("O"),new string('a',64));
+        var config=new LauncherConfig{UiResumeOperation=record,LaunchAfterUpdate=true};
+        Assert.Equal(record,LauncherUiOperations.BindResume(context,config));
+        Assert.False(config.LaunchAfterUpdate);Assert.Equal(record.ManifestSha256,config.ExpectedResumeManifestSha256);
+        config.UiResumeOperation=record with{Selection=selection with{Version="2"}};
+        Assert.Throws<InvalidDataException>(()=>LauncherUiOperations.BindResume(context,config));
+        config.UiResumeOperation=record with{ManifestSha256=null};
+        Assert.Throws<InvalidDataException>(()=>LauncherUiOperations.BindResume(context,config));
+    }
     [Theory][InlineData(false)][InlineData(true)]
     public void ContextPinsTheConfirmedVersionWithoutChangingMode(bool managed)
     {
