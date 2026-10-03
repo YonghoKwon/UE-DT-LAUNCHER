@@ -7,6 +7,7 @@ from pathlib import Path
 import stat
 import subprocess
 import uuid
+from stream_hash import sha256_stream
 
 
 def private_windows_acl(path):
@@ -64,7 +65,7 @@ def inside(root,path):
 
 
 def digest(path):
-    with Path(path).open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
+    with Path(path).open('rb') as stream:return sha256_stream(stream)
 
 
 def claim(root):

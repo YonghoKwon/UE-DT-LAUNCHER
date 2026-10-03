@@ -21,6 +21,7 @@ def main():
     if root.exists(): raise ValueError('Use a new publication directory')
     before = source_inventory(); head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=REPO, text=True).strip()
     dirty = bool(subprocess.check_output(['git', 'diff', 'HEAD', '--', 'src', 'Directory.Build.props', 'Directory.Build.targets', 'global.json', 'NuGet.Config'], cwd=REPO))
+    dirty |= bool(subprocess.check_output(['git', 'ls-files', '--others', '--exclude-standard', '--', 'src', 'Directory.Build.props', 'Directory.Build.targets', 'global.json', 'NuGet.Config'], cwd=REPO))
     root.mkdir(parents=True)
     suffix = '.exe' if args.rid == 'win-x64' else ''
     binaries = {}

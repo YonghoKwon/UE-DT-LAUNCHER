@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 import uuid
+from stream_hash import sha256_stream
 
 
 def provenance(binaries):
@@ -18,9 +19,10 @@ def provenance(binaries):
         if path.is_file():diff+=name.encode()+b'\0'+path.read_bytes()
     hashes={}
     for role,path in binaries.items():
-        with Path(path).open('rb') as stream:hashes[role]=hashlib.file_digest(stream,'sha256').hexdigest()
-    return {'source':source if re.fullmatch('[0-9a-f]{40}',source) else 'unavailable','sourceDirty':bool(diff),
-            'sourceDiffSha256':hashlib.sha256(diff).hexdigest(),'binarySha256':hashes}
+        with Path(path).open('rb') as stream:hashes[role]=sha256_stream(stream)
+    available = bool(re.fullmatch('[0-9a-f]{40}', source))
+    return {'source':source if available else 'unavailable','sourceDirty':bool(diff) if available else None,
+            'sourceDiffSha256':hashlib.sha256(diff).hexdigest() if available else None,'binarySha256':hashes}
 
 
 def atomic(path,record):

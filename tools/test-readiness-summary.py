@@ -29,6 +29,12 @@ class SummaryTests(unittest.TestCase):
     def test_success_requires_both_modes_and_all_proofs(self):
         evidence = self.evidence(); evidence['readiness_proofs'].pop()
         with self.assertRaises(ValueError): runner.sanitized_summary('a' * 40, 'Windows', True, evidence)
+
+    def test_malformed_evidence_is_not_success(self):
+        for proofs in (None, [None, {}], [{'mode': {}}, {'mode':'portable'}], []):
+            evidence = self.evidence(); evidence['readiness_proofs'] = proofs
+            with self.subTest(proofs=proofs), self.assertRaises(ValueError):
+                runner.sanitized_summary('a' * 40, 'Windows', True, evidence)
         evidence = self.evidence(); evidence['repair'] = False
         with self.assertRaises(ValueError): runner.sanitized_summary('a' * 40, 'Windows', True, evidence)
 

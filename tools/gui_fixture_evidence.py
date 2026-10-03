@@ -1,6 +1,7 @@
 """Read/verify only files inside a synthetic fixture; no UI automation."""
 import hashlib, json, os, socket, struct, uuid, base64, subprocess, time, urllib.request, urllib.error, urllib.parse, shutil
 from pathlib import Path
+from stream_hash import sha256_stream
 
 def inside(root, relative):
     root = Path(root).resolve()
@@ -17,7 +18,7 @@ def inside(root, relative):
 
 def sha256(path):
     with Path(path).open('rb') as stream:
-        return hashlib.file_digest(stream, 'sha256').hexdigest()
+        return sha256_stream(stream)
 
 def verify_files(folder, manifest):
     files = json.loads(Path(manifest).read_text(encoding='utf-8-sig'))['files']

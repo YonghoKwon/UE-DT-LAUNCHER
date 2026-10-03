@@ -6,6 +6,7 @@ Generated keys, packages, installations and raw evidence stay outside Git.
 """
 import argparse
 import hashlib
+from stream_hash import sha256_stream
 import http.server
 import json
 import os
@@ -76,7 +77,7 @@ def archive_release(package, archive, version, index, expected):
         if len(names) != len(expected)+2 or len(set(names)) != len(names):
             raise ValueError('Archive membership mismatch')
         for name, item in expected.items():
-            with source.open(name) as stream: digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+            with source.open(name) as stream: digest = sha256_stream(stream)
             if source.getinfo(name).file_size != item['size'] or digest != item['sha256']:
                 raise ValueError('Archive payload differs from its source')
 
