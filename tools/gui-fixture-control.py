@@ -4,7 +4,7 @@ from pathlib import Path
 from promotion_fixture_support import promote
 from gui_fixture_evidence import inside, verify_files, verify_cohort, preference_hash, restore_preferences, snapshot_preferences, fixture_mode, fixture_environment, record_control, agent_status, sha256
 p=argparse.ArgumentParser(); p.add_argument('--root',required=True)
-p.add_argument('action',choices=['smoke','gui-general','gui-developer','snapshot','compare','damage','release','stop-agent','start-agent','stop-server','start-server','stop-all','status','approve-v2','promote-v1','diagnostics','verify','verify-backup','invalidate-preview','prefs-snapshot','prefs-record-owned','prefs-restore','error-401','error-403','error-empty','error-config','config-reset','policy-reset','error-trust','trust-reset'])
+p.add_argument('action',choices=['smoke','gui-general','gui-developer','snapshot','compare','damage','release','stop-agent','start-agent','stop-server','start-server','stop-all','status','approve-v2','promote-v1','diagnostics','verify','verify-backup','invalidate-preview','prefs-snapshot','prefs-record-owned','prefs-restore','error-401','error-403','error-empty','error-config','config-reset','policy-reset','error-trust','trust-reset','proxy-status','proxy-fast','proxy-throttle','proxy-fail-version','proxy-reset-errors'])
 p.add_argument('--version',choices=['1.0.0','2.0.0'],default='1.0.0'); p.add_argument('--name',default='before')
 p.add_argument('--attempt', help='Exact synthetic child marker id to release')
 a=p.parse_args(); root=Path(a.root).resolve()
@@ -42,7 +42,14 @@ def require_stopped():
 
 if a.action in ('stop-agent','start-agent') and mode=='portable':
     raise ValueError('Portable fixture has no Agent process or IPC')
-if a.action=='prefs-snapshot':
+if a.action.startswith('proxy-'):
+    if not fixture.get('guiDownloadProof'):raise ValueError('Not a synthetic throttled-download fixture')
+    if a.action=='proxy-status':print(inside(root,'control/proxy-metrics.json').read_text())
+    elif a.action=='proxy-fast':inside(root,'control/proxy-unthrottle').touch();record_control(root,a.action);print('Disabled only synthetic transfer throttling')
+    elif a.action=='proxy-fail-version':inside(root,'control/proxy-fail-version').touch();record_control(root,a.action);print('Test-only version.txt HTTP503 after upstream authorization')
+    elif a.action=='proxy-reset-errors':inside(root,'control/proxy-fail-version').unlink(missing_ok=True);record_control(root,a.action);print('Removed test-only HTTP fault')
+    else:inside(root,'control/proxy-unthrottle').unlink(missing_ok=True);record_control(root,a.action);print('Restored synthetic transfer throttling')
+elif a.action=='prefs-snapshot':
     if (root/'ui-preferences-original.json').exists(): raise ValueError('Original preferences already captured')
     snapshot_preferences(root); print('Original preferences captured')
 elif a.action=='prefs-record-owned':

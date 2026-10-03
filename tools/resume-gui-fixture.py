@@ -1,5 +1,6 @@
 """Resume only the recorded binary cohort of a stopped, isolated GUI fixture."""
 import argparse, json, os, subprocess
+import urllib.parse
 from pathlib import Path
 from gui_fixture_evidence import inside, verify_cohort, fixture_environment, fixture_mode, wait_server_ready, wait_agent_ready, hold_fixture, FixtureHarnessLock
 
@@ -16,9 +17,14 @@ for name in ('stop-all','stop-agent','start-agent','agent-stopped','agent-ready'
     (control/name).unlink(missing_ok=True)
 env=fixture_environment(root,fixture)
 flags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0
-worker=None;server=None
+worker=None;server=None;download_proxy=None
 with inside(root,'resume-server.log').open('a',encoding='utf-8') as sl, inside(root,'resume-agent.log').open('a',encoding='utf-8') as al:
     try:
+        if fixture.get('guiDownloadProof'):
+            from gui_download_proxy import DownloadProxy
+            settings=json.loads(inside(root,'server.json').read_text())
+            download_proxy=DownloadProxy(root,urllib.parse.urlsplit(settings['publicUrl']).port,urllib.parse.urlsplit(settings['listenUrl']).port)
+            download_proxy.start()
         server=subprocess.Popen([str(server_path),'serve','--config',str(inside(root,'server.json'))],env=env,stdout=sl,stderr=sl,creationflags=flags)
         wait_server_ready(server,json.loads(inside(root,'server.json').read_text())['publicUrl'])
         if fixture_mode(fixture)=='managed':
@@ -27,6 +33,7 @@ with inside(root,'resume-server.log').open('a',encoding='utf-8') as sl, inside(r
         print('READY: '+str(root)+' mode='+fixture_mode(fixture),flush=True)
         hold_fixture(root,fixture,env,server,worker,sl,al)
     finally:
+        if download_proxy is not None:download_proxy.close()
         for process in (worker,server):
             if process is not None and process.poll() is None: process.terminate();process.wait(timeout=10)
         ownership.close()

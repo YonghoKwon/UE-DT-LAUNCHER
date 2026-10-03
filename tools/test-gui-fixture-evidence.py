@@ -185,7 +185,7 @@ class EvidenceTests(unittest.TestCase):
             process.terminate.side_effect=terminated
             arguments=['test-intranet-auth.py','--launcher',str(base/'UeDtLauncher.exe'),'--server',str(base/'Distribution.exe'),'--prepare-gui',str(base/'Synthetic.exe'),'--gui-mode','portable','--root',str(root)]
             import urllib.error
-            with patch.object(sys,'argv',arguments),patch.object(module.subprocess,'run',side_effect=run),patch.object(module.subprocess,'Popen',return_value=process) as popen,patch.object(module.subprocess,'check_output',side_effect=lambda cmd,**kw: ('test-head\n' if 'rev-parse' in cmd else '') if kw.get('text') else b''),patch.object(module.urllib.request,'urlopen',side_effect=urllib.error.HTTPError('loopback',401,'unauthorized',{},None)),patch.object(module,'hold_fixture') as hold,patch.object(module,'snapshot_preferences'),contextlib.redirect_stdout(io.StringIO()):
+            with patch.object(sys,'argv',arguments),patch.object(module.subprocess,'run',side_effect=run),patch.object(module.subprocess,'Popen',return_value=process) as popen,patch.object(module.subprocess,'check_output',side_effect=lambda cmd,**kw: ('"test","S-1-5-21-123-456-789-1001"' if cmd[0]=='whoami' else 'test-head\n' if 'rev-parse' in cmd else '') if kw.get('text') else b''),patch.object(module.urllib.request,'urlopen',side_effect=urllib.error.HTTPError('loopback',401,'unauthorized',{},None)),patch.object(module,'hold_fixture') as hold,patch.object(module,'snapshot_preferences'),contextlib.redirect_stdout(io.StringIO()):
                 module.main()
             self.assertEqual(1,popen.call_count)
             self.assertTrue(all(command[1] not in ('agent','doctor','run') for command in commands))

@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 import struct
@@ -64,7 +65,9 @@ def main():
     parser.add_argument("--readiness-proof", action="store_true", help="Check published read-only diagnostics and selected release readiness")
     parser.add_argument("--gui-mode", choices=['managed','portable'], default='managed', help="GUI-only deployment, with a fresh isolated credential/install root")
     parser.add_argument("--gui-long-labels", action="store_true", help="GUI-only: deterministic long Korean project name and release notes")
+    parser.add_argument('--gui-download-proof',action='store_true',help='GUI-only: signed 64MiB synthetic download with loopback throttling and resume cache')
     args = parser.parse_args()
+    if args.gui_download_proof and not args.prepare_gui:parser.error('--gui-download-proof requires --prepare-gui')
     if args.operation_proof and (not args.agent or args.prepare_gui):
         parser.error("--operation-proof requires console Agent without GUI")
     if args.gui_long_labels and not args.prepare_gui:
@@ -131,10 +134,14 @@ def main():
         port = reservation.getsockname()[1]
     origin = f"http://127.0.0.1:{port}"
     backend = origin
-    if args.nginx:
+    if args.nginx or args.gui_download_proof:
         with socket.socket() as reservation:
             reservation.bind(("127.0.0.1", 0))
             backend = f"http://127.0.0.1:{reservation.getsockname()[1]}"
+    download_proxy=None
+    if args.gui_download_proof:
+        from gui_download_proxy import DownloadProxy
+        download_proxy=DownloadProxy(root,port,urllib.parse.urlsplit(backend).port)
     write(root / "server.json", {"root": str(root / "server"), "publicUrl": origin, "listenUrl": backend,
           "signingKeyPath": str(root / "release.pem"), "policyPath": str(root / "policy.json"),
           "authenticationMode": "request-signature-v1"})
@@ -164,6 +171,9 @@ def main():
             package.writestr("hero.png", png)
             if args.operation_proof and version == "2.0.0":
                 package.writestr("cancellation.bin", b"synthetic-download-" * (4 * 1024 * 1024))
+            if args.gui_download_proof and version=='2.0.0':
+                with package.open('cancellation.bin','w') as data:
+                    for _ in range(64):data.write(bytes(range(256))*4096)
         run(launcher, "release-metadata", "--zip", archive, "--project-id", "demo", "--version", version,
             "--platform", platform, "--entry-point", entry, "--executable-paths", entry,
             "--hero-path", "hero.png", "--output", upload / "release.json", *gui_metadata_arguments(args.gui_long_labels, version))
@@ -195,7 +205,7 @@ def main():
     config = json.loads(generated.read_text(encoding="utf-8"))
     config.update(versionPolicy="exact", requestedVersion="1.0.0", installDir=str(client / "apps"), stateRootDir=str(client / "state"),
                   launchArguments=["/c", "echo UE_DT_FAKE_GAME_OK>runtime-marker.txt"] if os.name == "nt" else [])
-    if args.operation_proof: config['performance']={'resumeCacheBytes':256*1024*1024}
+    if args.operation_proof or args.gui_download_proof: config['performance']={'resumeCacheBytes':256*1024*1024}
     harness_lock=FixtureHarnessLock(root) if args.prepare_gui else None
     if harness_lock is not None:harness_lock.__enter__()
     log = (root / "server.log").open("w", encoding="utf-8")
@@ -205,6 +215,7 @@ def main():
     nginx_process = None
     nginx_log = None
     try:
+        if download_proxy is not None:download_proxy.start()
         if args.nginx:
             nginx_root = root / "nginx"
             nginx_root.mkdir()
@@ -412,7 +423,7 @@ http {{
                   'sourceDiffSha256':hashlib.sha256(source_evidence).hexdigest(),'sourceDirty':bool(source_evidence),
                   'binaries':{kind:{'path':value,'sha256':sha256(value)} for kind,value in gui_binaries.items()},
                   'supportFiles':gui_support_files,'pendingJobs':pending_jobs,
-                  'viewOnlyProjects':['demo-secondary'] if args.gui_long_labels else []})
+                  'viewOnlyProjects':['demo-secondary'] if args.gui_long_labels else [],'guiDownloadProof':args.gui_download_proof})
             summary['deployment_mode']=args.gui_mode
             summary['gui_long_labels']=args.gui_long_labels
             summary['view_only_projects']=['demo-secondary'] if args.gui_long_labels else []
@@ -460,6 +471,7 @@ http {{
             write(root / "summary.json", summary)
             print(f"PASS: {root}", flush=True)
     finally:
+        if download_proxy is not None:download_proxy.close()
         if nginx_process is not None and nginx_process.poll() is None:
             nginx_process.terminate(); nginx_process.wait(timeout=10)
         if nginx_log is not None:
