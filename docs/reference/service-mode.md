@@ -1,6 +1,6 @@
 # 무인 실행과 서비스 모드
 
-문서 점검 2026-09-28 / `0d12957` 기준 현재 가이드. **현재 서비스는 앱을 자동 종료하거나 다른 버전으로 자동 전환하지 않습니다.** [실행 안전성·수동 복구](runtime-safety.md)를 함께 읽으세요.
+문서 점검 2026-10-03 / codex/operations-hardening-closure 기준 현재 가이드. **현재 서비스는 앱을 자동 종료하거나 다른 버전으로 자동 전환하지 않습니다.** [실행 안전성·수동 복구](runtime-safety.md)를 함께 읽으세요.
 
 `UeDtLauncher service` 반복 실행과 `UeDtLauncher.Agent` OS 서비스는 서로 다릅니다.
 
@@ -13,6 +13,8 @@
 | Windows Service/systemd Agent | IPC 요청 대기. 설치만으로 주기적 업데이트가 시작되지 않음 |
 
 AgentWorker의 자동 스케줄러는 미구현입니다(OPS-07). Windows 서비스 계정에서 실행한 앱은 로그인 사용자 데스크톱에 표시되지 않습니다. GUI용 실행과 무인 service 실행을 혼용하지 마세요.
+
+조회 전용 `scheduled-check`는 기존 자동 설치 service 루프와 다릅니다. 진단이 확정한 exact target으로 설치 상태를 검사하며 `checked / action-required / verification-pending`을 반환합니다. Healthy/종료0만으로 실행 가능을 판단하지 않습니다. 현재 호스트의 task/timer·서비스 등록은 하지 않았습니다.
 
 ## 명령
 

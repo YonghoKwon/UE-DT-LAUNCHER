@@ -1,10 +1,14 @@
 # 개선 진행 현황과 보완 필요 사항
 
-점검: 2026-10-03 / `codex/headless-operations`. 취소/재개·온라인 실행, 자격 수명, backup/restore, retention, 조회 전용 schedule을 구현하고 Windows/WSL 각635개 및 게시 CLI/console Agent/서버 통합을 통과했습니다. 새 GUI/회사 인수와 성능 개선 미달은 별도로 남깁니다. [이번 증거](docs/reference/archive/validation/headless-operations-validation.md). 진행률은 항목 전체 수용이 아닌 아래 체크포인트 기준입니다.
+점검: 2026-10-03 / `codex/operations-hardening-closure`. 주요 headless 구현 후 취소/캐시·정리/복원·인증/점검 결함, 측정/설치본·CI 경계를 보강했습니다. [최신 증거](docs/reference/archive/validation/operations-closure-validation.md). 아래 이전 날짜/게시본은 이력이며 진행률은 항목 전체의 남은 수용 조건까지 함께 판단합니다.
 
 P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선. 우선순위는 제안이며 일정·수치 목표는 미정입니다. 미검증과 미구현을 구분합니다.
 
 ## 먼저 확인할 진행 현황
+
+최신 요약: Windows/WSL 각각664개 회귀·게시 CLI/console Agent/서버·HTTP/HTTPS·준비도·수명/장애·개발 MSI/RPM 비설치 검증을 진행했습니다. 새로운 실제 GUI/음성·회사 UE/RHEL/서비스 계정·실제 인증서·원격 CI는 미실행입니다. 따라서 **완료6·부분19·대기3, 열린22개**를 유지합니다. 대부분의 headless 기능은 구현돼 있지만 열린 항목이 전부 미구현이라는 뜻은 아닙니다.
+
+PERF-03: Windows10/30연결 p95 26.20/109.92→11.47/30.24ms, WSL10/30연결29.25/90.41→10.21/26.40ms를 관측했습니다. 실패0·90% 콘텐츠 절감 유지. Windows 직전1연결은10.6% 악화했고 측정 순서/ambient load는 완전 통제하지 못했으므로75%를 유지합니다. 원래 d756af2 비교와 최적화 직전 비교를 구분하며 원시 키/로그는 보관하지 않습니다.
 
 OPS-07 closure: selected target과 준비도/설치검사 결속을 보강했다. default1/exact2 실제 게시 점검 및 inventory 불변 확인. 실제 OS 예약/서비스 계정은 후속이다.
 
@@ -20,7 +24,7 @@ closure 취소 보완: 등록 ACK·취소 보존·commit 결과·unstarted launc
 
 후속 closure 시작: fixture 실제 소유/경로/게시본 확인과 비밀 stdout 비보관, 실패 checkpoint를 추가했다. Windows 계약3개와 기존 게시본의 headless 실행 통과. 항목 전체 진행률은 새 결함 수정·후속 게시 검증 후 판단한다. [현재 기록](docs/reference/archive/validation/operations-closure-validation.md)
 
-최종 로컬 통합: Windows/WSL635개·headless runner·broker/health/native family·Windows36개 종료 경계, 개발 MSI 비설치 추출 및 Ubuntu RPM 생성/권한 조회를 확인했다. C# Release는경고/오류0, RPM 중복 build-id 경고는 별도 남았다. CI 코드만 연결했으며 원격 실행/설치본 실제 수명주기/회사 인증서는 미검증이다. 최신상태50/75% 상한은 유지한다.
+이하635개 등은 이전 단계 이력이다. 당시 headless runner·broker/health/native family·Windows36개 종료 경계, 개발 MSI 추출·Ubuntu RPM을 확인했다. 현재664개와 추가 수용 조건은 위 요약·체크포인트를 따른다. 과거 RPM 중복 build-id 경고는 이번에 해소했으며 원격CI/실설치/회사 인증서는 여전히 미검증이다.
 
 PERF-03 최신 cohort-06 재측정은1/10/30 p95가18.16/97.01/365.33ms, 실패0이나 비교 기준 개선 미달이다. 새 signer pool은 제거했고 계측만 남겼다. 75%와 시간 미달을 유지한다. [정제 비교](docs/reference/archive/validation/headless-performance-results.json). 90% 콘텐츠 절감 성공을 API 지연 완료로 합산하지 않는다.
 
@@ -83,18 +87,18 @@ Headless 주요 묶음은 구현·양 OS 회귀/게시 시험을 진행했다. �
 
 | 항목 | ① 구현/절차 | ② 로컬 검사 | ③ 요구 환경 실행/측정 | ④ 수용 기준 | 진행률 |
 |---|---|---|---|---|---:|
-| OPS-07 | disabled check-only CLI·명시 주기·중복 skip·비활성 template | Windows3개/설치0건 회귀 | 게시 조회/보호 inventory 불변 확인 | 실제 OS 예약/서비스 계정은 별도 | 50% |
-| OPS-04 | explicit plan/confirm·public/승격/active 보호·quarantine journal | Windows5개 stale/중단/재생성 회귀 | 게시 정리·stale 거부 통과 | WSL·링크/복수 프로세스·운영 인수 필요 | 50% |
-| OPS-05 | maintenance 잠금·offline backup/verify·staged restore/latest authority | Windows5개 회귀 | 게시 백업/생존 서버 거부/최신 폐기 보존 통과 | WSL·중단/누락 전수·회사 복구훈련 별도 | 50% |
-| SEC-01 | 자격별 관리/폐기·명시 만료·durable latch/audit | 신규6개 포함29개 회귀 | Windows 게시 만료 키/개별 폐기 확인 | WSL·운영 교체·최종 수용 대기 | 50% |
-| SEC-02 | canonical IP·opt-in rate/concurrency 제한 | IP/상한/무큐 회귀 | 정상 게시 인증/권한 회귀 | HTTP429·프록시·부하 전수 대기 | 50% |
-| DEV-01 | Core28개 물리 이동·기존 backend 조정 활용 | Windows601개 및 게시 readiness8개 | 물리 이동 게시본 통과 | 화면 조정 책임 추가 정리 필요 | 50% |
-| USER-03 | OS owner/session·취소/재개·예산 opt-in 캐시 | 관련13개 unit·기존608개 회귀 | Windows 게시 proof-04 취소/불변/재개/discard 확인 | WSL·장애 전수·GUI 수용은 별도 | 50% |
+| OPS-07 | disabled check-only·정확한 selected/preparation·명시 주기 | 양 OS 회귀·조회 불변 | default1/exact2 게시 점검·준비도 보류 구분 | 실제 OS 예약/서비스 계정 별도 | 50% |
+| OPS-04 | durable intent·directory identity·private quarantine·schema6 ledger | 재생성/부분 삭제·중단 회귀 | 양 OS 게시 정리/stale 거부·복원 연결 확인 | 열린 writer/모든 경합·실제 업로드 계정 인수 | 50% |
+| OPS-05 | exclusive stage/fence·latest graph·policy·독립 Manifest 서명 | 누락/추가/동일 손상 서명·보호 회귀 | 양 OS 게시 backup/restore→인증된 설치 | 장애 전수·과거 키/회사 RPO/RTO·완전 유실 별도 | 50% |
+| SEC-01 | 개별 만료/폐기·durable latch/audit | audit 실패·동시 만료·시계 역행 회귀 | 양 OS 게시 만료/폐기·HTTPS 토큰 | 실제 운영 교체·서명키 수명/회사 정책 수용 | 50% |
+| SEC-02 | canonical IP·opt-in 한도·bounded memory | actual HTTP429/슬롯 반환/시간 창 회귀 | 양 OS 게시 권한/위조 헤더 회귀 | 모든 HEAD/image/Range 경계·회사 proxy 인수 | 50% |
+| DEV-01 | Core 물리 이동·공통 Backend token/result 경계 | 양 OS 회귀·headless 상태/취소 | 게시 실행/문제 해결 조정 검증 | 실제 GUI 수용·View 책임 추가 정리 | 50% |
+| USER-03 | 등록 ACK/commit 결과·owner cache 예약·discard archive | 동시 예산/손상/취소·저장 경계 회귀 | 양 OS 게시 취소/불변/재개/discard | 적용/부분 파일 모든 장애·실제 GUI/계정 수용 | 50% |
 | USER-04 | 새 launch 온라인 권한 재확인·기존 앱 미종료 정책 | Windows 회귀/HTTP 게시 실행 | 합성 온라인 실행 통과 | 폐기/단절 실행 전수·회사 인수 대기 | 50% |
 | PERF-01 | 병렬 다운로드·해시·상태 검사 확인 | 상한·취소·재시도 회귀 확인 | publish 실행·반복 측정 확인 | 재현 범위 충족 | 100% |
 | PERF-02 | 검증 후 독립 복사 확인 | 원본 독립·손상 fallback 회귀 확인 | 실제 설치·전송량 측정 확인 | 90% 절감 재현 조건 충족 | 100% |
 | PERF-04 | 작업 잠금·큐·진행·공간 점검 확인 | 복구·충돌·cleanup 회귀 확인 | worker1/2 및 API 동시 측정 확인 | 기본1 유지, 선택2의 재현 범위 충족 | 100% |
-| PERF-03 | 권한 유지·조회/SQL 조정 확인 | 동시 요청·권한/서명 회귀 확인 | 1/10/30개 연결 측정 확인 | **10개 연결 지연 미달** | 75% |
+| PERF-03 | 권한 유지·durable64 sequence 예약·계측 | 동시/저장/재시작·권한/서명 회귀 | 양 OS10/30연결 개선·실패0, Windows3개 데이터 비교 | 직전Windows1연결10.6% 악화·통제 반복 필요 | 75% |
 | OPS-01 | 실제 UE 패키징/접수 준비 | 관련 Editor29건/도구6건·Manifest328파일 검증 | 로컬 Windows GUI 설치/실행·UE 수명/정상 종료 확인 | 회사망·Linux/RHEL·업데이트/복구 gate 미완료 | 50% |
 | OPS-03 | approve/promote·revision·감사·기준선 이전·권한별 Catalog/클라이언트 선택 | Windows/WSL 각568개, 동시/저장 실패/구형/명시적 추천 회귀 | 양 OS 게시 CLI/API·HTTP 서명·HTTPS/Bearer·pending/running 불변·실제 GUI 대기 안내 확인 | 합의한 로컬 승격 범위 충족. 회사 인수는 별도 | 100% |
 | USER-01 | schema3 opt-in·릴리스/설치/owner 결속·host 경로/권한/write 보강 | 후속 Windows/WSL 각552개·Root 누락/다른 릴리스/로그 접근 거부 회귀 | 게시 runtime-host 합성 v1/v2·HTTP/HTTPS 확인, 새 실제 UE fixture 사용자 조작 대기 | 실제 UE GUI 보존·앱 CustomLogs·명시적 이전·회사 계정은 미완료 | 50% |
@@ -102,7 +106,7 @@ Headless 주요 묶음은 구현·양 OS 회귀/게시 시험을 진행했다. �
 | USER-05 | schema 3 생성기·doctor·설치 예제 확인 | 관련 자동화 통과 | Windows/Linux 생성 설정 연결·실제 MSI/RPM 내용 확인 | 설정 예제 보완 범위 충족, 회사 설치 승인은 별도 | 100% |
 | USER-02 | 진단 상태/대상/조치·근거 보존·모순 검증·중복 안내 수정 | Windows/WSL 각601개·실제 IPC의 구형/누락·headless 중복 회귀 | 이번 게시 readiness 양 OS 각8개, 이전 GUI는 게시본별 이력 | GUI 중단 유지. 최신 후보 전체 실제 수용은 재개 후 확인 | 75% |
 | SEC-03 | 생성 시 ACL/mode/owner·명시적 repair | Windows/WSL 권한 회귀 통과 | uedt 읽기 성공·nobody 거부 확인 | Windows LocalService 실제 실행 미확인 | 75% |
-| SEC-04 | 요청 서명·nonce·Catalog 결속·Agent 이미지 | 변조/replay/만료 갱신 회귀 통과 | Windows GUI/Agent·Linux HTTP/HTTPS 및 부하 실행 | WSL proxy 간헐 timeout·메모리 계측 공백 남음 | 75% |
+| SEC-04 | 요청 서명·nonce·Catalog 결속·Agent 이미지 | 변조/replay/재시작/만료 회귀 | 양 OS 게시 HTTP/HTTPS·자원 샘플 및 부하 | 과거 공백은 이력, 실제 nginx 대용량/회사 위험 수용 남음 | 75% |
 | OPS-08 | 공식 preflight·EXE 선서명·MSI payload gate | 계약 11개·개발 MSI 추출/hash 확인 | 실제 회사 서명 인증서 미확인 | 인증서·설치본 서명 검증 대기 | 50% |
 | OPS-09 | 엄격 runtime 기록·서비스 snapshot/barrier·공통 변경 조정기 | 기존 안전성 Windows/WSL 회귀 각 393개·집계 검사 | 저장 경계 강제 종료 각 36개·health 실패·정확한 서비스 대상·CLI E2E 및 게시본별 GUI 이력 | 이번 portable 실행 중 버튼 차단/수명 확인을 추가. 모든 변경 진입점의 실제 전수 검증과 회사 UE/계정은 남음 | 75% |
 | UI-01 | 포스코DX·반응형·주 버튼 고정·제목 배율 | 작은 DIP/200%·포커스 회귀 | 고정8ce5060,1920×1080·OS100%·글자100%·고대비 끔, 양 모드/두 프로필 실제 관측 | 2026-09-29 사용자 합의의 제한 범위 충족. 다른 해상도/DPI 후속 | 100% |
@@ -128,10 +132,10 @@ Headless 주요 묶음은 구현·양 OS 회귀/게시 시험을 진행했다. �
 | ID/우선 | 진행률 | 상태 | 현재 근거·영향 | 보완 방향·완료 조건 |
 |---|---:|---|---|---|
 | OPS-01/P0 | 50% | 부분 · 로컬 Windows UE 확인 | 실제ma0t10_dt UE5.3 Development 328파일 패키징·ZIP/외부 JSON 서명 게시·GUI 설치/실행·수명/종료, Manifest 해시 확인. [실제 UE 기록](docs/reference/archive/validation/real-ue-package-validation.md) | 실제 UE 업데이트/복구·Shipping/Linux/RHEL·회사 TLS/CA·IP·서비스 계정 검증은 남음. 로컬 성공은 회사 승인 아님 |
-| OPS-02/P0 | 0% | 대기 · 추가 보완 | MSI/RPM 구성은 있으나 이번 통합의 실기기 수명주기 미검증 | 설치/upgrade/repair/uninstall, 서비스 자동 시작·credential ACL·데이터 보존, 코드서명 gate 검증 |
+| OPS-02/P0 | 0% | 대기 · 실설치 인수 | MSI/RPM 생성·비설치 payload/권한 검증, 미실행 VM 인수 계획 준비 | 실제 install/upgrade/repair/uninstall·재부팅/서비스·credential·데이터 보존. 계획 생성은 실설치 증거가 아님 |
 | OPS-03/P1 | 100% | 완료 · 로컬 승격 범위 | `cbb5ba7`·`9350e57`·`a8080ea`: 승인/승격 분리, revision/감사/legacy-baseline, 권한별 추천·구형 목록 제한·Core/GUI fallback 차단. 양 OS568개·게시 프로세스/서명/이전·티켓/Running 불변 통과. [증거](docs/reference/archive/validation/release-promotion-validation.md) | 회사 인수·예약 공개·삭제·자동 앱 전환은 별도. 기존 DB는 offline migration 후 운영 |
-| OPS-04/P1 | 50% | 부분 진행 · 확인형 비공개 정리 | plan/fingerprint·보호 참조·quarantine/journal/audit | WSL/장애 전수·회사 기간/공개판 삭제 정책 별도 |
-| OPS-05/P1 | 50% | 부분 진행 · 통제된 복원 | offline snapshot/hash·staged fence·최신 authority 재확인 | WSL/장애 전수·회사 RPO/RTO/복구훈련 및 완전 유실 복구는 별도 |
+| OPS-04/P1 | 50% | 부분 진행 · 확인형 비공개 정리 | durable intent·directory identity·quarantine·schema6 삭제 ledger·재생성 보존, 양 OS 게시 확인 | 열린 writer/모든 경합·실제 업로드 계정·회사 기간/공개판 삭제 정책 별도 |
+| OPS-05/P1 | 50% | 부분 진행 · 통제된 복원 | exclusive stage/live fence·latest DB/policy·전체 graph/hash·독립 Manifest 서명, 양 OS 인증된 복원 설치 | 장애 전수·과거 signing key·회사 RPO/RTO/복구훈련 및 완전 유실 별도 |
 | OPS-06/P1 | 50% | 부분 · 원격 검증 대기 | HTTPS E2E + Windows/Linux readiness CI·요약1파일7일 보관 구성. 같은 명령 로컬 양 OS 각8개와 요약 허용 필드 검증. [증거](docs/reference/archive/validation/quick-wins-validation.md) | 실제 원격 CI 실행·운영 인수 결과 확인. 공유 runner 시간을 성능 gate로 사용하지 않음 |
 | OPS-07/P1 | 50% | 부분 진행 · 조회 전용 | opt-in scheduled-check·명시 주기·중복 skip·비활성 외부 template | 실제 OS 예약/서비스 계정 인수 별도. 자동 설치/전환 제외 |
 | OPS-08/P0 | 50% | 부분 · 실제 인증서 대기 | 공식 사전 gate·EXE 선서명·MSI 내장 payload 검증·실행별 WiX intermediate 구현. 계약 11개 및 개발 MSI 추출/hash 비교 통과 | 실제 회사 인증서와 설치된 EXE 서명 검증은 미완료. [기록](docs/reference/archive/validation/deployment-safety-validation.md) |
@@ -143,7 +147,7 @@ Headless 주요 묶음은 구현·양 OS 회귀/게시 시험을 진행했다. �
 |---|---:|---|---|---|
 | PERF-01/P1 | 100% | 완료 · 재현 범위 | 재현 환경 완료: bounded 다운로드/해시, 관리형 상태 검사, 실제 네트워크 속도·논리 진행률 구분. 작은 파일 설치 10.96초→5.98초 | `94a4f9e`, `1e29454`; 실제 UE·회사 PC 기준선은 OPS-01에서 계속 확인 |
 | PERF-02/P1 | 100% | 완료 · 재현 범위 | 재현 환경 완료: 인증된 대상 기준 최근 3개 설치에서 독립 복사. 90% 동일 데이터의 전송량 90% 절감 | `417b9ec`, `638028a`; 원본 독립성·손상 fallback·repair 재다운로드 검증. 공용 캐시는 범위 밖 |
-| PERF-03/P1 | 75% | 부분 · 기준 미달 | 부분 완료: 토큰 매 요청 검사, 정책 파싱 재사용, exact 조회, fresh sequence 유지. 30개 연결 p95 833.44→81.23ms·실패32→0 | `10ec1f9`, `d152477`; **10개 연결 혼합 p95 5.43→24.66ms 악화**, 시간 gate 미달. 기본 운영 적용 승인 보류, 혼합 읽기/쓰기 지연 추가 개선 필요 |
+| PERF-03/P1 | 75% | 부분 · 추가 수용 필요 | 권한 유지·durable64 순번 예약. 이번 Windows10/30 p95 26.20/109.92→11.47/30.24ms, WSL29.25/90.41→10.21/26.40ms·실패0, 90% 재사용 | 이전 수치는 과거 이력. 직전Windows1연결10.6% 악화·통제된 반복/작업 간섭·회사 성능 인수는 남음. [최신 비교](docs/reference/archive/validation/operations-closure-validation.md) |
 | PERF-04/P2 | 100% | 완료 · 재현 범위 | 재현 환경 완료: 진행/공간 점검, schema 백업, OS 작업 잠금·cleanup 보호·공정 큐. 동시 HTTP 중 4개 ZIP 접수 중앙값 1 worker 5.02초 / 2 workers 2.59초 | `d3f8d68`, `f12a861`, `d152477`; 2 worker 편차·응답 지연도 보고. 기본1 유지, 실환경 자원 기준선 별도 |
 
 상세 조건·반복 횟수·부분 미달 항목은 [성능 검증 기록](docs/reference/archive/validation/performance-validation.md)을 따릅니다. WSL1 nginx의 큰 파일 중단은 직접 API 정상/프록시 경유 실패로 분리 관측했고, 실제 RHEL nginx 대용량 검증은 미완료입니다. 이 제한을 작은 파일 E2E 통과로 대체하지 않습니다.
@@ -154,7 +158,7 @@ Headless 주요 묶음은 구현·양 OS 회귀/게시 시험을 진행했다. �
 |---|---:|---|---|---|
 | USER-01/P1 | 50% | 부분 · GUI 협업 대기 | `cf99ba1`: 릴리스/설치 결속·명시적 root·user host credential 보호·Linux 권한·UserDir/log write 보강. Windows/WSL 각552개·게시 합성 host 통과. [후속 증거](docs/reference/archive/validation/runtime-data-acceptance-completion.md) | 실제 UE GUI 설치/업데이트/복원·SaveGame 보존 사용자 직접 조작 대기. CustomLogs·데이터 이전·회사 계정 미완료. 실제 수용 전75%로 올리지 않음 |
 | USER-02/P1 | 75% | 부분 · 로컬 진단/GUI 확인 | `8e42536`·`cc7ff02`·`5e3a247`: 읽기 전용 진단·mode/target/capability·준비도·조치 안내·지원 ZIP. Windows/WSL 각587개, 게시 HTTP/HTTPS·구형 Agent·양 모드 실제 오류/재시도·설정 수정 확인. [증거](docs/reference/archive/validation/readiness-validation.md) | 마지막 조치 문구 보강의 영향받은 오류 화면을 새 후보로 확인. 최신 후보 전체 GUI 수용·실제 회사 새 PC는 별도 |
-| USER-03/P2 | 50% | 부분 진행 · headless | 작업 소유권·상태/취소/재개·opt-in 캐시 및 GUI 코드 연결 | WSL·적용/복구/부분 파일 장애 전수와 실제 GUI 수용 필요 |
+| USER-03/P2 | 50% | 부분 진행 · headless | ACK/commit·실제 owner/session cache·partial/new 예산·비활성 archive 및 GUI token/result 연결, 양 OS 게시 검증 | 적용/복구/부분 파일 장애 전수·실제 GUI/회사 계정 필요 |
 | USER-04/P2 | 50% | 부분 진행 · headless | 새 실행 온라인 인증/권한 필수, 기존 실행 앱 미종료 | 폐기/네트워크 단절/정확한 선택의 전수 실행과 회사 정책 인수 |
 | USER-05/P1 | 100% | 완료 · 설정 보완 범위 | schema 3 생성기·doctor·MSI 예제/RPM 설정, Windows/Linux publish 생성 설정 E2E와 실제 artifact 내용 확인 | `24cc451` 및 최종 검증. MSI/RPM 실제 설치 수명주기는 OPS-02로 유지. [기록](docs/reference/archive/validation/intranet-auth-validation.md) |
 
@@ -171,12 +175,12 @@ Headless 주요 묶음은 구현·양 OS 회귀/게시 시험을 진행했다. �
 
 | ID/우선 | 진행률 | 상태 | 현재 근거·영향 | 보완 방향·완료 조건 |
 |---|---:|---|---|---|
-| SEC-01/P1 | 50% | 부분 진행 · headless | 관리 ID·개별 폐기·명시 만료·durable latch/audit | WSL/재시작·교체·최종 수용 필요 |
-| SEC-02/P1 | 50% | 부분 진행 · headless | canonical IP와 opt-in 요청/다운로드 제한 | HTTP429/부하·회사 프록시 인수 필요 |
+| SEC-01/P1 | 50% | 부분 진행 · headless | 관리 ID·개별 폐기·명시 만료·durable latch/audit, 양 OS 게시 만료/폐기와 실패/동시 회귀 | 운영 교체·서명키 수명·회사 정책/계정 인수 |
+| SEC-02/P1 | 50% | 부분 진행 · headless | canonical IP·opt-in 제한, actual HTTP429·슬롯 반환·clock window 회복 및 양 OS 권한 회귀 | 모든 endpoint/부하 장애와 회사 프록시 인수 |
 | SEC-03/P0 | 75% | 부분 · Windows 서비스 실행 대기 | `e22a908` 이후 생성 시 ACL/mode/owner 검증. Linux uedt 실제 읽기·nobody 거부 통과 | Windows LocalService 실제 설치 계정 읽기와 기존 credential 이전 현장 확인 남음. [기록](docs/reference/archive/validation/intranet-auth-validation.md) |
 | SEC-04/P0 | 75% | 부분 · 환경 제약 남음 | `babb88e`, `10d4063`: 요청 서명·challenge/nonce·Catalog 결속·Agent 이미지, Windows/Linux E2E·1/10/30 연결 실패 0 | WSL proxy의 간헐 handshake/startup timeout과 메모리 지표 미수집을 보존. 실제 RHEL 대용량·회사 HTTP 위험 수용 별도. [기록](docs/reference/archive/validation/intranet-auth-validation.md) |
 | EXT-01/P2 | 0% | 대기 · 추가 보완 | IAccessPolicyProvider 파일 구현만 존재 | 회사 API 합의 후 timeout/cache TTL/기본 거부. 장애·취소·오래된 응답에서 권한 확대 없음 |
-| DEV-01/P2 | 50% | 부분 진행 | Core28개 물리 이동, 기존 backend의 취소 조정 연결 | 화면 조정 책임 추가 분리·최종 양 OS 회귀 필요 |
+| DEV-01/P2 | 50% | 부분 진행 | Core 물리 이동·Backend token/result 공통화, 양 OS 회귀/게시 검증 | 실제 GUI 수용·View 책임 추가 정리 |
 
 근거 소스: [서버 API](src/UeDtLauncher.DistributionServer/DistributionHttp.cs), [저장 관리](src/UeDtLauncher.DistributionServer/StorageMaintenance.cs), [권한](src/UeDtLauncher.DistributionServer/AccessPolicy.cs), [엔진](src/UeDtLauncher.Core/LauncherEngine.cs), [버전 경로](src/UeDtLauncher.Core/Distribution/VersionedReleasePaths.cs), [CI](.github/workflows/build.yml).
 

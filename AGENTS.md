@@ -1,6 +1,6 @@
 # 작업 지침
 
-점검: 2026-10-03 / 작업 기준 codex/headless-operations. 저장소 전체에 적용합니다.
+점검: 2026-10-03 / 작업 기준 codex/operations-hardening-closure. 저장소 전체에 적용합니다.
 
 ## 문서 관리 계약
 
@@ -36,6 +36,11 @@
 | installer/windows/, packaging/linux/, .github/workflows/ | 설치본·nginx·서비스·CI |
 
 ## 보존할 경계
+
+- Catalog sequence reservation은 exclusive 인증 서버 수명 안에서 최대64개 high-water를 commit한 뒤 발급한다. 실패/재시작으로 번호를 재사용하지 않고 overflow/잘못된 DB형식은 차단한다. 정상 예약은 복원 순번 우회가 아니며 Catalog/권한 캐시와 혼용하지 않는다. 비교의 느려진1연결·누락 지표를 숨기지 않는다.
+- 복원 활성화는 원본 일치만으로 충분하지 않다. 릴리스 tuple·Manifest 서명 ID/알고리즘·전체 파일 hash/inventory를 별도 검사한다. 확인할 수 없는 이전 signing identity는 staged 점검 대상으로 남긴다.
+- RPM은 고유 실행 폴더·정확한 파일 경로·data-only newc 검사·payload hash/권한 확인을 지킨다. stale wildcard/미검증 publish 생략을 금지한다. stable은 같은 commit functional gate와 signer/fingerprint 검증 후에만 공개하며 실제 인증서/설치 인수와 구분한다.
+- 회사 인수 준비 도구는 미실행 계획만 생성한다. 현재 호스트의 install/service/account/reboot를 수행하지 않는다. Git 없는 mirror의 source 상태를 clean/0으로 보충하지 않으며 출처 hash·사후 copy 대조와 build attestation을 구분한다.
 
 - Doctor selected release는 target/권한 확인을 거친 optional 정보다. schedule 진단/설치 상태에 같은 선택을 사용하고 default config로 다시 선택하지 않는다. Healthy와 preparation/status를 혼동하지 않는다.
 

@@ -1,6 +1,6 @@
 # 현재 운영 문서 색인
 
-정리: 2026-10-02 / 작업 기준 `codex/real-ue-data-safety`. 상시 관리 정본은 루트 4개이며, 이 폴더에는 **현재 사용하는 상세 가이드 9개와 이 색인**만 둡니다.
+정리: 2026-10-03 / 작업 기준 `codex/operations-hardening-closure`. 상시 관리 정본은 루트 4개이며, 이 폴더에는 **현재 사용하는 상세 가이드 9개와 이 색인**만 둡니다.
 
 | 루트 정본 | 역할 |
 |---|---|
@@ -27,7 +27,7 @@
 
 ## 검증 증거와 과거 자료
 
-최신 추가: [사용자/버전별 UE 데이터 경로](archive/validation/real-ue-data-safety-validation.md). 후보64c4ad0의 양 OS 각542개·게시 합성 host·HTTP/HTTPS 검증과 실제 UE GUI 미실행을 구분합니다. 설정·동작은 위 가이드에도 반영했습니다.
+최신 추가: [운영 안전성·게시 프로그램 검증](archive/validation/operations-closure-validation.md). 취소/캐시/정리/복원/인증/점검·설치본과 실제 GUI/회사 미검증을 구분합니다. 이전 [UE 데이터 경로](archive/validation/real-ue-data-safety-validation.md)는 당시 후보의 이력입니다.
 
 [아카이브 색인](archive/README.md)에서 찾습니다. **보관된 검증 결과는 유효한 이력**이지만 해당 날짜·환경·범위를 넘는 보장은 아닙니다.
 

@@ -1,6 +1,6 @@
 # DT 배포 시스템 — 기능 지도와 단계별 실행 안내
 
-확인일: 2026-10-03 / `codex/headless-operations`. **현재 구현된 기능**이며 회사 운영 승인 완료가 아닙니다. HTTP A(최초 준비)는 [PC 서명](intranet-auth.md), HTTPS/Bearer는 해당 모드 예제를 따릅니다. ZIP/검사/승인/개발자 확인/**명시 승격**/권한별 추천은 공통입니다. 먼저 한 문장으로 이해하면:
+확인일: 2026-10-03 / `codex/operations-hardening-closure`. **현재 구현된 기능**이며 회사 운영 승인 완료가 아닙니다. HTTP A(최초 준비)는 [PC 서명](intranet-auth.md), HTTPS/Bearer는 해당 모드 예제를 따릅니다. ZIP/검사/승인/개발자 확인/**명시 승격**/권한별 추천은 공통입니다. 먼저 한 문장으로 이해하면:
 
 > 개발자가 ZIP과 설명서를 올리면 서버가 검사합니다. 관리자가 승인·실행 버전 승격을 하면, 허용된 PC의 사용자가 설치하고 DT 프로그램을 실행합니다.
 
@@ -19,7 +19,7 @@
 | 서버 관리자 | `retention inspect` → `retention plan --jobs 실패ID --output 계획.json` → 정지후`retention apply --plan 계획.json --confirm` | public/모든승격/pending/active 보호. stale/재생성은 새확인 |
 | 회사 운영자 | disabled template 검토·명시 주기 설정 → `scheduled-check --config ...` 한 회차 | 조회·설치 상태 검사만. 자동 설치/실행/전환 없음, 현재 호스트 예약 등록0 |
 
-실제 GUI/음성/회사 인수와 성능 미달은 [최신 검증](archive/validation/headless-operations-validation.md)에 따로 기록한다.
+실제 GUI/음성/회사 인수와 성능 수용 조건은 [최신 검증](archive/validation/operations-closure-validation.md)에 따로 기록한다. discard는 비활성 작업 기록을 보관 영역으로 옮겨 live 슬롯을 회복하는 명령이며, 사용자 데이터/공개판이나 다른 요청자의 캐시를 일괄 삭제하지 않는다.
 
 ## 1. 무엇이 어디에서 동작하나요?
 

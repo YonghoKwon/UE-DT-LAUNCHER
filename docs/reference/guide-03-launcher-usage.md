@@ -2,11 +2,13 @@
 
 2026-09-28: `sample-config` 기본은 DistributionServer/schema 3 요청 서명입니다. 기존 정적 예제는 `--mode legacy-catalog`로 생성합니다. [새 명령·키 저장·doctor 안내](intranet-auth.md)를 참고하세요. 기존 파일은 `--force` 없이 덮어쓰지 않습니다.
 
-> 현재 설정 가이드 / 2026-09-28, 코드 0d12957과 대조. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
+> 현재 설정 가이드 / 2026-10-03, codex/operations-hardening-closure와 대조. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
 
 현재 기본 배포는 DistributionServer의 ZIP + 외부 `release.json` 접수·승인 방식입니다. 서버는 [서버 가이드](distribution-workflow.md), 게시는 [게시 가이드](feature-workflow.md), 화면은 [GUI 사용법](launcher-user-guide.md), 개요는 [README](../../README.md)를 참고하세요.
 
 ## 설정 파일의 역할
+
+취소/재개 CLI의 owner/session은 실제 OS 신원이며 임의 주장으로 바꾸지 않습니다. 재개는 새 권한/Manifest 검증이 필요합니다. `performance.resumeCacheBytes`는 명시 예산으로만 활성화되며 partial/verified/new를 합산합니다. 비활성 `operation discard`는 기록 archive와 live 슬롯 회복이며 다른 사용자 캐시/데이터를 일괄 삭제하지 않습니다.
 
 | 설정 | 역할 |
 | --- | --- |

@@ -10,9 +10,9 @@
 
 Windows fixture 계약3개 및 d756af2의 기존 cohort-06 CLI/console Agent/서버로 실제 headless runner 통과. 제품 소스 수정 전 도구 검증이며 새 제품 후보의 회귀 결과로 합산하지 않는다. Windows 권한 생성은 새 root에 native icacls, 검사는 Win32 ACL API를 사용한다.
 
-## 이후 묶음
+## 묶음별 기록 — 최신 결과와 단계별 이력 구분
 
-## 8. 測定/순번 병목 (합성 로컬 범위)
+## 8. 측정/순번 병목 (합성 로컬 범위)
 
 측정 도구의 HTTP/Bearer 가정을 요청 서명·명시 승격으로 바꾸고 Catalog 서명/binding/sequence와 Range 실제 바이트를 검증했다. source/diff/binary hash·부분 실패·null 자원 지표를 보존한다. Python3.10에서도 bounded streaming SHA-256을 사용한다. 미측정을0으로 보충하지 않는다.
 
@@ -21,6 +21,28 @@ Windows original d756af2와 최적화 직전 final-02, 후보 final-03에 작은
 .NET counter 프로파일에서 sequence wait의 관측 p95 최대116.62ms, 실제 sequence DB 구간 p95 최대4.39ms였다(프로파일 자체는 타이밍에 영향을 줌). 한 인증 서버/루트의 수명 안에서64개 순번을 durable high-water commit 후 발급하는 후보로 대기를 줄였다. 응답·권한은 캐시하지 않으며 재시작 시 남은 번호는 건너뛴다. 정상 순번 예약은 복원 때 임의 순번 증가를 허용하는 우회 기능이 아니다. concurrent/저장 실패/commit 후 실패/재시작·취소/overflow·잘못된 DB형식 회귀와 actual published server 강제 종료→이전 challenge 거부·high-water 초과 발급을 확인했다.
 
 Windows worker1/2(각 준비1/측정3, 동시10클라이언트) 접수 중앙값13207/6068ms, Catalog p95 175/181ms, Range p95 160/159ms, HTTP 실패0. worker2는 선택 기능이고 기본1을 유지한다. 계측 일부 시간은 겹치며 native SQLite wait나 회사 SLA가 아니다.
+
+Ubuntu WSL1의80MiB large 구성도 같은 프로토콜·준비1/측정3으로 비교했다. API p95 7.18/29.25/90.41→7.08/10.21/26.40ms, 실패0·90% 재사용 유지. WSL psutil은 새 비공개 시험 폴더에 배포판 package를 추출해 사용했고 OS에 설치하지 않았다. Windows/WSL 시간은 서로 합산하지 않으며 request-signature와 HTTPS/Bearer 수치도 섞지 않는다. [Windows 정제 비교](operations-performance-comparison.json).
+
+## 9. 최종 게시·설치본·CI와 인수 준비
+
+고정 코드 기준8af82c8의 Windows final-04와 같은193개 product-source를 사후 hash 대조한 WSL copy를 확인했다. Windows/WSL 각각664개 회귀, Release warning/error0, 최신 게시 headless3개·readiness8개, WSL private nginx HTTP 서명/HTTPS Bearer를 통과했다. WSL copy에는 Git metadata가 없으므로 sourceDirty/hash 공백을 false/0으로 채우지 않으며 사후 대조를 build attestation으로 확대하지 않는다. [정제 실행 증거](operations-closure-evidence.json).
+
+양 OS의 저장 경계36개 프로세스 강제 종료·native 후손·broker/재시작·health500/timeout/연결 실패·읽기 전용 inspect/dry-run·migration apply 거부·정확한 service 대상A/defaultB 불변을 확인했다. 이 수명 시험은 final-02/동일 Core의 게시본 이력이며 모든 변경 상태/진입점의 전수 또는 정전 내구성 주장은 하지 않는다. 최종 변경은 서버 sequence/검증 경계이고 최신 게시 headless/인증 회귀를 다시 수행했다.
+
+Windows 개발 MSI 생성→비설치 CAB 추출→GUI/Agent SHA 대조와 공식 preflight/failure 계약11개를 통과했다. Ubuntu RPM은 실행별 고유 디렉터리·정확한 package·data-only newc 경로/링크/중복/크기 제한·payload SHA·config0640/noreplace·credential root:uedt0750·state/log uedt0750을 검사했다. 중복 build-id 경고는 _build_id_links none으로 해소했다. 실제 install/scriptlet·서비스/계정 생성·회사 인증서는 수행하지 않았다. NuGet vulnerability 조회는 전 프로젝트0이었다.
+
+Stable workflow는 동일 commit functional gate와 signer 조건을 모두 요구하며 RPM key DB/GPG home은 실행별로 격리하고 정확한 fingerprint/파일만 서명한다. fast 계약·readiness/headless/restart 증거를 CI에 연결했지만 원격 실행은 미검증이다. 보관은 allowlist 요약 JSON/7일이며 키/DB/원시 log/CSV는 업로드하지 않는다.
+
+회사 인수 도구를 실제 개발 MSI/RPM에 대해 실행해 **미실행** 계획을 생성했다. install→service/권한→정확한 연결→upgrade→repair→승인 후 재부팅→uninstall/데이터 보존 순서이며 현재 호스트에서 실행하지 않는다. 계획 생성은 lifecycle 통과 증거가 아니다.
+
+### 남은 검증
+
+- 실제 GUI 취소/오류/복원 수용과 내레이터, 실제 UE 사용자 데이터/회사 RHEL/망·서비스 계정, 실제 서명 인증서와 guest 설치 수명주기·원격 CI.
+- Windows1연결 추가 성능 수용과 nginx 대용량, 모든 변경/취소/재개/정리/복원 장애 조합. 열린 writer/실제 업로드 계정 인수.
+- 복원 시 과거 signing identity, 원본 완전 유실과 회사 RPO/RTO, cache 데이터의 명시 수명 정책. discard는 live 기록 슬롯 회복이며 다른 owner 캐시를 삭제하지 않는다.
+
+완료6/부분19/대기3(열린22)를 유지한다. 새 GUI/회사 인수·OPS-08 실제 인증서/OPS-06 원격 CI 상한을 자동 상향하지 않았다. push/PR은 수행하지 않았다.
 
 ## 복원 활성화의 독립 서명 검사
 

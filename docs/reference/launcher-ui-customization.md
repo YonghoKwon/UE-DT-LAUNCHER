@@ -1,6 +1,6 @@
 # GUI 표시 설정·이미지 커스터마이징
 
-> 참고 가이드 / 문서 점검 2026-09-29 / 작업 기준 codex/ui-acceptance-finalization. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
+> 현재 가이드 / 문서 점검 2026-10-03 / 작업 기준 codex/operations-hardening-closure. 포스코DX 디자인/표시 설정은 유지했습니다. 현재 GUI 입력 중단 중이므로 문서 점검을 새 DPI/키보드/음성 수용으로 계산하지 않습니다. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
 
 이 문서는 이름·이미지·정렬을 다룹니다. 서버 접근 권한, 서명키, 설치 루트는 Agent 보호 설정과 서버 정책이 담당합니다. [설정 레퍼런스](guide-03-launcher-usage.md)의 설정 선택 순서를 먼저 확인하세요.
 

@@ -6,6 +6,8 @@
 
 | 기록 | 내용 |
 |---|---|
+| [운영 안전성 후속](validation/operations-closure-validation.md) · [정제 실행](validation/operations-closure-evidence.json) · [성능 비교](validation/operations-performance-comparison.json) | 양 OS664개·최신 headless3/readiness8·취소/캐시/정리/복원/인증·순번 병목·비설치 MSI/RPM·실환경 보류 |
+| [이전 headless 통합](validation/headless-operations-validation.md) | 당시635개·기능 구현과 초기 성능 미달 이력. 현재 판정과 구분 |
 | [빠른 비대화형 개선](validation/quick-wins-validation.md) · [정제 JSON](validation/quick-wins-evidence.json) | 양 OS601개·실제 IPC 근거 누락/구형·진단 합성·준비도 CI·양 OS 각8개·원격/GUI 보류 |
 | [최초 연결 진단·오류 해결](validation/readiness-validation.md) · [정제 JSON](validation/readiness-evidence.json) | 양 OS587개·읽기 전용 doctor·선택/승격/구형 호환·게시 E2E·실제 양 모드 설치/복구/복원·게시본별 수용 구분·사용자 GUI 검증 중단 |
 | [승인·승격 분리](validation/release-promotion-validation.md) · [정제 JSON](validation/release-promotion-evidence.json) | a8080ea·양 OS568개·권한별 추천·DB 이전·pending/running 불변·실제 지정 대기 GUI |

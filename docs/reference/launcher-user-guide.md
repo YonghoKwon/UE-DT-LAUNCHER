@@ -1,6 +1,8 @@
 # GUI 사용자 가이드
 
-> 참고 가이드 / 문서 점검 2026-09-29 / 작업 기준 codex/ui-acceptance-finalization. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
+> 현재 가이드 / 문서 점검 2026-10-03 / 작업 기준 codex/operations-hardening-closure. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다. 아래 실제 GUI 통과는 해당 과거 후보의 이력이며 현재 GUI 입력은 중단 상태입니다.
+
+취소 요청은 작업 완료와 다릅니다. 적용 전에는 작업자/안전한 복구 종료를 기다리고, 설치 commit 후에는 설치 완료·실행 생략/상태 재확인 안내를 따릅니다. 이미 시작한 앱은 취소로 종료하지 않습니다. 이번에는 관련 코드/headless만 검증했으며 실제 취소 버튼 수용은 재개 후 필요합니다.
 
 현재 GUI는 Windows 합성 앱으로 시험하며 Linux는 CLI 기준입니다. Linux 데스크톱 GUI에는 X11/Wayland가 필요합니다. 고정 후보 `8ce5060`의 관리형·portable 설치/업데이트·수명·개발자 복구/복원·preview 거부를 실제 확인했습니다. UI-01은1920×1080의 검증된 기본 배율 범위에서 수용했고, 남은 오류/개발자 확인(UI-02)과 접근성(UI-03)은 별도 대기입니다. 이전 게시본 `ab37fcb` 결과는 별도 이력으로 보존합니다. [이번 증거·남은 조건](archive/validation/ui-acceptance-finalization.md)·[개선 대장](../../IMPROVEMENTS.md)을 확인하세요.
 

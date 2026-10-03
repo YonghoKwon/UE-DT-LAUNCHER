@@ -4,7 +4,7 @@
 
 ## A. 최초 준비 — 관리자 작업
 
-서버 CLI 수명 관리: `client-key add ... --expires-at 2030-01-01T00:00:00Z`, `token-issue pc --expires-at ...`, `token-list`, `token-revoke-id --id 관리ID`. 생략하면 기존처럼 무기한이다. 새 자격 등록·실제 연결 성공 후 이전 자격을 폐기한다. DB schema5 업그레이드 전 서버/watch/작업을 중지하며 자동 snapshot 백업이 생성된다. 관리 목록에는 token/hash를 출력하지 않는다. `maxApiRequestsPerSecond`/`maxConcurrentDownloads`는 기본 null(비활성), 명시한 양수 한도 초과는429다.
+서버 CLI 수명 관리: `client-key add ... --expires-at 2030-01-01T00:00:00Z`, `token-issue pc --expires-at ...`, `token-list`, `token-revoke-id --id 관리ID`. 생략하면 기존처럼 무기한이다. 새 자격 등록·실제 연결 성공 후 이전 자격을 폐기한다. 현재 내부 DB schema6 전환 전 서버/watch/작업을 중지하며 일관된 snapshot 백업이 생성된다. 관리 목록에는 token/hash를 출력하지 않는다. `maxApiRequestsPerSecond`/`maxConcurrentDownloads`는 기본 null(비활성), 명시한 양수 한도 초과는429/Retry-After다. 실제 HTTP 슬롯 반환·만료/audit 원자성의 로컬 검증과 회사 계정/프록시 인수를 구분한다.
 
 | 순서 | 실행 위치 | 명령/작업 | 정상 결과 |
 |---:|---|---|---|

@@ -1,6 +1,6 @@
 # 실행 중 변경 차단과 수동 복구
 
-2026-09-28 / `0d12957` 기준 현재 가이드. 앱을 자동 종료하거나 다른 버전으로 자동 전환하지 않는 안전성 단계이다. 실제 회사 UE/서비스 계정 검증은 별도이다.
+2026-10-03 / codex/operations-hardening-closure 기준 현재 가이드. 앱을 자동 종료하거나 다른 버전으로 자동 전환하지 않는다. 등록 ACK/취소·commit 결과·host 시작 전 abort를 보강했다. [게시 프로세스/장애 증거](archive/validation/operations-closure-validation.md)와 실제 회사 UE/서비스 계정 인수는 별도다.
 
 ## 사용자에게 달라지는 점
 

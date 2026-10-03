@@ -2,7 +2,7 @@
 
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 배포 시스템입니다.
 
-문서 점검: **2026-10-03**, 작업 기준: `codex/headless-operations`. Core 물리 이동, 취소·재개/온라인 실행, 자격 수명, 오프라인 백업/통제된 복원, 확인형 정리, 조회 전용 자동 점검을 구현했습니다. Windows/WSL 각635개와 실제 게시 CLI·console Agent·서버 통합을 확인했습니다. [최신 검증/남은 조건](docs/reference/archive/validation/headless-operations-validation.md), [이전 GUI 이력](docs/reference/archive/validation/readiness-validation.md). GUI 조작 중단·성능 미달·회사 인수 조건은 유지합니다.
+문서 점검: **2026-10-03**, 작업 기준: `codex/operations-hardening-closure`. 취소/실행·요청자별 재개 캐시, 정리/복원·서명, 인증/한도·정확한 예약 점검을 보강했습니다. Windows/WSL 각각664개 회귀·Release 경고/오류0, 게시 CLI·console Agent·서버, 개발 MSI/RPM 비설치 추출을 확인했습니다. [최신 결과와 남은 조건](docs/reference/archive/validation/operations-closure-validation.md), [이전 GUI 이력](docs/reference/archive/validation/readiness-validation.md). GUI 입력 중단·원격 CI/회사 인수 미완료를 유지합니다.
 
 **현재 판단: 합성 앱 기반 배포·설치·실행·복구는 활용 가능한 단계이며, 회사 정식 운영 인수는 미완료입니다.** 현재 수치와 남은 작업은 [개선 진행 현황](IMPROVEMENTS.md), 상세 명령은 [운영 문서 색인](docs/reference/README.md)을 확인하세요.
 
@@ -20,11 +20,11 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 
 취소 후 표시는 작업 결과를 따릅니다. 적용 전 취소는 안전 종료를 기다리고, 이미 설치가 완료됐다면 실행 생략 또는 상태 재확인 안내를 제공합니다. 실행이 시작되기 전 티켓만 해당 시도에 맞춰 중단할 수 있습니다.
 
-현재 후속 작업은 `codex/operations-hardening-closure`에서 진행합니다. 시험 root 소유/경로·게시본 확인, 비밀 stdout 제외, 단계별 결과 기록을 보강했습니다. [후속 검증](docs/reference/archive/validation/operations-closure-validation.md).
+시험 root의 실제 소유/ACL/경로·게시본 hash를 확인하며 비밀 stdout은 저장하지 않습니다. 부분 실패/timeout/미측정도 기록하고 Python3.10 Linux 도구를 지원합니다. 관리형/portable GUI를 실제 클릭한 결과와 headless 결과는 구분합니다.
 
 현재 **완료6·부분19·대기3(총28, 열린22)** 항목입니다. 주요 headless 구현은 진행했지만 GUI/음성·장애 전수·원격 CI·회사 인수 및 PERF-03 미달은 남아 있습니다. [작업별 명령 표](docs/reference/feature-workflow.md)를 따라 실행하고, 이 숫자를 제품 전체 완성률로 해석하지 마세요.
 
-성능 재측정은 요청 실패0·90% 콘텐츠 재사용을 유지했지만 10연결 지연·시간 목표가 미달해 PERF-03을 완료로 올리지 않았습니다. [최종 수치와 조건](docs/reference/archive/validation/headless-performance-results.json). 테스트 활용과 회사 성능/운영 수용을 구분하세요.
+Catalog 순번은64개를 먼저 durable high-water로 예약하고 요청마다 서로 다른 번호를 발급합니다. 재시작 시 미사용 번호는 건너뛰며, 서명 응답이나 권한 허용 결과는 캐시하지 않습니다. Windows 재현 시험의10/30연결 p95는26.20/109.92→11.47/30.24ms로 개선됐지만 직전 후보의1연결 비교는10.6% 악화했습니다. PERF-03은75%를 유지합니다. 회사 SLA나 GUI 성능 보장은 아닙니다. [비교 조건](docs/reference/archive/validation/operations-closure-validation.md)
 
 자동 점검은 `scheduledCheck: {"enabled": true, "intervalSeconds": 3600}`처럼 관리자가 명시한 경우에만 `scheduled-check --config ...` 한 회차로 수행합니다. Catalog·설치 상태 조회만 하고 설치/실행/버전 전환은 하지 않습니다. Windows/Linux 비활성 템플릿은 저장소에 있으며 이 PC에는 등록하지 않았습니다.
 
@@ -38,7 +38,7 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 
 런타임 엔진·보안·transaction·IPC 소스는 이제 `src/UeDtLauncher.Core/`에 직접 위치합니다. 링크 컴파일을 제거했으며 기존 CLI/IPC 계약은 유지합니다.
 
-Headless 후속 작업은 `codex/headless-operations`에서 진행 중입니다. 마우스·키보드·실제 GUI 검증 중단을 유지하며 게시 CLI/console Agent/서버를 사용합니다. [묶음별 검증](docs/reference/archive/validation/headless-operations-validation.md). 측정 도구는 HTTP 요청 서명과 명시적 승격을 사용하도록 갱신했으며 운영 완료나 성능 목표 달성을 뜻하지 않습니다.
+마우스·키보드·실제 GUI 검증 중단을 유지합니다. MSI/RPM은 정확한 실행별 package와 payload hash를 확인하며, 현재 호스트에 설치/서비스/계정을 생성하지 않았습니다. 회사 인수용 미실행 계획은 `tools/prepare-company-acceptance.py`로 생성합니다. [설치본과 인수 준비](docs/reference/commercial-deployment.md)
 
 최종 목표는 **Unreal Engine DT 프로그램의 패키징 결과를 안전하게 배포하고, 회사에서 안정적으로 설치·업데이트·실행·복구할 수 있는 배포 시스템**입니다. 목표는 확정됐지만 회사 운영 승인 조건을 모두 충족한 상태는 아닙니다.
 
@@ -206,4 +206,4 @@ Linux 클라이언트/Agent는 `-r linux-x64`로 생성합니다. 네이티브 �
 - 기설치 앱 원격 삭제·실행 금지는 범위 밖입니다.
 - Agent 설치만으로 정기 업데이트가 시작되지는 않습니다. 현재 managed service-run은 한 회차 실행이며 주기 운영은 추가 설계가 필요합니다.
 
-운영 전 우선 보완: MSI 내부 EXE 서명 순서, 동명 프로세스 식별, Linux credential 소유권. [보완 목록](IMPROVEMENTS.md)의 OPS-08/09·SEC-03을 확인하세요. 기존 테스트 통과만으로 이 항목들이 해결됐다고 판단하지 않습니다.
+운영 전 우선 인수: 실제 회사 인증서와 설치된 payload 서명, 서비스 계정 credential 접근, 실제 UE 데이터·복구·RHEL/망 경로. 서명 순서·실행 수명·소유권 보호는 구현돼 있지만 현장 인수와 장애 전수는 남아 있습니다. [보완 목록](IMPROVEMENTS.md)의 OPS-08/09·SEC-03을 확인하세요.

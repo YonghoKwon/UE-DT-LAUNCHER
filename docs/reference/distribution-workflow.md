@@ -2,7 +2,7 @@
 
 2026-09-28: 신규 사내 HTTP는 [schema 3 요청 서명 설정](intranet-auth.md)을 사용합니다. 아래 HTTPS/Bearer 예제는 기존 모드용이며 HTTP로 주소만 바꾸면 안 됩니다. ZIP·수동 승인·권한 정책·버전 격리는 두 모드에 공통입니다.
 
-> 참고 가이드 / 성능 추가 점검 2026-09-28. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
+> 현재 운영 가이드 / 점검 2026-10-03, codex/operations-hardening-closure. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
 
 설정 예시는 실제 회사 주소·계정·권한으로 바꿔야 합니다. 이전 실행 근거는 [2026-09-12 기록](archive/validation/distribution-validation.md), 성능 추가 결과와 한계는 [2026-09-28 기록](archive/validation/performance-validation.md), 남은 검증은 [보완 목록](../../IMPROVEMENTS.md)을 확인합니다.
 
@@ -137,12 +137,14 @@ UeDtLauncher agent update --project demo --environment dev --channel dev --versi
 
 ## 5. 유지보수 및 검증
 
-2026-09-28 추가: 서버 `intakeWorkers`는 기본1/최대2입니다. 접수 상태의 단계·처리 바이트·예상 추가 공간을 inspect로 확인할 수 있습니다. DB schema v2로 최초 실행 시 기존 DB를 백업한 뒤 migration하며, 이전/새 프로세스를 같은 DB에 동시에 실행하지 않습니다. active_work·OS 작업 잠금이 활성 임시 폴더를 정리로부터 보호합니다. 상세 교체/복원·측정 주의는 [성능 검증](archive/validation/performance-validation.md)을 따릅니다.
+서버 `intakeWorkers`는 기본1/최대2입니다. 접수 단계·처리 바이트·예상 추가 공간을 inspect로 확인합니다. 현재 DB 내부 schema는6이며 변경 전 일관된 SQLite backup을 생성합니다. 서버/watch를 먼저 정지하고, 구/신 서버를 같은 DB에 동시에 실행하지 마세요. active_work·OS 작업 잠금이 진행 중 폴더를 보호합니다. 2-worker는 선택 기능이며 API 간섭까지 함께 측정해야 합니다. [측정·검증](archive/validation/operations-closure-validation.md)
 
-usage는 디렉터리별 용량을 표시합니다. cleanup은 실패한 scratch 작업 폴더만 대상으로 기본 dry-run하며 `--apply`를 명시해야 지웁니다. 게시된 릴리스와 참조 중인 원본 snapshot은 삭제하지 않습니다.
+`usage`는 용량 조회입니다. 운영 정리는 앞의 `retention inspect → plan → apply --confirm` 절차를 사용합니다. 기존 `cleanup`은 scratch 전용 호환 명령이며 공개판·승격·활성 자료의 삭제 기능으로 확대하지 않습니다. 중단 journal의 이동/삭제 의도와 directory identity를 유지하고 재생성 source를 수집하지 않습니다. 완료 삭제는 DB ledger에 남깁니다.
 DB audit에는 접수/승인 상태 변경이 기록됩니다. nginx 접근 로그는 토큰을 포함하지 않아야 하며, 서비스 로그와 함께 접근 거부를 확인합니다.
 
-백업은 서비스를 멈춘 후 root 디렉터리 전체(DB, WAL, releases, processing 포함)를 파일 권한과 함께 복사합니다. server.json·policy·개인키는 별도 암호화 백업으로 보호합니다. 복원은 서비스 정지 상태의 빈 root에 원래 구조로 복사하고 소유자/권한을 복원한 다음 list/inspect, 서명 다운로드, 허용·거부 PC 검사를 수행합니다. sequence DB를 예전 값으로 복원하면 클라이언트의 replay 검사에 걸릴 수 있으므로 복원 시 기존 최고 sequence 이상으로 운영자가 복구해야 합니다.
+백업/복원은 앞의 전용 CLI로 수행합니다. raw DB/WAL 복사나 Catalog 순번의 임의 증가는 대체 절차가 아닙니다. 미완료 retention을 먼저 정리하고, `backup create/verify`로 DB snapshot·파일 inventory/hash·정책을 확인합니다. private signing key는 번들에 포함되지 않으므로 별도 보호 백업이 필요합니다.
+
+`restore stage`의 새 비공개 root는 모든 live 명령이 차단됩니다. `activate`는 현재 생존 원본의 순번·승격·폐기/만료·정책, 필수 작업/릴리스 전체 파일과 서명된 Manifest를 확인한 뒤 fence를 마지막에 해제합니다. 의도된 삭제 이력이 없는 누락, 추가 파일, 손상 서명, 확인할 수 없는 과거 signing key는 차단합니다. 현재 자료를 포함한 새 backup으로 다시 stage하거나 관리자 점검을 수행하며 client trust를 삭제하지 않습니다. 원본 완전 유실 복구와 회사 RPO/RTO는 별도입니다.
 
 `tools/test-distribution-e2e.sh <Linux서버exe> <Linux런처exe> <nginx>`는 임시 디렉터리에서 TLS·두 파일 접수·승인·서명·IP 차단·위조 헤더·Range·두 버전 동시 설치·Linux 실행권한·repair·토큰 폐기를 검증합니다. 회사 서버 및 실제 Unreal 패키지에 대한 실측 결과와 이 테스트 결과는 구분합니다.
 
