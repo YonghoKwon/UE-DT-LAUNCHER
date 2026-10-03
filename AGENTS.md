@@ -37,6 +37,8 @@
 
 ## 보존할 경계
 
+- schema6 전환 전 일관된 DB backup/서버 중지를 지킨다. incomplete legacy retention journal을 자동 채택하지 않는다. candidate directory identity와 durable move/delete intents를 유지하고 이동 후 source 재수집을 금지한다. 잔여 승인 파일만 검사·삭제하며 완료 삭제 ledger/audit를 보존한다.
+
 - resume cache는 신뢰된 실제 requester context를 사용한다. service identity로 보충하거나 클라이언트 owner 주장을 신뢰하지 않는다. content quota는 partial/verified/new 예약을 포함하고 owned temporary만 정리한다. discard는 비활성 archive/ID 재사용 거부이며 active lock inode를 삭제하지 않는다.
 
 - operation registration ACK 이전 취소 의도를 유실하지 않는다. commit 완료와 조회/실행 취소를 분리한다. launch-abort는 원래 OS requester/attempt/ticket·Host 미부착에만 허용하며 started/unknown을 해제하지 않는다. Backend token/result 계약을 실행/문제 해결에 동일 적용한다.

@@ -7,7 +7,8 @@ namespace UeDtLauncher.Distribution;
 public sealed record RetentionCandidate(string Path, string? JobId, long Bytes, IReadOnlyList<BackupFile> Files);
 public sealed record RetentionPlan(int SchemaVersion, string Root, IReadOnlyList<string> Jobs, IReadOnlyList<string> Temporary,
     string ReferenceHash, IReadOnlyList<RetentionCandidate> Candidates, string Fingerprint, string PlanId);
-public sealed record RetentionJournal(RetentionPlan Plan, int NextIndex, string Phase);
+public sealed record RetentionJournal(RetentionPlan Plan, int NextIndex, string Phase,List<RetentionItem>? Items=null);
+public sealed record RetentionItem(int Index,string Phase,string DirectoryIdentity,string Quarantine);
 
 public static class RetentionMaintenance
 {
@@ -90,6 +91,7 @@ public static class RetentionMaintenance
         {
             journal = await JsonFiles.ReadAsync<RetentionJournal>(journalPath);
             if (journal.Plan != plan && Hash(journal.Plan) != Hash(plan)) throw new InvalidDataException("Cleanup journal changed.");
+            if(journal.Items is null && journal.Phase!="Completed")throw new InvalidDataException("Legacy incomplete cleanup requires review; no automatic adoption.");
             if (journal.Phase == "Completed")
             {
                 if(plan.Candidates.Any(c=>Directory.Exists(SafePath.ResolveInsideChecked(settings.Root,c.Path))))
@@ -102,24 +104,72 @@ public static class RetentionMaintenance
         {
             var actual = await PlanAsync(settings, plan.Jobs, plan.Temporary);
             if (Hash(actual with {PlanId=plan.PlanId,Fingerprint=""}) != plan.Fingerprint) throw new InvalidDataException("Cleanup plan changed; inspect and confirm a new plan.");
-            journal = new(plan,0,"Pending"); await JsonFiles.WriteAsync(journalPath,journal);
+            journal = new(plan,0,"Pending",[]); await JsonFiles.WriteAsync(journalPath,journal);
         }
         for (var index=journal.NextIndex;index<plan.Candidates.Count;index++)
         {
             var candidate=plan.Candidates[index];
             var source=SafePath.ResolveInsideChecked(settings.Root,candidate.Path);
-            var quarantine=SafePath.ResolveInsideChecked(settings.Root,".retention-quarantine/" + plan.Fingerprint + "/" + index);
-            if (Directory.Exists(source) && Directory.Exists(quarantine)) throw new InvalidDataException("Ambiguous cleanup state.");
-            if (Directory.Exists(source)) { Directory.CreateDirectory(Path.GetDirectoryName(quarantine)!);Directory.Move(source,quarantine); }
-            Boundary.Value?.Invoke("quarantine");
-            if (Directory.Exists(quarantine))
+            var privateRoot=SafePath.ResolveInsideChecked(settings.Root,".retention-quarantine");MaintenanceStorage.PrivateDirectory(privateRoot);
+            var privatePlan=SafePath.ResolveInsideChecked(privateRoot,plan.Fingerprint);MaintenanceStorage.PrivateDirectory(privatePlan);
+            var quarantine=SafePath.ResolveInsideChecked(privatePlan,index.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            var item=journal.Items!.SingleOrDefault(value=>value.Index==index);
+            if(item is null)
+            {
+                if(!Directory.Exists(source))throw new InvalidDataException("Confirmed source disappeared before movement.");
+                item=new(index,"MoveIntent",MaintenanceStorage.DirectoryIdentity(source),Path.GetRelativePath(settings.Root,quarantine));journal.Items!.Add(item);
+                await JsonFiles.WriteAsync(journalPath,journal);Boundary.Value?.Invoke("move-intent");
+            }
+            async Task Transition(string phase)
+            {
+                item=item! with{Phase=phase};journal.Items![index]=item;await JsonFiles.WriteAsync(journalPath,journal);
+            }
+            if(item.Phase=="MoveIntent")
+            {
+                if(Directory.Exists(quarantine))
+                {if(MaintenanceStorage.DirectoryIdentity(quarantine)!=item.DirectoryIdentity)throw new InvalidDataException("Quarantine identity changed.");}
+                else
+                {
+                    if(!Directory.Exists(source) || MaintenanceStorage.DirectoryIdentity(source)!=item.DirectoryIdentity)throw new InvalidDataException("Source was recreated; make a new plan.");
+                    Directory.Move(source,quarantine);
+                }
+                Boundary.Value?.Invoke("quarantine");await Transition("Quarantined");
+            }
+            if(item.Phase=="Quarantined")
             {
                 var actual=new List<BackupFile>();foreach(var file in DistributionBackup.Files(quarantine))actual.Add(new(Path.GetRelativePath(quarantine,file).Replace('\\','/'),new FileInfo(file).Length,await Hashing.Sha256FileAsync(file)));
-                if(Hash(actual)!=Hash(candidate.Files))throw new InvalidDataException("Quarantined content changed; no deletion authorized.");
-                Directory.Delete(quarantine,true); // Protected quarantine: upload accounts cannot swap entries after validation.
-                Boundary.Value?.Invoke("delete");
+                if(Hash(actual)!=Hash(candidate.Files))throw new InvalidDataException("Quarantined content changed.");
+                await Transition("DeleteIntent");Boundary.Value?.Invoke("delete-intent");
             }
-            else if (journal.NextIndex==index && journal.Phase=="Pending" && File.Exists(source)) throw new InvalidDataException("Unexpected cleanup entry.");
+            if(item.Phase=="DeleteIntent")
+            {
+                if(Directory.Exists(quarantine))
+                {
+                    if(MaintenanceStorage.DirectoryIdentity(quarantine)!=item.DirectoryIdentity)throw new InvalidDataException("Quarantine identity changed.");
+                    var remaining=DistributionBackup.Files(quarantine);var expected=candidate.Files.ToDictionary(file=>file.Path,StringComparer.Ordinal);
+                    foreach(var path in remaining)
+                    {
+                        var relative=Path.GetRelativePath(quarantine,path).Replace('\\','/');
+                        if(!expected.TryGetValue(relative,out var file) || new FileInfo(path).Length!=file.Bytes)throw new InvalidDataException("Unexpected remaining cleanup file.");
+                        using(var held=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.Read|FileShare.Delete))
+                        {
+                            var hash=Convert.ToHexString(await SHA256.HashDataAsync(held)).ToLowerInvariant();
+                            if(hash!=file.Sha256)throw new InvalidDataException("Remaining cleanup file changed.");
+                            File.Delete(path);
+                        }
+                        Boundary.Value?.Invoke("file-delete");
+                    }
+                    Directory.Delete(quarantine,true);
+                }
+                Boundary.Value?.Invoke("delete");await Transition("Deleted");
+            }
+            if(item.Phase!="Deleted")throw new InvalidDataException("Unknown cleanup phase.");
+            using(var db=DistributionBackup.Open(settings.Root,false))
+            using(var tx=db.BeginTransaction())
+            {
+                using var q=db.CreateCommand();q.Transaction=tx;q.CommandText="INSERT OR IGNORE INTO maintenance_deletions(id,path,job,tree_hash,at) VALUES($id,$path,$job,$hash,$at)";
+                q.Parameters.AddWithValue("$id",plan.PlanId+":"+index);q.Parameters.AddWithValue("$path",candidate.Path);q.Parameters.AddWithValue("$job",(object?)candidate.JobId??DBNull.Value);q.Parameters.AddWithValue("$hash",Hash(candidate.Files));q.Parameters.AddWithValue("$at",DateTimeOffset.UtcNow.ToString("O"));q.ExecuteNonQuery();tx.Commit();
+            }
             journal=journal with {NextIndex=index+1,Phase="Deleting"};await JsonFiles.WriteAsync(journalPath,journal);
         }
         using(var db=DistributionBackup.Open(settings.Root,false))

@@ -80,7 +80,7 @@ public sealed class ReleasePromotionTests : IDisposable
         using (var db = store.Open()) { using var q = db.CreateCommand(); q.CommandText = "DROP TABLE promotions; DROP TABLE promotion_state; PRAGMA user_version=3"; q.ExecuteNonQuery(); }
         SqliteConnection.ClearAllPools(); var before = Snapshot(root);
         var preview = ReleasePromotions.PreviewMigration(store.Settings); Assert.True(preview.ApplyRequired); Assert.Equal(before, Snapshot(root));
-        var upgraded = new IntakeStore(store.Settings); Assert.Single(Directory.GetFiles(root, "distribution.pre-v5-*.db"));
+        var upgraded = new IntakeStore(store.Settings); Assert.Single(Directory.GetFiles(root, "distribution.pre-v6-*.db"));
         var p = new ReleasePromotions(upgraded); Assert.False(p.Snapshot().Ready);
         Assert.Throws<InvalidOperationException>(() => p.Promote(Selection("1.0.0"), 0, "before migration"));
         p.Migrate(); var current = p.Inspect(Selection("1.0.0")); Assert.Equal(Selection("1.0.0").ReleaseId, current.RecommendedRelease);

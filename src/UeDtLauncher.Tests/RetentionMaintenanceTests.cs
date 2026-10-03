@@ -53,4 +53,24 @@ public sealed class RetentionMaintenanceTests : IDisposable
         RetentionMaintenance.Boundary.Value=null;
         await RetentionMaintenance.ApplyAsync(store.Settings,plan,true);Assert.False(Directory.Exists(path));
     }
+    [Theory][InlineData("delete")][InlineData("file-delete")]
+    public async Task InterruptedDeletionNeverRecollectsRecreatedSource(string boundary)
+    {
+        var path=Failed();File.WriteAllText(Path.Combine(path,"second"),"second");var plan=await RetentionMaintenance.PlanAsync(store.Settings,["failed"],[]);
+        var once=false;RetentionMaintenance.Boundary.Value=stage=>{if(stage==boundary && !once){once=true;throw new IOException("injected");}};
+        await Assert.ThrowsAsync<IOException>(()=>RetentionMaintenance.ApplyAsync(store.Settings,plan,true));
+        Directory.CreateDirectory(path);File.WriteAllText(Path.Combine(path,"payload"),"failed");
+        RetentionMaintenance.Boundary.Value=null;await RetentionMaintenance.ApplyAsync(store.Settings,plan,true);
+        Assert.Equal("failed",File.ReadAllText(Path.Combine(path,"payload")));
+        using var db=store.Open();using var q=db.CreateCommand();q.CommandText="SELECT COUNT(*) FROM maintenance_deletions";Assert.Equal(1L,q.ExecuteScalar());
+    }
+    [Fact]
+    public async Task RecreatedSourceBeforeMovementIsRejectedEvenWithSameBytes()
+    {
+        var path=Failed();var plan=await RetentionMaintenance.PlanAsync(store.Settings,["failed"],[]);
+        RetentionMaintenance.Boundary.Value=stage=>{if(stage=="move-intent")throw new IOException("injected");};
+        await Assert.ThrowsAsync<IOException>(()=>RetentionMaintenance.ApplyAsync(store.Settings,plan,true));
+        Directory.Move(path,path+"-original");Directory.CreateDirectory(path);File.WriteAllText(Path.Combine(path,"payload"),"failed");
+        RetentionMaintenance.Boundary.Value=null;await Assert.ThrowsAsync<InvalidDataException>(()=>RetentionMaintenance.ApplyAsync(store.Settings,plan,true));Assert.True(Directory.Exists(path));
+    }
 }

@@ -12,6 +12,12 @@ Windows fixture 계약3개 및 d756af2의 기존 cohort-06 CLI/console Agent/서
 
 ## 이후 묶음
 
+## 4. 정리 상태/삭제 이력
+
+move intent/quarantined/delete intent/deleted를 후보별로 원자 기록한다. OS directory identity에 결속하고 이동 후에는 source를 재수집하지 않는다. 부분 삭제는 승인 목록의 잔여 파일만 hash 검사하고 진행한다. quarantine parent는 신규 생성 시 비공개 owner/ACL/mode, 기존 영역은 검증한다. 완료한 삭제는 schema6 maintenance_deletions에 유지한다.
+
+Windows16개 정리/승격 회귀와 retention-01 게시 headless 통과. 삭제/파일별 삭제 경계 종료 후 같은 경로·내용의 새 source를 보존했고 이동 전 재생성은 거부했다. schema5→6은 서버 정지·pre-v6 SQLite backup 후 전환하며 구 서버 동시 사용을 금지한다. 실제 업로드 계정과 열린 writer의 회사 인수는 별도다.
+
 ## 3. 재개 캐시/기록 수명
 
 Cache schema2는 trusted IPC requester 또는 portable 현재 owner/session별 partition에 저장한다. Agent 서비스 계정으로 사용자 캐시를 결속하지 않는다. 이전 cache는 자동 채택/삭제하지 않는다. 설치별 content quota에 partial/verified/new를 예약하며, 소유가 확인된 copy temporary만 정리한다. 사용 불가/예산 부족은 네트워크 처리로 전환한다.

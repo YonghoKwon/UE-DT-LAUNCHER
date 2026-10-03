@@ -53,8 +53,8 @@ public sealed class IntakeStore
         using var command = db.CreateCommand();
         command.CommandText = "PRAGMA user_version";
         var version = Convert.ToInt32(command.ExecuteScalar());
-        if (version > 5) throw new InvalidDataException("Distribution database schema is newer than this server.");
-        if (version == 5) return;
+        if (version > 6) throw new InvalidDataException("Distribution database schema is newer than this server.");
+        if (version == 6) return;
         initialization.Dispose();
         using var maintenance = DistributionMaintenanceLease.Acquire(Root, true);
         using var offline = new AuthenticationProcessLease(Root);
@@ -62,7 +62,7 @@ public sealed class IntakeStore
         if (existed)
         {
             using var backup = new SqliteConnection(new SqliteConnectionStringBuilder
-            { DataSource = Path.Combine(Root, "distribution.pre-v5-" + DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmssfffffff") + ".db"), Pooling = false }.ToString());
+            { DataSource = Path.Combine(Root, "distribution.pre-v6-" + DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmssfffffff") + ".db"), Pooling = false }.ToString());
             backup.Open(); db.BackupDatabase(backup);
         }
         using var transaction = db.BeginTransaction(); command.Transaction = transaction;
@@ -107,7 +107,8 @@ public sealed class IntakeStore
         command.CommandText = """
             UPDATE tokens SET management_id='legacy-' || substr(hash,1,24) WHERE management_id IS NULL;
             CREATE UNIQUE INDEX IF NOT EXISTS tokens_management_id_idx ON tokens(management_id);
-            PRAGMA user_version=5;
+            CREATE TABLE IF NOT EXISTS maintenance_deletions(id TEXT PRIMARY KEY,path TEXT NOT NULL,job TEXT,tree_hash TEXT NOT NULL,at TEXT NOT NULL);
+            PRAGMA user_version=6;
             """;
         command.ExecuteNonQuery(); transaction.Commit();
     }
