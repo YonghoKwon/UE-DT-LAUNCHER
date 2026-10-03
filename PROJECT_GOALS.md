@@ -14,6 +14,8 @@
 
 ## 현재 위치
 
+운영 후속은 확인된 코드 결함과 장애 조합을 마무리한다. fixture/결과 검증만으로 회사/GUI 인수를 종료하지 않는다. [closure 증거](docs/reference/archive/validation/operations-closure-validation.md)
+
 이번 회사 인수 준비 결과는 CLI 운영 도구·자동화·게시 프로세스에 한정한다. 실제 GUI 재개, 새 취소/모든 장애조합, 회사 RHEL/UE·서비스 계정·실제 인증서·MSI/RPM 설치 수명주기·remote CI·성능 수용을 완료 조건에서 빼지 않는다.
 
 최신 성능 후보는 기능 정확성/재사용을 유지했으나 시간 수용 미달이다. 회사 성능 목표/운영 승인을 선언하지 않으며 PERF-03의 다음 병목/통제된 환경 재검증이 필요하다.

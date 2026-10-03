@@ -10,7 +10,7 @@ REPO = Path(__file__).resolve().parents[1]
 
 
 def source_inventory():
-    names = subprocess.check_output(['git', 'ls-files', 'src', 'Directory.Build.props', 'Directory.Build.targets', 'global.json', 'NuGet.Config'], cwd=REPO, text=True).splitlines()
+    names = subprocess.check_output(['git', 'ls-files', '--cached','--others','--exclude-standard','src', 'Directory.Build.props', 'Directory.Build.targets', 'global.json', 'NuGet.Config'], cwd=REPO, text=True).splitlines()
     return {n: sha256(REPO/n) for n in names}
 
 

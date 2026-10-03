@@ -6,6 +6,8 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 ## 먼저 확인할 진행 현황
 
+후속 closure 시작: fixture 실제 소유/경로/게시본 확인과 비밀 stdout 비보관, 실패 checkpoint를 추가했다. Windows 계약3개와 기존 게시본의 headless 실행 통과. 항목 전체 진행률은 새 결함 수정·후속 게시 검증 후 판단한다. [현재 기록](docs/reference/archive/validation/operations-closure-validation.md)
+
 최종 로컬 통합: Windows/WSL635개·headless runner·broker/health/native family·Windows36개 종료 경계, 개발 MSI 비설치 추출 및 Ubuntu RPM 생성/권한 조회를 확인했다. C# Release는경고/오류0, RPM 중복 build-id 경고는 별도 남았다. CI 코드만 연결했으며 원격 실행/설치본 실제 수명주기/회사 인증서는 미검증이다. 최신상태50/75% 상한은 유지한다.
 
 PERF-03 최신 cohort-06 재측정은1/10/30 p95가18.16/97.01/365.33ms, 실패0이나 비교 기준 개선 미달이다. 새 signer pool은 제거했고 계측만 남겼다. 75%와 시간 미달을 유지한다. [정제 비교](docs/reference/archive/validation/headless-performance-results.json). 90% 콘텐츠 절감 성공을 API 지연 완료로 합산하지 않는다.

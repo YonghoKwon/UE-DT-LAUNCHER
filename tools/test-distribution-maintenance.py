@@ -6,6 +6,7 @@ from pathlib import Path
 import sqlite3
 import subprocess
 import time
+from fixture_contract import claim, inside, verify
 
 
 def main():
@@ -13,24 +14,25 @@ def main():
     parser.add_argument('--server',required=True,type=Path)
     parser.add_argument('--config',required=True,type=Path,help='Stopped synthetic server.json')
     parser.add_argument('--output',required=True,type=Path,help='New proof directory')
-    args=parser.parse_args(); args.output.mkdir(parents=True,exist_ok=False)
+    args=parser.parse_args()
     executable=str(args.server.resolve()); config=args.config.resolve()
-    settings=json.loads(config.read_text(encoding='utf-8-sig'))
-    if not str(settings['publicUrl']).startswith('http://127.0.0.1:') or not ('publish' in config.parts or config.parent.parent.name.startswith('uedt-headless-')):
-        raise RuntimeError('Only an isolated loopback published fixture is allowed')
+    settings=verify(config.parent,config,executable)
+    from gui_fixture_evidence import validate_origin
+    validate_origin(settings['publicUrl']);validate_origin(settings['listenUrl'])
+    claim(args.output)
     flags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0
     counter=0
     def run(*command,expected=0):
         nonlocal counter
         counter+=1
         result=subprocess.run([executable,*map(str,command),'--config',str(config)],capture_output=True,text=True,encoding='utf-8',timeout=120,creationflags=flags)
-        (args.output/('private-command-'+str(counter)+'.log')).write_text(result.stdout+result.stderr,encoding='utf-8')
+        (args.output/('private-command-'+str(counter)+'.log')).write_text('secret output omitted\n' if command[:1]==('token-issue',) else result.stdout+result.stderr,encoding='utf-8')
         if (expected is None and result.returncode==0) or (expected is not None and result.returncode!=expected):raise RuntimeError('Maintenance command failed: '+str(command[:2]))
         return result.stdout
     backup=args.output/'backup'; target=args.output/'restored'
     run('backup','plan'); run('backup','create','--output',backup); run('backup','verify','--backup',backup)
     run('restore','stage','--backup',backup,'--target',target)
-    issued=run('token-issue','pc-test').strip()
+    run('token-issue','pc-test')
     metadata=json.loads(run('token-list'))[-1];run('token-revoke-id','--id',metadata['id'])
     with (args.output/'server-private.log').open('w') as log:
         owned=subprocess.Popen([executable,'serve','--config',str(config)],stdout=log,stderr=log,creationflags=flags)

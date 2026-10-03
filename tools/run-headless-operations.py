@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from evidence_contract import Evidence
 
 
 def main():
@@ -15,12 +16,15 @@ def main():
     args=parser.parse_args();tools=Path(__file__).resolve().parent
     private=Path(tempfile.mkdtemp(prefix='uedt-headless-'));fixture=private/'fixture'
     binaries={name:str(Path(getattr(args,name)).resolve()) for name in ('launcher','agent','server')}
-    checks=[]
+    evidence_report=Evidence(args.output,binaries,['auth-operations-schedule','offline-maintenance'])
     try:
         def run(name,command):
+            evidence_report.start(name)
             with (private/(name+'.log')).open('w',encoding='utf-8') as log:
-                result=subprocess.run(command,stdout=log,stderr=log,timeout=480,creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
-            checks.append({'name':name,'success':result.returncode==0})
+                try:result=subprocess.run(command,stdout=log,stderr=log,timeout=480,creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
+                except subprocess.TimeoutExpired:
+                    evidence_report.finish(name,False,kind='timeout');raise
+            evidence_report.finish(name,result.returncode==0,result.returncode,'process-failed' if result.returncode else None)
             if result.returncode:raise RuntimeError('Functional proof failed')
         run('auth-operations-schedule',[sys.executable,str(tools/'test-intranet-auth.py'),'--root',str(fixture),
             *[part for name,path in binaries.items() for part in ('--'+name,path)],'--operation-proof','--credential-proof','--schedule-proof','--service-proof'])
@@ -32,13 +36,7 @@ def main():
         success=True
     except (OSError,ValueError,subprocess.TimeoutExpired,RuntimeError):
         success=False
-    source=os.environ.get('GITHUB_SHA','')
-    if not source:
-        found=subprocess.run(['git','rev-parse','HEAD'],capture_output=True,text=True);source=found.stdout.strip()
-    report={'schemaVersion':1,'source':source if re.fullmatch('[0-9a-f]{40}',source) else 'unavailable',
-        'platform':'Windows' if os.name=='nt' else 'Linux','success':success,'checks':checks,
-        'count':sum(c['success'] for c in checks)}
-    output=Path(args.output);output.parent.mkdir(parents=True,exist_ok=True);output.write_text(json.dumps(report,indent=2),encoding='utf-8')
+    evidence_report.complete(success)
     print(('PASS' if success else 'FAIL')+': headless operations; allowlisted summary only')
     return 0 if success else 1
 

@@ -22,6 +22,7 @@ import zlib
 import hashlib
 from gui_fixture_evidence import snapshot_preferences, sha256, wait_agent_ready, wait_server_ready, hold_fixture, verify_cohort, FixtureHarnessLock, copy_server_support
 from promotion_fixture_support import promote
+from fixture_contract import claim, seal
 
 GUI_LONG_DISPLAY_NAME = "포스코DX 디지털 트윈 통합 운영 시뮬레이터 — 제철 공정·설비 상태·안전 점검 및 원격 협업 시험 프로젝트"
 GUI_SECONDARY_DISPLAY_NAME = "포스코DX 보조 검증 프로젝트 — 다중 프로젝트 선택 및 작은 화면 키보드 탐색을 위한 합성 시험"
@@ -84,6 +85,7 @@ def main():
         raise RuntimeError('GUI fixtures require a new empty root; existing data will not be replaced')
     if (root / "server.json").exists():
         raise RuntimeError("Use a new isolated root; existing fixture will not be replaced")
+    claim(root)
     if args.prepare_gui: snapshot_preferences(root)
     client = root / "client"
     private_root=client / ('portable-private' if args.prepare_gui and args.gui_mode=='portable' else 'agent')
@@ -113,7 +115,8 @@ def main():
         counter += 1
         result = subprocess.run([binary, *map(str, arguments)], env=env, capture_output=True, text=True,
                                 encoding="utf-8", errors="replace", timeout=120, creationflags=flags)
-        (root / f"command-{counter:02d}.log").write_text(result.stdout + result.stderr, encoding="utf-8")
+        sensitive = arguments[:2] in (("credential","set"),("credential","keygen")) or arguments[:1]==("token-issue",)
+        (root / f"command-{counter:02d}.log").write_text("sensitive provisioning output omitted\n" if sensitive else result.stdout + result.stderr, encoding="utf-8")
         if result.returncode != expected:
             raise RuntimeError(f"Command {counter} failed ({result.returncode}); inspect isolated log")
         return result.stdout
@@ -135,6 +138,7 @@ def main():
           "signingKeyPath": str(root / "release.pem"), "policyPath": str(root / "policy.json"),
           "authenticationMode": "request-signature-v1"})
     write(root / "policy.json", fixture_access_policy(args.gui_long_labels))
+    seal(root,{'server':server,'launcher':launcher,**({'agent':args.agent} if args.agent else {})},root/'server.json')
     credential_storage='portable' if args.prepare_gui and args.gui_mode=='portable' else 'managed'
     run(launcher, "credential", "keygen", "--name", "device", "--key-id", "pc-test-key", "--public-out", root / "device-public.json", "--storage", credential_storage)
     run(server, "client-key", "add", "--client", "pc-test", "--public-key", root / "device-public.json", "--config", root / "server.json")
