@@ -175,6 +175,37 @@ public sealed class RequestAuthenticationTests
         public override DateTimeOffset GetUtcNow() => Utc;
         public void Advance(int seconds) => timestamp += seconds * 1000;
     }
+    [Fact]
+    public async Task HeldDownloadReturns429ThenReleasesSlotWithoutAuthorizationCaching()
+    {
+        var entered=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);var release=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var hooks=new DistributionHttp.TestHooks{BeforeFile=async context=>{entered.TrySetResult();await release.Task.WaitAsync(context.RequestAborted);}};
+        await using var fixture=await Fixture.CreateAsync(settings=>settings.MaxConcurrentDownloads=1,hooks);
+        var challenge=await fixture.Challenge();var path="/releases/demo/prod/stable/1.0.0/windows-x64/files/game.bin";
+        var active=fixture.Send(fixture.Proof(path),challenge,"bytes=0-2");await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        using(var rejected=await fixture.Send(fixture.Proof(path),challenge)){Assert.Equal(HttpStatusCode.TooManyRequests,rejected.StatusCode);Assert.Equal(1,rejected.Headers.RetryAfter!.Delta!.Value.TotalSeconds);}
+        release.SetResult();using(var completed=await active)Assert.Equal(HttpStatusCode.PartialContent,completed.StatusCode);
+        new DistributionDeviceKeys(fixture.Store).Revoke("pc-key");
+        using var unauthorized=await fixture.Send(fixture.Proof(path),challenge);Assert.Equal(HttpStatusCode.Unauthorized,unauthorized.StatusCode);
+    }
+    [Fact]
+    public async Task RateWindowUsesMonotonicClockAndRecoversAfter429()
+    {
+        var clock=new MonotonicClock();await using var fixture=await Fixture.CreateAsync(settings=>settings.MaxApiRequestsPerSecond=2,new(){Clock=clock});
+        var challenge=await fixture.Challenge();using(var first=await fixture.Send(fixture.Proof("/api/v1/catalog"),challenge))Assert.Equal(HttpStatusCode.OK,first.StatusCode);
+        using(var excess=await fixture.Send(fixture.Proof("/api/v1/catalog"),challenge))Assert.Equal(HttpStatusCode.TooManyRequests,excess.StatusCode);
+        clock.Utc=clock.Utc.AddYears(-10);clock.Advance(1);
+        using var recovered=await fixture.Send(fixture.Proof("/api/v1/catalog"),challenge);Assert.Equal(HttpStatusCode.OK,recovered.StatusCode);
+    }
+    [Theory][InlineData("/api/v1/catalog")][InlineData("/releases/demo/prod/stable/1.0.0/windows-x64/manifest.json")][InlineData("/releases/demo/prod/stable/1.0.0/windows-x64/files/game.bin")]
+    public async Task ExpiryIsImmediateAcrossSignedEndpointsAndCannotRevive(string path)
+    {
+        var clock=new MonotonicClock();await using var fixture=await Fixture.CreateAsync(hooks:new(){Clock=clock},expiresAt:clock.Utc.AddSeconds(1));
+        var challenge=await fixture.Challenge();clock.Utc=clock.Utc.AddSeconds(1);
+        using(var expired=await fixture.Send(fixture.Proof(path),challenge))Assert.Equal(HttpStatusCode.Unauthorized,expired.StatusCode);
+        clock.Utc=clock.Utc.AddDays(-1);
+        using var rollback=await fixture.Send(fixture.Proof(path),challenge);Assert.Equal(HttpStatusCode.Unauthorized,rollback.StatusCode);
+    }
 
     private sealed class Fixture : IAsyncDisposable
     {
@@ -185,17 +216,18 @@ public sealed class RequestAuthenticationTests
         public string Private = "";
         public HttpClient Http = null!;
         private WebApplication app = null!;
-        public static async Task<Fixture> CreateAsync()
+        public static async Task<Fixture> CreateAsync(Action<DistributionSettings>? configure=null,DistributionHttp.TestHooks? hooks=null,DateTimeOffset? expiresAt=null)
         {
             var f = new Fixture(); Directory.CreateDirectory(f.Root);
             var settings = new DistributionSettings { Root = f.Root, AuthenticationMode = "request-signature-v1", PublicUrl = "http://127.0.0.1:18500", ListenUrl = "http://127.0.0.1:0", PolicyPath = Path.Combine(f.Root, "policy.json"), SigningKeyPath = Path.Combine(f.Root, "release.pem") };
+            configure?.Invoke(settings);
             using var releaseKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             await File.WriteAllTextAsync(settings.SigningKeyPath, releaseKey.ExportPkcs8PrivateKeyPem());
             var publicPath = Path.Combine(f.Root, "public.pem"); await File.WriteAllTextAsync(publicPath, releaseKey.ExportSubjectPublicKeyInfoPem());
             f.Store = new(settings); await f.Policy(true);
             f.Config = new(); f.Config.Security.TrustedSigningKeys.Add(new() { KeyId = settings.SigningKeyId, PublicKeyPath = publicPath });
             using var device = ECDsa.Create(ECCurve.NamedCurves.nistP256); f.Private = device.ExportPkcs8PrivateKeyPem();
-            f.Public = new(1, "pc-key", device.ExportSubjectPublicKeyInfoPem()); new DistributionDeviceKeys(f.Store).Add("pc", f.Public);
+            f.Public = new(1, "pc-key", device.ExportSubjectPublicKeyInfoPem()); new DistributionDeviceKeys(f.Store).Add("pc", f.Public,expiresAt);
             var metadata = new ReleaseSidecar { ProjectId = "demo", Version = "1.0.0" };
             var directory = Path.Combine(f.Root, "releases", metadata.ReleaseId);
             Directory.CreateDirectory(Path.Combine(directory, "files")); await File.WriteAllTextAsync(Path.Combine(directory, "files", "game.bin"), "abcdefghij");
@@ -206,7 +238,7 @@ public sealed class RequestAuthenticationTests
                 command.Parameters.AddWithValue("$id", metadata.ReleaseId); command.Parameters.AddWithValue("$dir", directory); command.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(metadata, JsonFiles.Options)); command.ExecuteNonQuery();
             }
             new ReleasePromotions(f.Store).Promote(new(metadata.ProjectId, metadata.Environment, metadata.Channel, metadata.Platform, metadata.Version), 0, "test fixture");
-            f.app = DistributionHttp.CreateApplication(f.Store); await f.app.StartAsync();
+            f.app = DistributionHttp.CreateApplicationCore(f.Store,hooks); await f.app.StartAsync();
             f.Http = new() { BaseAddress = new Uri(f.app.Urls.Single()) }; return f;
         }
         public Task Policy(bool allowed) => JsonFiles.WriteAsync(Store.Settings.PolicyPath, new AccessPolicy { Clients = [new ClientAccess { Id = "pc", Addresses = ["127.0.0.0/8"], Grants = allowed ? [new ReleaseGrant { ProjectId = "demo", Environment = "prod", Channel = "stable" }] : [] }] });

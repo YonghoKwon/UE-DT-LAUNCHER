@@ -12,6 +12,12 @@ Windows fixture 계약3개 및 d756af2의 기존 cohort-06 CLI/console Agent/서
 
 ## 이후 묶음
 
+## 6. 인증/한도 게시 경계
+
+Request limit에 내부 monotonic clock, actual Kestrel 파일 dispatch barrier seam을 추가했다(제품 설정/환경변수로 활성화 불가). held download N/N+1의429/Retry-After·정상 완료 슬롯 반환·폐기 후401, window 회복, endpoint 만료/clock rollback·expiry audit rollback/동시1회 latch를 확인했다.
+
+관련48개 Windows 회귀 및 boundaries-01 publish headless 만료/폐기/복원/점검 통과. 모든 회사 경로·계정/부하·HEAD/image 권한 전수는 최종 matrix/회사 인수와 구분한다.
+
 ## 5. 복원 정합성
 
 target 전체 stage를 private directory/exclusive lease로 예약하고 shared live lease는 staged fence를 검사한다. 모든 store/serve/watch/쓰기 진입점이 보호된다. source/target 잠금은 canonical path 순서다. 복사 후 hash, current DB integrity, jobs.source/snapshot·active_work·release의 양방향 파일 목록/hash, latest policy를 검증한다. 의도된 삭제 ledger는 source 부재와 함께 인정하고 이전 backup으로 삭제 자료를 다시 공개하지 않는다. incomplete retention은 backup을 거부한다.

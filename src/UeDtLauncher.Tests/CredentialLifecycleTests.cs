@@ -52,6 +52,16 @@ public sealed class CredentialLifecycleTests : IDisposable
         Assert.Throws<SqliteException>(() => keys.Add("another", registration));
     }
     [Fact]
+    public void ExpiryAuditFailureNeverPartiallyCommitsAndConcurrentLatchIsOnce()
+    {
+        var clock=new Clock();var tokens=new DistributionTokens(store,clock);var token=tokens.Issue("pc",clock.Now);
+        using(var db=store.Open()){using var q=db.CreateCommand();q.CommandText="CREATE TRIGGER fail_expiry BEFORE INSERT ON audit WHEN NEW.action='credential-expired' BEGIN SELECT RAISE(ABORT,'injected'); END";q.ExecuteNonQuery();}
+        Assert.Throws<SqliteException>(()=>tokens.Authenticate(token));Assert.False(tokens.List().Single().Expired);
+        using(var db=store.Open()){using var q=db.CreateCommand();q.CommandText="DROP TRIGGER fail_expiry";q.ExecuteNonQuery();}
+        Parallel.For(0,10,_=>Assert.Null(tokens.Authenticate(token)));
+        using var check=store.Open();using var count=check.CreateCommand();count.CommandText="SELECT COUNT(*) FROM audit WHERE action='credential-expired'";Assert.Equal(1L,count.ExecuteScalar());
+    }
+    [Fact]
     public void CanonicalAddressRejectsDuplicateMalformedProxyValuesAndNeverTrustsRemoteHeaders()
     {
         Assert.Null(DistributionClientAddress.Resolve(IPAddress.Loopback, ["1.2.3.4", "1.2.3.5"]));

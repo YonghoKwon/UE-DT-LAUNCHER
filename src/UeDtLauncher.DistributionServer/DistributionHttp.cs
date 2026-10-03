@@ -22,6 +22,9 @@ public static class DistributionHttp
     }
 
     public static WebApplication CreateApplication(IntakeStore store)
+        =>CreateApplicationCore(store,null);
+    internal sealed class TestHooks{internal Func<HttpContext,Task>? BeforeFile;internal TimeProvider? Clock;}
+    internal static WebApplication CreateApplicationCore(IntakeStore store,TestHooks? hooks)
     {
         if (File.Exists(Path.Combine(store.Root, "restore-staged.json"))) throw new InvalidDataException("Restored root is staged; reconcile current security records before serving.");
         var promotions = new ReleasePromotions(store);
@@ -46,10 +49,10 @@ public static class DistributionHttp
         catch { app.DisposeAsync().AsTask().GetAwaiter().GetResult(); throw; }
         var authentication = app.Services.GetRequiredService<DeviceAuthenticationState>();
         var publisher = new ApprovedPublisher(store);
-        var tokens = new DistributionTokens(store);
-        var deviceKeys = new DistributionDeviceKeys(store);
+        var tokens = new DistributionTokens(store,hooks?.Clock);
+        var deviceKeys = new DistributionDeviceKeys(store,hooks?.Clock);
         var assets = new PublishedAssetCache();
-        var limits = new DistributionRequestLimits(store.Settings);
+        var limits = new DistributionRequestLimits(store.Settings,hooks?.Clock);
         var sequenceGate = new SemaphoreSlim(1, 1);
         var databaseGate = store.DatabaseGate;
         IAccessPolicyProvider provider = new FileAccessPolicyProvider(store.Settings.PolicyPath);
@@ -181,6 +184,7 @@ public static class DistributionHttp
                 context.Response.StatusCode = 503; // Invalid/unavailable policy never grants access.
             }
         });
+        if(hooks?.BeforeFile is not null)app.Use(async(context,next)=>{if(context.Request.Path.Value?.Contains("/files/",StringComparison.Ordinal)==true)await hooks.BeforeFile(context);await next();});
         app.MapMethods("/api/v1/catalog", new[] { "GET", "HEAD" }, async (HttpContext context) =>
         {
             var releases = (List<PublishedRelease>)context.Items["allowed"]!;

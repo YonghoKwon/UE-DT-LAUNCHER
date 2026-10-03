@@ -20,8 +20,10 @@ internal sealed class DistributionRequestLimits
     private readonly object gate = new();
     private long window;
     private int count;
-    internal DistributionRequestLimits(DistributionSettings settings)
+    private readonly TimeProvider clock;
+    internal DistributionRequestLimits(DistributionSettings settings,TimeProvider? clock=null)
     {
+        this.clock=clock??TimeProvider.System;
         if (settings.MaxApiRequestsPerSecond is <= 0 or > 1000000 || settings.MaxConcurrentDownloads is <= 0 or > 4096)
             throw new InvalidDataException("Request limits must be explicit positive bounded values or null (disabled).");
         rateLimit = settings.MaxApiRequestsPerSecond;
@@ -32,7 +34,7 @@ internal sealed class DistributionRequestLimits
         if (rateLimit is null) return true;
         lock (gate)
         {
-            var now = Environment.TickCount64 / 1000;
+            var now = clock.GetTimestamp()/clock.TimestampFrequency;
             if (window != now) { window = now; count = 0; }
             if (count >= rateLimit) return false;
             count++; return true;

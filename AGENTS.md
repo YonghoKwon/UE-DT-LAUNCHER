@@ -37,6 +37,8 @@
 
 ## 보존할 경계
 
+- limit 시간/HTTP file barrier는 내부 시험 seam만 사용한다. 정상 동시성·429·슬롯 반환·만료/audit 원자성을 actual HTTP로 검증하고 검사 우회 CLI를 만들지 않는다.
+
 - stage 전체 exclusive target reservation, live lease 이후 staged fence 검사, source/target canonical lock ordering을 유지한다. 필수 source/snapshot/active/release의 양방향 inventory/hash와 policy를 검증한다. incomplete retention backup·staged authority·기록 없는 누락은 거부하고 fence 제거는 마지막이다.
 
 - schema6 전환 전 일관된 DB backup/서버 중지를 지킨다. incomplete legacy retention journal을 자동 채택하지 않는다. candidate directory identity와 durable move/delete intents를 유지하고 이동 후 source 재수집을 금지한다. 잔여 승인 파일만 검사·삭제하며 완료 삭제 ledger/audit를 보존한다.
