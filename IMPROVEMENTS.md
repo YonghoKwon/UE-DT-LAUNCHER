@@ -1,16 +1,16 @@
 # 개선 진행 현황과 보완 필요 사항
 
-점검: 2026-10-03 / `codex/operations-hardening-closure`. 주요 headless 구현 후 취소/캐시·정리/복원·인증/점검 결함, 측정/설치본·CI 경계를 보강했습니다. [최신 증거](docs/reference/archive/validation/operations-closure-validation.md). 아래 이전 날짜/게시본은 이력이며 진행률은 항목 전체의 남은 수용 조건까지 함께 판단합니다.
+점검: 2026-10-03 / `codex/client-workflow-completion`. 작업 수명·재개·빈 목록/권한 복귀 표시 결함을 수정하고 최종 게시본의 GUI 수용을 진행 중입니다. [현재 증거](docs/reference/archive/validation/client-workflow-validation.md). 아래 이전 날짜/게시본은 이력이며 진행률은 항목 전체의 남은 수용 조건까지 함께 판단합니다.
 
 P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선. 우선순위는 제안이며 일정·수치 목표는 미정입니다. 미검증과 미구현을 구분합니다.
 
 ## 먼저 확인할 진행 현황
 
-GUI 재연결 추가: 관리형 추천 대기·service 단절/재시도·미설치 불변을 확인한 후, 실제 일반 GUI v1 설치·v2 업데이트/실행·3파일 해시·v1 보호 snapshot 불변·창 종료 후 자식 유지·정상 종료 후Quiescent를 통과했다. 개발자 exact v2 확인창 취소도 파일/marker 불변이다. 완료 후 작업 취소 버튼 잔존은 수정 대기이며 양 모드/에디션 복구·복원 등 전체 수용은 남는다. USER-02/UI-02 진행률과 전체 집계는 유지한다. [관측 기록](docs/reference/archive/validation/client-editions-validation.md)
+현재 후속: 작업 시작/종료·취소 요청·재개 조건·세대별 진행 이벤트와 정상 Running 안내를 수정했다. 실제 GUI에서 발견한 관리형 resume 선택 거부, 빈 목록의 이전 카드 잔존, 권한 복귀 후 설치 상태 누락도 수정했다. 최종 제품 소스의 Windows/WSL각698개, 시험 도구14+프록시1개와 게시 HTTP 요청 서명·취소/재개가 통과했다. `final-05` 관리형 일반에서 추천 대기/빈 목록/서비스 재연결·조회 무변경, v1 설치·실행·창 종료 후 자식 유지, v2 다운로드 취소·즉시 재개·Range·4파일 해시·v1 보존·자동 실행0건을 확인했다. 네 조합 전체 수용은 남아 USER-02/UI-02는75%, USER-03은50%와 기존 집계를 유지한다. 이번 화면은 사용자 합의의1440×900·100%이며1920×1080 증거로 계산하지 않는다.
 
-최신 에디션 후속: 별도 General/Developer 빌드·MSI 두 종·base/developer RPM, 공통 CLI/Agent/runtime-host, GUI 취소 완료/재개 결속을 구현했다. Windows/WSL 각667개·게시 headless/readiness·비설치 payload 검증 통과. 실제 마우스 수용은 위 관리형 부분 통과와 잔여 시험을 구분한다. USER-02/UI-02는75%, USER-03은50%, 완료6/부분19/대기3 집계를 유지한다. [에디션 검증](docs/reference/archive/validation/client-editions-validation.md)
+이전 에디션 작업 이력: 별도 General/Developer 빌드·MSI 두 종·base/developer RPM, 공통 CLI/Agent/runtime-host, GUI 취소 완료/재개 결속을 구현했다. 당시 Windows/WSL각667개·게시 headless/readiness·비설치 payload 검증 통과. 현재 작업 수명/GUI 수용은 위 최신 기록을 따르고 [에디션 검증](docs/reference/archive/validation/client-editions-validation.md)은 당시 이력으로 보존한다.
 
-최신 요약: Windows/WSL 각각664개 회귀·게시 CLI/console Agent/서버·HTTP/HTTPS·준비도·수명/장애·개발 MSI/RPM 비설치 검증을 진행했습니다. 새로운 실제 GUI/음성·회사 UE/RHEL/서비스 계정·실제 인증서·원격 CI는 미실행입니다. 따라서 **완료6·부분19·대기3, 열린22개**를 유지합니다. 대부분의 headless 기능은 구현돼 있지만 열린 항목이 전부 미구현이라는 뜻은 아닙니다.
+현재 집계: **완료6·부분19·대기3, 열린22개**를 유지합니다. 실제 합성 GUI 부분 수용은 위 최신 기록을 따르며 회사 UE/RHEL/서비스 계정·실제 인증서·내레이터 음성·원격 CI는 별도 미검증입니다. 대부분의 headless 기능은 구현돼 있지만 열린 항목이 전부 미구현이라는 뜻은 아닙니다.
 
 PERF-03: Windows10/30연결 p95 26.20/109.92→11.47/30.24ms, WSL10/30연결29.25/90.41→10.21/26.40ms를 관측했습니다. 실패0·90% 콘텐츠 절감 유지. Windows 직전1연결은10.6% 악화했고 측정 순서/ambient load는 완전 통제하지 못했으므로75%를 유지합니다. 원래 d756af2 비교와 최적화 직전 비교를 구분하며 원시 키/로그는 보관하지 않습니다.
 
@@ -108,13 +108,13 @@ Headless 주요 묶음은 구현·양 OS 회귀/게시 시험을 진행했다. �
 | USER-01 | schema3 opt-in·릴리스/설치/owner 결속·host 경로/권한/write 보강 | 후속 Windows/WSL 각552개·Root 누락/다른 릴리스/로그 접근 거부 회귀 | 게시 runtime-host 합성 v1/v2·HTTP/HTTPS 확인, 새 실제 UE fixture 사용자 조작 대기 | 실제 UE GUI 보존·앱 CustomLogs·명시적 이전·회사 계정은 미완료 | 50% |
 | OPS-06 | HTTPS 및 양 OS readiness CI·정제 요약7일 보관 연결 | 동일 readiness 명령 양 OS 각8개·실패 요약/허용필드 확인 | **현재 변경의 원격 CI 증거 미확인** | 원격 CI 실행·운영 인수 필요 | 50% |
 | USER-05 | schema 3 생성기·doctor·설치 예제 확인 | 관련 자동화 통과 | Windows/Linux 생성 설정 연결·실제 MSI/RPM 내용 확인 | 설정 예제 보완 범위 충족, 회사 설치 승인은 별도 | 100% |
-| USER-02 | 진단 상태/대상/조치·근거 보존·모순 검증·중복 안내 수정 | Windows/WSL 각601개·실제 IPC의 구형/누락·headless 중복 회귀 | 이번 게시 readiness 양 OS 각8개, 이전 GUI는 게시본별 이력 | GUI 중단 유지. 최신 후보 전체 실제 수용은 재개 후 확인 | 75% |
+| USER-02 | 진단 상태/대상/조치·근거 보존·모순 검증·중복 안내 수정 | final-05 Windows/WSL각698개 및 구형/누락 IPC 회귀 | final-05 양 OS 게시 readiness 및 네 GUI 조합의 빈 목록/재연결 조회 불변 | 네 조합 남은 오류별 조치/재시도와 회사 새 PC 인수 별도 | 75% |
 | SEC-03 | 생성 시 ACL/mode/owner·명시적 repair | Windows/WSL 권한 회귀 통과 | uedt 읽기 성공·nobody 거부 확인 | Windows LocalService 실제 실행 미확인 | 75% |
 | SEC-04 | 요청 서명·nonce·Catalog 결속·Agent 이미지 | 변조/replay/재시작/만료 회귀 | 양 OS 게시 HTTP/HTTPS·자원 샘플 및 부하 | 과거 공백은 이력, 실제 nginx 대용량/회사 위험 수용 남음 | 75% |
 | OPS-08 | 공식 preflight·EXE 선서명·MSI payload gate | 계약 11개·개발 MSI 추출/hash 확인 | 실제 회사 서명 인증서 미확인 | 인증서·설치본 서명 검증 대기 | 50% |
 | OPS-09 | 엄격 runtime 기록·서비스 snapshot/barrier·공통 변경 조정기 | 기존 안전성 Windows/WSL 회귀 각 393개·집계 검사 | 저장 경계 강제 종료 각 36개·health 실패·정확한 서비스 대상·CLI E2E 및 게시본별 GUI 이력 | 이번 portable 실행 중 버튼 차단/수명 확인을 추가. 모든 변경 진입점의 실제 전수 검증과 회사 UE/계정은 남음 | 75% |
 | UI-01 | 포스코DX·반응형·주 버튼 고정·제목 배율 | 작은 DIP/200%·포커스 회귀 | 고정8ce5060,1920×1080·OS100%·글자100%·고대비 끔, 양 모드/두 프로필 실제 관측 | 2026-09-29 사용자 합의의 제한 범위 충족. 다른 해상도/DPI 후속 | 100% |
-| UI-02 | 선택/runtime·복원·재시도·진단/조치 안내 구현 확인 | d665d67 Windows/WSL 각587개·IPC/HTTP/HTTPS 확인 | readiness final의 양 모드/두 프로필 실제 설치·수명·복구·복원·확인/오류/설정 재시도 이력 | final-02 전체 GUI는 사용자 중단 중. 작은 환경/음성은 별도 | 75% |
+| UI-02 | 선택/runtime·복원·진단·작업 수명/재개/빈 목록 표시 수정 | final-05 Windows/WSL각698개·게시 HTTP/IPC 확인 | final-05 관리형 일반 v1 설치/수명·v2 취소/Range 재개 통과. 이전 후보 전체/부분 수용은 이력 | 같은 최종 게시본 네 조합의 잔여 기능/오류/복원 직접 수용 필요 | 75% |
 | UI-03 | 제목 배율·Local Tab·대화창 고대비/focus·실제 framework peer | 관련 headless 72개, 연결된 peer의 이름 변경·byte tick 억제 | 사전 게시본 Windows 글자200%/Tab 관측, 사용자 prefs 원복 확인 | 최종 키보드/OS 고대비 전체 흐름 대기. 내레이터 음성 후속 보류로 75% 유지 | 75% |
 
 근거: [성능 검증 기록](docs/reference/archive/validation/performance-validation.md), [CI 구성](.github/workflows/build.yml), 각 항목의 커밋·미완료 조건. 다른 항목의 기존 기반 기능이나 문서 작성만으로 추가 보완 진척을 자동 가산하지 않았습니다.
@@ -161,7 +161,7 @@ Headless 주요 묶음은 구현·양 OS 회귀/게시 시험을 진행했다. �
 | ID/우선 | 진행률 | 상태 | 현재 근거·영향 | 보완 방향·완료 조건 |
 |---|---:|---|---|---|
 | USER-01/P1 | 50% | 부분 · GUI 협업 대기 | `cf99ba1`: 릴리스/설치 결속·명시적 root·user host credential 보호·Linux 권한·UserDir/log write 보강. Windows/WSL 각552개·게시 합성 host 통과. [후속 증거](docs/reference/archive/validation/runtime-data-acceptance-completion.md) | 실제 UE GUI 설치/업데이트/복원·SaveGame 보존 사용자 직접 조작 대기. CustomLogs·데이터 이전·회사 계정 미완료. 실제 수용 전75%로 올리지 않음 |
-| USER-02/P1 | 75% | 부분 · 로컬 진단/GUI 확인 | `8e42536`·`cc7ff02`·`5e3a247`: 읽기 전용 진단·mode/target/capability·준비도·조치 안내·지원 ZIP. Windows/WSL 각587개, 게시 HTTP/HTTPS·구형 Agent·양 모드 실제 오류/재시도·설정 수정 확인. [증거](docs/reference/archive/validation/readiness-validation.md) | 마지막 조치 문구 보강의 영향받은 오류 화면을 새 후보로 확인. 최신 후보 전체 GUI 수용·실제 회사 새 PC는 별도 |
+| USER-02/P1 | 75% | 부분 · 최종 GUI 수용 진행 중 | 읽기 전용 진단·준비도·지원 정보 유지. final-05각698개 및 게시 HTTP/HTTPS/readiness·네 조합 빈 목록/재연결 무변경. [증거](docs/reference/archive/validation/client-workflow-validation.md) | 최신 게시본의 네 조합 잔여 오류별 조치/재시도. 실제 회사 새 PC 인수는 별도 |
 | USER-03/P2 | 50% | 부분 진행 · headless | ACK/commit·실제 owner/session cache·partial/new 예산·비활성 archive 및 GUI token/result 연결, 양 OS 게시 검증 | 적용/복구/부분 파일 장애 전수·실제 GUI/회사 계정 필요 |
 | USER-04/P2 | 50% | 부분 진행 · headless | 새 실행 온라인 인증/권한 필수, 기존 실행 앱 미종료 | 폐기/네트워크 단절/정확한 선택의 전수 실행과 회사 정책 인수 |
 | USER-05/P1 | 100% | 완료 · 설정 보완 범위 | schema 3 생성기·doctor·MSI 예제/RPM 설정, Windows/Linux publish 생성 설정 E2E와 실제 artifact 내용 확인 | `24cc451` 및 최종 검증. MSI/RPM 실제 설치 수명주기는 OPS-02로 유지. [기록](docs/reference/archive/validation/intranet-auth-validation.md) |
@@ -171,7 +171,7 @@ Headless 주요 묶음은 구현·양 OS 회귀/게시 시험을 진행했다. �
 | ID/우선 | 진행률 | 상태 | 현재 상태·영향 | 보완 방향·완료 조건 |
 |---|---:|---|---|---|
 | UI-01/P1 | 100% | 완료 · 1920×1080 범위 한정 | 고정8ce5060 양 모드/두 프로필 실제 GUI 및 화면 진단 확인:1920×1080·OS100%·글자100%·고대비 끔. 2026-09-29 사용자 합의로 수용 범위 조정 | **추가 테스트 필요:**1366×768·1280×720 등 다른 해상도, OS125/150%·큰 글자/고대비 최악 조건. 미검증을 지원 보장으로 표현하지 않음. [증거·범위 변경](docs/reference/archive/validation/ui-acceptance-finalization.md) |
-| UI-02/P1 | 75% | 부분 · 최신 후보 GUI 중단 | d665d67 각587개 및 readiness final 양 모드/두 프로필 실제 전체 기능 이력. final-02 조치 문구 수정 후 양 모드403 확인. [게시본별 증거](docs/reference/archive/validation/readiness-validation.md) | 최신 후보 전체 수용은 [단일 체크리스트](docs/reference/guide-03-launcher-usage.md#보류-중인-gui-수용-체크리스트)를 따라 재개 후 확인. 이력 합산 금지, 작은 환경은 후속 |
+| UI-02/P1 | 75% | 부분 · 최종 GUI 수용 진행 중 | final-05각698개 회귀와 관리형 일반 v1 설치/수명·v2 취소/Range 재개/4파일 검증. [게시본별 증거](docs/reference/archive/validation/client-workflow-validation.md) | 네 조합 잔여 수용은 [단일 체크리스트](docs/reference/guide-03-launcher-usage.md#보류-중인-gui-수용-체크리스트) 참조. 이전 후보 합산 금지 |
 | UI-03/P2 | 75% | 부분 · 음성 보류/OS 대기 | 제목 배율·Tab/focus·대화창 고대비, 연결된 framework peer 이름 변경·byte tick 억제 회귀. 사전 게시본 실제 글자200%/Tab·prefs 원복 확인 | 새 후보 키보드 전체 흐름·OS 고대비 확인. 내레이터 실행/녹음/청취는 후속 보류하며 코드/UIA 통과로 대체하지 않음 |
 | UI-04/P2 | 0% | 대기 · 추가 보완 | 트레이·완료 알림은 이전 범위에서 제외 | 필요성 합의 후 opt-in 구현. 닫기/종료 의미·알림 설정 명확화 |
 

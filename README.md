@@ -2,7 +2,7 @@
 
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 배포 시스템입니다.
 
-문서 점검: **2026-10-03**, 작업 기준: `codex/client-editions-ux-acceptance`. 일반 `UeDtLauncher.exe`와 개발자 `UeDtLauncher.Developer.exe`를 별도 빌드합니다. 설정으로 GUI 종류를 바꿀 수 없습니다. Windows/WSL 각각667개 회귀·Release 경고/오류0, 두 MSI와 기본/개발자 추가 RPM의 비설치 검증을 확인했습니다. 연결 복구 후 관리형 일반 GUI의 v1 설치·v2 업데이트/실행·해시·v1 보존·창 종료 후 자식 수명, 개발자 exact v2 확인/취소 불변을 실제 마우스로 확인했습니다. [이번 검증·남은 마우스 시험](docs/reference/archive/validation/client-editions-validation.md).
+문서 점검: **2026-10-03**, 작업 기준: `codex/client-workflow-completion`. 일반 `UeDtLauncher.exe`와 개발자 `UeDtLauncher.Developer.exe`를 별도 빌드하며 설정으로 GUI 종류를 바꿀 수 없습니다. 최종 제품 소스의 Windows/WSL 회귀는 각각698개 통과했고 양 OS 게시본을 생성했습니다. 설치본 비설치 검증은 [이전 에디션 기록](docs/reference/archive/validation/client-editions-validation.md), 현재 고정 게시본의 실제 GUI 결과는 [작업 흐름 검증](docs/reference/archive/validation/client-workflow-validation.md)에서 구분합니다.
 
 기본 빌드는 `LauncherEdition=General`입니다. 개발자는 `dotnet publish src/UeDtLauncher -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:LauncherEdition=Developer`로 생성합니다. `--build-info`에서 에디션을 확인하세요. Developer 배포에는 공통 runtime-host인 일반 실행 파일도 포함해야 하며, `tools/publish_runtime_cohort.py --output <새폴더> --rid win-x64`는 두 EXE·Agent·서버와 두 클라이언트 ZIP을 함께 생성합니다.
 
@@ -10,7 +10,7 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 
 ## 프로젝트 목표와 처음 읽을 안내
 
-2026-10-03 GUI 재연결 후 관리형 service 단절/재시도·미설치 불변에 더해 실제 설치/업데이트를 확인했습니다. 완료 후 작업 취소 버튼이 남는 표시 결함과 개발자/portable 복구·복원 등 잔여 수용은 열려 있습니다. 관측1440×900은1920×1080 시험을 대신하지 않습니다. [실제 관측과 환경](docs/reference/archive/validation/client-editions-validation.md)을 확인하세요.
+작업 시작/종료·취소 요청 표시와 진행 이벤트 수명을 통일했고, 관리형 재개 선택 검증·빈 목록 표시·권한 복귀 후 설치 상태 조회를 수정했습니다. 최종 `final-05` 관리형 일반 화면에서 v1 설치/실행·창 종료 후 자식 유지와 v2 다운로드 취소/Range 재개·4파일 해시·v1 보존·재개 후 자동 실행0건을 확인했습니다. 개발자/portable 및 나머지 오류·복원 수용은 계속 진행 중이며 이전 후보 성공을 합산하지 않습니다. 사용자 합의에 따라 이번 실제 화면은 **1440×900·100%**로 기록합니다. 기존 UI-01의1920×1080 한정 수용과는 별도입니다.
 
 자동 점검의 `checked`는 준비도와 설치 상태 확인이 함께 완료된 경우입니다. `action-required`는 관리자/사용자 조치, `verification-pending`은 보류된 검사이며 종료0을 실행 가능으로 해석하지 않습니다.
 
@@ -71,7 +71,7 @@ flowchart LR
 
 ## 최초 연결 점검과 문제 해결
 
-현재 GUI 자동 조작은 사용자 요청으로 중단 상태입니다. 구현·이전 게시본의 실제 통과·최신 후보 재검증을 구분하며, 재개 후 남은 범위는 [단일 GUI 수용 체크리스트](docs/reference/guide-03-launcher-usage.md#보류-중인-gui-수용-체크리스트)를 따릅니다.
+GUI 마우스 검증은 재개됐습니다. 구현·이전 게시본의 실제 통과·최종 게시본 재검증을 구분하며 남은 범위는 [단일 GUI 수용 체크리스트](docs/reference/guide-03-launcher-usage.md#보류-중인-gui-수용-체크리스트)를 따릅니다.
 
 | 실행 위치·담당 | 입력/행동 | 결과와 다음 조치 |
 |---|---|---|

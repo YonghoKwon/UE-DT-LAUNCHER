@@ -1,6 +1,6 @@
 # 작업 지침
 
-점검: 2026-10-03 / 작업 기준 codex/client-editions-ux-acceptance. 저장소 전체에 적용합니다.
+점검: 2026-10-03 / 작업 기준 codex/client-workflow-completion. 저장소 전체에 적용합니다.
 
 ## 문서 관리 계약
 
@@ -40,7 +40,7 @@
 - 일반/개발자 GUI는 LauncherBuildInfo의 컴파일 에디션으로 결정한다. config/env/실행 옵션/파일명으로 바꾸지 않는다. Core clientProfile는 CLI/legacy 선택 호환용이며 서버 권한과 혼용하지 않는다.
 - General/Developer GUI의 obj/bin·assembly를 분리하고 Developer의 브랜드 URI는 실제 assembly로 해석한다. 공통 runtime-host UeDtLauncher는 developer ZIP/설치본에도 포함한다. 런처 self-update 자동 교체는 사용하지 않고 원본 설정/pending을 보존한다.
 - 일반 MSI는 일반/Agent, 개발자 MSI는 일반/개발자/Agent이며 같은 제품 계열의 동일 버전 중복을 차단한다. RPM developer addon은 exact base version 의존성과 별도 파일 소유권을 가진다. 실제 설치/계정은 별도 인수다.
-- 2026-10-03 사용자가 GUI 마우스 검증 재개를 승인했다. 새 합성 fixture에만 적용한다. 현재 세션 Disc/GetCursorPos0x80070005는 환경 제약이며 입력 가능 상태가 복구되기 전 실제 클릭 통과로 기록하지 않는다. CLI 설치로 GUI 시험을 대신하지 않는다.
+- 2026-10-03 사용자가 GUI 마우스 검증 재개를 승인했다. 새 합성 fixture에만 적용한다. 초기 Disc/GetCursorPos0x80070005 환경 제약과 재연결 후 실제 클릭 통과를 구분하며 CLI 설치로 GUI 시험을 대신하지 않는다.
 
 - Catalog sequence reservation은 exclusive 인증 서버 수명 안에서 최대64개 high-water를 commit한 뒤 발급한다. 실패/재시작으로 번호를 재사용하지 않고 overflow/잘못된 DB형식은 차단한다. 정상 예약은 복원 순번 우회가 아니며 Catalog/권한 캐시와 혼용하지 않는다. 비교의 느려진1연결·누락 지표를 숨기지 않는다.
 - 복원 활성화는 원본 일치만으로 충분하지 않다. 릴리스 tuple·Manifest 서명 ID/알고리즘·전체 파일 hash/inventory를 별도 검사한다. 확인할 수 없는 이전 signing identity는 staged 점검 대상으로 남긴다.
@@ -130,6 +130,11 @@
 - DB schema 변경 전 백업, 작업별 OS 잠금, active_work 보호를 유지합니다. 잠금 파일을 삭제하거나 긴 ZIP I/O를 공용 잠금 안에 넣지 않습니다.
 
 ## UI 규칙
+
+- 작업 수명은 공통 start/finish 경계를 사용한다. 실제 시작 즉시 취소 표시, 취소 요청 중 중복 입력 차단, 종료 상태 해제 후 화면 갱신 순서를 지킨다. 진행 콜백 생성과 UI 큐 처리 양쪽에서 세대 ID를 검사해 종료/이전 작업 이벤트를 버린다.
+- 재개 표시와 적용은 같은 선택·Manifest digest·재개 가능한 phase·runtime 상태 판정을 사용한다. operation-resume의 선택은 기존 서버의 exact 검증과 일치시키며 다른 operation 제어 명령에 임의 선택을 허용하지 않는다. 정상 Running은 안내 상태이고 변경은 차단하되 새 오류 지원 ID를 만들지 않는다.
+- 빈 Catalog 종료에서는 이전 프로젝트/설치/재개 표시를 제거한다. 빈 화면의 다시 확인도 Catalog만 갱신하지 않고 정확한 선택의 설치 상태까지 읽기 전용으로 확인한다.
+- 2026-10-03 사용자 합의로 이번 게시본 화면/기능 시험은 원격 세션의 실제1440×900·100%로 기록한다. 이전 UI-01의1920×1080 한정 수용과 합산하거나 실제 OS 배율 시험으로 확장하지 않는다.
 
 - 실제 GUI 입력은 시험 동안 활성·잠금 해제된 데스크톱 연결이 필요하다. 2026-10-03 재연결의 초기 조회2건/Disc 이력과 이후 관리형 v1 설치·v2 업데이트/실행·개발자 exact 확인 취소 통과를 구분한다. 완료 후 cancel 버튼 잔존은 별도 결함이며 수정 후 영향 시험을 다시 수행한다. 관측1440×900/scale1을1920×1080 시험으로 계산하지 않는다.
 
