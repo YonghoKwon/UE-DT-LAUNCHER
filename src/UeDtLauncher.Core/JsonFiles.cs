@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Runtime.InteropServices;
 
 namespace UeDtLauncher;
 
@@ -47,7 +48,19 @@ public static class JsonFiles
                 stream.Flush(flushToDisk: true);
             }
 
-            File.Move(tempPath, fullPath, overwrite);
+            if(!overwrite && OperatingSystem.IsLinux())
+            {
+                // File.Move(false) can check existence then rename on Unix; RENAME_NOREPLACE is one atomic decision.
+                if(RenameNoReplace(-100,tempPath,-100,fullPath,1)!=0)
+                {
+                    var error=Marshal.GetLastPInvokeError();
+                    // WSL1/filesystems without renameat2: link exclusively publishes the freshly flushed temp,
+                    // then finally removes its temporary name. It never links installed payloads or existing data.
+                    if(error is not (22 or 38 or 95) || LinkNewFile(tempPath,fullPath)!=0)
+                        throw new IOException("Cannot atomically create configuration without replacing an existing file.",new System.ComponentModel.Win32Exception(Marshal.GetLastPInvokeError()));
+                }
+            }
+            else File.Move(tempPath, fullPath, overwrite);
         }
         finally
         {
@@ -61,4 +74,8 @@ public static class JsonFiles
             }
         }
     }
+    [DllImport("libc",EntryPoint="renameat2",SetLastError=true)]
+    private static extern int RenameNoReplace(int sourceDirectory,[MarshalAs(UnmanagedType.LPUTF8Str)] string source,int targetDirectory,[MarshalAs(UnmanagedType.LPUTF8Str)] string target,uint flags);
+    [DllImport("libc",EntryPoint="link",SetLastError=true)]
+    private static extern int LinkNewFile([MarshalAs(UnmanagedType.LPUTF8Str)] string source,[MarshalAs(UnmanagedType.LPUTF8Str)] string target);
 }
