@@ -21,6 +21,7 @@ import zipfile
 import struct
 import zlib
 import hashlib
+import uuid
 from gui_fixture_evidence import snapshot_preferences, sha256, wait_agent_ready, wait_server_ready, hold_fixture, verify_cohort, FixtureHarnessLock, copy_server_support
 from promotion_fixture_support import promote
 from fixture_contract import claim, seal
@@ -107,7 +108,7 @@ def main():
     # Existing test override changes storage location only. --storage portable below still
     # exercises current-user credential protection and never touches the user's real keys.
     if args.prepare_gui:
-        env['UE_DT_AGENT_ENDPOINT']='uedt-test-'+root.name if os.name=='nt' else str(root/'agent.sock')
+        env['UE_DT_AGENT_ENDPOINT']='uedt-test-'+root.name+'-'+uuid.uuid4().hex[:12] if os.name=='nt' else str(root/'agent.sock')
     gui_binaries={}
     gui_support_files={}
     if args.prepare_gui:
@@ -354,7 +355,8 @@ http {{
             agent_config = client / "agent" / "config" / "launcher.config.json"
             agent_config.parent.mkdir(parents=True)
             write(agent_config, config)
-            env["UE_DT_AGENT_ENDPOINT"] = "uedt-test-" + root.name if os.name == "nt" else str(root / "agent.sock")
+            if "UE_DT_AGENT_ENDPOINT" not in env or not args.prepare_gui:
+                env["UE_DT_AGENT_ENDPOINT"] = "uedt-test-"+root.name+'-'+uuid.uuid4().hex[:12] if os.name == "nt" else str(root / "agent.sock")
             agent_log = (root / "agent.log").open("w", encoding="utf-8")
             agent_process = subprocess.Popen([str(composed_agent)], env=env, stdout=agent_log, stderr=agent_log, creationflags=flags)
             if args.prepare_gui: wait_agent_ready(agent_process,env['UE_DT_AGENT_ENDPOINT'])
@@ -391,7 +393,6 @@ http {{
                 from operation_fixture_support import prove_operations
                 summary['owned_operation_cancellation'] = prove_operations(root, client, launcher, env, flags, run, platform)
             if args.promotion_proof:
-                import uuid
                 from gui_fixture_evidence import agent_status
                 config['requestedVersion']='2.0.0'
                 config['launchArguments']=['/c','ping -n 8 127.0.0.1 > nul'] if os.name=='nt' else ['7']
