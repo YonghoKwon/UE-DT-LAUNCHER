@@ -5,6 +5,21 @@ namespace UeDtLauncher.Tests;
 public class LauncherUiOperationsTests
 {
     [Fact]
+    public void KnownRejectedRestoreWithoutSelectionKeepsOriginalErrorAndSupportId()
+    {
+        var selection=new ReleaseSelection("demo","prod","stable","windows-x64","2.0.0");
+        var response=new ManagedAgentResponse{Success=false,Status="failed",ErrorCode="backup-preview-changed",CorrelationId="support-preview",Message="preview changed"};
+        var error=Assert.Throws<AgentOperationException>(()=>LauncherRestoreResult.FromManaged(response,selection));
+        Assert.Equal("backup-preview-changed",LauncherUiError.From(error).Code);Assert.Equal("support-preview",LauncherUiError.From(error).SupportId);
+    }
+    [Fact]
+    public void UnexpectedRestoreFailureOrSuccessForOtherSelectionIsUnknown()
+    {
+        var selection=new ReleaseSelection("demo","prod","stable","windows-x64","2.0.0");
+        Assert.Equal(LauncherRestoreDisposition.Unknown,LauncherRestoreResult.FromManaged(new(){Success=false,Status="failed",ErrorCode="storage-failed"},selection).Disposition);
+        Assert.Equal(LauncherRestoreDisposition.Unknown,LauncherRestoreResult.FromManaged(new(){Success=true,SelectedRelease=selection with{Version="1.0.0"}},selection).Disposition);
+    }
+    [Fact]
     public void ResumeProtocolAllowsOnlyValidatedExpectedSelectionAndNoLaunchInput()
     {
         var request=new ManagedAgentRequest{Command="operation-resume",OperationId=Guid.NewGuid().ToString("N"),ProjectId="demo",Selection=new("demo","prod","stable","windows-x64","1")};

@@ -31,7 +31,20 @@ internal sealed record LauncherUiOperationResult(LauncherConfig Config, ReleaseS
 internal enum LauncherUiCompletion{Checked,Completed,CommittedLaunchSkipped,CommittedRefreshRequired}
 internal enum LauncherTroubleshootAction { OfferInstall, Complete, Repair }
 internal enum LauncherRestoreDisposition { Applied,InspectionRequired,Unknown }
-internal sealed record LauncherRestoreResult(LauncherRestoreDisposition Disposition,Exception? Error=null);
+internal sealed record LauncherRestoreResult(LauncherRestoreDisposition Disposition,Exception? Error=null)
+{
+    internal static LauncherRestoreResult FromManaged(ManagedAgentResponse response,ReleaseSelection? expected)
+    {
+        if(!response.Success)
+        {
+            var code=response.ErrorCode??response.Status;
+            if(response.Runtime is not null || code is "backup-preview-changed" or "no-backup" or "client-upgrade-required")response.ThrowIfFailed();
+            return new(LauncherRestoreDisposition.Unknown,new AgentOperationException(code,response.CorrelationId,response.Message));
+        }
+        if(response.SelectedRelease!=expected)return new(LauncherRestoreDisposition.Unknown,new InvalidDataException("Restore selection was not confirmed."));
+        return new(response.InstallationCommitted==true && response.ProjectStatus is null?LauncherRestoreDisposition.InspectionRequired:LauncherRestoreDisposition.Applied);
+    }
+}
 internal sealed class LauncherUiCancelledException(OperationStatus operation):OperationCanceledException("Launcher operation cancelled")
 {internal OperationStatus Operation {get;}=operation;}
 

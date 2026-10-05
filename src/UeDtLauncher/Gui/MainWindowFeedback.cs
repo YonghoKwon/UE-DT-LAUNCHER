@@ -62,11 +62,7 @@ public sealed partial class MainWindow
         {
             var response=await new ManagedAgentClient().SendStreamingAsync("rollback",config.ProjectId,ReportManagedProgress,
                 selection:config.SelectedRelease ?? CurrentReleaseSelection(),expectedBackup:preview);
-            if(response.SelectedRelease!=config.SelectedRelease)return new(LauncherRestoreDisposition.Unknown,new InvalidDataException("Restore selection was not confirmed."));
-            if(!response.Success && response.Runtime is null && response.Status is not ("backup-preview-changed" or "no-backup" or "client-upgrade-required"))
-                return new(LauncherRestoreDisposition.Unknown,new AgentOperationException(response.ErrorCode??response.Status,response.CorrelationId,response.Message));
-            response.ThrowIfFailed();
-            return new(response.InstallationCommitted==true && response.ProjectStatus is null?LauncherRestoreDisposition.InspectionRequired:LauncherRestoreDisposition.Applied);
+            return LauncherRestoreResult.FromManaged(response,config.SelectedRelease);
         }
         catch(Exception ex)when(ex is IOException or OperationCanceledException){return new(LauncherRestoreDisposition.Unknown,ex);}
     }
