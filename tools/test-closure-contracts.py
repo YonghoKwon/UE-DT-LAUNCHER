@@ -105,9 +105,10 @@ class AcceptanceTests(unittest.TestCase):
     def fixture(self,root):
         (root/'control').mkdir();(root/'client/logs').mkdir(parents=True)
         fixture={'id':'fixture','deploymentMode':'portable','productPublication':{'productSourceHash':'b'*64,'binarySha256':{'launcher':'c'*64}}}
-        (root/'client/logs/ui.log').write_text('[UiDisplay] '+json.dumps({'profile':'general','screenPixels':'0, 0, 1920, 1080','renderScaling':1,'textScale':1,'highContrast':False}))
+        (root/'control/gui-run-general.json').write_text(json.dumps({'runId':'run1','pid':123,'startedUtc':'2026-10-06T00:00:00+00:00'}))
+        (root/'client/logs/ui.log').write_text('[UiDisplay] '+json.dumps({'profile':'general','screenPixels':'0, 0, 1920, 1080','renderScaling':1,'textScale':1,'highContrast':False,'sessionId':'session1','processId':123,'sessionStartedUtc':'2026-10-06T00:00:01+00:00'}))
         (root/'capture.png').write_bytes(b'\x89PNG\r\n\x1a\n')
-        proof={'inputActor':'computer-use','productSourceHash':'b'*64,'profile':'general','screen':{'pixels':[1920,1080],'renderScaling':1,'textScale':1,'highContrast':False},'result':True,'checks':{name:True for name in CHECKS['initial-configuration']},'screenshots':['capture.png']}
+        proof={'inputActor':'computer-use','fixtureId':'fixture','productSourceHash':'b'*64,'profile':'general','screen':{'pixels':[1920,1080],'renderScaling':1,'textScale':1,'highContrast':False,'runId':'run1','sessionId':'session1'},'result':True,'checks':{name:True for name in CHECKS['initial-configuration']},'screenshots':['capture.png']}
         return fixture,proof
     def test_gui_case_requires_matching_cohort_real_display_and_proof(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -129,5 +130,20 @@ class AcceptanceTests(unittest.TestCase):
         with self.assertRaises(ValueError):aggregate(records[:3])
         records[0]['productSourceHash']='d'*64
         with self.assertRaises(ValueError):aggregate(records)
+    def test_stale_process_or_session_display_cannot_pass(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);fixture,proof=self.fixture(root)
+            for changed in ({'pid':124},{'startedUtc':'2026-10-06T00:00:02+00:00'}):
+                path=root/'control/gui-run-general.json';original=path.read_text();value=json.loads(original);value.update(changed);path.write_text(json.dumps(value))
+                with self.assertRaises(ValueError):record_case(root,fixture,'general','initial-configuration','passed',proof)
+                path.write_text(original)
+            with self.assertRaises(ValueError):record_case(root,fixture,'general','initial-configuration','passed',dict(proof,fixtureId='other'))
+    def test_lifetime_requires_gui_install_and_exact_requested_completion(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);fixture,proof=self.fixture(root)
+            proof['checks']={name:True for name in CHECKS['v1-install-lifetime']}
+            for changed in ({},{'guiInstall':True},{'guiInstall':True,'runtimeEndReason':'requested'}):
+                with self.assertRaises(ValueError):record_case(root,fixture,'general','v1-install-lifetime','passed',dict(proof,**changed))
+            record_case(root,fixture,'general','v1-install-lifetime','passed',dict(proof,guiInstall=True,runtimeEndReason='requested',runtimeAttemptId='a'*32))
 
 if __name__=='__main__':unittest.main()

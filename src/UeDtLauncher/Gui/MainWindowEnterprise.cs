@@ -27,6 +27,8 @@ public sealed partial class MainWindow
     private string? _configDraft;
     private ScrollViewer? _actionDetails;
     private string? _lastDisplayDiagnostic;
+    private readonly string _displaySessionId=Guid.NewGuid().ToString("N");
+    private readonly DateTimeOffset _displaySessionStarted=DateTimeOffset.UtcNow;
     private bool _maintenanceExpanded;
     private bool _helpExpanded;
     private int _detailsTabIndex;
@@ -290,7 +292,8 @@ public sealed partial class MainWindow
     private void RecordDisplayDiagnostic()
     {
         var screen=Screens.ScreenFromWindow(this)??Screens.Primary;
-        var value=System.Text.Json.JsonSerializer.Serialize(new {profile=_config.ClientProfile,screenPixels=screen?.Bounds.ToString(),
+        var value=System.Text.Json.JsonSerializer.Serialize(new {profile=_config.ClientProfile,sessionId=_displaySessionId,
+            sessionStartedUtc=_displaySessionStarted,processId=Environment.ProcessId,screenPixels=screen?.Bounds.ToString(),
             workingPixels=screen?.WorkingArea.ToString(),renderScaling=RenderScaling,clientDip=ClientSize.ToString(),
             textScale=_preferences.TextScale,highContrast=HighContrast});
         if(value==_lastDisplayDiagnostic)return;

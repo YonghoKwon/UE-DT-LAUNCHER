@@ -22,7 +22,7 @@ public class LauncherRecoveryFlowTests
         window.Show();
         try
         {
-            await InvokeAsync(window,"RefreshSelectionStatusAsync");Dispatcher.UIThread.RunJobs();
+            await InvokeAsync(window,"RefreshSelectionStatusAsync",false);Dispatcher.UIThread.RunJobs();
             Assert.Equal("unavailable",model.SelectedProject.ProjectId);Assert.Null(model.ProjectStatus);
             Assert.Contains(window.GetVisualDescendants().OfType<Avalonia.Controls.TextBlock>(),t=>t.Text=="사용 가능한 프로젝트가 없습니다");
             Assert.Equal(0,backend.Checks);Assert.Equal(0,backend.Executions);

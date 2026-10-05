@@ -1,5 +1,6 @@
 """Controls only a prepared synthetic GUI fixture. Never operates on company installations."""
-import argparse, hashlib, json, os, re, subprocess, time, zipfile
+import argparse, hashlib, json, os, re, subprocess, time, zipfile, uuid
+from datetime import datetime,timezone
 from pathlib import Path
 from promotion_fixture_support import promote
 from gui_fixture_evidence import inside, verify_files, verify_cohort, preference_hash, restore_preferences, snapshot_preferences, fixture_mode, fixture_environment, record_control, agent_status, sha256,operation_root
@@ -187,8 +188,13 @@ elif a.action=='invalidate-preview':
 elif a.action.startswith('gui-'):
     profile=a.action[4:]
     selected=fixture['binaries'].get('developer',fixture['binaries']['launcher']) if profile=='developer' else fixture['binaries']['launcher']
+    started=datetime.now(timezone.utc).isoformat();run_id=uuid.uuid4().hex
     process=subprocess.Popen([selected['path'],'--gui','--config',str(root/'client'/(profile+'.json'))],env=env)
-    print(json.dumps(dict(pid=process.pid,profile=profile)))
+    from evidence_contract import atomic
+    run=dict(runId=run_id,pid=process.pid,profile=profile,startedUtc=started,fixtureId=fixture['id'],
+             productSourceHash=fixture['productPublication']['productSourceHash'],binarySha256=sha256(selected['path']))
+    atomic(control/('gui-run-'+profile+'.json'),run)
+    print(json.dumps(dict(pid=process.pid,profile=profile,runId=run_id)))
 elif a.action in ('snapshot','compare'):
     assert re.fullmatch(r'[a-zA-Z0-9-]+',a.name)
     path=control/(a.name+'.snapshot.json')

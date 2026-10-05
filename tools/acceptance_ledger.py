@@ -1,6 +1,7 @@
 """Scenario-level evidence for one published GUI cohort. This module never clicks or installs."""
 import json,re
 import hashlib,os
+from datetime import datetime
 from pathlib import Path
 from evidence_contract import atomic
 from gui_fixture_evidence import inside,sha256
@@ -34,6 +35,8 @@ def load_proof(root,reference):
     return value
 
 def actual_display(root,profile):
+    run=load_proof(root,'control/gui-run-'+profile+'.json')
+    started=datetime.fromisoformat(run['startedUtc'].replace('Z','+00:00'))
     config=inside(root,'client/'+profile+'.json')
     directories=[inside(root,'client/logs')]
     if os.name=='nt':
@@ -46,21 +49,26 @@ def actual_display(root,profile):
             with path.open('rb') as stream:
                 stream.seek(max(0,path.stat().st_size-512*1024))
                 lines=stream.read().decode('utf-8',errors='replace').splitlines()
-            for line in lines:
+            for index,line in enumerate(lines):
                 if '[UiDisplay]' not in line:continue
                 try:value=json.loads(line.split('[UiDisplay]',1)[1].strip())
                 except ValueError:continue
-                if value.get('profile')==profile:candidates.append(value)
+                try:session_start=datetime.fromisoformat(value['sessionStartedUtc'].replace('Z','+00:00'))
+                except (KeyError,TypeError,ValueError):continue
+                if value.get('profile')==profile and value.get('processId')==run['pid'] and session_start>=started:
+                    candidates.append((path.stat().st_mtime_ns,index,value))
     if not candidates:raise ValueError('Actual GUI display diagnostic is missing')
-    value=candidates[-1];pixels=[int(v.strip()) for v in value['screenPixels'].split(',')][-2:]
-    return {'pixels':pixels,'renderScaling':value['renderScaling'],'textScale':value['textScale'],'highContrast':value['highContrast']}
+    value=max(candidates,key=lambda row:(row[0],row[1]))[2]
+    pixels=[int(v.strip()) for v in value['screenPixels'].split(',')][-2:]
+    return {'pixels':pixels,'renderScaling':value['renderScaling'],'textScale':value['textScale'],'highContrast':value['highContrast'],
+            'runId':run['runId'],'sessionId':value['sessionId']}
 
 def create(root,fixture):
     publication=fixture.get('productPublication')
     if publication is None:raise ValueError('Acceptance requires a successful snapshot cohort')
     path=inside(root,'control/acceptance-ledger.json')
     if path.exists():raise ValueError('Existing acceptance evidence is preserved')
-    record={'schemaVersion':1,'fixtureId':fixture['id'],'productSourceHash':publication['productSourceHash'],
+    record={'schemaVersion':2,'fixtureId':fixture['id'],'productSourceHash':publication['productSourceHash'],
             'binarySha256':publication['binarySha256'],'cases':[],'complete':False}
     for profile in ('general','developer'):
         names=SCENARIOS|DEVELOPER if profile=='developer' else SCENARIOS
@@ -80,9 +88,12 @@ def record_case(root,fixture,profile,name,status,proof=None):
     record=load(root,fixture);row=next((c for c in record['cases'] if c['profile']==profile and c['name']==name),None)
     if row is None or status not in ('running','passed','failed','blocked','not-run'):raise ValueError('Invalid acceptance case')
     if status=='passed':
+        if record.get('schemaVersion')!=2:raise ValueError('Historical evidence cannot receive new acceptance passes')
         if not isinstance(proof,dict) or proof.get('inputActor') not in ('computer-use','user'):raise ValueError('CLI/headless execution cannot pass a GUI case')
         if proof.get('productSourceHash')!=record['productSourceHash'] or proof.get('profile')!=profile:raise ValueError('Case source/profile mismatch')
-        if proof.get('screen')!=actual_display(root,profile) or proof.get('screen')!={'pixels':[1920,1080],'renderScaling':1,'textScale':1,'highContrast':False}:raise ValueError('Actual screen evidence is required')
+        if proof.get('fixtureId')!=fixture['id']:raise ValueError('Case fixture mismatch')
+        display=actual_display(root,profile)
+        if proof.get('screen')!=display or {k:display[k] for k in ('pixels','renderScaling','textScale','highContrast')}!={'pixels':[1920,1080],'renderScaling':1,'textScale':1,'highContrast':False}:raise ValueError('Actual current-run screen evidence is required')
         if proof.get('result') is not True or not proof.get('checks') or not all(v is True for v in proof['checks'].values()):raise ValueError('Incomplete case checks')
         required=CHECKS[name]|({'service-reconnect'} if name=='connection-errors' and fixture['deploymentMode']=='managed' else set())
         if not required<=set(proof['checks']):raise ValueError('Required scenario checks are missing')
@@ -90,8 +101,8 @@ def record_case(root,fixture,profile,name,status,proof=None):
             if not re.fullmatch('[a-z0-9-]{1,80}',label):raise ValueError('Unsafe evidence label')
         screenshots=proof.get('screenshots')
         if not isinstance(screenshots,list) or not screenshots:raise ValueError('A GUI screenshot is required')
-        for name in screenshots:
-            path=inside(root,name)
+        for capture_name in screenshots:
+            path=inside(root,capture_name)
             with path.open('rb') as stream:
                 signature=stream.read(8)
                 if signature!=b'\x89PNG\r\n\x1a\n' and not signature.startswith(b'\xff\xd8\xff'):raise ValueError('A native PNG/JPEG capture is required')
@@ -103,6 +114,8 @@ def record_case(root,fixture,profile,name,status,proof=None):
             row['snapshotScope']=proof['snapshotScope']
         if proof.get('runtimeEndReason') not in (None,'requested'):raise ValueError('Watchdog exit is not requested lifetime completion')
         if proof.get('guiInstall') is False:raise ValueError('CLI installation cannot pass GUI installation')
+        if name=='v1-install-lifetime' and (proof.get('guiInstall') is not True or proof.get('runtimeEndReason')!='requested' or not re.fullmatch('[a-f0-9]{32}',proof.get('runtimeAttemptId',''))):
+            raise ValueError('Actual GUI installation and exact requested runtime completion are mandatory')
     row['status']=status;record['complete']=all(c['status']=='passed' for c in record['cases'])
     atomic(inside(root,'control/acceptance-ledger.json'),record);return row
 

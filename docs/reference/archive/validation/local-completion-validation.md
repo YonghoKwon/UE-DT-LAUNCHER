@@ -1,5 +1,11 @@
 # 로컬 기능·운영·GUI 수용 마무리
 
+## 새 GUI 실행에 결속한 근거
+
+UiDisplay는 창별 session ID/생성 시각/실제 process ID를 기록한다. 도구의 GUI 시작 기록은 fixture·제품 hash·profile·새 run ID·시각에 결속된다. schema2 수용 기록은 현재 run의 화면만 사용하며 최초 설치/수명에는 GUI 설치=true·정확한 runtime attempt·requested 종료가 필수다. 예전 schema1은 이력이고 새 통과를 추가하지 않는다. 도구 계약13개와 fixture23개가 통과했고 중간 게시 GUI 시작/접근성 트리/정상 닫기를 직접 확인했다.
+
+전체 Windows 회귀 첫 실행은849개 중847개 통과,2개는 내부 조회 함수의 새 선택 파라미터를 reflection 시험이 생략하여 실패했다. 명시적으로 false를 전달하도록 시험을 수정했고 해당 기존12개가 통과했다. 제품 결함이 아닌 시험 호출 정합성 수정이며 최종 전체 회귀에서 다시 집계한다.
+
 ## 인증·저장·자동 점검 회귀
 
 HTTP 요청 서명33개와 HTTPS-origin Bearer 서버 회귀36개는 opt-in 다운로드 제한을 켠 HEAD/Range/이미지/404/416/권한 변경/폐기/만료/시계 역행, handler 실패·클라이언트 연결 취소 후 슬롯 반환을 실제 Kestrel HTTP로 확인했다. Bearer 단위 서버는 loopback HTTP transport에 HTTPS 공개 origin을 사용하며 실제 TLS 증거는 별도 게시 HTTPS E2E로 구분한다.
