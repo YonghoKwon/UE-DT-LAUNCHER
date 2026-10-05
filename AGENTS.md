@@ -1,6 +1,12 @@
 # 작업 지침
 
-점검: 2026-10-06 / 작업 기준 codex/client-acceptance-closure. 저장소 전체에 적용합니다.
+점검: 2026-10-06 / 작업 기준 codex/local-completion-sprint. 저장소 전체에 적용합니다.
+
+- 이번 사용자의 명시적 계속 승인은 새 격리 합성 fixture의 설치/실행/취소/재개/복구/복원/정리에 적용한다. 같은 범위에 반복 승인 카드를 요구하지 않는다. 회사 환경·서비스/계정·인증서·실제 UE·OS 설정 변경으로 확대하지 않으며 새 중단 신호/잠긴 데스크톱/다른 앱의 안전 요청에는 입력을 멈춘다. 아래 과거 실행 직전 개별 확인 기록은 당시 정책 이력이다.
+- 재시도 context는 설정 준비 전에 결속한다. Catalog 갱신으로 effective selection이 달라지면 이전 설치/runtime 표시를 무효화하고 새 Check 결과만 적용한다. commit 뒤 비취소 실행/Integration 오류는 설치 Completed를 보존하며 원래 지원 ID의 Check-only 안내로 연결한다.
+- RetentionPlan schema2의 승인 파일/빈 디렉터리 신원만 삭제한다. 마지막 폴더 제거는 nonrecursive이며 새 자료가 있으면 quarantine/journal을 보존한다. schema1 적용·재귀 삭제·원본 재수집은 거부하고 새 계획/수동 정비를 요구한다.
+- 새 GUI 근거는 현재 fixture/run/session/process/제품 hash와 연결한다. 최초 설치 수명에는 실제 GUI 설치·정확한 attempt·requested 종료가 필수다. watchdog 종료·schema1 이력·다른 게시본 성공을 새 통과로 합산하지 않는다.
+- 전체 진행 보고서는4종 정본과 같은 제품 수용 요약에서 생성한다. 28개 항목의 체크포인트 평균을 제품 완성률로 계산하지 않는다.
 
 ## 문서 관리 계약
 

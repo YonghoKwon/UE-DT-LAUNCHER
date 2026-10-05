@@ -1,5 +1,26 @@
 # 개선 진행 현황과 보완 필요 사항
 
+## 최신 작업 — 2026-10-06 로컬 스프린트
+
+`codex/local-completion-sprint` 제품 후보1a7740f의 Windows849개/WSL848개+Windows 전용1개 제외, 양 OS 고정 게시를 확인했습니다. 재시도 준비·선택 갱신·commit 뒤 실행/바로가기 실패·정리 결과를 보완하고 retention schema2의 새 자료 보존, 인증 제한/슬롯 반환, 복원 저장 경계/예약 조회 실패 회귀를 추가했습니다. 양 OS 게시 HTTP·관리형 진단/복원·온라인 IP/exact/만료 거부·운영 backup/restore/retention이 통과했습니다. [현재 근거](docs/reference/archive/validation/local-completion-validation.md).
+
+새 네 GUI 조합은 v1 최초 설치/실행/수명, 관리형 일반 v2 취소·Range 재개·명시 실행과 실행 중 보호를 확인했습니다. 최종51개 전수와 WSL1 HTTPS broker timeout은 미완료입니다. USER-02/UI-02/USER-03/UI-03은75%, OPS-08은50%를 유지합니다. **집계 완료6·부분19·대기3/열린22개는 변하지 않았으며 코드 보완을 항목100%로 바꾸지 않았습니다.** 아래75ea591/789개/18개 GUI 근거는 직전 후보 이력입니다.
+
+### 직전 작업 이력
+
+현재 수용은 [자동 생성 전체 진행표](docs/reference/archive/validation/local-completion-progress.md)와 [현재 정제 근거](docs/reference/archive/validation/local-completion-runtime.json)에서 확인합니다. 새 GUI는8/51이며, 아래18/51은 직전 게시본 이력입니다. 숫자만 합산하지 않습니다.
+
+| 항목 | 이번 추가 구현/검증 | 항목 진행률 | 남은 수용 |
+|---|---|---:|---|
+| USER-02·UI-02 | 준비 전 retry 결속·Catalog 새 선택·commit 후 오류·실제 복구/복원 조회 재시도 | 각75% | 새 네 조합43개 전수 |
+| OPS-04·05 | schema2 승인 디렉터리·새 자료 보존·복원5개 저장 경계와 양 OS 게시 CLI | 각50% | 전체 종료/경합·실제 업로드 계정·복구 훈련 |
+| OPS-07 | 오류별 제한 재시도·취소·lease 반환·조회 전용 게시 실행 | 50% | 실제 예약/서비스 계정 |
+| SEC-01·02 | 제한을 켠 HEAD/Range/만료/폐기/취소/handler 실패 슬롯 회귀 | 각50% | 운영 수명·endpoint/부하 전수·회사 프록시 |
+| USER-04 | 게시 IP/exact 누락/만료 거부에서 설치/runtime 불변 | 50% | 단절/폐기 중 기존 실행 자식 유지 전수 |
+| PERF-03 | 현행 인증 별 준비1/측정3·1/10/30 비교 | 75% | 10연결 개선 미달,새 Linux 비교/실환경 |
+
+이 표는 추가 체크포인트이며 아래28개 항목의 완료 기준과 퍼센트는 낮추지 않습니다.
+
 점검: 2026-10-06 / `codex/client-acceptance-closure`. 재시도 선택/작업 결속·복구 commit 뒤 조회/취소 상태·정리 부분 실패·최소 화면 설정 생성·개발자 설정 재읽기를 수정했습니다. 최종 제품75ea591의 Windows789개 통과/WSL788개 통과·Windows 전용1개 제외, 양 OS 고정 publish·HTTP/HTTPS·최소 관리형 설정/IPC가 통과했습니다. 네 새 GUI fixture의 초기 설정·연결 오류 조회 재시도는 직접 확인했으며 관리형 일반의 v1 설치/수명과 v2 취소를 진행했습니다. **최종 네 조합 전체 수용은 미완료**입니다. [현재 근거](docs/reference/archive/validation/client-acceptance-closure-validation.md). USER-02/UI-02/USER-03은75% 유지하며 완료6·부분19·대기3·열린22개입니다.
 
 P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선. 우선순위는 제안이며 일정·수치 목표는 미정입니다. 미검증과 미구현을 구분합니다.

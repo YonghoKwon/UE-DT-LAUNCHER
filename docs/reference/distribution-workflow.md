@@ -137,6 +137,8 @@ UeDtLauncher agent update --project demo --environment dev --channel dev --versi
 
 ## 5. 유지보수 및 검증
 
+2026-10-06의 `retention plan`은 schema2입니다. 파일 inventory와 승인한 빈 디렉터리의 OS 신원까지 기록합니다. 적용 도중 새 파일·폴더가 생기면 재귀 삭제하지 않고 quarantine과 journal을 보존합니다. schema1 계획은 적용하지 않으며, 미시작 계획은 `retention plan`으로 다시 생성·검토하고 중단된 기존 journal은 관리자 수동 점검 대상으로 남깁니다. 삭제가 끝난 파일을 되돌려 복구했다고 표시하지 않습니다. 복원 활성화의 snapshot/rebase/policy/DB 교체/fence 직전 실패는 공개 차단을 유지하며 재시도 시 생존 원본의 최신 폐기·순번을 다시 확인합니다. 예외 시험과 실제 정전 내구성 보장은 구분합니다.
+
 서버 `intakeWorkers`는 기본1/최대2입니다. 접수 단계·처리 바이트·예상 추가 공간을 inspect로 확인합니다. 현재 DB 내부 schema는6이며 변경 전 일관된 SQLite backup을 생성합니다. 서버/watch를 먼저 정지하고, 구/신 서버를 같은 DB에 동시에 실행하지 마세요. active_work·OS 작업 잠금이 진행 중 폴더를 보호합니다. 2-worker는 선택 기능이며 API 간섭까지 함께 측정해야 합니다. [측정·검증](archive/validation/operations-closure-validation.md)
 
 `usage`는 용량 조회입니다. 운영 정리는 앞의 `retention inspect → plan → apply --confirm` 절차를 사용합니다. 기존 `cleanup`은 scratch 전용 호환 명령이며 공개판·승격·활성 자료의 삭제 기능으로 확대하지 않습니다. 중단 journal의 이동/삭제 의도와 directory identity를 유지하고 재생성 source를 수집하지 않습니다. 완료 삭제는 DB ledger에 남깁니다.

@@ -1,5 +1,7 @@
 # 현재 운영 문서 색인
 
+최신 작업은2026-10-06 `codex/local-completion-sprint`입니다. [스프린트 검증](archive/validation/local-completion-validation.md)에 고정 제품1a7740f,849개 전체 회귀, 운영 CLI·현재 GUI 근거와 미완료를 기록합니다. 아래75ea591/closure 기록은 직전 이력입니다. 루트4종 정본과 상세9개를 유지하고 새 실행 근거는 archive/validation 아래에만 보관합니다.
+
 정리: 2026-10-05 / 작업 기준 `codex/client-acceptance-closure`. 상시 관리 정본은 루트 4개이며, 이 폴더에는 **현재 사용하는 상세 가이드 9개와 이 색인**만 둡니다. 최소 화면 설정 생성과 재시도·정리 결과는 현재 설정/GUI/기능 지도에 반영했습니다. [최종 고정 후보의 검증·미실행 사례](archive/validation/client-acceptance-closure-validation.md)는 과거 후보와 구분합니다.
 
 | 루트 정본 | 역할 |

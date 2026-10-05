@@ -2,6 +2,14 @@
 
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 배포 시스템입니다.
 
+## 최신 상태 — 로컬 보완 스프린트
+
+2026-10-06 / `codex/local-completion-sprint`, 제품 후보 `1a7740f`. 재시도 준비 실패·Catalog 선택 갱신, 설치 commit 뒤 실행/바로가기 오류, 정리 후 상태 재조회, 승인되지 않은 정리 자료 보존을 수정했습니다. Windows849개, WSL848개+Windows 전용1개 제외 및 양 OS General/Developer/Agent/server Release 게시가 통과했습니다. [현재 검증](docs/reference/archive/validation/local-completion-validation.md).
+
+인증 제한·복원 저장 경계·조회형 예약 장애 회귀와 양 OS 게시 HTTP/운영 CLI를 확인했습니다. 네 새 GUI 조합의 v1 설치·실행·수명과 관리형 일반의 취소/재개/실행 보호/복원 핵심 흐름을 확인했습니다. **최종51개 중8개 전부 통과·43개 전수 미완료**입니다. USER-02/UI-02는75%, 전체 대장은 완료6·부분19·대기3/열린22개를 유지합니다. [전체 진행표·남은 조건](docs/reference/archive/validation/local-completion-progress.md). 실환경·내레이터·원격CI·인증서 인수를 자동 상향하지 않습니다. 아래75ea591/789개 기록은 직전 후보 이력입니다.
+
+### 직전 후보와 공통 사용 안내
+
 문서 점검: **2026-10-06**, 작업 기준: `codex/client-acceptance-closure`. 일반 `UeDtLauncher.exe`와 개발자 `UeDtLauncher.Developer.exe`는 별도 빌드이며 설정으로 GUI 종류를 바꾸지 못합니다. 복원 preview·정리 재시도의 정확한 작업 결속, 복구 적용 후 조회/취소 상태, 정리의 부분 실패·실제 잔여 수, 최소 화면 설정 생성과 개발자 설정 재읽기를 보완했습니다. 최종 제품 `75ea591`에서 Windows **789개 통과**, WSL **788개 통과·Windows 전용 1개 명시적 제외**, 양 에디션/Agent/서버 Release publish와 HTTP 요청 서명·Linux HTTPS/Bearer E2E를 확인했습니다. **최종 네 조합 전체 GUI 수용은 미완료**이며 과거 후보의 설치/복원 통과를 합산하지 않습니다. [현재 검증과 남은 사례](docs/reference/archive/validation/client-acceptance-closure-validation.md), [이전 후보 이력](docs/reference/archive/validation/client-usability-validation.md)을 구분하세요.
 
 기본 빌드는 `LauncherEdition=General`입니다. 개발자는 `dotnet publish src/UeDtLauncher -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:LauncherEdition=Developer`로 생성합니다. `--build-info`에서 에디션을 확인하세요. Developer 배포에는 공통 runtime-host인 일반 실행 파일도 포함해야 하며, `tools/publish_runtime_cohort.py --output <새폴더> --rid win-x64`는 두 EXE·Agent·서버와 두 클라이언트 ZIP을 함께 생성합니다.

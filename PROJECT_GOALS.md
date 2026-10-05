@@ -1,5 +1,13 @@
 # 최종 프로젝트 목표 — 회사용 Unreal Engine DT 배포 시스템
 
+## 최신 위치 — 로컬 구현과 회사 인수 분리
+
+2026-10-06 / `codex/local-completion-sprint`, 제품 후보1a7740f. Windows849개/WSL848개+Windows 전용1개 제외와 양 OS 동일 입력 snapshot 게시가 통과했습니다. 재시도/선택·설치 commit 후 오류·조회·정리 보존·인증/운영 장애 검증을 보완했습니다. [현재 검증](docs/reference/archive/validation/local-completion-validation.md).
+
+네 새 합성 GUI 조합의 최초 설치와 실행 수명을 직접 확인했습니다. 현재8/51 전부 통과이며43개 전수, WSL1 broker 준비/종료 timeout, 회사 계정/UE/RHEL/인증서/원격CI·운영 정책은 남아 있습니다. [전체 진행표](docs/reference/archive/validation/local-completion-progress.md). 완료6·부분19·대기3/열린22개와 회사 승인 미완료를 유지하며, UI01의 합의된1920×1080 범위를 다른 DPI·음성 수용으로 확대하지 않습니다. 아래75ea591 기록은 직전 후보 이력입니다.
+
+### 직전 기준점
+
 갱신: 2026-10-06 / 작업 기준 `codex/client-acceptance-closure`. **최상위 목표는 확정**됐습니다. 재시도의 정확한 선택/작업 결속·적용 완료 후 조회·수동 정리 부분 실패·관리형 화면 설정 생성과 개발자 설정 재읽기를 보완했습니다. 최종 제품75ea591의 Windows789개/WSL788개 통과(Windows 전용1개 제외), 양 OS 게시 인증/IPC·Linux HTTPS를 확인했습니다. 네 새 fixture의 실제 초기 설정·재연결 검증은 진행했고 전체 설치/취소/복원 수용과 회사 서비스 계정 ACL은 남아 있습니다. 회사 SLA·출시 인수 완료가 아닙니다. [현재 후보별 기록](docs/reference/archive/validation/client-acceptance-closure-validation.md).
 
 ## 확정한 최종 목표
