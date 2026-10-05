@@ -1,6 +1,6 @@
 # 개선 진행 현황과 보완 필요 사항
 
-점검: 2026-10-03 / `codex/client-workflow-completion`. 작업 수명·재개·빈 목록/권한 복귀 표시 결함을 수정하고 최종 게시본의 GUI 수용을 진행 중입니다. [현재 증거](docs/reference/archive/validation/client-workflow-validation.md). 아래 이전 날짜/게시본은 이력이며 진행률은 항목 전체의 남은 수용 조건까지 함께 판단합니다.
+점검: 2026-10-05 / `codex/client-recovery-acceptance`. 복구 완료 후 조회 실패의 잘못된 복원 제안·이전 재개 표시·복원 취소 컨트롤을 수정했습니다. Windows/WSL 각714개, 도구19/프록시3개, 새 Windows 게시 CLI/Agent 통과. 실제 GUI는 초기 창 확인 후 사용자 ESC로 중단되어 현재 후보 전체 수용은 미실행입니다. [현재 증거](docs/reference/archive/validation/client-recovery-validation.md). 이전 날짜/게시본은 이력이며 완료6·부분19·대기3·열린22개를 유지합니다.
 
 P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선. 우선순위는 제안이며 일정·수치 목표는 미정입니다. 미검증과 미구현을 구분합니다.
 

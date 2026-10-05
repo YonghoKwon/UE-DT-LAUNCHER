@@ -1,6 +1,6 @@
 # 최종 프로젝트 목표 — 회사용 Unreal Engine DT 배포 시스템
 
-갱신: 2026-10-03 / 작업 기준 `codex/client-workflow-completion`. **최상위 목표는 확정**됐습니다. 주요 headless 운영 기능과 안전성 후속을 구현·로컬 검증했지만 회사 SLA·출시/실환경 인수는 별도입니다. 정책과 조건은 아래 결정 표에서 관리합니다.
+갱신: 2026-10-05 / 작업 기준 `codex/client-recovery-acceptance`. **최상위 목표는 확정**됐습니다. 복구/재개 상태의 추가 결함을 수정하고 Windows/WSL 각714개와 Windows 게시 CLI/Agent를 검증했습니다. 실제 GUI는 사용자 ESC로 중단되어 현재 후보 전체 수용은 미실행입니다. 회사 SLA·출시/실환경 인수는 별도이며 현재 진행률은 유지합니다. [이번 기록](docs/reference/archive/validation/client-recovery-validation.md).
 
 ## 확정한 최종 목표
 

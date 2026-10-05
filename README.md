@@ -2,7 +2,7 @@
 
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 배포 시스템입니다.
 
-문서 점검: **2026-10-03**, 작업 기준: `codex/client-workflow-completion`. 일반 `UeDtLauncher.exe`와 개발자 `UeDtLauncher.Developer.exe`를 별도 빌드하며 설정으로 GUI 종류를 바꿀 수 없습니다. 최종 제품 소스의 Windows/WSL 회귀는 각각698개 통과했고 양 OS 게시본을 생성했습니다. 설치본 비설치 검증은 [이전 에디션 기록](docs/reference/archive/validation/client-editions-validation.md), 현재 고정 게시본의 실제 GUI 결과는 [작업 흐름 검증](docs/reference/archive/validation/client-workflow-validation.md)에서 구분합니다.
+문서 점검: **2026-10-05**, 작업 기준: `codex/client-recovery-acceptance`. 일반 `UeDtLauncher.exe`와 개발자 `UeDtLauncher.Developer.exe`를 별도 빌드하며 설정으로 GUI 종류를 바꿀 수 없습니다. 복구 적용 후 조회 실패의 복원 제안·오래된 재개 표시·복원 단계 취소 표시를 수정했습니다. Windows/WSL 각714개 회귀와 새 Windows 게시 CLI/Agent 시험이 통과했습니다. 실제 GUI는 초기 창 확인 후 사용자 ESC로 중단돼 나머지 수용은 미실행입니다. [현재 복구 검증](docs/reference/archive/validation/client-recovery-validation.md), [이전 작업 흐름](docs/reference/archive/validation/client-workflow-validation.md)을 확인하세요.
 
 기본 빌드는 `LauncherEdition=General`입니다. 개발자는 `dotnet publish src/UeDtLauncher -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:LauncherEdition=Developer`로 생성합니다. `--build-info`에서 에디션을 확인하세요. Developer 배포에는 공통 runtime-host인 일반 실행 파일도 포함해야 하며, `tools/publish_runtime_cohort.py --output <새폴더> --rid win-x64`는 두 EXE·Agent·서버와 두 클라이언트 ZIP을 함께 생성합니다.
 
