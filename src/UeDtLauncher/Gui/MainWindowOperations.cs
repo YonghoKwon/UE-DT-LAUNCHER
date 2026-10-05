@@ -49,10 +49,20 @@ public sealed partial class MainWindow
         catch(Exception error){MarkError(error,"작업 재개 실패");}
         finally{FinishUiOperation();}
     }
-    private void CommittedUiRefreshRequired()
+    private void CommittedUiRefreshRequired(string completedTitle="설치 완료")
     {
         _presentation.Retry=CurrentContext(LauncherUiOperation.Check);
-        MarkError(new AgentOperationException("status-refresh-required",Guid.NewGuid().ToString("N"),"설치는 완료됐습니다. 설치 상태를 다시 확인해 주세요."),"설치 완료 · 상태 재확인 필요",showDialog:false);
+        MarkError(new AgentOperationException("status-refresh-required",Guid.NewGuid().ToString("N"),"설치는 완료됐습니다. 설치 상태를 다시 확인해 주세요."),completedTitle+" · 상태 재확인 필요",showDialog:false);
+    }
+    private void ClearResumeAfterMutation(LauncherUiOperationContext context)
+    {
+        if(_resumeOperation?.Selection==context.Selection)_resumeOperation=null;
+    }
+    private void EndCancellableUiPhase()
+    {
+        Interlocked.Increment(ref _uiProgressGeneration);
+        _operationCancellation=null;
+        Build();
     }
     private void RequestOperationCancellation()
     {
@@ -111,8 +121,9 @@ public sealed partial class MainWindow
     private async Task RestoreUiPreviewAsync(LauncherUiOperationContext context,LauncherConfig config,RollbackPreview preview)
     {
         if(context!=CaptureUiOperation())throw new InvalidDataException("선택한 배포가 변경되었습니다.");
-        if(context.Managed)await RestoreManagedPreviewAsync(config,preview);
-        else await Task.Run(()=>RollbackPreviewService.RestoreExpectedAsync(config,preview.BackupId,preview.MetadataFingerprint));
+        EndCancellableUiPhase();
+        await _restorePreview(config,preview);
+        ClearResumeAfterMutation(context);
         _selectedRuntimeConfig=config;
         BeginOperation(LauncherUiOperation.Check);
         SetStatus("백업 복원 완료 · 설치 상태 확인 중");

@@ -33,6 +33,7 @@ public sealed partial class MainWindow : Window
     private Exception? _configurationError;
     private readonly ILauncherUiBackend _uiBackend;
     private readonly Func<string,Task<LauncherConfig>> _runtimeConfigLoader;
+    private readonly Func<LauncherConfig,RollbackPreview,Task> _restorePreview;
     private readonly Func<LauncherConfig,string,CancellationToken,Task<CatalogSnapshot>> _catalogLoader;
     private readonly Func<string,bool,DoctorTarget?,CancellationToken,Task<DoctorReport>> _doctor;
     private bool _windowMetricsInitialized;
@@ -80,10 +81,14 @@ public sealed partial class MainWindow : Window
     internal MainWindow(LauncherStartupOptions startupOptions, LauncherDashboardViewModel? model, LauncherUiPreferences? preferences, bool startServices, ILauncherUiBackend? backend=null,
         Func<LauncherConfig,string,CancellationToken,Task<CatalogSnapshot>>? catalogLoader=null,
         Func<string,bool,DoctorTarget?,CancellationToken,Task<DoctorReport>>? doctor=null,
-        Func<string,Task<LauncherConfig>>? runtimeConfigLoader=null)
+        Func<string,Task<LauncherConfig>>? runtimeConfigLoader=null,
+        Func<LauncherConfig,RollbackPreview,Task>? restorePreview=null)
     {
         _uiBackend=backend??new LauncherUiBackend();
         _runtimeConfigLoader=runtimeConfigLoader??(path=>LauncherPaths.LoadResolvedAsync(path));
+        _restorePreview=restorePreview??((config,preview)=>config.IsManagedDeployment
+            ? RestoreManagedPreviewAsync(config,preview)
+            : Task.Run(()=>RollbackPreviewService.RestoreExpectedAsync(config,preview.BackupId,preview.MetadataFingerprint)));
         _catalogLoader=catalogLoader??CatalogSnapshotService.LoadAsync;
         _doctor=doctor??((path,online,target,token)=>LauncherDoctor.RunAsync(path,online,token,target:target));
         _startupOptions = startupOptions;
@@ -1150,6 +1155,7 @@ public sealed partial class MainWindow : Window
         LauncherConfig? config=null;
         LauncherUiOperationResult? checkedResult=null;
         var repairAttempted=false;
+        var repairCommitted=false;
         using var cancellation=new CancellationTokenSource();
         try
         {
@@ -1166,8 +1172,10 @@ public sealed partial class MainWindow : Window
             {
                 repairAttempted=true;
                 var repaired=await _uiBackend.ExecuteAsync(context,config,true,false,CreateUiProgress(),_fileLogger,cancellation.Token);
-                if(repaired.Completion==LauncherUiCompletion.CommittedRefreshRequired || cancellation.IsCancellationRequested){CommittedUiRefreshRequired();return;}
-                ValidateUiResult(context,repaired);_viewModel.RequireRuntimeQuiescent(repaired.Runtime);
+                ValidateUiResult(context,repaired);
+                repairCommitted=true;ClearResumeAfterMutation(context);
+                if(repaired.Completion==LauncherUiCompletion.CommittedRefreshRequired || cancellation.IsCancellationRequested){CommittedUiRefreshRequired("파일 복구 완료");return;}
+                _viewModel.RequireRuntimeQuiescent(repaired.Runtime);
                 checkedResult=await _uiBackend.CheckAsync(context,config,CreateUiProgress());
                 if(checkedResult.Status.UpdateRequired)throw new InvalidDataException("파일 복구 후 검증을 완료하지 못했습니다.");
             }
@@ -1179,11 +1187,18 @@ public sealed partial class MainWindow : Window
         }
         catch(Exception ex)
         {
+            if(repairCommitted)
+            {
+                _presentation.Retry=CurrentContext(LauncherUiOperation.Check);
+                MarkError(ex,"파일 복구 완료 · 상태 재확인 필요",showDialog:false);
+                return;
+            }
             var offer=LauncherDashboardViewModel.CanOfferRecoveryRollback(repairAttempted,checkedResult?.Status.HasBackup==true,ex);
             if(ex is LauncherUiCancelledException cancelled){RecordCancelledOperation(cancelled.Operation);return;}
             if(ex is OperationCanceledException){RecordCancelledOperation(null);return;}
             if(offer && context is not null && config is not null)
             {
+                EndCancellableUiPhase();
                 try
                 {
                     var preview=context.Managed?await PreviewManagedRollbackAsync(config):await Task.Run(()=>RollbackPreviewService.ReadAsync(config));
