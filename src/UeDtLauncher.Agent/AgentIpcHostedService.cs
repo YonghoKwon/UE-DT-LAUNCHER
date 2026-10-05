@@ -487,16 +487,18 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     if (request.ExpectedBackupId is not null || request.ExpectedBackupFingerprint is not null)
                     {
                         if (request.ExpectedBackupId is null || request.ExpectedBackupFingerprint is null) throw new InvalidDataException("Both backup expectation fields are required.");
-                        await RollbackPreviewService.RestoreExpectedAsync(config, request.ExpectedBackupId, request.ExpectedBackupFingerprint,
-                            message => AddProgress(new LauncherProgress("Rollback", message, null)), cancellationToken);
-                        ManagedProjectStatus restoredStatus;
-                        if (File.Exists(config.InstalledManifestPath))
-                        {
-                            var restoredManifest=await JsonFiles.ReadAsync<LauncherManifest>(config.InstalledManifestPath,cancellationToken);
-                            restoredStatus=(await ManagedProjectStatusInspector.InspectAsync(config,restoredManifest,cancellationToken)) with { AvailableVersion=null };
-                        }
-                        else restoredStatus=new(false,null,null,true,0,0,BackupManager.List(config.BackupDir).Count>0);
-                        return Success(request, identity, "completed", "Confirmed backup restored.", progress, restoredStatus, config.SelectedRelease);
+                        var restored=await ManagedRestoreCompletion.RunAsync(
+                            ()=>RollbackPreviewService.RestoreExpectedAsync(config, request.ExpectedBackupId, request.ExpectedBackupFingerprint,
+                                message => AddProgress(new LauncherProgress("Rollback", message, null)), cancellationToken),
+                            async ()=>
+                            {
+                                if(!File.Exists(config.InstalledManifestPath))return new(false,null,null,true,0,0,BackupManager.List(config.BackupDir).Count>0);
+                                var restoredManifest=await JsonFiles.ReadAsync<LauncherManifest>(config.InstalledManifestPath,cancellationToken);
+                                return (await ManagedProjectStatusInspector.InspectAsync(config,restoredManifest,cancellationToken)) with { AvailableVersion=null };
+                            });
+                        var restoredResponse=Success(request,identity,restored.InspectionUnavailable?"completed-status-unavailable":"completed","Confirmed backup restored.",progress,restored.Status,config.SelectedRelease);
+                        restoredResponse.InstallationCommitted=true;restoredResponse.ClientPresentation=Presentation(config,restored.Status?.IsInstalled==true);
+                        return restoredResponse;
                     }
                     var backup = BackupManager.List(config.BackupDir).FirstOrDefault();
                     if (backup.BackupRoot is null) return Error(request, "no-backup", "No rollback backup is available.", identity);
@@ -505,7 +507,8 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                             config,
                             message => progress.Add(new ManagedAgentProgress("Rollback", DiagnosticRedactor.Redact(message), null)),
                             cancellationToken);
-                    return Success(request, identity, "completed", "Rollback completed.", progress);
+                    var legacyRestored=Success(request, identity, "completed", "Rollback completed.", progress,selectedRelease:config.SelectedRelease);
+                    legacyRestored.InstallationCommitted=true;return legacyRestored;
                 case "service-run":
                     var serviceExit = await ServiceRunner.RunOnceAsync(config, cancellationToken);
                     return serviceExit == 0

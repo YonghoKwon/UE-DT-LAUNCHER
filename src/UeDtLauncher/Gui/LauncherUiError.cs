@@ -22,6 +22,8 @@ public sealed record LauncherUiError(string Code,string Message,string SupportId
                 : "실행 상태 확인이 필요합니다. 관리자 점검 후 다시 시도해 주세요.",
             "no-backup"=>"복원할 수 있는 백업이 없습니다.",
             "backup-preview-changed"=>"백업 정보가 변경됐습니다. 복원할 백업을 다시 확인해 주세요.",
+            "status-refresh-required"=>"파일 작업은 완료됐습니다. 현재 설치 상태를 다시 확인해 주세요.",
+            "recovery-outcome-unknown"=>"백업 복원 결과를 확인하지 못했습니다. 설치 상태를 먼저 확인해 주세요.",
             _=>"작업을 완료하지 못했습니다. 다시 확인하거나 지원 ID와 함께 관리자에게 문의해 주세요."
         };
         return new(code,message,id??Guid.NewGuid().ToString("N"),DiagnosticRedactor.Redact(error.ToString()));

@@ -235,12 +235,12 @@ public sealed partial class MainWindow
     private Control EnterpriseActionBar()
     {
         var panel=new StackPanel {Spacing=12};var actions=new WrapPanel {Orientation=Orientation.Horizontal};
-        var primary=EnterpriseButton(IsDeveloper?"실행":_viewModel.PrimaryActionText,"primary-action",async (_,_)=>{if(IsDeveloper)await RunAsync(false,true);else await ExecutePrimaryActionAsync();},true);
+        var primary=EnterpriseButton(_readOnlyRecoveryFollowUp?"상태 다시 확인":IsDeveloper?"실행":_viewModel.PrimaryActionText,"primary-action",async (_,_)=>{if(IsDeveloper)await RunAsync(false,true);else await ExecutePrimaryActionAsync();},true);
         primary.Tag="general-primary-action"; primary.IsEnabled=HasProject&&_viewModel.PrimaryAction!=PrimaryActionKind.Disabled&&!_running;
         if(IsDeveloper)primary.IsEnabled=HasProject&&!_running;
         primary.HotKey=new KeyGesture(Key.F5);actions.Children.Add(primary);
         if(IsDeveloper)actions.Children.Add(EnterpriseButton("업데이트","update",async (_,_)=>await RunAsync(false,false)));
-        var check=EnterpriseButton(_viewModel.GeneralState==GeneralLauncherState.RecoverableError?"문제 해결":"상태 확인","status-check",async (_,_)=>{if(!IsDeveloper&&_viewModel.GeneralState==GeneralLauncherState.RecoverableError)await TroubleshootAsync();else await RefreshSelectionStatusAsync();});
+        var check=EnterpriseButton(_readOnlyRecoveryFollowUp?"상태 다시 확인":_viewModel.GeneralState==GeneralLauncherState.RecoverableError?"문제 해결":"상태 확인","status-check",async (_,_)=>await ExecuteStatusActionAsync());
         check.HotKey=new KeyGesture(Key.F6);actions.Children.Add(check);
         if(_running && _operationCancellation is not null)
         {

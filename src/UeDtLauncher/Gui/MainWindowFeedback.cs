@@ -56,11 +56,24 @@ public sealed partial class MainWindow
         var info=new BackupInfo {PreviousVersion=preview.RestoresUninstalledState?"미설치 상태 (설치 파일 제거 가능)":preview.RestoreVersion,NewVersion=preview.CurrentVersion};
         return await ConfirmRollback(preview.BackupId+" · "+preview.CreatedAtUtc,info);
     }
-    private async Task RestoreManagedPreviewAsync(LauncherConfig config,RollbackPreview preview)
+    private async Task<LauncherRestoreResult> RestoreManagedPreviewAsync(LauncherConfig config,RollbackPreview preview)
     {
-        var response=await new ManagedAgentClient().SendStreamingAsync("rollback",config.ProjectId,ReportManagedProgress,
-            selection:config.SelectedRelease ?? CurrentReleaseSelection(),expectedBackup:preview);
-        response.ThrowIfFailed();
-        // Completion is presented once, after the shared read-only status recheck.
+        try
+        {
+            var response=await new ManagedAgentClient().SendStreamingAsync("rollback",config.ProjectId,ReportManagedProgress,
+                selection:config.SelectedRelease ?? CurrentReleaseSelection(),expectedBackup:preview);
+            if(response.SelectedRelease!=config.SelectedRelease)return new(LauncherRestoreDisposition.Unknown,new InvalidDataException("Restore selection was not confirmed."));
+            if(!response.Success && response.Runtime is null && response.Status is not ("backup-preview-changed" or "no-backup" or "client-upgrade-required"))
+                return new(LauncherRestoreDisposition.Unknown,new AgentOperationException(response.ErrorCode??response.Status,response.CorrelationId,response.Message));
+            response.ThrowIfFailed();
+            return new(response.InstallationCommitted==true && response.ProjectStatus is null?LauncherRestoreDisposition.InspectionRequired:LauncherRestoreDisposition.Applied);
+        }
+        catch(Exception ex)when(ex is IOException or OperationCanceledException){return new(LauncherRestoreDisposition.Unknown,ex);}
+    }
+    private async Task ExecuteStatusActionAsync()
+    {
+        if(_readOnlyRecoveryFollowUp){await RefreshInstallStatusAsync();return;}
+        if(!IsDeveloper&&_viewModel.GeneralState==GeneralLauncherState.RecoverableError)await TroubleshootAsync();
+        else await RefreshSelectionStatusAsync();
     }
 }

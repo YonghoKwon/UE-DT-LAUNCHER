@@ -67,8 +67,10 @@ def main():
     parser.add_argument("--gui-long-labels", action="store_true", help="GUI-only: deterministic long Korean project name and release notes")
     parser.add_argument('--gui-download-proof',action='store_true',help='GUI-only: signed 64MiB synthetic download with loopback throttling and resume cache')
     parser.add_argument('--managed-client-proof',action='store_true',help='Published selection-only display config, diagnostics and managed launch')
+    parser.add_argument('--managed-rollback-proof',action='store_true',help='Published real IPC backup restoration with committed outcome')
     args = parser.parse_args()
     if args.managed_client_proof and (not args.agent or args.prepare_gui):parser.error('--managed-client-proof requires console Agent without GUI')
+    if args.managed_rollback_proof and (not args.agent or args.prepare_gui):parser.error('--managed-rollback-proof requires console Agent without GUI')
     if args.gui_download_proof and not args.prepare_gui:parser.error('--gui-download-proof requires --prepare-gui')
     if args.operation_proof and (not args.agent or args.prepare_gui):
         parser.error("--operation-proof requires console Agent without GUI")
@@ -377,6 +379,9 @@ http {{
             if args.managed_client_proof:
                 from managed_display_fixture import prove_managed_display
                 summary['minimal_managed_client']=prove_managed_display(run,launcher,client,config)
+            if args.managed_rollback_proof:
+                from managed_rollback_fixture import prove_managed_rollback
+                summary['managed_rollback_outcome']=prove_managed_rollback(run,launcher,client,config,env['UE_DT_AGENT_ENDPOINT'])
             if args.operation_proof:
                 from operation_fixture_support import prove_operations
                 summary['owned_operation_cancellation'] = prove_operations(root, client, launcher, env, flags, run, platform)

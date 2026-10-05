@@ -6,6 +6,7 @@ public sealed partial class MainWindow
     private CancellationTokenSource? _operationCancellation;
     private OperationStatus? _resumeOperation;
     private long _uiProgressGeneration;
+    private bool _readOnlyRecoveryFollowUp;
 
     private void StartCancellableUiOperation(CancellationTokenSource cancellation)
     {
@@ -29,7 +30,7 @@ public sealed partial class MainWindow
             : "작업 취소 완료 · 다시 확인해 주세요.");
     }
     private bool CanResumeSelected()
-    {try{return _viewModel.GeneralState!=GeneralLauncherState.RuntimeBlocked && LauncherUiOperations.CanResume(_resumeOperation,CurrentReleaseSelection());}catch{return false;}}
+    {try{return !_readOnlyRecoveryFollowUp && _viewModel.GeneralState!=GeneralLauncherState.RuntimeBlocked && LauncherUiOperations.CanResume(_resumeOperation,CurrentReleaseSelection());}catch{return false;}}
     private async Task ResumeUiOperationAsync()
     {
         if(_running || !CanResumeSelected())return;
@@ -51,6 +52,7 @@ public sealed partial class MainWindow
     }
     private void CommittedUiRefreshRequired(string completedTitle="설치 완료")
     {
+        _readOnlyRecoveryFollowUp=true;
         _presentation.Retry=CurrentContext(LauncherUiOperation.Check);
         MarkError(new AgentOperationException("status-refresh-required",Guid.NewGuid().ToString("N"),"설치는 완료됐습니다. 설치 상태를 다시 확인해 주세요."),completedTitle+" · 상태 재확인 필요",showDialog:false);
     }
@@ -116,14 +118,23 @@ public sealed partial class MainWindow
             else MarkError(new RuntimeBlockedException(LauncherDashboardViewModel.RequireRuntimeObservation(result.Runtime)),"실행 상태 확인",showDialog:false);
             return false;
         }
+        if(result.Completion==LauncherUiCompletion.Checked)_readOnlyRecoveryFollowUp=false;
         return true;
     }
     private async Task RestoreUiPreviewAsync(LauncherUiOperationContext context,LauncherConfig config,RollbackPreview preview)
     {
         if(context!=CaptureUiOperation())throw new InvalidDataException("선택한 배포가 변경되었습니다.");
         EndCancellableUiPhase();
-        await _restorePreview(config,preview);
+        var restoration=await _restorePreview(config,preview);
+        if(restoration.Disposition==LauncherRestoreDisposition.Unknown)
+        {
+            ClearResumeAfterMutation(context);
+            _readOnlyRecoveryFollowUp=true;_presentation.Retry=CurrentContext(LauncherUiOperation.Check);
+            if(restoration.Error is not null)AppendLog(DiagnosticRedactor.Redact(restoration.Error.ToString()),true);
+            MarkError(new AgentOperationException("recovery-outcome-unknown",(restoration.Error as AgentOperationException)?.CorrelationId??Guid.NewGuid().ToString("N"),"백업 복원 결과를 확인하지 못했습니다. 설치 상태를 먼저 확인해 주세요."),"복원 결과 확인 필요",showDialog:false);return;
+        }
         ClearResumeAfterMutation(context);
+        _readOnlyRecoveryFollowUp=true;
         _selectedRuntimeConfig=config;
         BeginOperation(LauncherUiOperation.Check);
         SetStatus("백업 복원 완료 · 설치 상태 확인 중");
@@ -135,6 +146,7 @@ public sealed partial class MainWindow
         }
         catch(Exception ex)
         {
+            _readOnlyRecoveryFollowUp=true;
             _presentation.Retry=CurrentContext(LauncherUiOperation.Check);
             MarkError(ex,"백업 복원 완료 · 상태 재확인 필요",showDialog:false);
         }

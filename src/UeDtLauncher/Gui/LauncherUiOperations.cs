@@ -30,6 +30,8 @@ internal sealed record LauncherUiOperationResult(LauncherConfig Config, ReleaseS
     ManagedProjectStatus Status, RuntimeObservation? Runtime,LauncherUiCompletion Completion=LauncherUiCompletion.Checked);
 internal enum LauncherUiCompletion{Checked,Completed,CommittedLaunchSkipped,CommittedRefreshRequired}
 internal enum LauncherTroubleshootAction { OfferInstall, Complete, Repair }
+internal enum LauncherRestoreDisposition { Applied,InspectionRequired,Unknown }
+internal sealed record LauncherRestoreResult(LauncherRestoreDisposition Disposition,Exception? Error=null);
 internal sealed class LauncherUiCancelledException(OperationStatus operation):OperationCanceledException("Launcher operation cancelled")
 {internal OperationStatus Operation {get;}=operation;}
 

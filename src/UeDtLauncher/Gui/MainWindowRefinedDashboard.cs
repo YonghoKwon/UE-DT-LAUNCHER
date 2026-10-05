@@ -33,7 +33,7 @@ public sealed partial class MainWindow : Window
     private Exception? _configurationError;
     private readonly ILauncherUiBackend _uiBackend;
     private readonly Func<string,Task<LauncherConfig>> _runtimeConfigLoader;
-    private readonly Func<LauncherConfig,RollbackPreview,Task> _restorePreview;
+    private readonly Func<LauncherConfig,RollbackPreview,Task<LauncherRestoreResult>> _restorePreview;
     private readonly Func<LauncherConfig,string,CancellationToken,Task<CatalogSnapshot>> _catalogLoader;
     private readonly Func<string,bool,DoctorTarget?,CancellationToken,Task<DoctorReport>> _doctor;
     private bool _windowMetricsInitialized;
@@ -82,13 +82,13 @@ public sealed partial class MainWindow : Window
         Func<LauncherConfig,string,CancellationToken,Task<CatalogSnapshot>>? catalogLoader=null,
         Func<string,bool,DoctorTarget?,CancellationToken,Task<DoctorReport>>? doctor=null,
         Func<string,Task<LauncherConfig>>? runtimeConfigLoader=null,
-        Func<LauncherConfig,RollbackPreview,Task>? restorePreview=null)
+        Func<LauncherConfig,RollbackPreview,Task<LauncherRestoreResult>>? restorePreview=null)
     {
         _uiBackend=backend??new LauncherUiBackend();
         _runtimeConfigLoader=runtimeConfigLoader??(path=>LauncherPaths.LoadResolvedAsync(path));
         _restorePreview=restorePreview??((config,preview)=>config.IsManagedDeployment
             ? RestoreManagedPreviewAsync(config,preview)
-            : Task.Run(()=>RollbackPreviewService.RestoreExpectedAsync(config,preview.BackupId,preview.MetadataFingerprint)));
+            : Task.Run(async()=>{await RollbackPreviewService.RestoreExpectedAsync(config,preview.BackupId,preview.MetadataFingerprint);return new LauncherRestoreResult(LauncherRestoreDisposition.Applied);}));
         _catalogLoader=catalogLoader??CatalogSnapshotService.LoadAsync;
         _doctor=doctor??((path,online,target,token)=>LauncherDoctor.RunAsync(path,online,token,target:target));
         _startupOptions = startupOptions;
@@ -978,6 +978,7 @@ public sealed partial class MainWindow : Window
     private async Task ExecutePrimaryActionAsync()
     {
         if(_running)return;
+        if(_readOnlyRecoveryFollowUp){await RefreshInstallStatusAsync();return;}
         if(_configurationError is not null)
         {
             _agentStatusTimer.Stop();_selectedRuntimeConfig=null;_viewModel.ProjectStatus=null;_catalog=new();
@@ -1107,6 +1108,7 @@ public sealed partial class MainWindow : Window
     private async Task RunAsync(bool repair, bool launch, ReleaseSelection? expectedSelection = null)
     {
         if(_running)return;
+        if(_readOnlyRecoveryFollowUp){await RefreshInstallStatusAsync();return;}
         _running=true;SetBusy(true);
         using var operationCancellation = new CancellationTokenSource();
         try
@@ -1149,6 +1151,7 @@ public sealed partial class MainWindow : Window
     private async Task TroubleshootAsync()
     {
         if(_running)return;
+        if(_readOnlyRecoveryFollowUp){await RefreshInstallStatusAsync();return;}
         _running=true;SetBusy(true);
         LauncherUiOperationContext? context=null;
         LauncherConfig? config=null;
@@ -1188,6 +1191,7 @@ public sealed partial class MainWindow : Window
         {
             if(repairCommitted)
             {
+                _readOnlyRecoveryFollowUp=true;
                 _presentation.Retry=CurrentContext(LauncherUiOperation.Check);
                 MarkError(ex,"파일 복구 완료 · 상태 재확인 필요",showDialog:false);
                 return;
@@ -1215,6 +1219,7 @@ public sealed partial class MainWindow : Window
     private async Task RollbackLatestAsync()
     {
         if (_running) return;
+        if(_readOnlyRecoveryFollowUp){await RefreshInstallStatusAsync();return;}
         _running=true;SetBusy(true);
         try
         {
@@ -1291,7 +1296,7 @@ public sealed partial class MainWindow : Window
         {
             var id = AutomationProperties.GetAutomationId(button);
             var mutation = id is "primary-action" or "update" or "repair" or "rollback" or "resume-operation" or "cache-clear" or "backup-cleanup";
-            button.IsEnabled = !busy && (!mutation || (HasProject && _viewModel.GeneralState != GeneralLauncherState.RuntimeBlocked)) &&
+            button.IsEnabled = !busy && (!mutation || (HasProject && _viewModel.GeneralState != GeneralLauncherState.RuntimeBlocked && (!_readOnlyRecoveryFollowUp || id=="primary-action"))) &&
                 (!Equals(button.Tag, "general-primary-action") || (HasProject && (IsDeveloper || _viewModel.PrimaryAction != PrimaryActionKind.Disabled)));
             if (_config.IsManagedDeployment && id is "cache-clear" or "backup-cleanup")
             {
