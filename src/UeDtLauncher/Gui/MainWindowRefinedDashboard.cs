@@ -1306,6 +1306,7 @@ public sealed partial class MainWindow : Window
                 button.IsEnabled = false;
                 ToolTip.SetTip(button, "관리형 캐시/백업 정리는 업데이트 서비스의 별도 관리 기능이 필요합니다.");
             }
+            if(_configurationError is not null && id is "update" or "repair" or "rollback" or "resume-operation" or "cache-clear" or "backup-cleanup" or "open-folder")button.IsEnabled=false;
         }
         foreach (var control in _selectionControls) control.IsEnabled = !busy;
         RefreshPresentation();

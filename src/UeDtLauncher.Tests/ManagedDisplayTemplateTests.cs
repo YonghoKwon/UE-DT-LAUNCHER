@@ -3,12 +3,51 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.LogicalTree;
+using Avalonia.Interactivity;
+using Avalonia.Threading;
+using System.Reflection;
 using UeDtLauncher.Gui;
 using Xunit;
 namespace UeDtLauncher.Tests;
 
 public class ManagedDisplayTemplateTests
 {
+    [AvaloniaTheory][InlineData(LauncherEdition.General,"primary-action")][InlineData(LauncherEdition.Developer,"primary-action")][InlineData(LauncherEdition.General,"status-check")][InlineData(LauncherEdition.Developer,"status-check")]
+    public async Task ActualConfigurationRecoveryButtonsReloadAndOnlyQuery(LauncherEdition edition,string action)
+    {
+        var root=Path.Combine(Path.GetTempPath(),"uedt-ui-config-retry-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);
+        var path=Path.Combine(root,"client.json");var queried=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var model=new LauncherDashboardViewModel(edition);var backend=new ConfigurationBackend(queried);
+        var window=new MainWindow(new(path,LauncherConfigSource.Explicit,false),model,new(),false,backend,
+            catalogLoader:(c,_,_)=>{Assert.Equal("demo",c.ProjectId);return Task.FromResult(new CatalogSnapshot{Projects=[new(){ProjectId="demo"}],Releases=[new(){ProjectId="demo",Environment="prod",Channel="stable",Platform=OperatingSystem.IsWindows()?"windows-x64":"linux-x64",Version="1.0.0",IsLatest=true}]});},
+            runtimeConfigLoader:p=>{var c=new LauncherConfig{DeploymentMode="portable",ProjectId="demo",DistributionServerUrl="https://fixture.invalid",InstallDir=Path.Combine(root,"app"),StateRootDir=Path.Combine(root,"state"),Projects=[new(){ProjectId="demo"}]};LauncherPaths.ResolveInPlace(c,p);return Task.FromResult(c);});
+        try
+        {
+            typeof(MainWindow).GetMethod("LoadConfig",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(window,[]);
+            typeof(MainWindow).GetMethod("Build",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(window,[]);window.Show();
+            var controls=window.GetLogicalDescendants().OfType<Button>().ToArray();
+            Assert.Contains(controls.Single(b=>AutomationProperties.GetAutomationId(b)=="primary-action").GetLogicalDescendants().OfType<TextBlock>(),t=>t.Text=="설정 다시 확인");
+            if(edition==LauncherEdition.Developer)Assert.False(controls.Single(b=>AutomationProperties.GetAutomationId(b)=="update").IsEnabled);
+            await JsonFiles.WriteAsync(path,new LauncherConfig{DeploymentMode="portable",ProjectId="demo",DistributionServerUrl="https://fixture.invalid",Projects=[new(){ProjectId="demo"}]});
+            controls.Single(b=>AutomationProperties.GetAutomationId(b)==action).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await queried.Task.WaitAsync(TimeSpan.FromSeconds(5));Dispatcher.UIThread.RunJobs();
+            Assert.Equal("demo",model.Config.ProjectId);Assert.False(Directory.Exists(Path.Combine(root,"app")));
+            Assert.Equal(0,backend.Mutations);Assert.Equal(1,backend.Checks);
+            var dialogs=(List<Window>)typeof(MainWindow).GetField("_openDialogs",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(window)!;
+            Assert.Empty(dialogs);
+        }
+        finally{window.Close();Directory.Delete(root,true);}
+    }
+    private sealed class ConfigurationBackend(TaskCompletionSource queried):ILauncherUiBackend
+    {
+        public int Mutations;public int Checks;
+        public Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext context,LauncherConfig config,Action<LauncherProgress> progress,CancellationToken token=default)
+        {
+            Checks++;context.Pin(config);VersionedReleasePaths.Bind(config,context.Selection!);queried.TrySetResult();
+            return Task.FromResult(new LauncherUiOperationResult(config,context.Selection,new(false,null,context.Selection!.Version,false,0,0,false),new(RuntimeState.Quiescent,"new-install","")));
+        }
+        public Task<LauncherUiOperationResult> ExecuteAsync(LauncherUiOperationContext context,LauncherConfig config,bool repair,bool launch,Action<LauncherProgress> progress,FileLogger? logger,CancellationToken token=default){Mutations++;throw new InvalidOperationException("Settings retry must not install or launch");}
+    }
     [Theory][InlineData("windows-x64")][InlineData("linux-x64")]
     public void TemplateContainsOnlyDisplaySelectionAndLoadsAsManagedClient(string platform)
     {

@@ -241,7 +241,7 @@ public sealed partial class MainWindow
     private Control EnterpriseActionBar()
     {
         var panel=new StackPanel {Spacing=12};var actions=new WrapPanel {Orientation=Orientation.Horizontal};
-        var primary=EnterpriseButton(_readOnlyRecoveryFollowUp?"상태 다시 확인":IsDeveloper?"실행":_viewModel.PrimaryActionText,"primary-action",async (_,_)=>{if(IsDeveloper)await RunAsync(false,true);else await ExecutePrimaryActionAsync();},true);
+        var primary=EnterpriseButton(_configurationError is not null?"설정 다시 확인":_readOnlyRecoveryFollowUp?"상태 다시 확인":IsDeveloper?"실행":_viewModel.PrimaryActionText,"primary-action",async (_,_)=>{if(IsDeveloper && _configurationError is null)await RunAsync(false,true);else await ExecutePrimaryActionAsync();},true);
         primary.Tag="general-primary-action"; primary.IsEnabled=HasProject&&_viewModel.PrimaryAction!=PrimaryActionKind.Disabled&&!_running;
         if(IsDeveloper)primary.IsEnabled=HasProject&&!_running;
         primary.HotKey=new KeyGesture(Key.F5);actions.Children.Add(primary);

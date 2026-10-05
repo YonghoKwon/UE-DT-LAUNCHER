@@ -35,3 +35,9 @@ publisher는 커밋된 Git snapshot에서 General/Developer/Agent/server와 별�
 도구 계약9개/기존fixture23개/proxy4개(합36개)가 통과했다. Windows/Linux final snapshot은 제품18db00d, source hasha93b4a3f89ad61ee9b01c4740ff9a6dcff79a705d0a9a531cacc919ff348a828이며 같은 입력에서 게시했다. 새 managed fixture를 실제 실행하고 상태 버튼 입력·미설치 inventory 불변·display1920×1080/scale1/text1/highContrastfalse를 확인했다. 네 조합 전체 수용은 아직 진행 전/중이며 이 도구 통과가 실제 모든 GUI 적용 통과는 아니다.
 
 이전 병렬 승인3건의 로그에는 IOException 일반 문장만 있어 원인/HResult를 확정할 수 없다. 새 준비는 단계·종료 코드·timeout/start-failed를 원자적으로 기록하고 승인/승격을 별도 기록한다. 새로운 fixture는 순차 준비하며 이를 병렬 실패 해결 증거로 사용하지 않는다.
+
+## 초기 GUI 점검 중 추가 수정
+
+고정18db00d 후보의 실제 개발자 설정 없음 화면에서 주 버튼이 설정 재읽기를 우회해 RunAsync로 진입함을 발견했다. 설정 오류 중에는 양 에디션 주/상태 버튼이 설정 재읽기→조회로 연결되고 주 버튼은설정 다시 확인, 설치 변경/폴더 열기는 비활성화한다. 실제 Button.ClickEvent 네 조합 회귀는 backend Check1회/변경0회·앱 경로 생성0건·확인창0건을 검사한다. 관련14개와 변경 코드의 양 에디션 publish/build-info가 통과했다. 이 제품 수정 후 기존 네 fixture는 보존·소유 harness만 종료했고 다음 고정 후보의 새 root로 영향 시험을 재수행한다.
+
+초기 실제 screen은1920×1080/scale1/text1/highContrastfalse였고 MG 설정 없음/오류/재조회 불변을 확인했다. 캡처는 native JPEG로 제공돼 PNG/JPEG 서명을 모두 지원하고 이후에는 원본 형식 확장자로 저장한다. 초기 일부JPEG.png 이름은 시험 이력이며 최종 공개 근거는 실제 형식을 사용한다.

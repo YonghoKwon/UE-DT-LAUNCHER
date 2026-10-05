@@ -77,6 +77,7 @@ public sealed partial class MainWindow
     }
     private async Task ExecuteStatusActionAsync()
     {
+        if(_configurationError is not null){await ExecutePrimaryActionAsync();return;}
         if(_readOnlyRecoveryFollowUp){await RefreshInstallStatusAsync();return;}
         if(!IsDeveloper&&_viewModel.GeneralState==GeneralLauncherState.RecoverableError)await TroubleshootAsync();
         else await RefreshSelectionStatusAsync();
