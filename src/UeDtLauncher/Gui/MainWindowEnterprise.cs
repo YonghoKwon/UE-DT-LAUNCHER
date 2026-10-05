@@ -223,7 +223,7 @@ public sealed partial class MainWindow
     {
         var wrap=new WrapPanel {Orientation=Orientation.Horizontal};
         var buttons=new[]{EnterpriseButton("검증/복구","repair",async (_,_)=>await RunAsync(true,false)),EnterpriseButton("백업 복원","rollback",async (_,_)=>await RollbackLatestAsync()),
-            EnterpriseButton("캐시 정리","cache-clear",(_,_)=>ClearCache()),EnterpriseButton("백업 정리","backup-cleanup",(_,_)=>CleanupBackups()),
+            EnterpriseButton("임시 파일 정리","cache-clear",async(_,_)=>await RunMaintenanceAsync(false)),EnterpriseButton("백업 정리","backup-cleanup",async(_,_)=>await RunMaintenanceAsync(true)),
             EnterpriseButton("설치 폴더","open-folder",(_,_)=>OpenInstallFolder(),tracked:false),EnterpriseButton("로그 ZIP","export-logs",(_,_)=>ExportLogsZip(),tracked:false)};
         foreach(var b in buttons){b.Margin=new Thickness(0,8,8,0);wrap.Children.Add(b);}return wrap;
     }

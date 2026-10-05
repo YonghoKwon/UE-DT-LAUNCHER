@@ -1356,9 +1356,40 @@ public sealed partial class MainWindow : Window
     private void DeveloperSettings() => SettingsDialog(true);
     private void SettingsDialog(bool dev) => ShowEnterpriseSettings(dev);
 
-    private void OpenInstallFolder() { var path = _selectedRuntimeConfig?.InstallDir ?? LauncherPaths.ResolveConfigRelative(ConfigPath, _selectedProject.InstallPath ?? _config.InstallDir); Directory.CreateDirectory(path); try { Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true }); } catch (Exception ex) { AppendLog("폴더를 열 수 없습니다: " + FriendlyError(ex), true); } }
-    private void ClearCache() { try { var p = SelectedStatePaths.StagingDir; if (Directory.Exists(p)) Directory.Delete(p, true); Directory.CreateDirectory(p); AppendLog("캐시를 정리했습니다.", true); } catch (Exception ex) { AppendLog("캐시 정리 실패: " + FriendlyError(ex), true); } }
-    private void CleanupBackups() { try { var p = SelectedStatePaths.BackupDir; BackupManager.Prune(p, _config.MaxBackupCount, m => AppendLog("백업 정리: " + m, true)); AppendLog($"백업을 정리했습니다. 최근 {_config.MaxBackupCount}개는 롤백을 위해 보관합니다.", true); } catch (Exception ex) { AppendLog("백업 정리 실패: " + FriendlyError(ex), true); } }
+    private void OpenInstallFolder()
+    {
+        try
+        {
+            var selection=CurrentReleaseSelection();
+            if(selection is not null && _selectedRuntimeConfig?.SelectedRelease!=selection)throw new InvalidOperationException("선택한 배포의 상태를 먼저 확인해 주세요.");
+            var path=_config.IsManagedDeployment
+                ? _selectedRuntimeConfig?.ManagedPresentation?.InstallDirectory??throw new InvalidOperationException("설치 폴더 정보를 확인하려면 업데이트 서비스를 갱신하고 상태를 확인해 주세요.")
+                : _selectedRuntimeConfig?.InstallDir??LauncherPaths.ResolveConfigRelative(ConfigPath,_selectedProject.InstallPath??_config.InstallDir);
+            Process.Start(new ProcessStartInfo{FileName=PortableMaintenance.ExistingFolder(path),UseShellExecute=true});
+        }
+        catch(Exception ex){AppendLog("폴더를 열 수 없습니다: "+FriendlyError(ex),true);SetStatus("설치 폴더를 확인할 수 없습니다. 상태를 먼저 확인해 주세요.");}
+    }
+    private async Task RunMaintenanceAsync(bool backups)
+    {
+        if(_running)return;
+        if(_readOnlyRecoveryFollowUp){await RefreshInstallStatusAsync();return;}
+        _running=true;SetBusy(true);
+        try
+        {
+            var context=CaptureUiOperation();
+            if(context.Managed)throw new InvalidOperationException("관리형 정리는 업데이트 서비스의 별도 관리 기능이 필요합니다.");
+            var config=await RunConfig(false,false);context.Pin(config);
+            if(context.Selection is not null)VersionedReleasePaths.Bind(config,context.Selection);
+            var messages=new List<string>();
+            await Task.Run(()=>{if(backups)PortableMaintenance.PruneBackups(config,m=>messages.Add(m));else PortableMaintenance.ClearStaging(config);});
+            foreach(var message in messages)AppendLog(message,true);
+            SetStatus(backups?$"백업 정리 완료 · 최근 {config.MaxBackupCount}개 보관":"임시 파일 정리 완료 · 이어받기 기록 보존");
+        }
+        catch(Exception ex){MarkError(ex,"정리할 수 없습니다",showDialog:false);}
+        finally{FinishUiOperation();}
+    }
+    private async void ClearCache()=>await RunMaintenanceAsync(false);
+    private async void CleanupBackups()=>await RunMaintenanceAsync(true);
     private void ClearLog() { _presentation.Logs.Clear(); if (_logBox is not null) _logBox.Text = string.Empty; }
     private string SaveLogFile() { var dir = Path.Combine(Path.GetDirectoryName(LauncherUiPreferences.DefaultPath)!, "support", "logs"); Directory.CreateDirectory(dir); var path = Path.Combine(dir, $"launcher-{DateTime.Now:yyyyMMdd-HHmmss}.log"); File.WriteAllText(path, DiagnosticRedactor.Redact(_presentation.LogText)); return path; }
     private void ExportLogsZip()

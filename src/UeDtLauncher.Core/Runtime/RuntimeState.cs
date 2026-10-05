@@ -251,12 +251,14 @@ public sealed class InstallationMutationLease : IDisposable
     private readonly string installationId;
     private bool disposed;
     private InstallationMutationLease(SingleInstanceLock gate, string installationId) { this.gate = gate; this.installationId = installationId; }
-    public static InstallationMutationLease Acquire(LauncherConfig config)
+    public static InstallationMutationLease Acquire(LauncherConfig config)=>AcquireCore(config,true);
+    internal static InstallationMutationLease AcquireMaintenance(LauncherConfig config)=>AcquireCore(config,false);
+    private static InstallationMutationLease AcquireCore(LauncherConfig config,bool initialize)
     {
         // Fail before creating the lock or runtime record when mutable data overlaps an install.
         RuntimeDataPolicy.ValidateConfiguration(config);
         var gate = SingleInstanceLock.Acquire(LauncherPaths.UpdateLockPath(config));
-        try { RuntimeStore.RequireQuiescent(config); RuntimeStore.Initialize(config); return new(gate, RuntimeStore.InstallationId(config)); }
+        try { RuntimeStore.RequireQuiescent(config); if(initialize)RuntimeStore.Initialize(config); return new(gate, RuntimeStore.InstallationId(config)); }
         catch { gate.Dispose(); throw; }
     }
     internal void Validate(LauncherConfig config)
