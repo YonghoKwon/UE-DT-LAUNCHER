@@ -86,7 +86,8 @@ def record_case(root,fixture,profile,name,status,proof=None):
         for name in screenshots:
             path=inside(root,name)
             with path.open('rb') as stream:
-                if stream.read(8)!=b'\x89PNG\r\n\x1a\n':raise ValueError('A captured PNG is required')
+                signature=stream.read(8)
+                if signature!=b'\x89PNG\r\n\x1a\n' and not signature.startswith(b'\xff\xd8\xff'):raise ValueError('A native PNG/JPEG capture is required')
         row['screenshots']=[{'name':Path(p).name,'sha256':sha256(inside(root,p))} for p in screenshots]
         row['checks']=proof['checks'];row['inputActor']=proof['inputActor'];row['screen']=proof['screen']
         if 'snapshotScope' in proof:
