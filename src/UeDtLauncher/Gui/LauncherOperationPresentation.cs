@@ -1,8 +1,9 @@
 using System.Collections.ObjectModel;
 namespace UeDtLauncher.Gui;
 
-public enum LauncherUiOperation { None, Check, Catalog, Update, Repair, Launch, Troubleshoot, Rollback }
+public enum LauncherUiOperation { None, Check, Catalog, Update, Repair, Launch, Troubleshoot, Rollback, ClearStaging, PruneBackups }
 public sealed record LauncherRetryContext(LauncherUiOperation Operation, string ProjectId, string Environment, string Channel, string? Version, ReleaseSelection? Selection = null);
+internal sealed record LauncherPresentationSnapshot(string Title,double? Percent,LauncherUiOperation Kind,string? ErrorCode,string? SupportId,string Stage,LauncherRetryContext? Retry);
 
 public sealed class LauncherOperationPresentation
 {
@@ -15,6 +16,7 @@ public sealed class LauncherOperationPresentation
     public string Announcement => ErrorCode is not null || Percent == 100 || Kind == LauncherUiOperation.None
         ? Title : CurrentStage switch
         {
+            "재확인" => Title,
             "파일 준비" => "필요한 파일을 준비하고 있습니다.",
             "적용" => "프로그램 파일을 적용하고 있습니다.",
             "복구" => "파일을 복구하고 있습니다.",
@@ -29,6 +31,17 @@ public sealed class LauncherOperationPresentation
     {
         Kind = operation; Percent = null; CurrentStage = "확인"; ErrorCode = SupportId = null;
         Title = operation == LauncherUiOperation.Rollback ? "백업 복원 중" : "작업을 확인하고 있습니다";
+    }
+    internal LauncherPresentationSnapshot Capture() => new(Title,Percent,Kind,ErrorCode,SupportId,CurrentStage,Retry);
+    internal void Restore(LauncherPresentationSnapshot value)
+    {
+        Title=value.Title;Percent=value.Percent;Kind=value.Kind;ErrorCode=value.ErrorCode;
+        SupportId=value.SupportId;CurrentStage=value.Stage;Retry=value.Retry;
+    }
+    internal void BeginFollowUp(string title)
+    {
+        Kind=LauncherUiOperation.Check;Percent=null;CurrentStage="재확인";
+        ErrorCode=SupportId=null;Title=title;
     }
     public void Stage(string stage)
     {

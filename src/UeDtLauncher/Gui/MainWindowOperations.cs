@@ -66,6 +66,14 @@ public sealed partial class MainWindow
         _operationCancellation=null;
         Build();
     }
+    private void BeginReadOnlyFollowUp(string completedTitle)
+    {
+        EndCancellableUiPhase();
+        _readOnlyRecoveryFollowUp=true;
+        _presentation.BeginFollowUp(completedTitle+" · 설치 상태 확인 중");
+        _presentation.Retry=CurrentContext(LauncherUiOperation.Check);
+        Build();
+    }
     private void RequestOperationCancellation()
     {
         if (_operationCancellation is null || _operationCancellation.IsCancellationRequested) return;
@@ -136,8 +144,7 @@ public sealed partial class MainWindow
         ClearResumeAfterMutation(context);
         _readOnlyRecoveryFollowUp=true;
         _selectedRuntimeConfig=config;
-        BeginOperation(LauncherUiOperation.Check);
-        SetStatus("백업 복원 완료 · 설치 상태 확인 중");
+        BeginReadOnlyFollowUp("백업 복원 완료");
         try
         {
             var result=await _uiBackend.CheckAsync(context,config,CreateUiProgress());

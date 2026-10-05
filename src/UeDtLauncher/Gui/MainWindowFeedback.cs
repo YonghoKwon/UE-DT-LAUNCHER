@@ -24,6 +24,8 @@ public sealed partial class MainWindow
             case LauncherUiOperation.Launch: await RunAsync(false,true,context.Selection);break;
             case LauncherUiOperation.Troubleshoot: await TroubleshootAsync();break;
             case LauncherUiOperation.Rollback: await RollbackLatestAsync();break; // New preview and confirmation every time.
+            case LauncherUiOperation.ClearStaging: await RunMaintenanceAsync(false);break;
+            case LauncherUiOperation.PruneBackups: await RunMaintenanceAsync(true);break;
         }
     }
     private async Task RefreshSelectionStatusAsync()
@@ -41,15 +43,22 @@ public sealed partial class MainWindow
         var service=await client.SendAsync("status"); service.ThrowIfFailed();
         if(!service.AgentCapabilities.Contains(RollbackPreviewService.Capability))
             throw new RuntimeBlockedException(new(RuntimeState.Unknown,"client-upgrade-required","백업 정보를 확인하려면 업데이트 서비스를 갱신해 주세요."));
-        var response=await client.SendStreamingAsync("rollback-preview",config.ProjectId,_=>{},selection:config.SelectedRelease ?? CurrentReleaseSelection());
-        response.ThrowIfFailed();
-        var preview=response.RollbackPreview;
+        var selection=config.SelectedRelease ?? CurrentReleaseSelection();
+        var response=await client.SendStreamingAsync("rollback-preview",config.ProjectId,_=>{},selection:selection);
+        var preview=ValidateManagedRollbackPreview(response,selection);
         if(preview is null || !preview.CanRestore)
         {
             SetStatus(preview is null?"복원할 백업이 없습니다.":"백업의 복원 정보를 확인할 수 없습니다. 관리자에게 문의해 주세요.");
             return null;
         }
         return preview;
+    }
+    internal static RollbackPreview? ValidateManagedRollbackPreview(ManagedAgentResponse response,ReleaseSelection? expected)
+    {
+        response.ThrowIfFailed();
+        if(expected is null || response.SelectedRelease!=expected)
+            throw new InvalidDataException("업데이트 서비스가 요청한 백업의 배포 선택을 확인하지 못했습니다. 상태를 다시 확인해 주세요.");
+        return response.RollbackPreview;
     }
     private async Task<bool> ConfirmPreviewAsync(RollbackPreview preview)
     {

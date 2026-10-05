@@ -14,6 +14,21 @@ namespace UeDtLauncher.Tests;
 
 public class CommittedRecoveryTests
 {
+    [AvaloniaTheory][InlineData(false,false)][InlineData(false,true)][InlineData(true,false)][InlineData(true,true)]
+    public async Task CommittedRepairClosesMutationCancellationDuringDelayedReadOnlyCheck(bool managed,bool developer)
+    {
+        using var f=new Fixture(managed,developer);f.Window.Show();f.SetResume();
+        f.Backend.FollowUpFinish=new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var task=Invoke(f.Window,"TroubleshootAsync");
+        await f.Backend.FollowUpEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Null(Button(f.Window,"cancel-operation"));
+        Assert.Equal("파일 복구 완료 · 설치 상태 확인 중",f.Presentation.Title);
+        Assert.Equal(f.Presentation.Title,f.Presentation.Announcement);
+        Assert.Equal(LauncherUiOperation.Check,f.Presentation.Retry?.Operation);
+        Assert.Equal(1,f.Backend.Executions);Assert.Null(Button(f.Window,"resume-operation"));
+        f.Backend.FollowUpFinish.SetResult();await task;
+        Assert.Equal("파일 복구 완료",f.Presentation.Title);Assert.Equal(1,f.Backend.Executions);
+    }
     public static IEnumerable<object[]> FollowUpCases=>from managed in new[]{false,true} from developer in new[]{false,true}
         from action in new[]{"primary-action","status-check","retry-operation","f6"} select new object[]{managed,developer,action};
 
@@ -136,13 +151,16 @@ public class CommittedRecoveryTests
     private sealed class Backend(Fixture f):ILauncherUiBackend
     {
         public TaskCompletionSource NextCheck=new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource FollowUpEntered=new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource? FollowUpFinish;
         public int Checks;public int Executions;public string AfterRepair="success";public bool AlreadyApplied;
-        public Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext c,LauncherConfig config,Action<LauncherProgress> progress,CancellationToken token=default)
+        public async Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext c,LauncherConfig config,Action<LauncherProgress> progress,CancellationToken token=default)
         {
             Checks++;
             NextCheck.TrySetResult();
+            if(Executions>0 && FollowUpFinish is not null){FollowUpEntered.TrySetResult();await FollowUpFinish.Task;}
             if((Executions>0||AlreadyApplied)&&AfterRepair=="network")throw new AgentOperationException("server-unavailable","synthetic-support","synthetic network failure");
-            return Task.FromResult(f.Result(config,(Executions==0&&!AlreadyApplied)||AfterRepair=="damaged"));
+            return f.Result(config,(Executions==0&&!AlreadyApplied)||AfterRepair=="damaged");
         }
         public Task<LauncherUiOperationResult> ExecuteAsync(LauncherUiOperationContext c,LauncherConfig config,bool repair,bool launch,Action<LauncherProgress> progress,FileLogger? logger,CancellationToken token=default)
         {

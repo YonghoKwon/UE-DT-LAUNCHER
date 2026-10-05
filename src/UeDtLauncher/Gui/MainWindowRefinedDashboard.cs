@@ -1099,15 +1099,6 @@ public sealed partial class MainWindow : Window
         _presentation.Complete(_installDetail); Build();
     }
 
-    private void ApplyManagedSelection(LauncherConfig config, ManagedAgentResponse response, ReleaseSelection? requested)
-    {
-        if (!UsesDistributionServer) return;
-        if (response.SelectedRelease is null || (requested is not null && (response.SelectedRelease != requested || CurrentReleaseSelection() != requested)))
-            throw new InvalidDataException("업데이트 서비스가 선택한 버전을 확인하지 못했습니다. 서비스 업데이트가 필요합니다.");
-        VersionedReleasePaths.Bind(config, response.SelectedRelease);
-        _selectedRuntimeConfig = config;
-    }
-
     private async Task RunAsync(bool repair, bool launch, ReleaseSelection? expectedSelection = null)
     {
         if(_running)return;
@@ -1180,6 +1171,7 @@ public sealed partial class MainWindow : Window
                 ValidateUiResult(context,repaired);
                 repairCommitted=true;ClearResumeAfterMutation(context);
                 if(repaired.Completion==LauncherUiCompletion.CommittedRefreshRequired || cancellation.IsCancellationRequested){CommittedUiRefreshRequired("파일 복구 완료");return;}
+                BeginReadOnlyFollowUp("파일 복구 완료");
                 _viewModel.RequireRuntimeQuiescent(repaired.Runtime);
                 checkedResult=await _uiBackend.CheckAsync(context,config,CreateUiProgress());
                 if(checkedResult.Status.UpdateRequired)throw new InvalidDataException("파일 복구 후 검증을 완료하지 못했습니다.");
@@ -1223,10 +1215,13 @@ public sealed partial class MainWindow : Window
     {
         if (_running) return;
         if(_readOnlyRecoveryFollowUp){await RefreshInstallStatusAsync();return;}
+        var previousPresentation=_presentation.Capture();
+        var previousState=_viewModel.GeneralState;
         _running=true;SetBusy(true);
         try
         {
             var context=CaptureUiOperation();
+            _presentation.Retry=CurrentContext(LauncherUiOperation.Rollback);
             var config=await RunConfig(false,false);context.Pin(config);
             if(context.Selection is not null)
             {
@@ -1237,8 +1232,9 @@ public sealed partial class MainWindow : Window
                 ? await _managedRollbackPreview(config)
                 : await Task.Run(()=>RollbackPreviewService.ReadAsync(config));
             if(preview is null || !preview.CanRestore)
-            {SetStatus("복원할 수 있는 백업 정보를 확인해 주세요.");return;}
-            if(!await ConfirmPreviewAsync(preview))return;
+            {_presentation.Retry=CurrentContext(LauncherUiOperation.Check);SetStatus("복원할 수 있는 백업 정보를 확인해 주세요.");return;}
+            if(!await ConfirmPreviewAsync(preview))
+            {_presentation.Restore(previousPresentation);_viewModel.GeneralState=previousState;return;}
             BeginOperation(LauncherUiOperation.Rollback);
             await RestoreUiPreviewAsync(context,config,preview);
         }
@@ -1384,6 +1380,7 @@ public sealed partial class MainWindow : Window
         try
         {
             var context=CaptureUiOperation();
+            _presentation.Retry=CurrentContext(backups?LauncherUiOperation.PruneBackups:LauncherUiOperation.ClearStaging);
             if(context.Managed)throw new InvalidOperationException("관리형 정리는 업데이트 서비스의 별도 관리 기능이 필요합니다.");
             var config=await RunConfig(false,false);context.Pin(config);
             if(context.Selection is not null)VersionedReleasePaths.Bind(config,context.Selection);
