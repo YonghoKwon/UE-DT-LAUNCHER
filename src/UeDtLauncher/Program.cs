@@ -747,6 +747,22 @@ public static class Program
         var output = Get(args, "--output") ?? "launcher.config.json";
         if (File.Exists(output) && !Has(args, "--force")) throw new IOException("Config already exists; use a new output or explicit --force.");
         var mode = Get(args, "--mode") ?? "distribution";
+        if(mode=="managed-client")
+        {
+            var allowed=new HashSet<string>(StringComparer.OrdinalIgnoreCase){"--mode","--project-id","--platform","--environment","--channel","--version-policy","--version","--output","--force"};
+            var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for(var i=0;i<args.Length;i++)
+            {
+                if(!allowed.Contains(args[i]) || !seen.Add(args[i]))throw new ArgumentException("Unsupported or duplicate managed-client option. Operational settings belong in the Agent configuration.");
+                if(!args[i].Equals("--force",StringComparison.OrdinalIgnoreCase))
+                {if(i+1>=args.Length || args[i+1].StartsWith("--",StringComparison.Ordinal))throw new ArgumentException("Missing managed-client option value.");i++;}
+            }
+            var client=LauncherConfigurationTemplates.ManagedClient(Required(args,"--project-id"),Get(args,"--platform"),
+                Get(args,"--environment")??"prod",Get(args,"--channel")??"stable",Get(args,"--version-policy")??"latest",Get(args,"--version"));
+            await JsonFiles.WriteAsync(output,client,overwrite:Has(args,"--force"));
+            Console.WriteLine("Managed client display configuration written. Provision the Agent operational configuration separately; the client edition is fixed by its build.");
+            return 0;
+        }
         if (mode == "distribution")
         {
             var distribution = LauncherConfigurationTemplates.Distribution(new DistributionTemplateOptions(
@@ -759,7 +775,7 @@ public static class Program
             Console.WriteLine("Distribution config written. Provision the device key and trusted release public key, then run doctor --online. HTTP is not encrypted.");
             return 0;
         }
-        if (mode != "legacy-catalog") throw new ArgumentException("--mode must be distribution or legacy-catalog.");
+        if (mode != "legacy-catalog") throw new ArgumentException("--mode must be distribution, managed-client or legacy-catalog.");
         var config = new LauncherConfig
         {
             SchemaVersion = 2,
@@ -857,7 +873,8 @@ public static class Program
         Console.WriteLine("  runtime recover --config <file> --dry-run|--confirm-stopped [--version <exact version>] [--service-selection]");
         Console.WriteLine("  release-metadata --zip <zip> --project-id <id> --version <version> --platform <platform> --entry-point <path> [--payload-root <path>] [--output <release.json>]");
         Console.WriteLine("  gui                 (also: --gui forces GUI; --cli forces CLI -> defaults to 'run')");
-        Console.WriteLine("  sample-config --output launcher.config.json [--mode distribution|legacy-catalog] [--force]");
+        Console.WriteLine("  sample-config --output launcher.config.json [--mode distribution|managed-client|legacy-catalog] [--force]");
+        Console.WriteLine("    managed-client: --project-id id [--platform windows-x64|linux-x64] [--environment prod|dev] [--channel stable|beta|dev] [--version-policy latest|exact] [--version exact-version]");
         Console.WriteLine("    [--server-url http://10.20.30.40] [--project-id id] [--platform windows-x64|linux-x64] [--profile general|developer]");
         Console.WriteLine("    [--deployment-mode managed-agent|portable] [--auth request-signature-v1|bearer] [--credential-name name] [--signing-key-id id] [--public-key path]");
         Console.WriteLine("  credential keygen --name name --key-id pc-key --public-out device-public.json [--storage managed|portable]");

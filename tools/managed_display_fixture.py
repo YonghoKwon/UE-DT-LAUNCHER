@@ -3,7 +3,11 @@ import json,time
 
 def prove_managed_display(run,launcher,client,config):
     profile=client/'minimal-managed-client.json'
-    profile.write_text(json.dumps({'schemaVersion':3,'deploymentMode':'managed-agent','manifestUrl':'','projectId':'demo','environment':'prod','channel':'stable','targetPlatform':config['targetPlatform'],'versionPolicy':'exact','requestedVersion':'1.0.0'}))
+    run(launcher,'sample-config','--mode','managed-client','--project-id','demo','--platform',config['targetPlatform'],
+        '--version-policy','exact','--version','1.0.0','--output',profile)
+    value=json.loads(profile.read_text())
+    if set(value)!={'schemaVersion','deploymentMode','manifestUrl','projectId','environment','channel','targetPlatform','versionPolicy','requestedVersion'}:
+        raise RuntimeError('Generated display configuration included operational fields')
     report=json.loads(run(launcher,'doctor','--config',profile,'--online'))
     if not report['healthy']:raise RuntimeError('Selection-only client diagnostics failed')
     run(launcher,'run','--config',profile)

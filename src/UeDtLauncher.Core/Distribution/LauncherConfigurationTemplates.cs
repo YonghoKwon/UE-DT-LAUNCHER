@@ -1,4 +1,13 @@
+using System.Text.Json.Serialization;
 namespace UeDtLauncher;
+
+public sealed record ManagedClientDisplayConfig(string ProjectId,string TargetPlatform,string Environment,string Channel,string VersionPolicy,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] string? RequestedVersion)
+{
+    public int SchemaVersion=>3;
+    public string DeploymentMode=>"managed-agent";
+    public string ManifestUrl=>"";
+}
 
 public sealed record DistributionTemplateOptions(
     string ServerUrl = "http://10.20.30.40", string ProjectId = "ue-dt-simulator", string Profile = "general",
@@ -7,6 +16,16 @@ public sealed record DistributionTemplateOptions(
 
 public static class LauncherConfigurationTemplates
 {
+    public static ManagedClientDisplayConfig ManagedClient(string projectId,string? platform=null,string environment="prod",string channel="stable",string versionPolicy="latest",string? version=null)
+    {
+        ReleaseSidecar.Segment(projectId);
+        platform??=OperatingSystem.IsWindows()?"windows-x64":"linux-x64";
+        KnownValues.ValidateReleaseTuple(platform,environment,channel);
+        if(versionPolicy is not ("latest" or "exact") || (versionPolicy=="exact" && string.IsNullOrWhiteSpace(version)) || (versionPolicy=="latest" && version is not null))
+            throw new ArgumentException("Use latest without --version, or exact with an explicit --version.");
+        if(version is not null)ReleaseSidecar.Segment(version);
+        return new(projectId,platform,environment,channel,versionPolicy,version);
+    }
     public static LauncherConfig Distribution(DistributionTemplateOptions options)
     {
         var platform = options.Platform ?? (OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64");

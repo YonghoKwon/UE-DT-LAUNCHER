@@ -95,6 +95,12 @@ public sealed partial class MainWindow
             var work=new Grid { ColumnDefinitions=new(sidebar?"248,*":"*"),ColumnSpacing=20 };
             if(sidebar)work.Children.Add(EnterpriseProjectList());
             var content=new StackPanel { Spacing=16 };
+            if(_viewModel.GeneralState==GeneralLauncherState.ConfigurationRequired)
+            {
+                var example="UeDtLauncher.exe sample-config --mode managed-client --project-id <프로젝트ID> --output launcher.config.json";
+                var command=Identify(new TextBox{Text=example,IsReadOnly=true,TextWrapping=TextWrapping.Wrap,FontSize=14*_preferences.TextScale,MinHeight=72},"configuration-example","관리형 화면 설정 생성 명령 예시");
+                content.Children.Add(Identify(EnterpriseCard(new StackPanel{Spacing=12,Children={Txt("화면 설정 준비",18,true),Muted("관리자에게 프로젝트 ID와 업데이트 서비스 준비 상태를 확인해 주세요. 실행 파일 옆에 화면 설정을 생성한 뒤 다시 확인하세요. 아래 명령의 프로젝트ID를 실제 등록값으로 바꿉니다.",14),command}}),"configuration-help","화면 설정 생성 안내"));
+            }
             if(!sidebar && projects.Count>1) content.Children.Add(CompactProjectSelector());
             if(IsDeveloper) content.Children.Add(EnterpriseFilters());
             if(!HasProject)

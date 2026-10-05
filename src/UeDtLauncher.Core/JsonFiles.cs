@@ -19,6 +19,9 @@ public static class JsonFiles
     }
 
     public static async Task WriteAsync<T>(string path, T value, CancellationToken cancellationToken = default)
+        =>await WriteAsync(path,value,true,cancellationToken);
+
+    public static async Task WriteAsync<T>(string path,T value,bool overwrite,CancellationToken cancellationToken=default)
     {
         var fullPath = Path.GetFullPath(path);
         var directory = Path.GetDirectoryName(fullPath);
@@ -44,7 +47,7 @@ public static class JsonFiles
                 stream.Flush(flushToDisk: true);
             }
 
-            File.Move(tempPath, fullPath, overwrite: true);
+            File.Move(tempPath, fullPath, overwrite);
         }
         finally
         {

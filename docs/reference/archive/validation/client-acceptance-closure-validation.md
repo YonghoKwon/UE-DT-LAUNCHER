@@ -15,3 +15,7 @@ stage-1 Windows General/Developer/Agent/server publish 후 실제 CLI·console A
 수동 정리는 삭제/실패/실제 잔여 수를 반환하고 일부 실패를 완료로 표시하지 않는다. staging/backups 전용 경로만 허용하며 resume-cache의 파일 목록/크기/수정 시각을 전후 대조한다(전체 내용 hash 인수와 구분). 자동 엔진 Prune의 best-effort 정책은 유지한다. 관련39개 및 stage-2 Windows 게시 CLI/console Agent의 실제 설치/repair/정상 backup 복원이 통과했다. Windows 소유 파일의 delete-sharing handle로 실제 삭제 실패와 해제 후 재정리를 확인했다. Linux는 주입 경계의 권한 거부 시험이며 Windows 잠금 사실로 확대하지 않는다.
 
 stage-2 source2201486+제품 변경/hash ff23541424b7beab85337d430c2470b8551110219efe98941ad7654a47b94156. GUI 정리 실제 적용은 최종 후보에서 별도 수행한다.
+
+## 화면 설정 생성
+
+`sample-config --mode managed-client`는 필수 projectId와 OS/track/version 선택만 출력한다. 운영 필드/프로필·중복/알 수 없는 옵션·exact 버전 누락·latest 버전 혼용을 거부한다. no-force 출력은 원자적 no-overwrite이며 기존 모드는 유지한다. 설정 필요 화면에 키보드로 읽을 수 있는 명령 예시를 제공한다. 관련17개와 stage-3 게시 CLI/console Agent가 실제 생성한 최소 설정으로 doctor/정확한 실행/감독 종료를 통과했다. Developer 게시 EXE의 generator와 build-info도 확인했다. stage-3 sourcef2ab087+제품 변경/hash54ac950d66fbfc42708847bf0392b76872fa476094dbf152364647bebb0d0a9c.
