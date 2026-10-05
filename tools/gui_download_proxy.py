@@ -116,6 +116,7 @@ class DownloadProxy:
             binding=json.loads(arm.read_text())
             records=list(inside(self.root,'client/state/operations').glob('*.json'))
             if len(records)>256:raise ValueError('Too many operation records')
+            matching=[]
             for path in records:
                 path=inside(self.root,str(path.relative_to(self.root)))
                 if path.stem in binding['beforeIds']:continue
@@ -123,7 +124,15 @@ class DownloadProxy:
                 try:value=json.loads(path.read_text())
                 except (OSError,ValueError):continue # Atomic replace can coincide with this test observation.
                 expected={'projectId':'demo','environment':'prod','channel':'stable','platform':binding['platform'],'version':binding['version']}
-                if value.get('schemaVersion')==1 and value.get('id')==path.stem and value.get('phase')=='Completed' and value.get('command')==binding['command'] and value.get('selection')==expected:
+                if value.get('schemaVersion')==1 and value.get('id')==path.stem and value.get('command')==binding['command'] and all((value.get('selection') or {}).get(k)==v for k,v in expected.items()):matching.append(value)
+            if binding.get('operationId') is None:
+                if len(matching)!=1:return False
+                binding['operationId']=matching[0]['id']
+                temporary=arm.with_suffix('.tmp');temporary.write_text(json.dumps(binding));temporary.replace(arm)
+            for value in matching:
+                if value['id']==binding['operationId'] and value.get('phase')=='Completed' and value.get('manifestSha256')==binding.get('manifestSha256'):
+                    fired={'sessionId':self.metrics['sessionId'],'operationId':value['id'],'command':value['command'],'manifestSha256':value['manifestSha256'],'version':binding['version']}
+                    temporary=self.control/'proxy-catalog-fired.tmp';temporary.write_text(json.dumps(fired));temporary.replace(self.control/'proxy-catalog-fired.json')
                     arm.unlink();self.metrics['catalogFaults']+=1;self.persist();return True
             return False
     def close(self):

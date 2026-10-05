@@ -19,3 +19,7 @@ Windows 전체741개(714+27), 실패/skip0. stage-b 게시 CLI의 최소 관리�
 ## Portable 유지보수
 
 임시 파일/백업 정리는 정확한 선택의 설치 잠금·runtime 재검사·미완료 journal 검사를 거친다. maintenance는 runtime 초기화 기록을 생성하지 않는다. staging 정리는 resume cache를 보존하고 backup은 기존 보관 개수를 따른다. 링크를 거부하며 UI 로그는 UI 스레드에서 집계한다. 설치 폴더는 존재하는 선택 경로만 열고 생성하지 않는다. 관련43개(신규9 포함)와 stage-c 양 에디션 게시 CLI의build-info 시작 확인을 통과했다. 실제 GUI 정리 조작은 최종 후보에서 별도로 수행한다.
+
+## 시험 결속
+
+Catalog 오류 제어는 실제 신규 작업ID를 한 번 고정하고 릴리스5필드·command·Manifest SHA-256·Completed를 모두 대조한다. 발화 기록과 프록시 세션을 보존하며 reset은 파일 오류와 미발생 Catalog 오류를 함께 해제한다. 계산된releaseId 추가 필드는 필수 선택 필드와 혼동하지 않는다. 합성 marker는 runtimeAttemptId와 결속하고 watchdog 종료 사유를 루프 종료 시 확정한다. 새 합성 실행 파일의 독립 수명 시험은 제한시간 경계를requested로 오인하지 않음을 확인했으며 GUI/감독 수용으로 합산하지 않는다.

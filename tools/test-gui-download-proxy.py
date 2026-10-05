@@ -37,8 +37,8 @@ class ProxyTests(unittest.TestCase):
                 root=Path(temporary);proxy=DownloadProxy(root,0,server.server_port);proxy.start()
                 operations=root/'client/state/operations';operations.mkdir(parents=True)
                 arm=root/'control/proxy-fail-catalog-after-commit'
-                arm.write_text(json.dumps({'version':'2.0.0','platform':'windows-x64','beforeIds':[],'command':'repair'}))
-                record={'schemaVersion':1,'id':'a'*32,'phase':'Completed','command':'repair','selection':{'projectId':'demo','environment':'prod','channel':'stable','platform':'windows-x64','version':'2.0.0'}}
+                arm.write_text(json.dumps({'version':'2.0.0','platform':'windows-x64','beforeIds':[],'command':'repair','manifestSha256':'f'*64,'operationId':None}))
+                record={'schemaVersion':1,'id':'a'*32,'phase':'Completed','command':'repair','manifestSha256':'f'*64,'selection':{'projectId':'demo','environment':'prod','channel':'stable','platform':'windows-x64','version':'2.0.0','releaseId':'demo/prod/stable/2.0.0/windows-x64'}}
                 path=operations/(record['id']+'.json');path.write_text(json.dumps(record))
                 def request():
                     connection=http.client.HTTPConnection('127.0.0.1',proxy.server.server_port,timeout=5)
@@ -52,6 +52,7 @@ class ProxyTests(unittest.TestCase):
                     record['phase']='Completed';path.write_text(json.dumps(record))
                     self.assertEqual(503,request());self.assertFalse(arm.exists());self.assertEqual(200,request())
                     self.assertEqual(1,proxy.metrics['catalogFaults'])
+                    fired=json.loads((root/'control/proxy-catalog-fired.json').read_text());self.assertEqual(record['id'],fired['operationId']);self.assertEqual('f'*64,fired['manifestSha256'])
                 finally:proxy.close()
         finally:server.shutdown();server.server_close();thread.join(timeout=5)
 

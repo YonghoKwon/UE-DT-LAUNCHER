@@ -29,6 +29,21 @@ def control(root,action,*arguments):
         runpy.run_path(str(TOOLS/'gui-fixture-control.py'),run_name='__main__')
 
 class EvidenceTests(unittest.TestCase):
+    def test_fault_reset_clears_file_and_pending_catalog_faults(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)/'fixture';fixture=make_fixture(root);fixture['guiDownloadProof']=True;(root/'fixture.json').write_text(json.dumps(fixture))
+            for name in ('proxy-fail-version','proxy-fail-catalog-after-commit'):(root/'control'/name).write_text('{}')
+            control(root,'proxy-reset-errors')
+            self.assertFalse((root/'control/proxy-fail-version').exists());self.assertFalse((root/'control/proxy-fail-catalog-after-commit').exists())
+
+    def test_same_version_stale_marker_cannot_release_a_new_runtime(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)/'fixture';make_fixture(root);attempt='a'*32
+            (root/'control'/f'{attempt}.started.json').write_text(json.dumps({'version':'1.0.0','runtimeAttemptId':'a'*32}))
+            with patch('gui_fixture_safety.product_json',return_value={'state':2,'attemptId':'b'*32}):
+                with self.assertRaises(ValueError):control(root,'release','--attempt',attempt)
+            self.assertFalse((root/'control'/('release-'+attempt)).exists())
+
     def test_payload_and_backup_lock_named_files_are_never_excluded(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)/'fixture';make_fixture(root)

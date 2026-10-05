@@ -81,9 +81,12 @@ elif a.action.startswith('proxy-'):
         operations=inside(root,'client/state/operations')
         records=[f.stem for f in operations.glob('*.json')] if operations.exists() else []
         if len(records)>256:raise ValueError('Too many fixture operation records')
-        atomic_bytes(control/'proxy-fail-catalog-after-commit',json.dumps({'version':a.version,'platform':platform,'beforeIds':records,'command':'repair'}).encode())
+        manifest=inside(root,'server/releases/demo/prod/stable/'+a.version+'/'+platform+'/manifest.json')
+        atomic_bytes(control/'proxy-fail-catalog-after-commit',json.dumps({'version':a.version,'platform':platform,'beforeIds':records,'command':'repair','manifestSha256':sha256(manifest),'operationId':None}).encode())
         record_control(root,a.action,version=a.version);print('Armed one authorized Catalog failure after the next exact repair commit')
-    elif a.action=='proxy-reset-errors':inside(root,'control/proxy-fail-version').unlink(missing_ok=True);record_control(root,a.action);print('Removed test-only HTTP fault')
+    elif a.action=='proxy-reset-errors':
+        for name in ('proxy-fail-version','proxy-fail-catalog-after-commit'):inside(root,'control/'+name).unlink(missing_ok=True)
+        record_control(root,a.action);print('Removed file and pending Catalog faults')
     else:inside(root,'control/proxy-unthrottle').unlink(missing_ok=True);record_control(root,a.action);print('Restored synthetic transfer throttling')
 elif a.action=='prefs-snapshot':
     if (root/'ui-preferences-original.json').exists(): raise ValueError('Original preferences already captured')
@@ -191,6 +194,7 @@ elif a.action=='release':
     if json.loads(marker.read_text()).get('version')!=a.version:raise ValueError('Synthetic attempt belongs to another version')
     observation=product_json(root,fixture,'runtime','inspect','--config',inside(root,'client/general.json'),'--version',a.version)
     if observation.get('state')!=2:raise ValueError('The exact selected runtime is not running')
+    if json.loads(marker.read_text()).get('runtimeAttemptId')!=observation.get('attemptId'):raise ValueError('Synthetic marker belongs to an older runtime attempt')
     inside(control,'release-'+a.attempt).touch()
     deadline=time.monotonic()+15
     while not inside(control,a.attempt+'.ended.json').exists():
@@ -219,7 +223,7 @@ elif a.action=='smoke':
     if sha256(folder/entry)!=fixture['binaries']['synthetic']['sha256'] or (folder/'version.txt').read_text().strip()!='1.0.0':
         raise ValueError('Smoke payload no longer matches the recorded synthetic binary')
     if os.name!='nt': (folder/entry).chmod(0o700)
-    process=subprocess.Popen([str(folder/entry),'--control-root',str(control)],creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
+    process=subprocess.Popen([str(folder/entry),'--control-root',str(control),'--smoke'],creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
     assert process.wait(timeout=10)==0
     deadline=time.monotonic()+10
     while not (set(control.glob('*.started.json'))-before) and time.monotonic()<deadline: time.sleep(.05)
