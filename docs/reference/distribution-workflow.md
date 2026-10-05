@@ -121,7 +121,7 @@ Agent 관리 설정에 `distributionServerUrl`, `installDir`(버전 설치 루�
 }
 ```
 
-Windows 경로는 Windows 관리 디렉터리로 지정합니다. 일반 UeDtLauncher.exe 또는 개발자 UeDtLauncher.Developer.exe를 배포하며 설정으로 종류를 바꾸지 않습니다. GUI 설정 우선순위는 `gui --config` → 실행 파일 옆 → 관리 설정입니다. 관리형 운영 보안 값은 Agent 설정을 사용합니다.
+Windows 경로는 Windows 관리 디렉터리로 지정합니다. 일반 UeDtLauncher.exe 또는 개발자 UeDtLauncher.Developer.exe를 배포하며 설정으로 종류를 바꾸지 않습니다. GUI는 `gui --config` → 실행 파일 옆 화면 설정만 탐색합니다. 서비스 운영 설정은 자동 탐색하지 않고 Agent만 사용합니다. [최소 화면 설정](guide-03-launcher-usage.md)을 별도로 준비하세요.
 
 위 JSON은 주요 필드 예시이며 회사 PC에 그대로 복사하는 완성 설정이 아닙니다. 프로젝트 ID·대상 OS·일반/개발자 표시 설정과 로그 쓰기 권한을 함께 점검합니다. Agent 서비스 계정이 credential과 공개키를 읽을 수 있어야 합니다. Linux credential 파일의 0600 및 Windows 서비스 ACL을 실제 설치 환경에서 확인하세요.
 

@@ -2,7 +2,7 @@
 
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 배포 시스템입니다.
 
-문서 점검: **2026-10-05**, 작업 기준: `codex/client-recovery-acceptance`. 일반 `UeDtLauncher.exe`와 개발자 `UeDtLauncher.Developer.exe`를 별도 빌드하며 설정으로 GUI 종류를 바꿀 수 없습니다. 복구 적용 후 조회 실패의 복원 제안·오래된 재개 표시·복원 단계 취소 표시를 수정했습니다. Windows/WSL 각714개 회귀와 새 Windows 게시 CLI/Agent 시험이 통과했습니다. 실제 GUI는 초기 창 확인 후 사용자 ESC로 중단돼 나머지 수용은 미실행입니다. [현재 복구 검증](docs/reference/archive/validation/client-recovery-validation.md), [이전 작업 흐름](docs/reference/archive/validation/client-workflow-validation.md)을 확인하세요.
+문서 점검: **2026-10-05**, 작업 기준: `codex/client-usability-hardening`. 일반 `UeDtLauncher.exe`와 개발자 `UeDtLauncher.Developer.exe`를 별도 빌드하며 설정으로 GUI 종류를 바꿀 수 없습니다. 관리형 클라이언트의 보호 설정/Manifest 직접 읽기, 복구 후 버튼별 재시도, portable 정리 잠금, 개발자 직접 복원 경로를 수정했습니다. 최신 Windows/WSL 각 **753개 회귀**, 양 OS Release publish·HTTP 요청 서명·최소 관리형 설정/IPC 복원과 Linux HTTPS/Bearer E2E가 통과했습니다. 실제 마우스 검증은 재개되어 네 조합의 설치·수명·취소/Range 재개를 확인했습니다. **최종 후보 네 조합 전체 오류/복원 수용은 아직 남아 있습니다.** [현재 게시본별 근거](docs/reference/archive/validation/client-usability-validation.md), [이전 복구 검증 이력](docs/reference/archive/validation/client-recovery-validation.md)을 확인하세요.
 
 기본 빌드는 `LauncherEdition=General`입니다. 개발자는 `dotnet publish src/UeDtLauncher -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:LauncherEdition=Developer`로 생성합니다. `--build-info`에서 에디션을 확인하세요. Developer 배포에는 공통 runtime-host인 일반 실행 파일도 포함해야 하며, `tools/publish_runtime_cohort.py --output <새폴더> --rid win-x64`는 두 EXE·Agent·서버와 두 클라이언트 ZIP을 함께 생성합니다.
 
@@ -10,7 +10,7 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 
 ## 프로젝트 목표와 처음 읽을 안내
 
-작업 시작/종료·취소 요청 표시와 진행 이벤트 수명을 통일했고, 관리형 재개 선택 검증·빈 목록 표시·권한 복귀 후 설치 상태 조회를 수정했습니다. 최종 `final-05` 관리형 일반 화면에서 v1 설치/실행·창 종료 후 자식 유지와 v2 다운로드 취소/Range 재개·4파일 해시·v1 보존·재개 후 자동 실행0건을 확인했습니다. 개발자/portable 및 나머지 오류·복원 수용은 계속 진행 중이며 이전 후보 성공을 합산하지 않습니다. 사용자 합의에 따라 이번 실제 화면은 **1440×900·100%**로 기록합니다. 기존 UI-01의1920×1080 한정 수용과는 별도입니다.
+관리형 GUI/CLI는 화면 설정의 정확한 선택만 사용하며 운영 URL·credential·설치 Manifest와 보호 상태는 Agent가 검사합니다. GUI 설정은 명시한 파일 또는 실행 파일 옆 파일만 찾고 서비스 전용 설정으로 자동 전환하지 않습니다. 관리형 바로가기도 선택만 저장합니다. 복구/복원 적용 후 조회 실패는 `상태 다시 확인`으로 안내하며 주 버튼·상태·재시도·F6는 조회만 수행합니다. Portable `임시 파일 정리`는 staging 정리이며 이어받기 캐시와 구분합니다. 실제 이번 화면은 **1920×1080·100%**로 관측했으며 이전1440×900 이력과 구분합니다. 서비스 계정 ACL·회사 인수는 별도입니다.
 
 자동 점검의 `checked`는 준비도와 설치 상태 확인이 함께 완료된 경우입니다. `action-required`는 관리자/사용자 조치, `verification-pending`은 보류된 검사이며 종료0을 실행 가능으로 해석하지 않습니다.
 

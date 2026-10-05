@@ -15,7 +15,7 @@
 .\publish\win-x64\UeDtLauncher.exe gui --config C:\ue-dt\gui.config.json
 ```
 
-GUI 표시 설정은 명시한 `--config` → 실행 파일 옆 `launcher.config.json` → 관리 설정 순입니다. 관리형 DistributionServer는 Agent의 보호 설정도 별도로 필요합니다. 서버·토큰·공개키·설치 경로는 [설정 레퍼런스](guide-03-launcher-usage.md)를 따릅니다.
+GUI 표시 설정은 명시한 `--config` → 실행 파일 옆 `launcher.config.json` 순입니다. 서비스 전용 설정으로 자동 전환하지 않습니다. 관리형은 선택만 담은 화면 설정과 Agent의 보호 운영 설정을 별도로 준비합니다. 서버·credential·공개키·보호 경로는 Agent가 읽습니다. [최소 화면 설정과 운영 설정](guide-03-launcher-usage.md)을 참고하세요.
 
 ## 일반 사용자와 개발자
 

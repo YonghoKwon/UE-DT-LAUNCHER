@@ -1,6 +1,6 @@
 # 작업 지침
 
-점검: 2026-10-05 / 작업 기준 codex/client-recovery-acceptance. 저장소 전체에 적용합니다.
+점검: 2026-10-05 / 작업 기준 codex/client-usability-hardening. 저장소 전체에 적용합니다.
 
 ## 문서 관리 계약
 
@@ -36,6 +36,12 @@
 | installer/windows/, packaging/linux/, .github/workflows/ | 설치본·nginx·서비스·CI |
 
 ## 보존할 경계
+
+- 관리형 GUI/CLI는 ManagedClientContext의 selection-only 설정과 Agent IPC를 사용한다. 운영 URL 누락을 portable/legacy fallback으로 해석하지 않는다. 보호 설정·credential·Manifest·설치 상태 직접 읽기/열거로 Agent 응답 누락을 보충하지 않는다. 관리형 로그는 사용자 저장소다.
+- 관리형 직접 복원은 ManagedClientContext.Bind로 정확한 선택만 묶는다. VersionedReleasePaths.Bind는 portable에만 적용하며 managed client의 로컬 install root를 요구하지 않는다. 구형 Agent의 ClientPresentation 누락은 보조 기능 갱신 안내이며 권한 우회가 아니다.
+- 적용 완료/조회 필요/결과 불명을 구분한다. 완료 뒤 주/상태/재시도/F6는 조회만 하며 응답 유실을 자동 복원 재적용으로 처리하지 않는다. 설치 변경 성공은 오래된 재개 힌트를 해제한다.
+- Portable 정리는 정확한 선택의 설치 lease→runtime→미완료 journal 검사 후 staging/기존 보관 정책 범위만 처리한다. resume cache·공개/다른 버전 파일을 임시 파일로 삭제하지 않는다. 폴더 열기는 존재 여부를 확인하며 폴더를 생성하지 않는다.
+- Fixture는 고유 UUID IPC endpoint를 사용한다. 관리형 operation registry는 실제 Agent 데이터 root의 state/operations다. 장애는 작업ID/릴리스/Manifest digest에 결속하고, 오래된 marker·watchdog 종료·다른 비교 scope를 통과 증거로 합산하지 않는다.
 
 - 일반/개발자 GUI는 LauncherBuildInfo의 컴파일 에디션으로 결정한다. config/env/실행 옵션/파일명으로 바꾸지 않는다. Core clientProfile는 CLI/legacy 선택 호환용이며 서버 권한과 혼용하지 않는다.
 - General/Developer GUI의 obj/bin·assembly를 분리하고 Developer의 브랜드 URI는 실제 assembly로 해석한다. 공통 runtime-host UeDtLauncher는 developer ZIP/설치본에도 포함한다. 런처 self-update 자동 교체는 사용하지 않고 원본 설정/pending을 보존한다.
@@ -133,7 +139,7 @@
 
 - 복구/복원 적용 완료와 후속 조회 실패를 구분한다. 완료 후 조회 실패/파일 이상은 Check 재시도이며 복구 실패의 rollback 제안으로 되돌리지 않는다. 같은 선택의 재개 힌트는 적용 성공 시 해제하고 조회/확인 취소/적용 전 실패에는 유지한다. 복원 단계는 다운로드 취소 컨트롤을 종료한다.
 - fixture 변경은 기존 설치 잠금과 제품의 엄격한 runtime/operation 관측으로 보호한다. payload/backup의 *.lock도 비교하고 이미 끝난 synthetic 시도를 release 성공으로 인정하지 않는다. 프록시 세션별 계측을 보존하며 도구 preflight는 인증 not-checked를 정상으로 보충하지 않는다.
-- 2026-10-05 물리 ESC로 Computer Use가 중단됐다. 이후 이 턴의 앱 입력을 멈추고 미실행을 기록한다. 초기 GUI 진단1920×1080과 계획1440×900을 구분하며 다음 재개 시 실제값을 확인한다.
+- 2026-10-05 이전 recovery 턴의 물리 ESC 중단은 당시 이력이다. 이번 usability 요청으로 합성 fixture 실제 입력을 재개했다. 현재 관측1920×1080/RenderScaling1/글자1/고대비false를 기록하며 당시 미실행이나 다른 후보를 최종 수용으로 합산하지 않는다. 새 중단 신호에는 즉시 입력을 멈춘다.
 
 - 작업 수명은 공통 start/finish 경계를 사용한다. 실제 시작 즉시 취소 표시, 취소 요청 중 중복 입력 차단, 종료 상태 해제 후 화면 갱신 순서를 지킨다. 진행 콜백 생성과 UI 큐 처리 양쪽에서 세대 ID를 검사해 종료/이전 작업 이벤트를 버린다.
 - 재개 표시와 적용은 같은 선택·Manifest digest·재개 가능한 phase·runtime 상태 판정을 사용한다. operation-resume의 선택은 기존 서버의 exact 검증과 일치시키며 다른 operation 제어 명령에 임의 선택을 허용하지 않는다. 정상 Running은 안내 상태이고 변경은 차단하되 새 오류 지원 ID를 만들지 않는다.
@@ -164,7 +170,7 @@
 - 일반 화면은 한 버튼·친화적 오류, Agent 대신 업데이트 서비스로 표기합니다. 기술 예외·내부 경로·비밀정보를 기본 화면에 표시하지 않습니다.
 - 개발자 명령을 보존하되 서버 권한을 확대하지 않습니다. 배포 서버 모드 GUI는 현재 OS용 릴리스를 선택합니다.
 - 이미지 누락·손상·과대 파일은 브랜드 fallback으로 처리합니다. 키보드·focus·스크린리더·DPI를 확인합니다.
-- GUI 설정 탐색은 explicit --config → 실행 파일 옆 → 관리 설정입니다. 관리형 운영 값은 Agent 설정을 사용합니다.
+- GUI 설정 탐색은 explicit --config → 실행 파일 옆 화면 설정입니다. 서비스 전용 관리 설정으로 자동 fallback하지 않습니다. 관리형 운영 값은 Agent 설정을 사용합니다. 구성이 없으면 화면 설정 생성/관리자 요청을 안내하며 기존 파일은 자동 이동·수정하지 않습니다.
 - single-file 네이티브 라이브러리 포함 옵션과 XAML의 &amp; escaping을 유지합니다.
 
 ## 작업·검증·커밋

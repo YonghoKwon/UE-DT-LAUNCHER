@@ -1,6 +1,6 @@
 # 최종 프로젝트 목표 — 회사용 Unreal Engine DT 배포 시스템
 
-갱신: 2026-10-05 / 작업 기준 `codex/client-recovery-acceptance`. **최상위 목표는 확정**됐습니다. 복구/재개 상태의 추가 결함을 수정하고 Windows/WSL 각714개와 Windows 게시 CLI/Agent를 검증했습니다. 실제 GUI는 사용자 ESC로 중단되어 현재 후보 전체 수용은 미실행입니다. 회사 SLA·출시/실환경 인수는 별도이며 현재 진행률은 유지합니다. [이번 기록](docs/reference/archive/validation/client-recovery-validation.md).
+갱신: 2026-10-05 / 작업 기준 `codex/client-usability-hardening`. **최상위 목표는 확정**됐습니다. 관리형 일반 권한 경계·후속 조회·portable 정리·직접 복원 결함을 수정하고 Windows/WSL 각753개와 이번 소스의 양 OS 게시 인증/IPC를 검증했습니다. 합성 마우스 시험을 재개했고 네 조합의 설치·자식 수명·취소/Range 재개를 확인했습니다. 마지막 직접 복원 수정 후 네 조합 전체 수용과 실제 서비스 계정 ACL은 남아 있습니다. 회사 SLA·출시 인수 완료가 아닙니다. [이번 후보별 기록](docs/reference/archive/validation/client-usability-validation.md).
 
 ## 확정한 최종 목표
 
@@ -13,6 +13,8 @@
 현재 사용 방법은 [기능 지도·명령 순서](docs/reference/feature-workflow.md), 현재 구현은 [README](README.md), 작업 목록은 [IMPROVEMENTS](IMPROVEMENTS.md)가 정본입니다.
 
 ## 현재 위치
+
+최신 경계는 **사용자 세션 클라이언트는 선택/표시·Agent는 보호 설정/credential/Manifest/상태 검사**다. 같은 계정 console Agent 검증을 실제 서비스 계정 일반 사용자 ACL 인수로 확대하지 않는다. final-win2에서 네 조합 취소/재개와 일부 복원, final-win3에서 관리형 개발자 직접 복원 취소/preview 거부/정상 적용을 확인했다. 서로 다른 후보의 부분 통과를 최종 전체 수용으로 합산하지 않아 USER-02/UI-02는75%를 유지한다. USER-03은 네 조합 실제 취소/재개와 로컬 장애 회귀 근거로75%이며 회사 계정·전체 장애 인수는 별도다. 다른 SEC/OPS/PERF·회사 Gate는 자동 상향하지 않는다.
 
 완료 후 취소 버튼 잔존과 작업 세대/재개 표시 결함을 수정했다. 실제 시험에서 추가 발견한 관리형 재개 선택 거부·빈 Catalog 이전 카드 잔존·권한 복귀 후 설치 상태 누락도 수정했다. 최종 제품 소스의 Windows/WSL698개 회귀와 관리형 일반의 v1 설치/실행·GUI 종료 후 자식 유지·v2 취소/Range 재개·v1 보존·재개 후 자동 실행0건을 확인했다. 네 조합의 잔여 오류/복원 수용은 진행 중이다. 사용자 합의에 따라 이번 화면/기능 증거는1440×900·100%로 기록하며 회사 Gate와 USER/UI 완료 조건을 상향하지 않는다.
 
