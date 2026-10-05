@@ -3,6 +3,7 @@ import argparse, json, os, subprocess
 import urllib.parse
 from pathlib import Path
 from gui_fixture_evidence import inside, verify_cohort, fixture_environment, fixture_mode, wait_server_ready, wait_agent_ready, hold_fixture, FixtureHarnessLock
+from gui_fixture_safety import preflight
 
 p=argparse.ArgumentParser(); p.add_argument('--root',required=True)
 p.add_argument('--server',help='Legacy assertion only; must equal the recorded server path')
@@ -11,6 +12,7 @@ assert json.loads(inside(root,'summary.json').read_text())['gui_prepared_empty']
 fixture=verify_cohort(root)
 server_path=Path(fixture['binaries']['server']['path']).resolve()
 if a.server and Path(a.server).resolve()!=server_path: raise ValueError('Cannot mix a different server into the recorded cohort')
+print('PREFLIGHT: '+json.dumps(preflight(root,fixture,'2.0.0')),flush=True)
 ownership=FixtureHarnessLock(root);ownership.__enter__()
 control=inside(root,'control');control.mkdir(exist_ok=True)
 for name in ('stop-all','stop-agent','start-agent','agent-stopped','agent-ready','stop-server','start-server','server-stopped','server-ready'):

@@ -6,6 +6,8 @@ from pathlib import Path
 import threading
 import time
 import urllib.parse
+import uuid
+from gui_fixture_evidence import inside
 
 
 class DownloadProxy:
@@ -16,7 +18,7 @@ class DownloadProxy:
         self.lock=threading.Lock();self.slots=threading.BoundedSemaphore(16)
         self.stop=threading.Event()
         self.last_persist=0.0
-        self.metrics=dict(fileRequests=0,rangeRequests=0,rangeStarts=[],fileBytes=0,throttledBytes=0,activeFiles=0,configuredBytesPerSecond=bytes_per_second)
+        self.metrics=dict(sessionId=uuid.uuid4().hex,startedAtUtc=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),fileRequests=0,rangeRequests=0,rangeStarts=[],fileBytes=0,throttledBytes=0,activeFiles=0,configuredBytesPerSecond=bytes_per_second,catalogFaults=0)
         owner=self
         class Handler(http.server.BaseHTTPRequestHandler):
             protocol_version='HTTP/1.1'
@@ -38,6 +40,8 @@ class DownloadProxy:
                     connection=http.client.HTTPConnection('127.0.0.1',owner.upstream,timeout=30)
                     connection.request(self.command,self.path,headers=headers)
                     response=connection.getresponse()
+                    if path=='/api/v1/catalog' and response.status==200 and owner.fail_catalog_after_commit():
+                        self.send_response(503);self.send_header('Content-Length','0');self.end_headers();self.close_connection=True;return
                     if path.endswith('/files/version.txt') and response.status in (200,206) and (owner.control/'proxy-fail-version').exists():
                         self.send_response(503);self.send_header('Content-Length','0');self.end_headers();self.close_connection=True;return
                     if file_request:
@@ -92,7 +96,35 @@ class DownloadProxy:
                 if attempt==19:raise
                 time.sleep(.01)
     def start(self):
-        with self.lock:self.persist()
+        with self.lock:
+            previous=inside(self.root,'control/proxy-metrics.json')
+            if previous.exists():
+                if previous.stat().st_size>65536:raise ValueError('Oversized prior proxy summary')
+                value=json.loads(previous.read_text());session=value.get('sessionId','legacy-'+uuid.uuid4().hex)
+                if not all(c.isascii() and (c.isalnum() or c=='-') for c in session) or len(session)>64:raise ValueError('Invalid prior proxy session')
+                history=inside(self.root,'control/proxy-sessions');history.mkdir(exist_ok=True)
+                target=inside(history,session+'.json')
+                if target.exists():raise ValueError('Prior proxy session was already archived')
+                previous.replace(target)
+            self.persist()
         self.thread.start()
+    def fail_catalog_after_commit(self):
+        with self.lock:
+            arm=inside(self.root,'control/proxy-fail-catalog-after-commit')
+            if not arm.exists():return False
+            if arm.stat().st_size>65536:raise ValueError('Oversized Catalog fault binding')
+            binding=json.loads(arm.read_text())
+            records=list(inside(self.root,'client/state/operations').glob('*.json'))
+            if len(records)>256:raise ValueError('Too many operation records')
+            for path in records:
+                path=inside(self.root,str(path.relative_to(self.root)))
+                if path.stem in binding['beforeIds']:continue
+                if path.stat().st_size>65536:raise ValueError('Oversized operation')
+                try:value=json.loads(path.read_text())
+                except (OSError,ValueError):continue # Atomic replace can coincide with this test observation.
+                expected={'projectId':'demo','environment':'prod','channel':'stable','platform':binding['platform'],'version':binding['version']}
+                if value.get('schemaVersion')==1 and value.get('id')==path.stem and value.get('phase')=='Completed' and value.get('command')==binding['command'] and value.get('selection')==expected:
+                    arm.unlink();self.metrics['catalogFaults']+=1;self.persist();return True
+            return False
     def close(self):
         self.stop.set();self.server.shutdown();self.server.server_close();self.thread.join(timeout=5)

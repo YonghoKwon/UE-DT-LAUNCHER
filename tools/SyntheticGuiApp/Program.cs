@@ -18,8 +18,9 @@ if(child<0)
 var attempt=args[child+1];
 if(!Guid.TryParseExact(attempt,"N",out _)) return 2;
 var version=File.ReadAllText(Path.Combine(AppContext.BaseDirectory,"version.txt")).Trim();
-File.WriteAllText(Path.Combine(root,attempt+".started.json"),JsonSerializer.Serialize(new {id=attempt,pid=Environment.ProcessId,version}));
+File.WriteAllText(Path.Combine(root,attempt+".started.json"),JsonSerializer.Serialize(new {id=attempt,pid=Environment.ProcessId,version,startedAtUtc=DateTimeOffset.UtcNow,watchdogSeconds=120}));
 var elapsed=Stopwatch.StartNew();
 while(elapsed.Elapsed<TimeSpan.FromSeconds(120) && !File.Exists(Path.Combine(root,"release-"+attempt))) await Task.Delay(100);
-File.WriteAllText(Path.Combine(root,attempt+".ended.json"),JsonSerializer.Serialize(new {id=attempt,version,naturalExit=true}));
+var reason=File.Exists(Path.Combine(root,"release-"+attempt))?"requested":"watchdog";
+File.WriteAllText(Path.Combine(root,attempt+".ended.json"),JsonSerializer.Serialize(new {id=attempt,version,naturalExit=true,reason,endedAtUtc=DateTimeOffset.UtcNow}));
 return 0;

@@ -2,6 +2,7 @@ import contextlib, importlib.util, io, json, os, runpy, subprocess, sys, tempfil
 from pathlib import Path
 from unittest.mock import patch, Mock
 from gui_fixture_evidence import inside, sha256, verify_files, snapshot_preferences, restore_preferences, preference_hash, verify_cohort, validate_origin, hold_fixture, FixtureHarnessLock, copy_server_support
+from gui_fixture_safety import require_quiescent, mutation_guard, preflight
 
 TOOLS=Path(__file__).resolve().parent
 
@@ -28,6 +29,65 @@ def control(root,action,*arguments):
         runpy.run_path(str(TOOLS/'gui-fixture-control.py'),run_name='__main__')
 
 class EvidenceTests(unittest.TestCase):
+    def test_payload_and_backup_lock_named_files_are_never_excluded(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)/'fixture';make_fixture(root)
+            app=root/'client/apps/demo/prod/stable/1.0.0/windows-x64';state=root/'client/state/demo/prod/stable/1.0.0/windows-x64'
+            backup=state/'backups/20261005000000';app.mkdir(parents=True);backup.mkdir(parents=True)
+            (app/'payload.lock').write_text('original');(backup/'payload.lock').write_text('original');(state/'update.lock').write_text('gate')
+            control(root,'snapshot','--scope','protected')
+            (state/'update.lock').write_text('gate changed');control(root,'compare','--scope','protected')
+            for path in (app/'payload.lock',backup/'payload.lock'):
+                path.write_text('changed')
+                with self.assertRaises(AssertionError):control(root,'compare','--scope','protected')
+                path.write_text('original')
+
+    def test_profile_faults_repeat_and_refuse_intervening_user_edits(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)/'fixture';make_fixture(root);(root/'client').mkdir()
+            for profile in ('general','developer'):
+                path=root/('client/'+profile+'.json');path.write_text('{"test":"'+profile+'"}');original=path.read_bytes()
+                for _ in range(2):
+                    control(root,'error-config','--profile',profile);control(root,'config-reset','--profile',profile)
+                    self.assertEqual(original,path.read_bytes())
+                control(root,'error-config','--profile',profile);path.write_text('user change')
+                with self.assertRaises(ValueError):control(root,'config-reset','--profile',profile)
+                self.assertEqual('user change',path.read_text())
+
+    def test_mutation_guard_rejects_missing_or_unknown_runtime_and_active_work(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)/'fixture';fixture=make_fixture(root)
+            state=root/'client/state/demo/prod/stable/1.0.0/windows-x64';state.mkdir(parents=True)
+            with self.assertRaises(ValueError):require_quiescent(root,fixture,'1.0.0')
+            (state/'runtime-state.json').write_text('{}');(state/'update.lock').write_text('')
+            with patch('gui_fixture_safety.product_json',return_value={'state':3}):
+                with self.assertRaises(ValueError):
+                    with mutation_guard(root,fixture,'1.0.0'):self.fail('Unknown runtime admitted')
+            with patch('gui_fixture_safety.product_json',return_value={'state':0}),patch('gui_fixture_safety.inspect_operations',return_value=['Downloading']):
+                with self.assertRaises(ValueError):require_quiescent(root,fixture,'1.0.0')
+            (root/'control/proxy-metrics.json').write_text('{"activeFiles":1}')
+            with patch('gui_fixture_safety.product_json',return_value={'state':0}),patch('gui_fixture_safety.inspect_operations',return_value=[]):
+                with self.assertRaises(ValueError):require_quiescent(root,fixture,'1.0.0')
+                (root/'control/proxy-metrics.json').write_text('{"activeFiles":0}')
+                with mutation_guard(root,fixture,'1.0.0'):pass
+
+    def test_preflight_is_read_only_and_reports_unverified_instead_of_normal(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)/'fixture';fixture=make_fixture(root)
+            before={str(f.relative_to(root)):f.read_bytes() for f in root.rglob('*') if f.is_file()}
+            with patch('gui_fixture_safety.product_json',side_effect=ValueError('not available')):
+                result=preflight(root,fixture,'2.0.0')
+            self.assertEqual('unverified',result['runtimeState']);self.assertEqual('not-checked',result['authentication'])
+            self.assertEqual(before,{str(f.relative_to(root)):f.read_bytes() for f in root.rglob('*') if f.is_file()})
+
+    def test_already_ended_release_does_not_create_a_release_request(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)/'fixture';make_fixture(root);attempt='a'*32
+            (root/'control'/f'{attempt}.started.json').write_text('{"version":"1.0.0"}')
+            (root/'control'/f'{attempt}.ended.json').write_text('{"reason":"watchdog"}')
+            with self.assertRaises(ValueError):control(root,'release','--attempt',attempt)
+            self.assertFalse((root/'control'/('release-'+attempt)).exists())
+
     def test_protected_inventory_excludes_cache_runtime_but_never_payload_or_scope(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)/'fixture';make_fixture(root)

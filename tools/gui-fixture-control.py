@@ -3,16 +3,19 @@ import argparse, hashlib, json, os, re, subprocess, time, zipfile
 from pathlib import Path
 from promotion_fixture_support import promote
 from gui_fixture_evidence import inside, verify_files, verify_cohort, preference_hash, restore_preferences, snapshot_preferences, fixture_mode, fixture_environment, record_control, agent_status, sha256
+from gui_fixture_safety import mutation_guard, preflight, product_json
 p=argparse.ArgumentParser(); p.add_argument('--root',required=True)
-p.add_argument('action',choices=['smoke','gui-general','gui-developer','snapshot','compare','damage','release','stop-agent','start-agent','stop-server','start-server','stop-all','status','approve-v2','promote-v1','diagnostics','verify','verify-backup','invalidate-preview','prefs-snapshot','prefs-record-owned','prefs-restore','error-401','error-403','error-empty','error-config','config-reset','policy-reset','error-trust','trust-reset','proxy-status','proxy-fast','proxy-throttle','proxy-fail-version','proxy-reset-errors','cache-off'])
+p.add_argument('action',choices=['smoke','gui-general','gui-developer','snapshot','compare','damage','release','stop-agent','start-agent','stop-server','start-server','stop-all','status','approve-v2','promote-v1','diagnostics','verify','verify-backup','invalidate-preview','prefs-snapshot','prefs-record-owned','prefs-restore','error-401','error-403','error-empty','error-config','config-reset','policy-reset','error-trust','trust-reset','proxy-status','proxy-fast','proxy-throttle','proxy-fail-version','proxy-reset-errors','proxy-fail-catalog-after-commit','cache-off','preflight'])
 p.add_argument('--version',choices=['1.0.0','2.0.0'],default='1.0.0'); p.add_argument('--name',default='before')
 p.add_argument('--scope',choices=['all','protected'],default='all',help='protected excludes transient staging/cache/runtime while retaining payload, manifests, state, backups and transaction journal')
 p.add_argument('--attempt', help='Exact synthetic child marker id to release')
+p.add_argument('--profile',choices=['general','developer'],default='general')
 p.add_argument('--damage-cached-download',action='store_true',help='Test-only: corrupt the portable fixture synthetic cancellation.bin cache before an explicit repair')
 a=p.parse_args(); root=Path(a.root).resolve()
 assert (root/'summary.json').exists() and json.loads((root/'summary.json').read_text())['gui_prepared_empty']
 fixture=verify_cohort(root)
-control=root/'control'; control.mkdir(exist_ok=True)
+control=inside(root,'control')
+if a.action!='preflight':control.mkdir(exist_ok=True)
 env=fixture_environment(root,fixture)
 mode=fixture_mode(fixture)
 exe=Path(fixture['binaries']['launcher']['path'])
@@ -28,7 +31,8 @@ def latest_backup():
     raise ValueError('No fixture backup exists')
 def snapshot():
     roots=[app,state] if a.scope=='all' else [app,state/'backups']
-    files=[f for folder in roots if folder.exists() for f in folder.rglob('*') if f.is_file() and not f.name.endswith('.lock')]
+    files=[f for folder in roots if folder.exists() for f in folder.rglob('*') if f.is_file()
+           and not (f.parent==state and f.name=='update.lock')]
     if a.scope=='protected':files += [state/name for name in ('installed-manifest.json','install-state.json','transaction.json') if (state/name).is_file()]
     return {str(f.relative_to(root)):hashlib.sha256(inside(root,str(f.relative_to(root))).read_bytes()).hexdigest() for f in files}
 
@@ -37,11 +41,6 @@ def atomic_bytes(path,data):
     temporary=path.with_name(path.name+'.fixture-tmp')
     if temporary.exists(): raise ValueError('Prior fixture write is incomplete')
     temporary.write_bytes(data);temporary.replace(path)
-
-def require_stopped():
-    runtime=state/'runtime-state.json'
-    if runtime.exists() and json.loads(runtime.read_text())['state']!=0:
-        raise ValueError('Fixture mutation requires a quiescent selected runtime')
 
 def read_proxy_metrics():
     path=inside(root,'control/proxy-metrics.json')
@@ -55,27 +54,35 @@ if a.action in ('stop-agent','start-agent') and mode=='portable':
     raise ValueError('Portable fixture has no Agent process or IPC')
 if a.damage_cached_download:
     if a.action!='status' or mode!='portable' or not fixture.get('guiDownloadProof'):raise ValueError('Only a quiescent portable synthetic download cache is eligible')
-    require_stopped()
     target_id='demo/prod/stable/'+a.version+'/'+platform
     records=[path for path in (state/'resume-cache').rglob('resume.json') if json.loads(inside(root,str(path.relative_to(root))).read_text()).get('releaseId')==target_id]
     candidates=[path.parent/(hashlib.sha256(b'cancellation.bin').hexdigest()+'.verified') for path in records]
     candidates=[inside(root,str(path.relative_to(root))) for path in candidates if path.is_file()]
     if len(candidates)!=1 or candidates[0].stat().st_size!=64*1024*1024:raise ValueError('Exact synthetic cache not found')
-    with candidates[0].open('r+b') as stream:stream.write(b'fixture-cache-corruption')
+    with mutation_guard(root,fixture,a.version):
+        with candidates[0].open('r+b') as stream:stream.write(b'fixture-cache-corruption')
     record_control(root,'damage-cached-download',version=a.version);print('Corrupted only the exact portable synthetic cached download')
 elif a.action=='cache-off':
-    require_stopped()
     paths=[root/'client/general.json',root/'client/developer.json']
     if mode=='managed':paths.append(root/'client/agent/config/launcher.config.json')
-    for path in paths:
-        value=json.loads(path.read_text());value.setdefault('performance',{})['resumeCacheBytes']=0
-        atomic_bytes(path,json.dumps(value,indent=2).encode())
+    with mutation_guard(root,fixture,a.version):
+        for path in paths:
+            value=json.loads(path.read_text());value.setdefault('performance',{})['resumeCacheBytes']=0
+            atomic_bytes(path,json.dumps(value,indent=2).encode())
     record_control(root,a.action);print('Disabled only fixture resume cache; existing cache files preserved')
+elif a.action=='preflight':
+    print(json.dumps(preflight(root,fixture,a.version)))
 elif a.action.startswith('proxy-'):
     if not fixture.get('guiDownloadProof'):raise ValueError('Not a synthetic throttled-download fixture')
     if a.action=='proxy-status':print(read_proxy_metrics())
     elif a.action=='proxy-fast':inside(root,'control/proxy-unthrottle').touch();record_control(root,a.action);print('Disabled only synthetic transfer throttling')
     elif a.action=='proxy-fail-version':inside(root,'control/proxy-fail-version').touch();record_control(root,a.action);print('Test-only version.txt HTTP503 after upstream authorization')
+    elif a.action=='proxy-fail-catalog-after-commit':
+        operations=inside(root,'client/state/operations')
+        records=[f.stem for f in operations.glob('*.json')] if operations.exists() else []
+        if len(records)>256:raise ValueError('Too many fixture operation records')
+        atomic_bytes(control/'proxy-fail-catalog-after-commit',json.dumps({'version':a.version,'platform':platform,'beforeIds':records,'command':'repair'}).encode())
+        record_control(root,a.action,version=a.version);print('Armed one authorized Catalog failure after the next exact repair commit')
     elif a.action=='proxy-reset-errors':inside(root,'control/proxy-fail-version').unlink(missing_ok=True);record_control(root,a.action);print('Removed test-only HTTP fault')
     else:inside(root,'control/proxy-unthrottle').unlink(missing_ok=True);record_control(root,a.action);print('Restored synthetic transfer throttling')
 elif a.action=='prefs-snapshot':
@@ -99,18 +106,22 @@ elif a.action=='approve-v2':
     subprocess.run([fixture['binaries']['server']['path'],'approve',job,'--config',str(root/'server.json')],env=env,check=True,capture_output=True,creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
     def promotion_run(*values):
         return subprocess.check_output([fixture['binaries']['server']['path'],*map(str,values)],env=env,text=True,encoding='utf-8')
-    promote(promotion_run,root/'server.json','demo','2.0.0','windows-x64')
+    promote(promotion_run,root/'server.json','demo','2.0.0',platform)
     record_control(root,'approve-v2',jobId=job)
     print('Approved fixture v2')
 elif a.action=='error-config':
-    path=root/'client/general.json';original=control/'original-general.json'
-    if original.exists(): raise ValueError('Configuration failure is already prepared')
+    path=inside(root,'client/'+a.profile+'.json');original=control/('original-'+a.profile+'.json');proof=control/(a.profile+'-config-fault.json')
+    if proof.exists(): raise ValueError('Configuration failure is already prepared')
     original.write_bytes(path.read_bytes())
     atomic_bytes(path,b'{"privateKeyPem":"GUI-SENTINEL",BROKEN')
-    record_control(root,a.action);print('Changed only the fixture display configuration')
+    proof.write_text(json.dumps({'originalSha256':sha256(original),'injectedSha256':sha256(path)}))
+    record_control(root,a.action,profile=a.profile);print('Changed only the selected fixture display configuration')
 elif a.action=='config-reset':
-    atomic_bytes(root/'client/general.json',(control/'original-general.json').read_bytes())
-    record_control(root,a.action);print('Restored fixture display configuration')
+    path=inside(root,'client/'+a.profile+'.json');original=inside(control,'original-'+a.profile+'.json');proof=inside(control,a.profile+'-config-fault.json')
+    evidence=json.loads(proof.read_text())
+    if sha256(path)!=evidence['injectedSha256'] or sha256(original)!=evidence['originalSha256']:raise ValueError('Configuration changed after fault injection; refusing overwrite')
+    atomic_bytes(path,original.read_bytes());proof.unlink()
+    record_control(root,a.action,profile=a.profile);print('Restored selected fixture display configuration after hash verification')
 elif a.action=='error-401':
     subprocess.run([fixture['binaries']['server']['path'],'client-key','revoke','--key-id','pc-test-key','--config',str(inside(root,'server.json'))],env=env,check=True,capture_output=True,creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
     (control/'auth-key-revoked').touch();record_control(root,a.action)
@@ -146,9 +157,9 @@ elif a.action=='verify-backup':
     if info.get('previousVersion')!=a.version or info.get('newVersion')!=a.version or info.get('addedPaths'): raise ValueError('Not a normal same-version backup')
     print('PASS: backup='+backup.name+' files='+str(verify_files(backup,meta/'installed-manifest.json')))
 elif a.action=='invalidate-preview':
-    require_stopped()
-    target=latest_backup()/'.uedt-meta'/'backup-info.json'
-    with target.open('a',encoding='utf-8') as stream: stream.write(' ')
+    with mutation_guard(root,fixture,a.version):
+        target=inside(root,str((latest_backup()/'.uedt-meta'/'backup-info.json').relative_to(root)))
+        with target.open('a',encoding='utf-8') as stream: stream.write(' ')
     record_control(root,a.action,version=a.version,backupId=target.parent.parent.name)
     print('Changed fixture preview fingerprint only')
 elif a.action.startswith('gui-'):
@@ -168,21 +179,27 @@ elif a.action in ('snapshot','compare'):
         elif a.scope!='all':raise ValueError('Legacy snapshot is all-scope only')
         assert record==snapshot(),'Protected file set/hash changed';print('PASS: protected snapshot unchanged')
 elif a.action=='damage':
-    require_stopped()
-    target=app/'version.txt'
-    target=inside(root,str(target.relative_to(root)))
-    assert target.is_file(); target.write_text('fixture-damaged');record_control(root,a.action,version=a.version);print('Damaged synthetic version.txt only')
+    with mutation_guard(root,fixture,a.version):
+        target=inside(root,str((app/'version.txt').relative_to(root)))
+        assert target.is_file(); target.write_text('fixture-damaged')
+    record_control(root,a.action,version=a.version);print('Damaged synthetic version.txt only')
 elif a.action=='release':
     if not a.attempt or not re.fullmatch(r'[a-f0-9]{32}',a.attempt): raise ValueError('An exact --attempt is required')
     marker=inside(control,a.attempt+'.started.json')
     if not marker.exists(): raise ValueError('Unknown synthetic attempt')
+    if inside(control,a.attempt+'.ended.json').exists():raise ValueError('Synthetic attempt has already ended; no live lifetime evidence')
+    if json.loads(marker.read_text()).get('version')!=a.version:raise ValueError('Synthetic attempt belongs to another version')
+    observation=product_json(root,fixture,'runtime','inspect','--config',inside(root,'client/general.json'),'--version',a.version)
+    if observation.get('state')!=2:raise ValueError('The exact selected runtime is not running')
     inside(control,'release-'+a.attempt).touch()
     deadline=time.monotonic()+15
     while not inside(control,a.attempt+'.ended.json').exists():
         if time.monotonic()>deadline: raise TimeoutError('Synthetic natural exit not confirmed')
         time.sleep(.1)
     record_control(root,a.action,attempt=a.attempt)
-    print('Confirmed natural child exit')
+    ended=json.loads(inside(control,a.attempt+'.ended.json').read_text())
+    if ended.get('reason')!='requested':raise ValueError('Synthetic watchdog expiry is not an explicit release')
+    print('Confirmed exact requested child exit')
 elif a.action=='status':
     print(json.dumps(dict(deploymentMode=mode,sourceHead=fixture.get('sourceHead'),revoked=(control/'auth-key-revoked').exists())))
     if mode=='managed':
