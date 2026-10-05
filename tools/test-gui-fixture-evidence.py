@@ -1,7 +1,7 @@
 import contextlib, importlib.util, io, json, os, runpy, subprocess, sys, tempfile, unittest
 from pathlib import Path
 from unittest.mock import patch, Mock
-from gui_fixture_evidence import inside, sha256, verify_files, snapshot_preferences, restore_preferences, preference_hash, verify_cohort, validate_origin, hold_fixture, FixtureHarnessLock, copy_server_support
+from gui_fixture_evidence import inside, sha256, verify_files, snapshot_preferences, restore_preferences, preference_hash, verify_cohort, validate_origin, hold_fixture, FixtureHarnessLock, copy_server_support,operation_root
 from gui_fixture_safety import require_quiescent, mutation_guard, preflight
 
 TOOLS=Path(__file__).resolve().parent
@@ -29,6 +29,11 @@ def control(root,action,*arguments):
         runpy.run_path(str(TOOLS/'gui-fixture-control.py'),run_name='__main__')
 
 class EvidenceTests(unittest.TestCase):
+    def test_managed_operation_registry_is_agent_owned_not_payload_state(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)/'fixture';fixture=make_fixture(root,'managed')
+            self.assertEqual(root/'private/state/operations',operation_root(root,fixture))
+            fixture['deploymentMode']='portable';self.assertEqual(root/'client/state/operations',operation_root(root,fixture))
     def test_managed_gui_fixture_has_selection_only_not_operational_settings(self):
         spec=importlib.util.spec_from_file_location('intranet_managed_display',TOOLS/'test-intranet-auth.py')
         module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)

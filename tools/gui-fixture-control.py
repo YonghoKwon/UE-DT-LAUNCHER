@@ -2,7 +2,7 @@
 import argparse, hashlib, json, os, re, subprocess, time, zipfile
 from pathlib import Path
 from promotion_fixture_support import promote
-from gui_fixture_evidence import inside, verify_files, verify_cohort, preference_hash, restore_preferences, snapshot_preferences, fixture_mode, fixture_environment, record_control, agent_status, sha256
+from gui_fixture_evidence import inside, verify_files, verify_cohort, preference_hash, restore_preferences, snapshot_preferences, fixture_mode, fixture_environment, record_control, agent_status, sha256,operation_root
 from gui_fixture_safety import mutation_guard, preflight, product_json
 p=argparse.ArgumentParser(); p.add_argument('--root',required=True)
 p.add_argument('action',choices=['smoke','gui-general','gui-developer','snapshot','compare','damage','release','stop-agent','start-agent','stop-server','start-server','stop-all','status','approve-v2','promote-v1','diagnostics','verify','verify-backup','invalidate-preview','prefs-snapshot','prefs-record-owned','prefs-restore','error-401','error-403','error-empty','error-config','config-reset','policy-reset','error-trust','trust-reset','proxy-status','proxy-fast','proxy-throttle','proxy-fail-version','proxy-reset-errors','proxy-fail-catalog-after-commit','cache-off','preflight'])
@@ -78,11 +78,11 @@ elif a.action.startswith('proxy-'):
     elif a.action=='proxy-fast':inside(root,'control/proxy-unthrottle').touch();record_control(root,a.action);print('Disabled only synthetic transfer throttling')
     elif a.action=='proxy-fail-version':inside(root,'control/proxy-fail-version').touch();record_control(root,a.action);print('Test-only version.txt HTTP503 after upstream authorization')
     elif a.action=='proxy-fail-catalog-after-commit':
-        operations=inside(root,'client/state/operations')
+        operations=operation_root(root,fixture)
         records=[f.stem for f in operations.glob('*.json')] if operations.exists() else []
         if len(records)>256:raise ValueError('Too many fixture operation records')
         manifest=inside(root,'server/releases/demo/prod/stable/'+a.version+'/'+platform+'/manifest.json')
-        atomic_bytes(control/'proxy-fail-catalog-after-commit',json.dumps({'version':a.version,'platform':platform,'beforeIds':records,'command':'repair','manifestSha256':sha256(manifest),'operationId':None}).encode())
+        atomic_bytes(control/'proxy-fail-catalog-after-commit',json.dumps({'version':a.version,'platform':platform,'beforeIds':records,'command':'repair','manifestSha256':sha256(manifest),'operationId':None,'operationsRelative':str(operations.relative_to(root))}).encode())
         record_control(root,a.action,version=a.version);print('Armed one authorized Catalog failure after the next exact repair commit')
     elif a.action=='proxy-reset-errors':
         for name in ('proxy-fail-version','proxy-fail-catalog-after-commit'):inside(root,'control/'+name).unlink(missing_ok=True)

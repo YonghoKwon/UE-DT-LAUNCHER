@@ -94,6 +94,13 @@ def validate_origin(origin):
 def fixture_mode(fixture):
     return fixture.get('deploymentMode', 'managed')
 
+def operation_root(root,fixture):
+    if fixture_mode(fixture)=='managed':
+        environment=json.loads(inside(root,'test-environment.json').read_text())
+        data=inside(root,Path(environment['UE_DT_AGENT_DATA_ROOT']).relative_to(Path(root).resolve()))
+        return inside(root,str((data/'state/operations').relative_to(root)))
+    return inside(root,'client/state/operations')
+
 def fixture_environment(root, fixture):
     values = json.loads(inside(root, 'test-environment.json').read_text())
     if set(values) != {'UE_DT_AGENT_DATA_ROOT', 'UE_DT_AGENT_ENDPOINT'}: raise ValueError('Unexpected fixture environment')

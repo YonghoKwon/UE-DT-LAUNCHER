@@ -114,7 +114,7 @@ class DownloadProxy:
             if not arm.exists():return False
             if arm.stat().st_size>65536:raise ValueError('Oversized Catalog fault binding')
             binding=json.loads(arm.read_text())
-            records=list(inside(self.root,'client/state/operations').glob('*.json'))
+            records=list(inside(self.root,binding.get('operationsRelative','client/state/operations')).glob('*.json'))
             if len(records)>256:raise ValueError('Too many operation records')
             matching=[]
             for path in records:

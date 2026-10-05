@@ -1,7 +1,7 @@
 """Test-only mutation guards and redacted preflight. Uses the product's read-only runtime validation."""
 import contextlib, ctypes, json, os, re, subprocess
 from pathlib import Path
-from gui_fixture_evidence import inside, fixture_environment, fixture_mode
+from gui_fixture_evidence import inside, fixture_environment, fixture_mode,operation_root
 
 def product_json(root,fixture,*arguments):
     result=subprocess.run([fixture['binaries']['launcher']['path'],*map(str,arguments)],env=fixture_environment(root,fixture),capture_output=True,text=True,encoding='utf-8',timeout=20,
@@ -13,7 +13,7 @@ def state_root(root,version,platform):
     return inside(root,'client/state/demo/prod/stable/'+version+'/'+platform)
 
 def inspect_operations(root,fixture):
-    folder=inside(root,'client/state/operations')
+    folder=operation_root(root,fixture)
     records=sorted(folder.glob('*.json')) if folder.exists() else []
     if len(records)>256:raise ValueError('Too many fixture operations to verify')
     phases=[]
