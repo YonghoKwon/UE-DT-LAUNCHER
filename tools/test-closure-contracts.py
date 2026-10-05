@@ -4,7 +4,7 @@ from unittest.mock import patch
 from cohort_contract import read_publication,validate_inputs,fixture_provenance,verify_fixture_publication
 from gui_fixture_evidence import sha256
 from restore_file_witness import arm,observe
-from acceptance_ledger import create,record_case,summary,aggregate,CHECKS
+from acceptance_ledger import create,record_case,summary,aggregate,CHECKS,load_proof
 
 def publication(root):
     root.mkdir();binaries={}
@@ -89,6 +89,19 @@ class RestoreWitnessTests(unittest.TestCase):
             self.assertIsNone(observe(root,fixture))
 
 class AcceptanceTests(unittest.TestCase):
+    def test_proof_reads_korean_utf8_and_optional_bom_independent_of_windows_locale(self):
+        for encoding in ('utf-8','utf-8-sig'):
+            with self.subTest(encoding=encoding),tempfile.TemporaryDirectory() as temp:
+                root=Path(temp);path=root/'proof.json';value={'title':'파일 복구 완료 · 상태 재확인 필요'}
+                path.write_text(json.dumps(value,ensure_ascii=False),encoding=encoding)
+                self.assertEqual(value,load_proof(root,'proof.json'))
+    def test_oversized_non_object_and_outside_proofs_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);path=root/'proof.json'
+            for content in ('[]',' '*(1024*1024+1)):
+                path.write_text(content,encoding='utf-8')
+                with self.assertRaises(ValueError):load_proof(root,'proof.json')
+            with self.assertRaises(ValueError):load_proof(root,'../proof.json')
     def fixture(self,root):
         (root/'control').mkdir();(root/'client/logs').mkdir(parents=True)
         fixture={'id':'fixture','deploymentMode':'portable','productPublication':{'productSourceHash':'b'*64,'binarySha256':{'launcher':'c'*64}}}

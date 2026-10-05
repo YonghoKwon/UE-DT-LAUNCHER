@@ -25,6 +25,13 @@ CHECKS={
  'maintenance-outcomes':{'staging-only','resume-preserved','partial-failure-reported','cleanup-only-retry'}
 }
 
+def load_proof(root,reference):
+    path=inside(root,reference)
+    if path.stat().st_size>1024*1024:raise ValueError('Oversized acceptance proof')
+    value=json.loads(path.read_text(encoding='utf-8-sig'))
+    if not isinstance(value,dict):raise ValueError('Acceptance proof must be a JSON object')
+    return value
+
 def actual_display(root,profile):
     config=inside(root,'client/'+profile+'.json')
     directories=[inside(root,'client/logs')]
@@ -64,7 +71,7 @@ def load(root,fixture):
     path=inside(root,'control/acceptance-ledger.json')
     if not path.exists():return create(root,fixture)
     if path.stat().st_size>1024*1024:raise ValueError('Oversized acceptance ledger')
-    record=json.loads(path.read_text())
+    record=json.loads(path.read_text(encoding='utf-8-sig'))
     if record.get('fixtureId')!=fixture['id'] or record.get('productSourceHash')!=fixture['productPublication']['productSourceHash']:
         raise ValueError('Acceptance evidence belongs to another cohort')
     return record

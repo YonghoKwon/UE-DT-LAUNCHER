@@ -54,10 +54,10 @@ def read_proxy_metrics():
 if a.action in ('stop-agent','start-agent') and mode=='portable':
     raise ValueError('Portable fixture has no Agent process or IPC')
 if a.action in ('case-start','case-finish','acceptance-summary'):
-    from acceptance_ledger import record_case,summary
+    from acceptance_ledger import record_case,summary,load_proof
     if a.action=='acceptance-summary':print(json.dumps(summary(root,fixture,a.profile)))
     else:
-        proof=json.loads(inside(root,a.proof).read_text()) if a.proof else None
+        proof=load_proof(root,a.proof) if a.proof else None
         print(json.dumps(record_case(root,fixture,a.profile,a.name,'running' if a.action=='case-start' else a.result,proof)))
 elif a.damage_cached_download:
     if a.action!='status' or mode!='portable' or not fixture.get('guiDownloadProof'):raise ValueError('Only a quiescent portable synthetic download cache is eligible')
