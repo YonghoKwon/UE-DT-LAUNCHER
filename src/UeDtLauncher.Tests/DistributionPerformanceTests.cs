@@ -373,6 +373,53 @@ public sealed class DistributionPerformanceTests
         Assert.Equal(HttpStatusCode.Unauthorized, revokedInternal.StatusCode);
     }
 
+    [Theory]
+    [InlineData("GET","files/game.bin",null,200)]
+    [InlineData("HEAD","files/game.bin",null,200)]
+    [InlineData("GET","files/hero.png",null,200)]
+    [InlineData("HEAD","manifest.json.sig",null,200)]
+    [InlineData("GET","files/missing.bin",null,404)]
+    [InlineData("GET","files/game.bin","bytes=100-",416)]
+    [InlineData("GET","files/game.bin","bytes=2-4",206)]
+    public async Task LimitedBearerErrorsHeadRangeAndRevocationReturnSlots(string method,string suffix,string? range,int status)
+    {
+        await using var s=await ServerFixture.CreateAsync(c=>c.MaxConcurrentDownloads=1);
+        await File.WriteAllTextAsync(Path.Combine(s.Store.Root,"releases/demo/prod/stable/1.0.0/windows-x64/files/hero.png"),"image");
+        var prefix="/releases/demo/prod/stable/1.0.0/windows-x64/";
+        using(var response=await s.GetAsync(prefix+suffix,"a",new(method),range))Assert.Equal(status,(int)response.StatusCode);
+        using(var next=await s.GetAsync(prefix+"files/game.bin","a"))Assert.Equal(HttpStatusCode.OK,next.StatusCode);
+        using(var denied=await s.GetAsync(prefix+suffix,"b",new(method),range))Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+        new DistributionTokens(s.Store).Revoke("a");
+        using(var revoked=await s.GetAsync(prefix+suffix,"a",new(method),range))Assert.Equal(HttpStatusCode.Unauthorized,revoked.StatusCode);
+        using var after=await s.GetAsync(prefix+"files/game.bin","all");Assert.Equal(HttpStatusCode.OK,after.StatusCode);
+    }
+    [Theory][InlineData(false)][InlineData(true)]
+    public async Task LimitedBearerHandlerFailureOrDisconnectDoesNotLeakSlot(bool disconnect)
+    {
+        var entered=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);var exited=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);var count=0;
+        await using var s=await ServerFixture.CreateAsync(c=>c.MaxConcurrentDownloads=1,new(){BeforeFile=async c=>
+        {
+            if(Interlocked.Increment(ref count)!=1)return;entered.SetResult();
+            try{if(disconnect)await Task.Delay(Timeout.Infinite,c.RequestAborted);else throw new IOException("owned failure");}finally{exited.SetResult();}
+        }});
+        var path="/releases/demo/prod/stable/1.0.0/windows-x64/files/game.bin";
+        using var cancel=new CancellationTokenSource();var pending=s.GetAsync(path,"a",token:cancel.Token);await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        if(disconnect){cancel.Cancel();await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>pending);}
+        else{using var failed=await pending;Assert.Equal(HttpStatusCode.ServiceUnavailable,failed.StatusCode);}
+        await exited.Task.WaitAsync(TimeSpan.FromSeconds(5));using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while(true){using var next=await s.GetAsync(path,"a");if(next.StatusCode!=HttpStatusCode.TooManyRequests){Assert.Equal(HttpStatusCode.OK,next.StatusCode);break;}await Task.Delay(10,timeout.Token);}
+    }
+    private sealed class ExpiryClock : TimeProvider
+    {public DateTimeOffset Now=DateTimeOffset.UtcNow;public override DateTimeOffset GetUtcNow()=>Now;}
+    [Theory][InlineData("GET","manifest.json")][InlineData("HEAD","manifest.json.sig")][InlineData("HEAD","files/hero.png")][InlineData("GET","files/game.bin")]
+    public async Task LimitedBearerExpiryCannotReviveOnClockRollback(string method,string suffix)
+    {
+        var clock=new ExpiryClock();await using var s=await ServerFixture.CreateAsync(c=>c.MaxConcurrentDownloads=1,new(){Clock=clock});
+        s.Tokens["a"]=new DistributionTokens(s.Store,clock).Issue("a",clock.Now.AddSeconds(1));clock.Now=clock.Now.AddSeconds(1);
+        var path="/releases/demo/prod/stable/1.0.0/windows-x64/"+suffix;
+        using(var expired=await s.GetAsync(path,"a",new(method),suffix=="files/game.bin"?"bytes=2-4":null))Assert.Equal(HttpStatusCode.Unauthorized,expired.StatusCode);
+        clock.Now=clock.Now.AddDays(-1);using var reversed=await s.GetAsync(path,"a",new(method));Assert.Equal(HttpStatusCode.Unauthorized,reversed.StatusCode);
+    }
     private static async Task<(DistributionCatalog Catalog, DistributionEnvelope Envelope)> ReadCatalog(HttpResponseMessage response)
     {
         var envelope = JsonSerializer.Deserialize<DistributionEnvelope>(await response.Content.ReadAsByteArrayAsync(), JsonFiles.Options)!;
@@ -425,7 +472,7 @@ public sealed class DistributionPerformanceTests
             http = new HttpClient { BaseAddress = new Uri(app.Urls.Single()), Timeout = TimeSpan.FromSeconds(15) };
             foreach (var client in new[] { "a", "b", "all" }) Tokens.Add(client, new DistributionTokens(store).Issue(client));
         }
-        public static async Task<ServerFixture> CreateAsync()
+        public static async Task<ServerFixture> CreateAsync(Action<DistributionSettings>? configure=null,DistributionHttp.TestHooks? hooks=null)
         {
             var directory = new TemporaryDirectory();
             var settings = new DistributionSettings
@@ -433,6 +480,7 @@ public sealed class DistributionPerformanceTests
                 Root = directory.Path, PolicyPath = Path.Combine(directory.Path, "policy.json"),
                 SigningKeyPath = Path.Combine(directory.Path, "signing.pem"), ListenUrl = "http://127.0.0.1:0"
             };
+            configure?.Invoke(settings);
             using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             await File.WriteAllTextAsync(settings.SigningKeyPath, key.ExportECPrivateKeyPem());
             await JsonFiles.WriteAsync(settings.PolicyPath, Policy("1.0.0"));
@@ -456,7 +504,7 @@ public sealed class DistributionPerformanceTests
             var promotion = new ReleasePromotions(store);
             var first = promotion.Promote(new("demo", "prod", "stable", "windows-x64", "2.0.0"), 0, "test fixture");
             promotion.Promote(new("demo", "prod", "stable", "windows-x64", "1.0.0"), first.Revision, "test fixture");
-            var app = DistributionHttp.CreateApplication(store);
+            var app = DistributionHttp.CreateApplicationCore(store,hooks);
             await app.StartAsync();
             return new ServerFixture(directory, store, app);
         }

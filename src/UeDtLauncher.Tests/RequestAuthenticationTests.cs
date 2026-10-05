@@ -207,6 +207,65 @@ public sealed class RequestAuthenticationTests
         using var rollback=await fixture.Send(fixture.Proof(path),challenge);Assert.Equal(HttpStatusCode.Unauthorized,rollback.StatusCode);
     }
 
+    [Theory]
+    [InlineData("GET", "game.bin", null, 200)]
+    [InlineData("HEAD", "game.bin", null, 200)]
+    [InlineData("GET", "hero.png", null, 200)]
+    [InlineData("HEAD", "hero.png", null, 200)]
+    [InlineData("GET", "missing.bin", null, 404)]
+    [InlineData("GET", "game.bin", "bytes=100-", 416)]
+    [InlineData("GET", "game.bin", "bytes=2-4", 206)]
+    public async Task LimitedSignedFileOutcomesReturnSlotAndKeepRevocationFresh(string method,string file,string? range,int status)
+    {
+        await using var f=await Fixture.CreateAsync(s=>s.MaxConcurrentDownloads=1);
+        await File.WriteAllTextAsync(Path.Combine(f.Root,"releases/demo/prod/stable/1.0.0/windows-x64/files/hero.png"),"image");
+        var challenge=await f.Challenge();var prefix="/releases/demo/prod/stable/1.0.0/windows-x64/files/";
+        using(var response=await f.Send(f.Proof(prefix+file) with{Method=method},challenge,range))
+        {Assert.Equal(status,(int)response.StatusCode);if(method=="HEAD")Assert.Empty(await response.Content.ReadAsByteArrayAsync());}
+        using(var next=await f.Send(f.Proof(prefix+"game.bin"),challenge))Assert.Equal(HttpStatusCode.OK,next.StatusCode);
+        await f.Policy(false);
+        using(var denied=await f.Send(f.Proof(prefix+file) with{Method=method},challenge,range))Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+        await f.Policy(true);new DistributionDeviceKeys(f.Store).Revoke("pc-key");
+        using var revoked=await f.Send(f.Proof(prefix+file) with{Method=method},challenge,range);Assert.Equal(HttpStatusCode.Unauthorized,revoked.StatusCode);
+    }
+    [Theory][InlineData(false)][InlineData(true)]
+    public async Task AbortedAndFailedFileHandlersReleaseLimitedSlot(bool disconnect)
+    {
+        var entered=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var exited=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);var count=0;
+        var hooks=new DistributionHttp.TestHooks{BeforeFile=async c=>
+        {
+            if(Interlocked.Increment(ref count)!=1)return;
+            entered.SetResult();
+            try {if(disconnect)await Task.Delay(Timeout.Infinite,c.RequestAborted);else throw new IOException("owned handler failure");}
+            finally{exited.SetResult();}
+        }};
+        await using var f=await Fixture.CreateAsync(s=>s.MaxConcurrentDownloads=1,hooks);
+        var challenge=await f.Challenge();var path="/releases/demo/prod/stable/1.0.0/windows-x64/files/game.bin";
+        using var message=f.Message(f.Proof(path),challenge);using var cancel=new CancellationTokenSource();
+        var pending=f.Http.SendAsync(message,cancel.Token);await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        if(disconnect){cancel.Cancel();await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>pending);}
+        else{using var failed=await pending;Assert.Equal(HttpStatusCode.ServiceUnavailable,failed.StatusCode);}
+        await exited.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        // Handler exit precedes middleware disposal; bounded fresh requests observe actual slot return.
+        using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while(true)
+        {
+            using var next=await f.Send(f.Proof(path),challenge);
+            if(next.StatusCode!=HttpStatusCode.TooManyRequests){Assert.Equal(HttpStatusCode.OK,next.StatusCode);break;}
+            await Task.Delay(10,timeout.Token);
+        }
+    }
+    [Theory][InlineData("GET","manifest.json")][InlineData("HEAD","manifest.json.sig")][InlineData("HEAD","files/hero.png")][InlineData("GET","files/game.bin")]
+    public async Task ExpiredKeyWithLimitsCannotAccessMetadataImagesOrRange(string method,string suffix)
+    {
+        var clock=new MonotonicClock();await using var f=await Fixture.CreateAsync(s=>s.MaxConcurrentDownloads=1,new(){Clock=clock},clock.Utc.AddSeconds(1));
+        var challenge=await f.Challenge();clock.Utc=clock.Utc.AddSeconds(1);
+        var proof=f.Proof("/releases/demo/prod/stable/1.0.0/windows-x64/"+suffix) with{Method=method};
+        using(var expired=await f.Send(proof,challenge,suffix=="files/game.bin"?"bytes=2-4":null))Assert.Equal(HttpStatusCode.Unauthorized,expired.StatusCode);
+        clock.Utc=clock.Utc.AddDays(-1);
+        using var reversed=await f.Send(proof with{Nonce=RequestSignatures.NewNonce()},challenge);Assert.Equal(HttpStatusCode.Unauthorized,reversed.StatusCode);
+    }
     private sealed class Fixture : IAsyncDisposable
     {
         public string Root { get; } = Path.Combine(Path.GetTempPath(), "uedt-auth-" + Guid.NewGuid().ToString("N"));
