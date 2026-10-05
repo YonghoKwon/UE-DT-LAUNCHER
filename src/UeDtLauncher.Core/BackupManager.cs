@@ -8,6 +8,7 @@ public sealed class BackupInfo
     // Paths that the update introduced; rollback deletes them so the install matches the previous file set.
     public List<string> AddedPaths { get; set; } = new();
 }
+public sealed record BackupPruneResult(int RemovedCount,int FailedCount,int RemainingCount,IReadOnlyList<string> FailedBackupIds);
 
 public static class BackupManager
 {
@@ -82,20 +83,35 @@ public static class BackupManager
     }
 
     public static void Prune(string backupDir, int keepCount, Action<string>? log = null)
+        =>PruneEntries(backupDir,keepCount,log,path=>Directory.Delete(path,true));
+
+    public static BackupPruneResult PruneWithResult(string backupDir,int keepCount,Action<string>? log=null)
+        =>PruneWithResult(backupDir,keepCount,log,path=>Directory.Delete(path,true));
+
+    internal static BackupPruneResult PruneWithResult(string backupDir,int keepCount,Action<string>? log,Action<string> delete)
+    {
+        var counts=PruneEntries(backupDir,keepCount,log,delete);
+        return new(counts.Removed,counts.Failed.Count,List(backupDir).Count,counts.Failed);
+    }
+    private static (int Removed,List<string> Failed) PruneEntries(string backupDir,int keepCount,Action<string>? log,Action<string> delete)
     {
         var backups = List(backupDir);
+        var removed=0;var failed=new List<string>();
         foreach (var (backupRoot, _) in backups.Skip(Math.Max(0, keepCount)))
         {
             try
             {
-                Directory.Delete(backupRoot, recursive: true);
+                delete(backupRoot);
+                removed++;
                 log?.Invoke($"Removed old backup: {Path.GetFileName(backupRoot)}");
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
+                failed.Add(Path.GetFileName(backupRoot));
                 log?.Invoke($"Could not remove old backup {Path.GetFileName(backupRoot)}: {ex.Message}");
             }
         }
+        return (removed,failed);
     }
 
     /// <summary>

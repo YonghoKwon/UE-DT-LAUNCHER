@@ -4,6 +4,13 @@ using Xunit;
 namespace UeDtLauncher.Tests;
 public class EnterpriseFeedbackTests
 {
+    [Fact]
+    public void PartialMaintenanceHasActionableMessageWithoutClaimingSuccess()
+    {
+        var error=LauncherUiError.From(new AgentOperationException("maintenance-partial","cleanup-support","PRIVATE-PATH"));
+        Assert.Equal("maintenance-partial",error.Code);Assert.Equal("cleanup-support",error.SupportId);
+        Assert.Contains("정리하지 못했습니다",error.Message);Assert.DoesNotContain("PRIVATE",error.Message);
+    }
     [Theory][InlineData(LauncherUiOperation.Check)][InlineData(LauncherUiOperation.Catalog)]
     public void ReadRetryCannotBecomeInstallOrLaunch(LauncherUiOperation operation)
     {

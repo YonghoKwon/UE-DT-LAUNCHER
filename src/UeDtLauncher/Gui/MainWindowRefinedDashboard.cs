@@ -1385,9 +1385,14 @@ public sealed partial class MainWindow : Window
             var config=await RunConfig(false,false);context.Pin(config);
             if(context.Selection is not null)VersionedReleasePaths.Bind(config,context.Selection);
             var messages=new List<string>();
-            await Task.Run(()=>{if(backups)PortableMaintenance.PruneBackups(config,m=>messages.Add(m));else PortableMaintenance.ClearStaging(config);});
+            var result=await Task.Run(()=>backups?PortableMaintenance.PruneBackupsWithResult(config,m=>messages.Add(m)):PortableMaintenance.ClearStagingWithResult(config,m=>messages.Add(m)));
             foreach(var message in messages)AppendLog(message,true);
-            SetStatus(backups?$"백업 정리 완료 · 최근 {config.MaxBackupCount}개 보관":"임시 파일 정리 완료 · 이어받기 기록 보존");
+            if(result.FailedCount>0 || !result.ResumeRecordsPreserved)
+            {
+                AppendLog($"정리 결과: 삭제 {result.RemovedCount}개 / 실패 {result.FailedCount}개 / 남은 {result.RemainingCount}개",true);
+                MarkError(new AgentOperationException("maintenance-partial",Guid.NewGuid().ToString("N"),"사용 중인 파일과 권한을 확인한 뒤 정리를 다시 시도해 주세요."),backups?"일부 백업 정리 필요":"일부 임시 파일 정리 필요",showDialog:false);
+            }
+            else SetStatus(backups?$"백업 정리 완료 · 삭제 {result.RemovedCount}개 · 남은 {result.RemainingCount}개 (보관 기준 {config.MaxBackupCount}개)":"임시 파일 정리 완료 · 이어받기 기록 보존");
         }
         catch(Exception ex){MarkError(ex,"정리할 수 없습니다",showDialog:false);}
         finally{FinishUiOperation();}

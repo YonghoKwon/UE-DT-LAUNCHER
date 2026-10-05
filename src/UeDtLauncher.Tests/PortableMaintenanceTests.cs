@@ -3,6 +3,45 @@ namespace UeDtLauncher.Tests;
 
 public class PortableMaintenanceTests
 {
+    [Fact]
+    public void StagingResultReportsPreservationAndRejectsAnotherStateSurface()
+    {
+        using var f=new Fixture();
+        var result=PortableMaintenance.ClearStagingWithResult(f.Config);
+        Assert.Equal(1,result.RemovedCount);Assert.Equal(0,result.FailedCount);Assert.Equal(0,result.RemainingCount);Assert.True(result.ResumeRecordsPreserved);
+        var before=f.Snapshot();f.Config.StagingDir=Path.GetDirectoryName(f.Resume)!;
+        Assert.Throws<InvalidDataException>(()=>PortableMaintenance.ClearStagingWithResult(f.Config));
+        Assert.Equal(before,f.Snapshot());
+    }
+    [Fact]
+    public void PruningResultCountsFailedAndSuccessfulCandidatesFromActualRemainingDirectories()
+    {
+        using var f=new Fixture();
+        Directory.CreateDirectory(Path.Combine(f.Config.BackupDir,"20261004000000"));
+        var result=BackupManager.PruneWithResult(f.Config.BackupDir,1,null,path=>
+        {
+            if(Path.GetFileName(path)=="20261005000000")throw new UnauthorizedAccessException("owned test denial");
+            Directory.Delete(path,true);
+        });
+        Assert.Equal(1,result.RemovedCount);Assert.Equal(1,result.FailedCount);Assert.Equal(2,result.RemainingCount);
+        Assert.Equal("20261005000000",Assert.Single(result.FailedBackupIds));
+        var retry=PortableMaintenance.PruneBackupsWithResult(f.Config);
+        Assert.Equal(1,retry.RemovedCount);Assert.Equal(0,retry.FailedCount);Assert.Equal(1,retry.RemainingCount);
+    }
+    [WindowsMaintenanceFact]
+    public void LockedOwnedBackupIsPartialUntilTheHandleIsReleased()
+    {
+        using var f=new Fixture();
+        var file=Path.Combine(f.Config.BackupDir,"20261005000000","data");
+        using(var held=new FileStream(file,FileMode.Open,FileAccess.Read,FileShare.Read))
+        {
+            var result=PortableMaintenance.PruneBackupsWithResult(f.Config);
+            Assert.Equal(0,result.RemovedCount);Assert.Equal(1,result.FailedCount);Assert.Equal(2,result.RemainingCount);
+            Assert.True(File.Exists(file));Assert.Equal("old",File.ReadAllText(f.Payload));
+        }
+        var retry=PortableMaintenance.PruneBackupsWithResult(f.Config);
+        Assert.Equal(1,retry.RemovedCount);Assert.Equal(0,retry.FailedCount);Assert.Equal(1,retry.RemainingCount);
+    }
     [Theory][InlineData(false)][InlineData(true)]
     public void HeldInstallationLeaseRejectsCleanupWithoutTouchingFiles(bool backups)
     {
@@ -57,4 +96,8 @@ public class PortableMaintenanceTests
         public string[] Snapshot()=>Directory.EnumerateFiles(Root,"*",SearchOption.AllDirectories).Where(p=>!p.EndsWith("update.lock",StringComparison.Ordinal)).Select(p=>Path.GetRelativePath(Root,p)+":"+Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(p)))).Order(StringComparer.Ordinal).ToArray();
         public void Dispose()=>Directory.Delete(Root,true);
     }
+}
+public sealed class WindowsMaintenanceFactAttribute:FactAttribute
+{
+    public WindowsMaintenanceFactAttribute(){if(!OperatingSystem.IsWindows())Skip="Windows delete-sharing semantics; Linux denial is tested separately through the internal boundary.";}
 }
