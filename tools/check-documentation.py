@@ -2,6 +2,7 @@
 from pathlib import Path
 from urllib.parse import unquote
 import re
+from markdown_anchors import anchors
 
 root = Path(__file__).resolve().parents[1]
 managed = {"README.md", "AGENTS.md", "IMPROVEMENTS.md", "PROJECT_GOALS.md"}
@@ -24,12 +25,14 @@ links = 0
 for path in files:
     body = path.read_text(encoding="utf-8-sig")
     for match in re.finditer(r"\]\(([^)\s]+)\)", body):
-        target = match.group(1).split("#", 1)[0]
-        if not target or re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", target):
+        link=match.group(1);target,separator,fragment=link.partition('#')
+        if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", target):
             continue
-        resolved = (path.parent / unquote(target)).resolve()
+        resolved = (path.parent / unquote(target)).resolve() if target else path.resolve()
         if not resolved.is_relative_to(root) or not resolved.exists():
             errors.append(f"{path.relative_to(root)} -> {target}")
+        elif separator and fragment and resolved.suffix=='.md' and unquote(fragment) not in anchors(resolved.read_text(encoding='utf-8-sig')):
+            errors.append(f"{path.relative_to(root)} -> {link} (missing anchor)")
         links += 1
 assert not errors, "\n".join(errors)
 print(f"PASS: 4 root documents, 9 current guides + index, {len(files)} Markdown files, {links} local links")

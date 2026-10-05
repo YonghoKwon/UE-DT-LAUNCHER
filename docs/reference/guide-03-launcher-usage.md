@@ -2,7 +2,7 @@
 
 2026-09-28: `sample-config` 기본은 DistributionServer/schema 3 요청 서명입니다. 기존 정적 예제는 `--mode legacy-catalog`로 생성합니다. [새 명령·키 저장·doctor 안내](intranet-auth.md)를 참고하세요. 기존 파일은 `--force` 없이 덮어쓰지 않습니다.
 
-> 현재 설정 가이드 / 2026-10-05, codex/client-usability-hardening과 대조. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
+> 현재 설정 가이드 / 2026-10-05, codex/client-acceptance-closure와 대조. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
 
 현재 기본 배포는 DistributionServer의 ZIP + 외부 `release.json` 접수·승인 방식입니다. 서버는 [서버 가이드](distribution-workflow.md), 게시는 [게시 가이드](feature-workflow.md), 화면은 [GUI 사용법](launcher-user-guide.md), 개요는 [README](../../README.md)를 참고하세요.
 
@@ -22,7 +22,19 @@ CLI의 `run --config` 등은 지정한 파일을 읽고, 생략하면 현재 작
 
 Agent 운영 설정 기본 위치는 Windows `%ProgramData%\UE-DT Launcher\config\launcher.config.json`, Linux `/etc/ue-dt-launcher/launcher.config.json`입니다. 관리형 GUI/CLI는 이 보호 설정·credential·설치 Manifest를 직접 읽지 않고 선택을 Agent에 보냅니다. 화면 설정에 운영 URL이 없어도 관리형 IPC를 유지하며 GUI 설정만 고쳐 권한을 늘릴 수 없습니다. 기존 구성이 서비스 설정 자동 탐색에 의존했다면 별도 화면 설정을 생성해 명시하세요. 파일 자동 이전은 하지 않습니다.
 
-관리자가 다음 최소 예시를 검토해 **실행 파일 옆 별도 launcher.config.json**으로 저장합니다. projectId는 회사 등록값으로 변경하세요. 일반/개발자 구분 필드는 필요하지 않습니다. `sample-config` 기본 출력은 Agent/portable의 전체 운영 설정이며 아래 화면 설정 생성 명령이 아닙니다.
+관리자가 **실행 파일 옆 별도 launcher.config.json**을 생성합니다. projectId는 회사 등록값으로 변경하세요. 일반/개발자 구분 필드는 필요하지 않습니다. `sample-config` 기본 출력은 여전히 전체 운영 설정이며 화면 설정에는 반드시 `--mode managed-client`를 명시합니다.
+
+```powershell
+.\UeDtLauncher.exe sample-config --mode managed-client `
+  --project-id ue-dt-simulator --platform windows-x64 `
+  --output .\launcher.config.json
+# 개발자용 정확한 버전 선택 (권한이나 에디션을 바꾸지 않음)
+.\UeDtLauncher.Developer.exe sample-config --mode managed-client `
+  --project-id ue-dt-simulator --version-policy exact --version 1.2.0 `
+  --output .\developer.config.json
+```
+
+기본 환경/채널/선택은prod/stable/latest, 플랫폼은 현재 OS입니다. projectId는 필수이며 exact에는 버전이 필요합니다. 운영 URL·credential·공개키·보호 경로·clientProfile은 출력하지 않습니다. 기존 파일은 `--force` 없이는 변경하지 않으며 선택한 출력 경로만 생성합니다. Agent 운영 설정은 별도로 준비해야 합니다.
 
 ```json
 {"schemaVersion":3,"deploymentMode":"managed-agent","projectId":"ue-dt-simulator","environment":"prod","channel":"stable","targetPlatform":"windows-x64","versionPolicy":"latest","manifestUrl":""}
@@ -36,6 +48,10 @@ Agent 운영 설정 기본 위치는 Windows `%ProgramData%\UE-DT Launcher\confi
 ```
 
 복구/복원이 적용됐지만 조회가 실패하면 **상태 다시 확인**으로 표시합니다. 주 버튼·상태/F6·다시 시도는 조회만 하고, 결과가 불명확하면 먼저 조회합니다. 다시 복원하려면 새 백업 preview와 확인이 필요합니다. `임시 파일 정리`는 portable staging만 정리하며 이어받기 기록을 보존합니다. 설치 lease·runtime·journal 검사를 통과해야 하고 관리형 정리는 비활성입니다. `설치 폴더`는 존재하는 선택 버전 폴더만 열며 없는 폴더를 생성하지 않습니다.
+
+복구 적용 완료가 확정되면 작업 취소 버튼을 제거하고 **파일 복구 완료 · 설치 상태 확인 중**으로 전환합니다. 후속 조회 실패는 적용 실패가 아니며 조회만 재시도합니다. 복원 preview 조회 실패의 다시 시도는 새 preview→새 확인창이며 이전 repair를 실행하지 않습니다. 확인 취소는 이전 상태/선택/유효 재개 정보를 유지합니다.
+
+수동 정리는 삭제 성공·실패·실제 잔여 수를 표시합니다. **일부 백업 정리 필요**라면 사용 중인 파일/권한 문제를 해결한 뒤 같은 정리만 재시도하세요. 실행 중/불명 runtime·진행 transaction에서는 정리하지 않습니다. staging만 정리하고 재개 기록을 임시 파일로 삭제하지 않으며 자동 엔진의 보관 정책은 변경하지 않습니다.
 
 ## 기존 HTTPS/Bearer 관리 설정 예시
 
@@ -168,25 +184,26 @@ GUI 설정에서 **연결·준비 상태 점검**을 열면 오프라인 설정 
 
 ### 현재 GUI 수용 체크리스트
 
-2026-10-05 usability 후속으로 마우스 검증을 재개했습니다. 최신 제품 소스의 Windows/WSL 각753개·양 OS publish 인증/IPC·Linux HTTPS를 확인했고, 실제 화면은1920×1080/OS100%/앱100%/고대비끔입니다. 아래는 후보별 직접 시험과 최종 미완료 조건을 구분한 단일 체크리스트입니다. 이전 recovery의ESC 중단은 당시 이력이며 현재 중단이 아닙니다. [현재 게시본별 근거](archive/validation/client-usability-validation.md)를 따릅니다.
+2026-10-05 closure 최종 제품75ea591에서 Windows789개/WSL788개 통과·Windows 전용1개 제외, 양 OS publish HTTP 인증/IPC·Linux HTTPS를 확인했습니다. 실제 화면은1920×1080/OS100%/앱100%/고대비끔입니다. 이전 후보의 설치/복원 수용은 이력이며 새 네 root의 사례별 ledger만 최종 전체 수용으로 계산합니다. [현재 근거](archive/validation/client-acceptance-closure-validation.md), [이전 usability 이력](archive/validation/client-usability-validation.md)을 구분합니다.
 
-final-win2의 네 독립 fixture는 CLI 선설치 없이 시작했습니다. 개발자 직접 managed 복원 경로에서 추가 결함을 발견해 final-win3로 수정·재검증했습니다. 영향받는 사례는 새 게시본 근거만 사용하고, 여러 후보의 일부 성공을 하나의 최종 전체 통과로 합산하지 않습니다.
+동일 제품 snapshot/cohort에서 accept-mg(관리형 일반), accept-md(관리형 개발자), accept-pg(portable 일반), accept-pd(portable 개발자)를 순차 준비했습니다. CLI 선설치가 없고 각 root/IPC가 독립적입니다. 제품을 다시 수정하면 영향받는 실제 GUI 수용을 새 게시본으로 수행합니다.
 
 | 사례 | 재개 후 확인 기준 | 현재 최신 후보 전체 판정 |
 |---|---|---|
-| 최초 조회·관리자 승격 | 미설치 재연결/조회는 설치·실행0건, 추천 대기→promote 후 정상 조회 | final-win2 일반 양 모드 추천 대기→승격, 서비스/서버 재연결 일부 확인. 오류별 네 조합 전수 남음 |
-| 설치·업데이트·실행 | v1→v2 정확한 실행, v1 보존·GUI 종료 후 자식 유지 | final-win2 네 조합v1 GUI 설치/실행·창 종료 수명 및 v2 명시 실행 확인. 마지막 수정 후 최종 전체표 재수용 남음 |
-| 개발자 exact 확인 | 정확한 선택, 취소 불변, 승인한 버전만 실행 | final-win2 관리형v1 확인 취소·두 개발자v1/v2 승인 대상 실행. Portable 취소 등 전수 남음 |
-| 취소·재개 | 실제 수신 중 취소, 즉시 재개 표시, Range·최종 해시, 완료 후 취소/재개 제거 | final-win2 네 조합 통과. 최종 headless 회귀/게시 작업 proof 통과. 회사 계정·전체 장애 별도 |
-| 실행 중 보호 | 생존/Running 확인 후 update·repair·rollback 차단, 보호 hash 동일 | final-win2 네 조합 실행 상태/보호 불변 확인. General 숨긴 유지보수 명령은 developer 보조창/자동화와 구분 |
-| 문제 해결 | 정상은 조회만, 손상은 복구/재검증, 미설치는 설치 안내 | final-win2 일반 양 모드 복구 성공→조회 실패→조회만 재시도, hash 불변 확인. 정상/미설치/오류 전수 남음 |
-| 정상 backup 복원 | 정상 상태 추가 repair 후 전체 backup hash 확인, 취소/적용 | final-win2 관리형 일반·portable 개발자, final-win3 관리형 개발자 정상backup 취소/복원 통과. portable 일반 등 남음 |
-| preview·재시도 | 변경된 preview 거부, 새 확인 필수, 복원 후 조회 재시도는 재복원하지 않음 | 위 세 경로 변경 거부/불변/새 확인 통과. 복원 후 실제 조회 장애는 단위/IPC 근거와 별도로 GUI 전수 남음 |
-| 설정·오류·진단 | 수정 후 조회만,401/403/빈 목록/서명/서비스·서버 단절 구분, 원인/조치/지원 ID | 최신 네 조합 오류 전수·일부 진단 ZIP 직접 UI 남음. 게시 CLI ZIP 비밀검사와 이전 후보 GUI 이력은 별도 |
+| 초기 설정·연결 | 수정 후 조회만·에디션 고정·서비스/서버 재연결·파일 불변 | 네 조합 직접 통과. Portable Agent 요청0건. 실제 서비스 계정ACL과 별도 |
+| 빈 목록·승격 | 이전 카드 제거·추천 대기→promote 후 조회만 | 관리형 일반 통과. 다른 세 조합 남음 |
+| 설치·실행·수명 | v1→v2 정확한 실행, v1 보존·GUI 종료 후 자식 유지 | 네 조합v1 GUI 설치/3파일 hash·창 종료 후 자식 생존·정상 요청 종료 통과. 관리형 일반 외v2 남음 |
+| 개발자 exact 확인 | 취소 불변·승인 대상만 실행 | 두 개발자 exact1 확인 취소(all 불변)/승인 대상 실행 통과. exact2와 나머지 조건 남음 |
+| 취소·재개 | 실제 수신 중 취소·즉시 재개·Range·hash·완료 버튼 정리 | 관리형 일반v2 수신 중 취소/즉시 재개·Range11993088·4파일 hash·v1 보존·자동 실행0건·별도 승인 후v2 명시 실행/정상 종료 통과. 다른 세 조합 남음 |
+| 실행 중 보호 | 생존 전후·변경 차단·보호 hash 동일 | 최종 네 조합의 변경/정리 시험 남음 |
+| 문제 해결 | 정상은 조회만·손상은 복구·commit 후 조회 오류에서 재적용0회 | 최종 네 조합 직접 적용 남음. 관련 headless/게시 IPC 통과와 구분 |
+| 정상 backup/복원 | 정상 추가 repair·전체 backup hash·취소/변경preview 거부/새 확인/적용 | 최종 네 조합 직접 적용 남음. 이전 후보 성공은 이력 |
+| 복원 후 조회 | file-transition 뒤 실제 Catalog 오류1회·조회만 재시도 | 도구 contract 및 Agent 내부경계 통과. 네 조합 GUI 직접 적용 남음 |
+| 정리·진단·인증 오류 | partial failure/잔여 수·정리만 재시도·ZIP·401/403/서명/지원ID | Windows held-handle/headless 및 게시 인증 회귀 통과. 실제 GUI 적용 전수 남음 |
 
 지원 해상도 추가 조건·내레이터·실제 UE 데이터·회사 계정은 각각 UI-01/03·USER-01·운영 인수 항목에서 별도 관리합니다.
 
-현재 단계별 증거와 게시본 소스/파일 해시는 [권한·유지보수·GUI 검증](archive/validation/client-usability-validation.md)에 기록합니다. [클라이언트 작업 흐름 검증](archive/validation/client-workflow-validation.md)은 이전 이력입니다. 적용 동작은 정확한 fixture와 영향을 확인한 뒤 진행하며 GUI 설치를 CLI 선설치로 대체하지 않습니다.
+현재 단계별 근거와 게시본 소스/파일 해시는 [클라이언트 closure 검증](archive/validation/client-acceptance-closure-validation.md)에 기록합니다. [클라이언트 작업 흐름 검증](archive/validation/client-workflow-validation.md)은 이전 이력입니다. 설치/실행·GUI 삭제의 적용은 Computer Use 지침에 따라 실행 직전 확인받으며 GUI 설치를 CLI 선설치로 대체하지 않습니다.
 
 ### 실행 안전성
 

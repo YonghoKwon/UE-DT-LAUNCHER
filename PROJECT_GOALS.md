@@ -1,6 +1,6 @@
 # 최종 프로젝트 목표 — 회사용 Unreal Engine DT 배포 시스템
 
-갱신: 2026-10-05 / 작업 기준 `codex/client-usability-hardening`. **최상위 목표는 확정**됐습니다. 관리형 일반 권한 경계·후속 조회·portable 정리·직접 복원 결함을 수정하고 Windows/WSL 각753개와 이번 소스의 양 OS 게시 인증/IPC를 검증했습니다. 합성 마우스 시험을 재개했고 네 조합의 설치·자식 수명·취소/Range 재개를 확인했습니다. 마지막 직접 복원 수정 후 네 조합 전체 수용과 실제 서비스 계정 ACL은 남아 있습니다. 회사 SLA·출시 인수 완료가 아닙니다. [이번 후보별 기록](docs/reference/archive/validation/client-usability-validation.md).
+갱신: 2026-10-05 / 작업 기준 `codex/client-acceptance-closure`. **최상위 목표는 확정**됐습니다. 재시도의 정확한 선택/작업 결속·적용 완료 후 조회·수동 정리 부분 실패·관리형 화면 설정 생성과 개발자 설정 재읽기를 보완했습니다. 최종 제품75ea591의 Windows789개/WSL788개 통과(Windows 전용1개 제외), 양 OS 게시 인증/IPC·Linux HTTPS를 확인했습니다. 네 새 fixture의 실제 초기 설정·재연결 검증은 진행했고 전체 설치/취소/복원 수용과 회사 서비스 계정 ACL은 남아 있습니다. 회사 SLA·출시 인수 완료가 아닙니다. [현재 후보별 기록](docs/reference/archive/validation/client-acceptance-closure-validation.md).
 
 ## 확정한 최종 목표
 
@@ -13,6 +13,12 @@
 현재 사용 방법은 [기능 지도·명령 순서](docs/reference/feature-workflow.md), 현재 구현은 [README](README.md), 작업 목록은 [IMPROVEMENTS](IMPROVEMENTS.md)가 정본입니다.
 
 ## 현재 위치
+
+최신 후보는 커밋 snapshot75ea591이며 Windows/Linux 제품 입력 hash가 같다. 합성 앱과 시험 harness 출처를 별도로 기록하고, 설정/credential·인증 방식·서버 권한·runtime/transaction 보호를 유지한다. 수동 정리 실패를 성공으로 숨기지 않으며 설정 생성은 운영 설정 대신 최소 표시 선택만 제공한다. USER-02/UI-02는 최종 네 조합 전체 수용 전75%, USER-03/UI-03도75%를 유지한다. 현재 집계는완료6·부분19·대기3/열린22개이며 다음 과거 후보의 기록과 합산하지 않는다.
+
+이번 GUI는 네 조합 초기 설정/재연결·각GUI 최초v1 설치/수명과 관리형 일반v2 취소/Range 재개/명시 실행까지14/51사례를 통과했다. 나머지37사례와 회사 인수를 유지하며 이 숫자를 제품 개발 공수·완성률로 해석하지 않는다. GUI 적용은 실행 직전 확인에 따라 수행한다.
+
+### 이전 단계 이력 (아래의 후보·테스트 수는 당시 근거)
 
 최신 경계는 **사용자 세션 클라이언트는 선택/표시·Agent는 보호 설정/credential/Manifest/상태 검사**다. 같은 계정 console Agent 검증을 실제 서비스 계정 일반 사용자 ACL 인수로 확대하지 않는다. final-win2에서 네 조합 취소/재개와 일부 복원, final-win3에서 관리형 개발자 직접 복원 취소/preview 거부/정상 적용을 확인했다. 서로 다른 후보의 부분 통과를 최종 전체 수용으로 합산하지 않아 USER-02/UI-02는75%를 유지한다. USER-03은 네 조합 실제 취소/재개와 로컬 장애 회귀 근거로75%이며 회사 계정·전체 장애 인수는 별도다. 다른 SEC/OPS/PERF·회사 Gate는 자동 상향하지 않는다.
 
@@ -52,7 +58,7 @@ Headless 자격 수명 구현: 기본 TTL 없이 관리자 만료 지정·개별
 
 빠른 개선 묶음은 진단 근거 보존과 모순 검증, 중복 조치 제거, 게시 준비도 검증의 Windows/Linux CI 연결까지 로컬 검증했다. 양 OS601개·준비도 각8개와 정제 요약/실패 기록을 확인했다. GUI 중단 중이므로 USER-02/UI-02는75%, 원격 CI 미확인으로 OPS-06은50%를 유지한다. [비대화형 결과](docs/reference/archive/validation/quick-wins-validation.md)
 
-보류된 최신 후보 GUI 수용은 [한 곳의 체크리스트](docs/reference/guide-03-launcher-usage.md#보류-중인-gui-수용-체크리스트)에서 관리한다. 예전 게시본에서 이미 통과한 작업을 미구현으로 표현하지 않으며, 새 후보의 미실행을 구현 완료와 구분한다.
+최신 후보 GUI 수용은 [한 곳의 체크리스트](docs/reference/guide-03-launcher-usage.md#현재-gui-수용-체크리스트)에서 관리한다. 예전 게시본에서 이미 통과한 작업을 미구현으로 표현하지 않으며, 새 후보의 미실행을 구현 완료와 구분한다.
 
 최초 연결 준비도 진단과 사용자 조치 안내를 보강했다. 오프라인 점검은 설치 상태를 생성/이전하지 않으며 온라인은 인증·서명·권한·승격·신뢰 기록을 유지한다. 기술 점검 통과는 실제 사용자 쓰기/설치/실행 보장이 아니고, 회사 계정·서비스·UE/RHEL 인수와 분리한다. [이번 증거와 게시본별 실제 GUI 수용](docs/reference/archive/validation/readiness-validation.md)
 

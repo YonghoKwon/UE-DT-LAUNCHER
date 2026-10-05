@@ -1,6 +1,6 @@
 # 현재 운영 문서 색인
 
-정리: 2026-10-03 / 작업 기준 `codex/operations-hardening-closure`. 상시 관리 정본은 루트 4개이며, 이 폴더에는 **현재 사용하는 상세 가이드 9개와 이 색인**만 둡니다.
+정리: 2026-10-05 / 작업 기준 `codex/client-acceptance-closure`. 상시 관리 정본은 루트 4개이며, 이 폴더에는 **현재 사용하는 상세 가이드 9개와 이 색인**만 둡니다. 최소 화면 설정 생성과 재시도·정리 결과는 현재 설정/GUI/기능 지도에 반영했습니다. [최종 고정 후보의 검증·미실행 사례](archive/validation/client-acceptance-closure-validation.md)는 과거 후보와 구분합니다.
 
 | 루트 정본 | 역할 |
 |---|---|

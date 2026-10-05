@@ -1,6 +1,6 @@
 # DT 배포 시스템 — 기능 지도와 단계별 실행 안내
 
-확인일: 2026-10-03 / `codex/operations-hardening-closure`. **현재 구현된 기능**이며 회사 운영 승인 완료가 아닙니다. HTTP A(최초 준비)는 [PC 서명](intranet-auth.md), HTTPS/Bearer는 해당 모드 예제를 따릅니다. ZIP/검사/승인/개발자 확인/**명시 승격**/권한별 추천은 공통입니다. 먼저 한 문장으로 이해하면:
+문서 대조: 2026-10-05 / `codex/client-acceptance-closure`. **현재 구현된 기능**이며 회사 운영 승인 완료가 아닙니다. 화면 설정 생성·완료 후 조회·정리 결과를 이번 코드에 맞췄으며 실제 검증 범위는 [현재 근거](archive/validation/client-acceptance-closure-validation.md)를 따릅니다. HTTP A(최초 준비)는 [PC 서명](intranet-auth.md), HTTPS/Bearer는 해당 모드 예제를 따릅니다. ZIP/검사/승인/개발자 확인/**명시 승격**/권한별 추천은 공통입니다. 먼저 한 문장으로 이해하면:
 
 > 개발자가 ZIP과 설명서를 올리면 서버가 검사합니다. 관리자가 승인·실행 버전 승격을 하면, 허용된 PC의 사용자가 설치하고 DT 프로그램을 실행합니다.
 
@@ -172,9 +172,20 @@ sudo -u uedt-distribution /opt/ue-dt-distribution/UeDtLauncher.DistributionServe
 | 파일/설정 | 정할 것 | 누가 관리 |
 |---|---|---|
 | Agent 보호 설정 | 서버 URL, 저장소 이름, 공개키, 설치/상태/로그 루트, OS | 관리자 |
-| 런처 표시 설정 | `deploymentMode=managed-agent`, `distributionServerUrl`, 프로젝트 표시 정보. 일반/개발자는 별도 EXE로 배포 | 관리자 또는 배포 담당 |
+| 런처 표시 설정 | `deploymentMode=managed-agent`와 프로젝트/트랙/OS/버전 선택만. 서버 URL/credential/보호 경로는 Agent 설정이며 일반/개발자는 별도 EXE | 관리자 또는 배포 담당 |
 
 Agent 운영 설정은 보통 `C:\ProgramData\UE-DT Launcher\config\launcher.config.json`, Linux는 `/etc/ue-dt-launcher/launcher.config.json`입니다. GUI는 명시한 `--config` → 실행 파일 옆 **화면 설정**만 찾습니다. 보호 운영 설정을 자동으로 읽거나 복사하지 않습니다. [운영 설정과 최소 화면 설정](guide-03-launcher-usage.md)
+
+```powershell
+# PC 관리자: 클라이언트 폴더에서 화면 설정 생성. project ID는 서버 등록값
+.\UeDtLauncher.exe sample-config --mode managed-client `
+  --project-id demo --platform windows-x64 --output .\launcher.config.json
+# Developer exact 선택이 필요하면 별도 파일로 생성 (서버 권한은 그대로)
+.\UeDtLauncher.Developer.exe sample-config --mode managed-client `
+  --project-id demo --version-policy exact --version 1.2.0 --output .\developer.config.json
+```
+
+정상 결과는 schema3 selection-only JSON 생성입니다. 기존 파일은 `--force` 없이는 변경하지 않습니다. 이 파일만으로 Agent 운영 준비를 대신하지 않으며 GUI는 컴파일 에디션으로 결정됩니다.
 
 개발/검증 PC에서는 Agent를 console mode로 실행할 수 있습니다. 이는 Windows 서비스 설치가 아닙니다.
 
@@ -393,6 +404,13 @@ Linux도 전체 운영 설정과 읽기/설치 권한을 확인합니다. portab
 서버 명령 앞에는 B5의 프로그램 경로·서비스 계정을 붙입니다. PC 명령 앞에는 `UeDtLauncher.exe` 또는 `./UeDtLauncher`를 붙입니다. 일시적 다운로드 오류의 제한된 자동 재시도/Range 기능은 있지만, 프로세스 종료 후 언제나 같은 바이트부터 재개한다고 보장하지 않습니다.
 
 GUI 문제 해결은 관리형/portable 모두 **점검 → 설치된 선택 버전의 손상만 복구 → 재검증** 순서입니다. 정상 설치는 점검만 하며 앱을 자동 실행하지 않습니다. Portable의 파일 복구는 Agent 명령 대신 GUI의 로컬 엔진을 사용합니다. 백업 복원은 별도 설치 버전으로의 전환이 아니며, 확인한 backup이 바뀌면 적용하지 않고 새 확인을 요구합니다.
+
+| 상황 | 사용자 조치 | 정상 결과 |
+|---|---|---|
+| 파일 복구 완료 후 조회 실패 | 상태 다시 확인/상태/F6/다시 시도 | 조회만 수행하고 이미 끝난 복구·복원을 재적용하지 않음 |
+| 백업 preview 연결 실패 | 다시 시도 → 새 preview → 확인 | 이전 repair를 재실행하지 않고 현재 백업만 확인 |
+| 일부 백업 정리 필요 | 삭제 성공/실패/실제 잔여 수 확인 → 사용/권한 원인 해소 → 같은 정리 재시도 | 설치 lease/runtime/journal 재검사 후 정리만 수행 |
+| 임시 파일 정리 | Portable 개발자 유지보수에서 정확한 선택 확인 | staging만 처리하고 다운로드 재개 기록/다른 버전은 보존 |
 
 **실행 중/실행 상태 불명 안내가 나오면:** 앱을 정상 종료 → 상태 다시 확인 순서입니다. GUI를 닫는 것만으로 앱이 종료되지는 않습니다. 기존 PID 기록·host 장애는 관리자에게 `runtime inspect`와 `runtime recover --dry-run` 점검을 요청하세요. 정지 확인 뒤에만 명시적으로 복구합니다. 구형 클라이언트는 런처와 Agent를 함께 갱신해야 변경 요청을 사용할 수 있습니다. [담당자별 정상/차단/수동 복구 명령](runtime-safety.md)
 

@@ -2,11 +2,25 @@
 
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 배포 시스템입니다.
 
-문서 점검: **2026-10-05**, 작업 기준: `codex/client-usability-hardening`. 일반 `UeDtLauncher.exe`와 개발자 `UeDtLauncher.Developer.exe`를 별도 빌드하며 설정으로 GUI 종류를 바꿀 수 없습니다. 관리형 클라이언트의 보호 설정/Manifest 직접 읽기, 복구 후 버튼별 재시도, portable 정리 잠금, 개발자 직접 복원 경로를 수정했습니다. 최신 Windows/WSL 각 **753개 회귀**, 양 OS Release publish·HTTP 요청 서명·최소 관리형 설정/IPC 복원과 Linux HTTPS/Bearer E2E가 통과했습니다. 실제 마우스 검증은 재개되어 네 조합의 설치·수명·취소/Range 재개를 확인했습니다. **최종 후보 네 조합 전체 오류/복원 수용은 아직 남아 있습니다.** [현재 게시본별 근거](docs/reference/archive/validation/client-usability-validation.md), [이전 복구 검증 이력](docs/reference/archive/validation/client-recovery-validation.md)을 확인하세요.
+문서 점검: **2026-10-05**, 작업 기준: `codex/client-acceptance-closure`. 일반 `UeDtLauncher.exe`와 개발자 `UeDtLauncher.Developer.exe`는 별도 빌드이며 설정으로 GUI 종류를 바꾸지 못합니다. 복원 preview·정리 재시도의 정확한 작업 결속, 복구 적용 후 조회/취소 상태, 정리의 부분 실패·실제 잔여 수, 최소 화면 설정 생성과 개발자 설정 재읽기를 보완했습니다. 최종 제품 `75ea591`에서 Windows **789개 통과**, WSL **788개 통과·Windows 전용 1개 명시적 제외**, 양 에디션/Agent/서버 Release publish와 HTTP 요청 서명·Linux HTTPS/Bearer E2E를 확인했습니다. **최종 네 조합 전체 GUI 수용은 미완료**이며 과거 후보의 설치/복원 통과를 합산하지 않습니다. [현재 검증과 남은 사례](docs/reference/archive/validation/client-acceptance-closure-validation.md), [이전 후보 이력](docs/reference/archive/validation/client-usability-validation.md)을 구분하세요.
 
 기본 빌드는 `LauncherEdition=General`입니다. 개발자는 `dotnet publish src/UeDtLauncher -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:LauncherEdition=Developer`로 생성합니다. `--build-info`에서 에디션을 확인하세요. Developer 배포에는 공통 runtime-host인 일반 실행 파일도 포함해야 하며, `tools/publish_runtime_cohort.py --output <새폴더> --rid win-x64`는 두 EXE·Agent·서버와 두 클라이언트 ZIP을 함께 생성합니다.
 
+게시 도구는 기본적으로 HEAD의 커밋된 소스 snapshot을 사용합니다. `--source-ref <커밋>`과 새 출력 폴더를 지정하면 제품 입력/역할별 파일 hash·에디션·SDK와 성공 여부를 `cohort.json`에 기록합니다. 시험 합성 앱은 별도 폴더에만 게시하며 일반/개발자 배포 ZIP에 넣지 않습니다. 새 GUI fixture는 명시적인 같은 cohort를 검사합니다.
+
+관리형 사용자 PC의 화면 설정은 다음처럼 생성합니다. 기존 파일은 `--force` 없이 덮어쓰지 않습니다. 운영 URL·credential·공개키·보호 경로·clientProfile은 출력하지 않으며 Agent 운영 설정은 별도로 준비해야 합니다.
+
+```powershell
+.\UeDtLauncher.exe sample-config --mode managed-client --project-id ue-dt-simulator --platform windows-x64 --output .\launcher.config.json
+# 개발자 exact 선택용 설정 예시 (빌드 에디션/서버 권한은 바뀌지 않음)
+.\UeDtLauncher.Developer.exe sample-config --mode managed-client --project-id ue-dt-simulator --version-policy exact --version 1.2.0 --output .\developer.config.json
+```
+
+복원 preview 오류의 재시도는 새 preview와 확인창으로 돌아갑니다. 임시 파일/백업 정리의 재시도는 같은 선택의 해당 정리만 수행합니다. `일부 백업 정리 필요`는 삭제 실패가 있다는 뜻이며 성공/실패/실제 잔여 수를 확인한 뒤 사용 중인 파일이나 권한 문제를 해결하세요. 복구 적용 완료 후에는 취소 버튼을 종료하고 `파일 복구 완료 · 설치 상태 확인 중` 또는 `상태 재확인 필요`로 안내합니다.
+
 **현재 판단: 합성 앱 기반 배포·설치·실행·복구는 활용 가능한 단계이며, 회사 정식 운영 인수는 미완료입니다.** 현재 수치와 남은 작업은 [개선 진행 현황](IMPROVEMENTS.md), 상세 명령은 [운영 문서 색인](docs/reference/README.md)을 확인하세요.
+
+이번 고정 게시본의 실제 GUI 수용은 **14/51 사례 통과·37사례 미실행**입니다. 네 조합의 초기 설정/재연결·최초v1 설치/실행·창 종료 후 수명, 관리형 일반의v2 취소/Range 재개/명시 실행을 확인했습니다. 나머지v2·복구/복원·정리/인증 오류 전수가 남아 USER-02/UI-02는75%를 유지합니다. 이 사례 비율은 제품 완성률이 아닙니다.
 
 ## 프로젝트 목표와 처음 읽을 안내
 
@@ -71,7 +85,7 @@ flowchart LR
 
 ## 최초 연결 점검과 문제 해결
 
-GUI 마우스 검증은 재개됐습니다. 구현·이전 게시본의 실제 통과·최종 게시본 재검증을 구분하며 남은 범위는 [단일 GUI 수용 체크리스트](docs/reference/guide-03-launcher-usage.md#보류-중인-gui-수용-체크리스트)를 따릅니다.
+GUI 마우스 검증은 재개됐습니다. 구현·이전 게시본의 실제 통과·최종 게시본 재검증을 구분하며 남은 범위는 [단일 GUI 수용 체크리스트](docs/reference/guide-03-launcher-usage.md#현재-gui-수용-체크리스트)를 따릅니다.
 
 | 실행 위치·담당 | 입력/행동 | 결과와 다음 조치 |
 |---|---|---|

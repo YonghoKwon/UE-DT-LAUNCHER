@@ -6,6 +6,7 @@
 
 | 기록 | 내용 |
 |---|---|
+| [클라이언트 수용 closure](validation/client-acceptance-closure-validation.md) · [정제 JSON](validation/client-acceptance-closure-results.json) | 75ea591·Windows789/WSL788+1Windows-only 제외·양 OS publish HTTP/HTTPS·새 cohort 네 GUI 초기 설정/재연결/v1 수명·관리형 일반v2 취소/Range·14/51사례. 전체 수용/회사 인수 미완료 |
 | [클라이언트 에디션 분리](validation/client-editions-validation.md) | 일반/개발자 EXE·두 MSI·base/addon RPM·GUI 취소/재개·667개 양 OS·실제 마우스 환경 제약 |
 | [운영 안전성 후속](validation/operations-closure-validation.md) · [정제 실행](validation/operations-closure-evidence.json) · [성능 비교](validation/operations-performance-comparison.json) | 양 OS664개·최신 headless3/readiness8·취소/캐시/정리/복원/인증·순번 병목·비설치 MSI/RPM·실환경 보류 |
 | [이전 headless 통합](validation/headless-operations-validation.md) | 당시635개·기능 구현과 초기 성능 미달 이력. 현재 판정과 구분 |

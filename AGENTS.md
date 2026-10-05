@@ -1,6 +1,6 @@
 # 작업 지침
 
-점검: 2026-10-05 / 작업 기준 codex/client-usability-hardening. 저장소 전체에 적용합니다.
+점검: 2026-10-05 / 작업 기준 codex/client-acceptance-closure. 저장소 전체에 적용합니다.
 
 ## 문서 관리 계약
 
@@ -136,6 +136,13 @@
 - DB schema 변경 전 백업, 작업별 OS 잠금, active_work 보호를 유지합니다. 잠금 파일을 삭제하거나 긴 ZIP I/O를 공용 잠금 안에 넣지 않습니다.
 
 ## UI 규칙
+
+- 재시도 context는 첫 비동기 I/O 전에 현재 작업과 정확한 선택에 결속한다. 복원 preview 실패는 새 preview/확인으로, 정리 실패는 같은 정리로만 재시도한다. 확인 취소는 이전 presentation·선택·유효 resume를 보존한다.
+- 복구 commit 뒤 mutation cancellation을 종료하고 읽기 전용 후속 조회 제목/단계를 사용한다. 관리형 preview의 응답 selection이 다르면 확인창을 열지 않는다. 완료 후 조회 실패는 재적용 근거가 아니다.
+- 수동 정리의 삭제 성공/실패/실제 잔여 수를 반환하며 일부 실패를 보관 완료로 표시하지 않는다. 자동 엔진 prune 정책과 수동 결과를 구분하고 staging/backups 전용 경로만 정리한다.
+- managed-client 설정 생성은 schema3 selection-only와 필수 projectId를 사용한다. no-force는 원자적 목적지 미존재 게시이며 실패 시 기존 파일을 보존한다. Linux의 새 설정 임시 파일 배타적 게시 fallback은 payload hard-link 재사용과 다르다.
+- 최종 GUI cohort는 성공한 커밋 snapshot publication을 명시한다. 제품/합성 앱/현재 harness 출처를 분리하고 서로 다른 후보의 성공을 합산하지 않는다. 복원 후 조회 fault는 file-transition 증거이며 rollback operation ID 또는 Agent ACK 관측이라고 기록하지 않는다.
+- 실제 화면 캡처는 native PNG/JPEG 형식을 유지한다. 문서 링크 검사는 한글 heading과 explicit anchor/중복 heading을 확인한다. 설치·실행·GUI 삭제는 Computer Use의 실행 직전 확인 규칙을 적용하며 일반 계획 승인을 새 적용의 포괄 승인으로 사용하지 않는다.
 
 - 복구/복원 적용 완료와 후속 조회 실패를 구분한다. 완료 후 조회 실패/파일 이상은 Check 재시도이며 복구 실패의 rollback 제안으로 되돌리지 않는다. 같은 선택의 재개 힌트는 적용 성공 시 해제하고 조회/확인 취소/적용 전 실패에는 유지한다. 복원 단계는 다운로드 취소 컨트롤을 종료한다.
 - fixture 변경은 기존 설치 잠금과 제품의 엄격한 runtime/operation 관측으로 보호한다. payload/backup의 *.lock도 비교하고 이미 끝난 synthetic 시도를 release 성공으로 인정하지 않는다. 프록시 세션별 계측을 보존하며 도구 preflight는 인증 not-checked를 정상으로 보충하지 않는다.
