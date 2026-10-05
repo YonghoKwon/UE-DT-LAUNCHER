@@ -2,7 +2,7 @@
 
 Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하고, 허용된 PC에서 설치·업데이트·실행하는 .NET 8 / Avalonia 배포 시스템입니다.
 
-문서 점검: **2026-10-05**, 작업 기준: `codex/client-acceptance-closure`. 일반 `UeDtLauncher.exe`와 개발자 `UeDtLauncher.Developer.exe`는 별도 빌드이며 설정으로 GUI 종류를 바꾸지 못합니다. 복원 preview·정리 재시도의 정확한 작업 결속, 복구 적용 후 조회/취소 상태, 정리의 부분 실패·실제 잔여 수, 최소 화면 설정 생성과 개발자 설정 재읽기를 보완했습니다. 최종 제품 `75ea591`에서 Windows **789개 통과**, WSL **788개 통과·Windows 전용 1개 명시적 제외**, 양 에디션/Agent/서버 Release publish와 HTTP 요청 서명·Linux HTTPS/Bearer E2E를 확인했습니다. **최종 네 조합 전체 GUI 수용은 미완료**이며 과거 후보의 설치/복원 통과를 합산하지 않습니다. [현재 검증과 남은 사례](docs/reference/archive/validation/client-acceptance-closure-validation.md), [이전 후보 이력](docs/reference/archive/validation/client-usability-validation.md)을 구분하세요.
+문서 점검: **2026-10-06**, 작업 기준: `codex/client-acceptance-closure`. 일반 `UeDtLauncher.exe`와 개발자 `UeDtLauncher.Developer.exe`는 별도 빌드이며 설정으로 GUI 종류를 바꾸지 못합니다. 복원 preview·정리 재시도의 정확한 작업 결속, 복구 적용 후 조회/취소 상태, 정리의 부분 실패·실제 잔여 수, 최소 화면 설정 생성과 개발자 설정 재읽기를 보완했습니다. 최종 제품 `75ea591`에서 Windows **789개 통과**, WSL **788개 통과·Windows 전용 1개 명시적 제외**, 양 에디션/Agent/서버 Release publish와 HTTP 요청 서명·Linux HTTPS/Bearer E2E를 확인했습니다. **최종 네 조합 전체 GUI 수용은 미완료**이며 과거 후보의 설치/복원 통과를 합산하지 않습니다. [현재 검증과 남은 사례](docs/reference/archive/validation/client-acceptance-closure-validation.md), [이전 후보 이력](docs/reference/archive/validation/client-usability-validation.md)을 구분하세요.
 
 기본 빌드는 `LauncherEdition=General`입니다. 개발자는 `dotnet publish src/UeDtLauncher -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:LauncherEdition=Developer`로 생성합니다. `--build-info`에서 에디션을 확인하세요. Developer 배포에는 공통 runtime-host인 일반 실행 파일도 포함해야 하며, `tools/publish_runtime_cohort.py --output <새폴더> --rid win-x64`는 두 EXE·Agent·서버와 두 클라이언트 ZIP을 함께 생성합니다.
 
@@ -20,7 +20,7 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 
 **현재 판단: 합성 앱 기반 배포·설치·실행·복구는 활용 가능한 단계이며, 회사 정식 운영 인수는 미완료입니다.** 현재 수치와 남은 작업은 [개선 진행 현황](IMPROVEMENTS.md), 상세 명령은 [운영 문서 색인](docs/reference/README.md)을 확인하세요.
 
-이번 고정 게시본의 실제 GUI 수용은 **14/51 사례 통과·37사례 미실행**입니다. 네 조합의 초기 설정/재연결·최초v1 설치/실행·창 종료 후 수명, 관리형 일반의v2 취소/Range 재개/명시 실행을 확인했습니다. 나머지v2·복구/복원·정리/인증 오류 전수가 남아 USER-02/UI-02는75%를 유지합니다. 이 사례 비율은 제품 완성률이 아닙니다.
+이번 고정 게시본의 실제 GUI 수용은 **18/51 사례 통과·33사례 미완료**입니다. 네 조합의 초기 설정/재연결·최초v1 설치/실행·창 종료 후 수명, 관리형 일반의v2 취소/Range 재개/명시 실행을 확인했습니다. 관리형 일반의 복구 후 조회 전용 재시도·정상 백업 준비·복원 취소/preview 거부/정상 복원·복원 후 조회 재시도도 확인했습니다. 나머지v2·복원·정리/인증 오류 전수가 남아 USER-02/UI-02는75%를 유지합니다. 이 사례 비율은 제품 완성률이 아닙니다.
 
 ## 프로젝트 목표와 처음 읽을 안내
 

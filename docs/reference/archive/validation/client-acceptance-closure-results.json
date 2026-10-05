@@ -36,9 +36,9 @@
       },
       "complete": false,
       "counts": {
-        "passed": 5,
+        "passed": 9,
         "failed": 0,
-        "not-run": 7,
+        "not-run": 3,
         "running": 0,
         "blocked": 0
       },
@@ -161,22 +161,155 @@
         {
           "profile": "general",
           "name": "normal-backup",
-          "status": "not-run"
+          "status": "passed",
+          "screenshots": [
+            {
+              "name": "normal-backup-auxiliary-developer-complete.jpg",
+              "sha256": "656af7caca2c607c144be036fa11498001d66a83789c8cac48852b0e13ac4ecd"
+            }
+          ],
+          "checks": {
+            "healthy-extra-repair": true,
+            "all-backup-hashes": true
+          },
+          "inputActor": "computer-use",
+          "screen": {
+            "pixels": [
+              1920,
+              1080
+            ],
+            "renderScaling": 1,
+            "textScale": 1,
+            "highContrast": false
+          }
         },
         {
           "profile": "general",
           "name": "repair-followup",
-          "status": "not-run"
+          "status": "passed",
+          "screenshots": [
+            {
+              "name": "promotion-refresh-install-required.jpg",
+              "sha256": "2a500c18d1b158aa4ffae5a250bf4a254375fa1c850119260e9be3fdb0fed694"
+            },
+            {
+              "name": "repair-committed-followup-error.jpg",
+              "sha256": "6e0be7b3a1f071197465fb5e5d8930df37cd11d4b16f70ed5ce6b42fa6a88cec"
+            },
+            {
+              "name": "repair-primary-readonly-error.jpg",
+              "sha256": "f60046cda662775b1ae4a10365a6fbf7eb0b97252b198d52f1ff128ea354aabc"
+            },
+            {
+              "name": "repair-status-readonly-error.jpg",
+              "sha256": "7010cb7478be1d14b1e29f2ab218f6a3be393959542476313782d55c06041baf"
+            },
+            {
+              "name": "repair-retry-readonly-error.jpg",
+              "sha256": "443a3021074412c656263d8af8778708218874bacff8ad0a725220012fb213a3"
+            },
+            {
+              "name": "repair-f6-readonly-restored.jpg",
+              "sha256": "78a6ec9bd947946d143cc83f4e0aced28bdb2639f68c99896801f36ada0d5a55"
+            },
+            {
+              "name": "repair-normal-query-no-apply.jpg",
+              "sha256": "8f154a8fdd84a658ba4461ff6880612642595d2ee7c74b67f02fc1ca993d86a5"
+            }
+          ],
+          "checks": {
+            "normal-query-only": true,
+            "missing-install-guidance": true,
+            "damaged-repaired": true,
+            "post-commit-query-failure": true,
+            "buttons-query-only": true
+          },
+          "inputActor": "computer-use",
+          "screen": {
+            "pixels": [
+              1920,
+              1080
+            ],
+            "renderScaling": 1,
+            "textScale": 1,
+            "highContrast": false
+          },
+          "snapshotScope": "protected"
         },
         {
           "profile": "general",
           "name": "restore-confirmation",
-          "status": "not-run"
+          "status": "passed",
+          "screenshots": [
+            {
+              "name": "general-normal-backup-confirmation.jpg",
+              "sha256": "e62530fca69c4ca6f014d4f54b43eb287b30cd9a109eff96a144389cec90d59d"
+            },
+            {
+              "name": "general-restore-cancelled-no-mutation.jpg",
+              "sha256": "6865bd18d20e253dcc6e00628d2557b230463e1659b6849c7da2539b0e5d4feb"
+            },
+            {
+              "name": "general-changed-preview-rejected.jpg",
+              "sha256": "5f9cfec5856426e3ea34584dec3063e04b4f7f746967fbaad76a20a09b30eec1"
+            },
+            {
+              "name": "general-new-preview-normal-restore.jpg",
+              "sha256": "b5b42d7ab9610c083ff4ec51b24b45daea590dd9faa70efd79d99b204ff01237"
+            },
+            {
+              "name": "general-restore-committed-query-required.jpg",
+              "sha256": "476815e2849a811193b33d77f09cea71b18c8c0eb4f7251a3a32ec5323ecd60a"
+            }
+          ],
+          "checks": {
+            "cancel-unchanged": true,
+            "changed-preview-rejected": true,
+            "new-confirmation": true,
+            "normal-restored": true
+          },
+          "inputActor": "computer-use",
+          "screen": {
+            "pixels": [
+              1920,
+              1080
+            ],
+            "renderScaling": 1,
+            "textScale": 1,
+            "highContrast": false
+          },
+          "snapshotScope": "protected"
         },
         {
           "profile": "general",
           "name": "restore-followup",
-          "status": "not-run"
+          "status": "passed",
+          "screenshots": [
+            {
+              "name": "general-restore-committed-query-required.jpg",
+              "sha256": "476815e2849a811193b33d77f09cea71b18c8c0eb4f7251a3a32ec5323ecd60a"
+            },
+            {
+              "name": "general-restore-query-only-complete.jpg",
+              "sha256": "0bded8ef6e03c994db118c23bd56076062ac507f22daf6fd088ebac4795fffc5"
+            }
+          ],
+          "checks": {
+            "restore-file-witness": true,
+            "query-only-retry": true,
+            "no-second-restore": true
+          },
+          "inputActor": "computer-use",
+          "screen": {
+            "pixels": [
+              1920,
+              1080
+            ],
+            "renderScaling": 1,
+            "textScale": 1,
+            "highContrast": false
+          },
+          "snapshotScope": "protected"
         },
         {
           "profile": "general",
@@ -769,7 +902,51 @@
     "managedGeneralInstalledFilesV2": 4,
     "v1ProtectedUnchanged": true,
     "resumeAutomaticLaunch": false,
-    "requestedSyntheticExit": true
+    "requestedSyntheticExit": true,
+    "repairFollowUp": {
+      "catalogFaults": 1,
+      "installedFiles": 4,
+      "repairOperations": 1,
+      "retryOperationRecords": 5,
+      "retryOperationRecordHashesUnchanged": true,
+      "additionalRepairOrRestoreDuringRetry": false,
+      "readonlyInputs": [
+        "primary-action",
+        "status-check",
+        "retry-operation",
+        "F6"
+      ],
+      "normalInstallationQueryOnly": true,
+      "v1ProtectedUnchanged": true,
+      "repeatQueryFailureTitle": "상태 확인 실패"
+    },
+    "normalBackup": {
+      "id": "20261005150434",
+      "files": 4,
+      "auxiliarySetupProfile": "developer",
+      "completedInGui": true,
+      "automaticLaunch": false,
+      "temporaryCaptureObstructionResolvedByUser": true
+    },
+    "restoreConfirmationPartial": {
+      "cancelProtectedUnchanged": true,
+      "changedPreviewRejected": true,
+      "changedPreviewProtectedUnchanged": true,
+      "backupFilesStillValid": 4,
+      "normalRestoreApplied": true,
+      "complete": true
+    },
+    "restoreFollowUp": {
+      "kind": "restore-file-transition",
+      "attemptId": "e3b488a481a344aea4eb36a49fbe2df6",
+      "backupId": "20261005150434",
+      "files": 4,
+      "catalogFaultsTotal": 2,
+      "queryRetryProtectedUnchanged": true,
+      "reappliedRestore": false,
+      "appLaunched": false,
+      "v1ProtectedUnchanged": true
+    }
   },
   "excluded": [
     "company UE and RHEL",
@@ -777,5 +954,7 @@
     "remote CI",
     "real signing certificates",
     "narrator speech"
-  ]
+  ],
+  "updatedDate": "2026-10-06",
+  "harnessSourceCommit": "1248251"
 }

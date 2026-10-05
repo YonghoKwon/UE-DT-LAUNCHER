@@ -58,13 +58,13 @@ publisher는 커밋된 Git snapshot에서 General/Developer/Agent/server와 별�
 
 실패한 첫 WSL 후보와18db00d GUI 후보는 앞의 당시 이력으로 보존한다. 최종 성공에 합산하지 않는다.
 
-## 최종 후보 실제 GUI — 14/51 사례 완료, 전체 미완료
+## 최종 후보 실제 GUI — 18/51 사례 완료, 전체 미완료
 
 2026-10-05 / 입력 주체 Computer Use / 실제 screen1920×1080, RenderScaling1, 앱 글자1, 고대비false. OS 설정을 에이전트가 변경하지 않았다. 네 fixture는 처음에 모두 미설치이며 각기 고유 root와 managed UUID IPC를 사용한다. 초기 설정 시험과 연결 오류의 재조회 전후 **동일 all scope의 payload/state inventory가 불변**이고 실행 marker 생성0건임을 검사했다. 최소 화면 설정은 Agent 보호 설정을 포함하지 않는다. 반대 legacy clientProfile 값도 컴파일된 Light General/Dark Developer를 바꾸지 못했다.
 
 | 조합 | 완전히 통과한 ledger 사례 | 남은 사례 |
 |---|---:|---:|
-| 관리형 일반 | 5/12: 초기 설정·연결 오류·빈 목록/승격·v1 GUI 설치/수명·v2 취소/재개/명시 실행 | 7 |
+| 관리형 일반 | 9/12: 초기 설정·연결 오류·빈 목록/승격·v1 GUI 설치/수명·v2 취소/재개/명시 실행·복구 후 조회·정상 백업 준비·복원 확인/적용·복원 후 조회 | 3 |
 | 관리형 개발자 | 3/13: 초기 설정·연결 오류·v1 GUI 설치/수명 | 10 |
 | Portable 일반 | 3/12: 초기 설정·연결 오류·v1 GUI 설치/수명 | 9 |
 | Portable 개발자 | 3/14: 초기 설정·연결 오류·v1 GUI 설치/수명 | 11 |
@@ -83,12 +83,32 @@ publisher는 커밋된 Git snapshot에서 General/Developer/Agent/server와 별�
 - 별도 사용자 확인 후v2 명시 실행. 정확한2.0.0 시도·Running·취소 버튼 없음/불필요 지원ID 없음 확인. 생존 중 상태 조회 전후 protected 동일. 종료 요청 뒤 Quiescent 확인.
 - 위 마지막 관측은 일반 화면의 실행 차단/조회 부분 근거다. 숨긴 update/repair/rollback/정리의 모든 진입점 직접 시험은 아직 없어 `runtime-protection` 전체 사례를 통과로 올리지 않았다.
 
+### 2026-10-06 — 승인된 복구와 조회 전용 재시도
+
+같은75ea591 제품/cohort에서 관리형 일반의 문제 해결을 실제 클릭했다. exact v2의 version.txt 손상 후 서명된 Manifest4파일이 정상으로 복구됐고, 정확한 repair 작업/Manifest digest에 결속한 Catalog 조회 장애1회가 발생했다. 화면은 `파일 복구 완료 · 상태 재확인 필요`였으며 취소·재개 버튼과 복원 제안은 없었다.
+
+서버를 다시 정지한 상태에서 주 버튼·상태 버튼·다시 시도를 각각 눌러 조회만 수행한 뒤, 서버 재시작 후 F6로 최신 상태에 복귀했다. 동일 protected scope 설치/Manifest/backup/journal과 작업 기록5개 전체 hash는 불변, repair 기록은1개로 추가 적용0건이었다. 반복된 조회 자체의 실패 제목은 `상태 확인 실패`이며 파일 복구 실패/재복원으로 처리하지 않았다. 정상 설치 상태 확인도 추가 복구·실행 없이 종료했다. v1 protected 불변과 기존 앱 marker의 종료 상태를 확인했다.
+
+실제 증거 JSON에 한글 결과를 기록하자 Python의 Windows 기본cp949 읽기가 실패했다. 이는 제품 복구 실패가 아닌 도구 오류였다. `2037dc0`에서 UTF-8/BOM proof reader·ledger 읽기를 수정하고 `1248251`에서 실제 stream 읽기도1MiB로 제한했다. Windows/WSL 각11개 도구 회귀(신규2개 포함), 같은 게시본의 실제 한글 proof 등록을 통과했다. 제품 입력 hash/바이너리는 바뀌지 않았다.
+
+추가 승인 후 같은 root의 **보조 Developer exact2.0.0** 검증/복구로 정상 백업 `20261005150434`를 생성하고 전체4파일 hash를 확인했다. 이는 General 정상 문제 해결이 강제 repair한다는 증거가 아니라 복원 시험 준비다. 앱은 실행하지 않았다. 완료 캡처에 외부 보안 프로그램 창이 겹쳐 입력을 중단하고 사용자에게 화면 정리를 요청했다. 사용자가 직접 정리한 뒤 정상 런처 캡처를 다시 확보해 정상 백업 사례를 통과로 기록했다. 보안 앱/설정은 조작하지 않았으며 다른 창이 포함된 캡처는 아카이브에 저장하지 않았다.
+
+![관리형 일반 복구 완료 후 조회 실패](client-acceptance-closure-screens/managed-general/repair-committed-followup-error.jpg)
+
+![F6 조회만으로 최신 상태 복귀](client-acceptance-closure-screens/managed-general/repair-f6-readonly-restored.jpg)
+
 ### 현재 남은 수용 및 재개 조건
 
-다른 세 조합의v2 취소/재개/명시 실행, 관리형 일반 외 빈 목록/승격 전수, 두 개발자v2 exact, 네 조합 실행 중 모든 변경 차단, 정상/미설치 문제 해결, 손상 복구/commit 후 조회 장애와 모든 재시도 버튼, 정상 추가 repair의 전체 backup, 복원 취소/preview 변경 거부/정상 적용/file-witness 조회 장애, portable 개발자 정리 부분 실패·정리만 재시도, GUI 진단과 인증 오류 전수를 수행해야 한다. 실제 적용 버튼은 Computer Use의 실행 직전 확인 규칙을 지킨다. 같은 후보/root를 재개할 수 있으며 오래된 fault/작업/runtime 상태를 preflight로 먼저 확인하고 자동 초기화하지 않는다.
+복원 시험: 정상 백업 준비 후 test-only cache를 끄고 합성version.txt만 다시 손상시켰다. 인증을 통과한 version.txt 응답에만503을 주어 General 문제 해결의 복구 실패→복원 확인창 경로를 직접 확인했다. 확인 취소와, 두 번째 새 preview를 연 뒤 backup metadata whitespace를 바꾼 적용 거부 모두 동일 protected inventory 불변이었다. 후자는 `백업 정보 변경` 안내/지원ID를 표시했고 정상 백업4파일도 유지됐다. 입력 캐시 오류1건은 대상 창 재관측 후 좌표 입력으로 복구했으며 제품 실패로 기록하지 않았다. 세 번째 새 preview/확인창 뒤 별도 승인으로 정상 백업을 적용했다. file-transition witness e3b488a481a344aea4eb36a49fbe2df6가 정확한 설치·백업/fingerprint·전체4파일/Manifest/설치 상태·잠금 해제 전환을 관측한 뒤 Catalog 오류1회를 발생시켰다. 이는 rollback operation ID/Agent ACK 관측이 아니다. 화면은 백업 복원 완료 · 상태 재확인 필요였고 취소/오래된 재개 버튼은 없었다. 실제 다시 시도 클릭 후 최신 상태로 복귀했으며 protected hash 불변·재복원0건·v1 보존·앱 실행0건을 확인했다. 이 두 General 사례를 통과로 기록했고 다른 세 조합으로 확대하지 않았다. test-only file/Catalog 오류는 해제하고 정상 설치/백업은 보존했다.
+
+[General 복원 확인창](client-acceptance-closure-screens/managed-general/general-normal-backup-confirmation.jpg) · [변경preview 거부](client-acceptance-closure-screens/managed-general/general-changed-preview-rejected.jpg)
+
+다른 세 조합의v2 취소/재개/명시 실행, 관리형 일반 외 빈 목록/승격 전수, 두 개발자v2 exact, 네 조합 실행 중 모든 변경 차단, 다른 세 조합의 문제 해결·복구 후 조회·정상 백업·복원 취소/preview 거부/정상 적용/file-witness 조회 장애, portable 개발자 정리 부분 실패·정리만 재시도, GUI 진단과 인증 오류 전수를 수행해야 한다. 실제 적용 버튼은 Computer Use의 실행 직전 확인 규칙을 지킨다. 같은 후보/root를 재개할 수 있으며 오래된 fault/작업/runtime 상태를 preflight로 먼저 확인하고 자동 초기화하지 않는다.
 
 현재 USER-02/UI-02/USER-03/UI-03은75%, UI-01은 합의한1920×1080 한정100%다. 다른 해상도/DPI·음성·회사 서비스 계정ACL·UE/RHEL·인증서·원격CI·회사 운영 승인은 미검증 그대로다. 개선대장 완료6/부분19/대기3/열린22개를 유지한다. push/PR은 하지 않았다.
 
 [정제된 사례별 JSON/바이너리 hash](client-acceptance-closure-results.json) · [관리형 일반 화면](client-acceptance-closure-screens/managed-general/) · [관리형 개발자 화면](client-acceptance-closure-screens/managed-developer/) · [Portable 일반 화면](client-acceptance-closure-screens/portable-general/) · [Portable 개발자 화면](client-acceptance-closure-screens/portable-developer/)
 
 ![관리형 일반 v2 재개 완료·자동 실행 없음](client-acceptance-closure-screens/managed-general/v2-resume-complete-no-launch.jpg)
+
+![General 정상 복원 후 조회 오류](client-acceptance-closure-screens/managed-general/general-restore-committed-query-required.jpg)

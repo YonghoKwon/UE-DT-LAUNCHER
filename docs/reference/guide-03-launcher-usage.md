@@ -2,7 +2,7 @@
 
 2026-09-28: `sample-config` 기본은 DistributionServer/schema 3 요청 서명입니다. 기존 정적 예제는 `--mode legacy-catalog`로 생성합니다. [새 명령·키 저장·doctor 안내](intranet-auth.md)를 참고하세요. 기존 파일은 `--force` 없이 덮어쓰지 않습니다.
 
-> 현재 설정 가이드 / 2026-10-05, codex/client-acceptance-closure와 대조. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
+> 현재 설정 가이드 / 2026-10-06, codex/client-acceptance-closure와 대조. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
 
 현재 기본 배포는 DistributionServer의 ZIP + 외부 `release.json` 접수·승인 방식입니다. 서버는 [서버 가이드](distribution-workflow.md), 게시는 [게시 가이드](feature-workflow.md), 화면은 [GUI 사용법](launcher-user-guide.md), 개요는 [README](../../README.md)를 참고하세요.
 
@@ -196,9 +196,9 @@ GUI 설정에서 **연결·준비 상태 점검**을 열면 오프라인 설정 
 | 개발자 exact 확인 | 취소 불변·승인 대상만 실행 | 두 개발자 exact1 확인 취소(all 불변)/승인 대상 실행 통과. exact2와 나머지 조건 남음 |
 | 취소·재개 | 실제 수신 중 취소·즉시 재개·Range·hash·완료 버튼 정리 | 관리형 일반v2 수신 중 취소/즉시 재개·Range11993088·4파일 hash·v1 보존·자동 실행0건·별도 승인 후v2 명시 실행/정상 종료 통과. 다른 세 조합 남음 |
 | 실행 중 보호 | 생존 전후·변경 차단·보호 hash 동일 | 최종 네 조합의 변경/정리 시험 남음 |
-| 문제 해결 | 정상은 조회만·손상은 복구·commit 후 조회 오류에서 재적용0회 | 최종 네 조합 직접 적용 남음. 관련 headless/게시 IPC 통과와 구분 |
-| 정상 backup/복원 | 정상 추가 repair·전체 backup hash·취소/변경preview 거부/새 확인/적용 | 최종 네 조합 직접 적용 남음. 이전 후보 성공은 이력 |
-| 복원 후 조회 | file-transition 뒤 실제 Catalog 오류1회·조회만 재시도 | 도구 contract 및 Agent 내부경계 통과. 네 조합 GUI 직접 적용 남음 |
+| 문제 해결 | 정상은 조회만·손상은 복구·commit 후 조회 오류에서 재적용0회 | 관리형 일반의 실제 손상 복구/조회 오류1회/주·상태·재시도·F6 조회만·작업 기록 hash 불변 통과. 다른 세 조합 남음 |
+| 정상 backup/복원 | 정상 추가 repair·전체 backup hash·취소/변경preview 거부/새 확인/적용 | 관리형 일반 시험의 보조 Developer 추가repair로 정상 backup4파일 확인·General 복원 확인 취소 불변. General 변경preview 거부/새 확인/정상 복원/취소 불변도 통과. 다른 세 조합 남음 |
+| 복원 후 조회 | file-transition 뒤 실제 Catalog 오류1회·조회만 재시도 | 관리형 일반의 file-transition witness·Catalog 오류1회·조회 재시도/재복원0건·v1 보존 통과. 다른 세 조합 남음 |
 | 정리·진단·인증 오류 | partial failure/잔여 수·정리만 재시도·ZIP·401/403/서명/지원ID | Windows held-handle/headless 및 게시 인증 회귀 통과. 실제 GUI 적용 전수 남음 |
 
 지원 해상도 추가 조건·내레이터·실제 UE 데이터·회사 계정은 각각 UI-01/03·USER-01·운영 인수 항목에서 별도 관리합니다.

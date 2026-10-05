@@ -1,6 +1,6 @@
 # 작업 지침
 
-점검: 2026-10-05 / 작업 기준 codex/client-acceptance-closure. 저장소 전체에 적용합니다.
+점검: 2026-10-06 / 작업 기준 codex/client-acceptance-closure. 저장소 전체에 적용합니다.
 
 ## 문서 관리 계약
 
@@ -136,6 +136,8 @@
 - DB schema 변경 전 백업, 작업별 OS 잠금, active_work 보호를 유지합니다. 잠금 파일을 삭제하거나 긴 ZIP I/O를 공용 잠금 안에 넣지 않습니다.
 
 ## UI 규칙
+
+- GUI 근거 JSON과 ledger는 UTF-8/BOM을 명시하고 실제 stream 읽기를1MiB로 제한한다. 한글 proof를 OS 기본 cp949로 읽지 않는다. 다른 앱이 겹친 캡처는 입력/증거에 사용하지 않으며 보안 앱을 조작하지 않고 사용자 정리 후 대상 창을 다시 확인한다.
 
 - 재시도 context는 첫 비동기 I/O 전에 현재 작업과 정확한 선택에 결속한다. 복원 preview 실패는 새 preview/확인으로, 정리 실패는 같은 정리로만 재시도한다. 확인 취소는 이전 presentation·선택·유효 resume를 보존한다.
 - 복구 commit 뒤 mutation cancellation을 종료하고 읽기 전용 후속 조회 제목/단계를 사용한다. 관리형 preview의 응답 selection이 다르면 확인창을 열지 않는다. 완료 후 조회 실패는 재적용 근거가 아니다.
