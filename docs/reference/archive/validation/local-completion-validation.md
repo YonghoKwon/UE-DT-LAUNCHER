@@ -1,5 +1,11 @@
 # 로컬 기능·운영·GUI 수용 마무리
 
+## 승인되지 않은 정리 자료 보존
+
+RetentionPlan schema2는 파일뿐 아니라 빈 디렉터리의 OS 신원도 승인 목록에 포함한다. 승인 파일 삭제 후 새 파일/빈 폴더가 발견되면 재귀 삭제하지 않고 quarantine·DeleteIntent를 보존한다. schema1 적용은 거부하며 새 계획 또는 기존 중단 journal의 수동 점검이 필요하다. 디렉터리 탐색도 깊이128/개수500000으로 제한한다.
+
+Windows retention/backup 관련22개가 통과했다. 실제 삭제 경계에서 새 파일·빈 디렉터리를 넣은2개는 재시도에서도 자료와 journal을 보존했고 완료 audit을 만들지 않았다. stage3 서버 Release publish는 경고/오류0이었다. 새 독립 fixture의 게시 HTTP 서명 E2E와 offline backup/통제 복원/retention CLI 시험이 통과했다. 이전 fixture의 다른 서버 cohort를 사용한 첫 시도는 시작 전 거부했으며 정상 제품 시험으로 계산하지 않는다.
+
 ## 설치 완료 이후 오류와 정리 결과
 
 GUI 내부 결과에 후속 단계/원래 오류를 전달한다. commit 뒤 Launch/Integration의 비취소 오류는 완료된 설치 기록으로 남고 Check-only 재시도로 연결된다. 취소/오래된 resume를 제거하고 원래 지원 ID를 보존하며 실행 상태를 추정하지 않는다. 정리 성공은 이전 오류/지원 정보를 지우고 설치 상태를 재조회한다. 조회 실패는 정리 완료 사실을 보존한다.

@@ -4,7 +4,8 @@ using System.Text.Json;
 
 namespace UeDtLauncher.Distribution;
 
-public sealed record RetentionCandidate(string Path, string? JobId, long Bytes, IReadOnlyList<BackupFile> Files);
+public sealed record RetentionDirectory(string Path,string Identity);
+public sealed record RetentionCandidate(string Path, string? JobId, long Bytes, IReadOnlyList<BackupFile> Files,IReadOnlyList<RetentionDirectory>? Directories=null);
 public sealed record RetentionPlan(int SchemaVersion, string Root, IReadOnlyList<string> Jobs, IReadOnlyList<string> Temporary,
     string ReferenceHash, IReadOnlyList<RetentionCandidate> Candidates, string Fingerprint, string PlanId);
 public sealed record RetentionJournal(RetentionPlan Plan, int NextIndex, string Phase,List<RetentionItem>? Items=null);
@@ -15,6 +16,34 @@ public static class RetentionMaintenance
     internal static readonly AsyncLocal<Action<string>?> Boundary = new(); // Test seam only, never CLI/environment input.
     private static StringComparison Comparison => OperatingSystem.IsWindows()?StringComparison.OrdinalIgnoreCase:StringComparison.Ordinal;
     private static string Hash(object value) => Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(value, JsonFiles.Options))).ToLowerInvariant();
+    private static List<RetentionDirectory> Directories(string root)
+    {
+        var result=new List<RetentionDirectory>();
+        void Visit(string path,int depth)
+        {
+            if(depth>128 || result.Count>=500000)throw new IOException("Cleanup directory inventory exceeds maintenance limits.");
+            var relative=Path.GetRelativePath(root,path).Replace('\\','/');
+            _=SafePath.ResolveInsideChecked(root,relative);
+            result.Add(new(relative,MaintenanceStorage.DirectoryIdentity(path)));
+            foreach(var child in Directory.EnumerateDirectories(path).Order(StringComparer.Ordinal))Visit(child,depth+1);
+        }
+        Visit(root,0);return result.OrderBy(d=>d.Path,StringComparer.Ordinal).ToList();
+    }
+    private static void DeleteApprovedEmptyDirectories(string root,IReadOnlyList<RetentionDirectory> approved)
+    {
+        var expected=approved.ToDictionary(d=>d.Path,StringComparer.Ordinal);
+        foreach(var current in Directories(root))
+            if(!expected.TryGetValue(current.Path,out var directory)||current.Identity!=directory.Identity)
+                throw new InvalidDataException("Unapproved cleanup directory remains; quarantine and journal are preserved for review.");
+        foreach(var directory in approved.OrderByDescending(d=>d.Path.Length))
+        {
+            var path=directory.Path=="."?root:SafePath.ResolveInsideChecked(root,directory.Path);
+            if(!Directory.Exists(path))continue;
+            if(MaintenanceStorage.DirectoryIdentity(path)!=directory.Identity || Directory.EnumerateFileSystemEntries(path).Any())
+                throw new InvalidDataException("Unapproved cleanup content remains; quarantine and journal are preserved for review.");
+            Directory.Delete(path,false);
+        }
+    }
     private static (List<(string Id, string Source, string State, string? Snapshot)> Jobs, HashSet<string> Referenced, string Hash) References(string root)
     {
         using var db = DistributionBackup.Open(root, true); using var tx = db.BeginTransaction(deferred: true); using var q = db.CreateCommand(); q.Transaction = tx;
@@ -62,7 +91,7 @@ public static class RetentionMaintenance
             if (!Directory.Exists(path)) return;
             var files = new List<BackupFile>();
             foreach (var file in DistributionBackup.Files(path)) files.Add(new(Path.GetRelativePath(path, file).Replace('\\','/'), new FileInfo(file).Length, await Hashing.Sha256FileAsync(file)));
-            candidates.Add(new(relative.Replace('\\','/'), jobId, files.Sum(f => f.Bytes), files));
+            candidates.Add(new(relative.Replace('\\','/'), jobId, files.Sum(f => f.Bytes), files,Directories(path)));
         }
         foreach (var id in selectedJobs.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
         {
@@ -76,12 +105,14 @@ public static class RetentionMaintenance
             if (Path.GetDirectoryName(path.Replace('/',Path.DirectorySeparatorChar)) != "processing") throw new InvalidDataException("Select immediate processing child directories only.");
             await Add(SafePath.ResolveInsideChecked(root,path), null);
         }
-        var plan = new RetentionPlan(1, root, selectedJobs.Order(StringComparer.Ordinal).ToArray(), temporary.Order(StringComparer.Ordinal).ToArray(), current.Hash, candidates, "", Guid.NewGuid().ToString("N"));
+        var plan = new RetentionPlan(2, root, selectedJobs.Order(StringComparer.Ordinal).ToArray(), temporary.Order(StringComparer.Ordinal).ToArray(), current.Hash, candidates, "", Guid.NewGuid().ToString("N"));
         return plan with { Fingerprint = Hash(plan) };
     }
     public static async Task<object> ApplyAsync(DistributionSettings settings, RetentionPlan plan, bool confirm)
     {
-        if (!confirm || !Guid.TryParseExact(plan.PlanId,"N",out _) || plan.SchemaVersion != 1 || Path.GetFullPath(settings.Root) != plan.Root || Hash(plan with { Fingerprint = "" }) != plan.Fingerprint)
+        if(plan.SchemaVersion!=2 || plan.Candidates.Any(c=>c.Directories is null))
+            throw new InvalidDataException("Cleanup requires a new schema 2 plan with approved directory identities; preserve old journals for review.");
+        if (!confirm || !Guid.TryParseExact(plan.PlanId,"N",out _) || Path.GetFullPath(settings.Root) != plan.Root || Hash(plan with { Fingerprint = "" }) != plan.Fingerprint)
             throw new InvalidDataException("Valid plan and explicit --confirm are required.");
         using var maintenance = DistributionMaintenanceLease.Acquire(settings.Root, true, create:false);
         using var oldServer = new AuthenticationProcessLease(settings.Root);
@@ -139,6 +170,7 @@ public static class RetentionMaintenance
             {
                 var actual=new List<BackupFile>();foreach(var file in DistributionBackup.Files(quarantine))actual.Add(new(Path.GetRelativePath(quarantine,file).Replace('\\','/'),new FileInfo(file).Length,await Hashing.Sha256FileAsync(file)));
                 if(Hash(actual)!=Hash(candidate.Files))throw new InvalidDataException("Quarantined content changed.");
+                if(Hash(Directories(quarantine))!=Hash(candidate.Directories!))throw new InvalidDataException("Quarantined directories changed.");
                 await Transition("DeleteIntent");Boundary.Value?.Invoke("delete-intent");
             }
             if(item.Phase=="DeleteIntent")
@@ -159,7 +191,7 @@ public static class RetentionMaintenance
                         }
                         Boundary.Value?.Invoke("file-delete");
                     }
-                    Directory.Delete(quarantine,true);
+                    DeleteApprovedEmptyDirectories(quarantine,candidate.Directories!);
                 }
                 Boundary.Value?.Invoke("delete");await Transition("Deleted");
             }

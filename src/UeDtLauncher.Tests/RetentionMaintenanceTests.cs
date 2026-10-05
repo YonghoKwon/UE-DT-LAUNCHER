@@ -14,6 +14,35 @@ public sealed class RetentionMaintenanceTests : IDisposable
         var source=Path.Combine(root,"incoming/failed");Directory.CreateDirectory(source);File.WriteAllText(Path.Combine(source,"payload"),"failed");
         store.Save(new("failed",source,"failed",null,null));return source;
     }
+    [Theory][InlineData(false)][InlineData(true)]
+    public async Task LateUnapprovedFileOrEmptyDirectoryIsPreservedAndNeverMarkedDeleted(bool directory)
+    {
+        _=Failed();var plan=await RetentionMaintenance.PlanAsync(store.Settings,["failed"],[]);
+        var quarantine=Path.Combine(root,".retention-quarantine",plan.Fingerprint,"0");var unexpected=Path.Combine(quarantine,"late-unapproved");
+        RetentionMaintenance.Boundary.Value=phase=>{if(phase=="file-delete"){if(directory)Directory.CreateDirectory(unexpected);else File.WriteAllText(unexpected,"new-data");}};
+        await Assert.ThrowsAnyAsync<Exception>(()=>RetentionMaintenance.ApplyAsync(store.Settings,plan,true));
+        Assert.True(directory?Directory.Exists(unexpected):File.Exists(unexpected));
+        if(!directory)Assert.Equal("new-data",File.ReadAllText(unexpected));
+        RetentionMaintenance.Boundary.Value=null;
+        await Assert.ThrowsAnyAsync<Exception>(()=>RetentionMaintenance.ApplyAsync(store.Settings,plan,true));
+        var journal=await JsonFiles.ReadAsync<RetentionJournal>(Path.Combine(root,"retention-"+plan.Fingerprint+".json"));
+        Assert.Equal("DeleteIntent",Assert.Single(journal.Items!).Phase);Assert.NotEqual("Completed",journal.Phase);
+        using var db=store.Open();using var q=db.CreateCommand();q.CommandText="SELECT COUNT(*) FROM maintenance_deletions";Assert.Equal(0L,q.ExecuteScalar());
+    }
+    [Fact]
+    public async Task ApprovedOriginalEmptyDirectoriesCanBeRemovedWithoutRecursiveDeletion()
+    {
+        var source=Failed();Directory.CreateDirectory(Path.Combine(source,"empty/nested"));
+        var plan=await RetentionMaintenance.PlanAsync(store.Settings,["failed"],[]);Assert.Equal(2,plan.SchemaVersion);Assert.Equal(3,plan.Candidates.Single().Directories!.Count);
+        await RetentionMaintenance.ApplyAsync(store.Settings,plan,true);Assert.False(Directory.Exists(source));
+    }
+    [Fact]
+    public async Task LegacyPlanApplyIsRejectedWithoutChangingSource()
+    {
+        var source=Failed();var plan=await RetentionMaintenance.PlanAsync(store.Settings,["failed"],[]);
+        await Assert.ThrowsAsync<InvalidDataException>(()=>RetentionMaintenance.ApplyAsync(store.Settings,plan with{SchemaVersion=1},true));
+        Assert.Equal("failed",File.ReadAllText(Path.Combine(source,"payload")));Assert.Empty(Directory.GetFiles(root,"retention-*.json"));
+    }
     [Fact]
     public async Task ExplicitPlanAndConfirmationDeleteOnlyFailedAndRetainAudit()
     {
