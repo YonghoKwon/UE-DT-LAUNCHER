@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 import uuid
+import time
 from stream_hash import sha256_stream
 
 
@@ -35,7 +36,13 @@ def atomic(path,record):
     try:
         with temporary.open('x',encoding='utf-8') as output:
             json.dump(record,output,indent=2);output.write('\n');output.flush();os.fsync(output.fileno())
-        os.replace(temporary,path)
+        for attempt in range(5):
+            try:os.replace(temporary,path);break
+            except OSError as error:
+                # Windows readers/scanners can temporarily prevent an atomic replacement.
+                # Never alter ACLs, retry the product command, or fall back to a non-atomic write.
+                if os.name!='nt' or getattr(error,'winerror',None) not in (5,32,33) or attempt==4:raise
+                time.sleep(.02*(2**attempt))
     finally:
         if temporary.exists():temporary.unlink()
 

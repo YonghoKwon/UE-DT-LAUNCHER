@@ -10,6 +10,24 @@ import hashlib
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_atomic_windows_replace_has_bounded_retry_without_nonatomic_fallback(self):
+        from evidence_contract import atomic
+        import os
+        with tempfile.TemporaryDirectory() as root:
+            path=Path(root)/'proof.json';path.write_text('old');real=os.replace;calls=[]
+            def transient(source,target):
+                calls.append(1)
+                if len(calls)<3:
+                    error=PermissionError('owned reader');error.winerror=5;raise error
+                return real(source,target)
+            with patch('evidence_contract.os.name','nt'),patch('evidence_contract.os.replace',side_effect=transient),patch('evidence_contract.time.sleep'):
+                atomic(path,{'new':True})
+            self.assertEqual(3,len(calls));self.assertTrue(json.loads(path.read_text())['new'])
+            before=path.read_bytes();error=PermissionError('persistent denial');error.winerror=5
+            with patch('evidence_contract.os.name','nt'),patch('evidence_contract.os.replace',side_effect=error) as replace,patch('evidence_contract.time.sleep'):
+                with self.assertRaises(PermissionError):atomic(path,{'mustNotAppear':True})
+                self.assertEqual(5,replace.call_count)
+            self.assertEqual(before,path.read_bytes());self.assertEqual([path],list(Path(root).iterdir()))
     def test_missing_git_is_unavailable_not_clean_or_zero(self):
         class Missing:
             returncode=1

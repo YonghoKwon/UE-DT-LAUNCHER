@@ -1,5 +1,13 @@
 # 로컬 기능·운영·GUI 수용 마무리
 
+## 고정 게시본과 실제 실행
+
+제품 후보1a7740f, 입력 hash67f441e18d16e0843e4f1050680f2cdc97b7d15254641703ce2016a1a0e58532의 Windows/Linux General·Developer·Agent·server 게시가 경고/오류0으로 통과했다. Windows849개, WSL848개+Windows delete-sharing 전용1개 제외. 양 OS 게시 HTTP 서명·readiness·schedule·자격·관리형 최소 화면 설정/IPC 복원·온라인 IP/exact누락/만료 거부는 설치/runtime 변경0건으로 통과했다. 양 OS offline backup/통제 restore/retention도 통과했다. 새 실행에서 살아 있는 기존 자식을 유지하는 단절/폐기 전수는 아직 별도다.
+
+Windows HTTPS/Bearer runtime broker와 양 OS native runtime family가 통과했다. WSL1 broker는 첫 socket 준비15초 timeout 후 종료까지 timeout, 실제 readiness30초로 보강한 재시험도 timeout이었다. 종료는 보유한 Popen만 사용했고 새 추정 PID/이름 kill은 수행하지 않았다. 이번 WSL broker는 환경 제약/미통과이며 HTTP Agent E2E 성공으로 대체하지 않는다.
+
+Windows fixture 준비2건은 preparation-status 원자 교체에서 WinError5로 실패했다. 소유자/ACL이 기대값과 일치함을 확인했고 ACL 변경 없이 해당 교체만 최대5회(총300ms)의 제한 재시도를 추가했다. 영구 거부는 기존 파일을 보존하고 실패한다. 제품 명령 자동 재실행/비원자 write fallback은 없다. 새 root의 준비는 통과했다.
+
 ## 새 GUI 실행에 결속한 근거
 
 UiDisplay는 창별 session ID/생성 시각/실제 process ID를 기록한다. 도구의 GUI 시작 기록은 fixture·제품 hash·profile·새 run ID·시각에 결속된다. schema2 수용 기록은 현재 run의 화면만 사용하며 최초 설치/수명에는 GUI 설치=true·정확한 runtime attempt·requested 종료가 필수다. 예전 schema1은 이력이고 새 통과를 추가하지 않는다. 도구 계약13개와 fixture23개가 통과했고 중간 게시 GUI 시작/접근성 트리/정상 닫기를 직접 확인했다.

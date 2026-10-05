@@ -86,12 +86,8 @@ def main():
             connection.close()
             if os.name != "nt": channel.close()
     try:
-        deadline = time.monotonic() + 15
-        if os.name != "nt":
-            while not Path(endpoint).exists() and service.poll() is None and time.monotonic() < deadline:
-                time.sleep(0.05)
-        else:
-            time.sleep(1)
+        from gui_fixture_evidence import wait_agent_ready
+        wait_agent_ready(service,endpoint,timeout=30)
         assert "runtime-supervision-v1" in rpc("status")["agentCapabilities"]
         if "rollback-preview-v1" in rpc("status")["agentCapabilities"]:
             preview = rpc("rollback-preview")["rollbackPreview"]
@@ -128,7 +124,7 @@ def main():
         service.terminate(); service.wait(timeout=10)
         assert host.poll() is None, "Runtime host died with Agent"
         service = subprocess.Popen([str(agent)], env=env, stdout=log, stderr=log, creationflags=flags)
-        time.sleep(1)
+        wait_agent_ready(service,endpoint,timeout=30)
         output, error = host.communicate(timeout=20)
         assert host.returncode == 0, error
         assert rpc("runtime-inspect")["runtime"]["state"] == 0
@@ -149,7 +145,11 @@ def main():
     finally:
         if host and host.poll() is None:
             host.kill(); host.wait(timeout=5)
-        service.terminate(); service.wait(timeout=10); log.close()
+        if service.poll() is None:
+            service.terminate()
+            try:service.wait(timeout=10)
+            except subprocess.TimeoutExpired:service.kill();service.wait(timeout=5)
+        log.close()
         tls_server.shutdown();tls_server.server_close()
 
 
