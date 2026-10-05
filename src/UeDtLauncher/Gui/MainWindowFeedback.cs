@@ -28,12 +28,12 @@ public sealed partial class MainWindow
             case LauncherUiOperation.PruneBackups: await RunMaintenanceAsync(true);break;
         }
     }
-    private async Task RefreshSelectionStatusAsync()
+    private async Task RefreshSelectionStatusAsync(bool rebuild=false)
     {
         if(_running)return;
         if(UsesDistributionServer)
         {
-            if(!await RefreshCatalog(false,suppressDialog:true) || !HasProject)return;
+            if(!await RefreshCatalog(rebuild,suppressDialog:true) || !HasProject)return;
         }
         await RefreshInstallStatusAsync();
     }

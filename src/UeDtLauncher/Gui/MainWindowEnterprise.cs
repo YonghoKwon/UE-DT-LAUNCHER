@@ -172,7 +172,7 @@ public sealed partial class MainWindow
     {
         var grid=new Grid {RowDefinitions=new("Auto,Auto,*"),RowSpacing=12};
         var heading=new Grid {ColumnDefinitions=new("*,Auto")};heading.Children.Add(Txt("프로젝트",18,true));
-        heading.Children.Add(At(EnterpriseButton("새로고침","catalog-refresh",async (_,_)=>await RefreshCatalog(true)),1));grid.Children.Add(heading);
+        heading.Children.Add(At(EnterpriseButton("새로고침","catalog-refresh",async (_,_)=>await RefreshSelectionStatusAsync(true)),1));grid.Children.Add(heading);
         var search=Identify(new TextBox {Text=_search,Watermark="프로젝트 검색",MinHeight=40,FontSize=14*_preferences.TextScale},"project-search","프로젝트 검색");
         search.TextChanged+=(_,_)=>{_search=search.Text??"";RenderEnterpriseProjects();};grid.Children.Add(AtRow(search,1));
         _enterpriseProjects=Identify(new ListBox {Background=Brushes.Transparent,BorderThickness=new Thickness(0),SelectionMode=SelectionMode.Single},"project-list","프로젝트 선택");

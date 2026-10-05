@@ -311,7 +311,7 @@ public sealed partial class MainWindow : Window
         var grid = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*,Auto"), RowSpacing = 12 };
         var title = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         title.Children.Add(Txt("배포 선택", 18, true));
-        title.Children.Add(At(Track(SmallButton("↻", async (_, _) => await RefreshCatalog(true))), 1));
+        title.Children.Add(At(Track(SmallButton("↻", async (_, _) => await RefreshSelectionStatusAsync(true))), 1));
         grid.Children.Add(title);
 
         var search = new TextBox { Text = _search, Watermark = "프로젝트 검색", FontSize = 13, Background = B(IsDeveloper ? "#0F172A" : "#F9FAFB"), Foreground = Fg(), TabIndex = _nextTabIndex++ };
@@ -1007,6 +1007,7 @@ public sealed partial class MainWindow : Window
 
     private async Task<bool> RefreshCatalog(bool rebuild, bool suppressDialog = false)
     {
+        var requested=DisplaySelectionContext();
         var ownsBusy = !_running;
         if (ownsBusy) { BeginOperation(LauncherUiOperation.Catalog); _running=true; SetBusy(true); }
         try
@@ -1014,10 +1015,13 @@ public sealed partial class MainWindow : Window
             _catalogState = "카탈로그 확인 중...";
             if (rebuild) Build();
             var catalogConfig = await RunConfig(false, false);
-            _catalog = await _catalogLoader(catalogConfig, CurrentPlatform, CancellationToken.None);
+            var catalog=await _catalogLoader(catalogConfig, CurrentPlatform, CancellationToken.None);
+            if(requested!=DisplaySelectionContext())throw new InvalidDataException("배포 선택이 변경되었습니다. 상태를 다시 확인해 주세요.");
+            _catalog=catalog;
             _presentation.ErrorCode=null;_presentation.SupportId=null;
             _catalogState = _catalog.Status;
             MergeCatalogProjects();
+            if(HasProject && requested!=DisplaySelectionContext())InvalidateDisplayedInstallation();
             UpdateReleaseNotes();
             return true;
         }
@@ -1147,6 +1151,7 @@ public sealed partial class MainWindow : Window
         if(_running)return;
         if(_readOnlyRecoveryFollowUp){await RefreshInstallStatusAsync();return;}
         _running=true;SetBusy(true);
+        BeginOperation(LauncherUiOperation.Troubleshoot);
         LauncherUiOperationContext? context=null;
         LauncherConfig? config=null;
         LauncherUiOperationResult? checkedResult=null;
@@ -1159,7 +1164,7 @@ public sealed partial class MainWindow : Window
             {
                 if(!await RefreshCatalog(false,suppressDialog:true) || !HasProject)return;
             }
-            context=CaptureUiOperation();config=await RunConfig(false,false);
+            context=CaptureUiOperation();_presentation.Retry=CurrentContext(LauncherUiOperation.Troubleshoot);config=await RunConfig(false,false);
             BeginOperation(LauncherUiOperation.Troubleshoot);Progress(0);StartCancellableUiOperation(cancellation);
             checkedResult=await _uiBackend.CheckAsync(context,config,CreateUiProgress(),cancellation.Token);
             ValidateUiResult(context,checkedResult);_viewModel.RequireRuntimeQuiescent(checkedResult.Runtime);
