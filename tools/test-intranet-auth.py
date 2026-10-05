@@ -60,6 +60,7 @@ def main():
     parser.add_argument("--promotion-proof", action="store_true", help="Verify promotion cannot retarget pending or running managed launches")
     parser.add_argument("--agent")
     parser.add_argument('--developer-launcher',help='Compiled Developer client for edition GUI acceptance')
+    parser.add_argument('--cohort',help='Successful immutable product publication manifest; required for new GUI fixtures')
     parser.add_argument("--prepare-gui", help="Test-only synthetic executable; leave installs empty and hold for GUI")
     parser.add_argument("--nginx", help="Optional isolated Linux nginx executable; no system service changes")
     parser.add_argument("--benchmark", action="store_true", help="Optional synthetic signed load (requires cryptography)")
@@ -75,6 +76,12 @@ def main():
     parser.add_argument('--managed-client-proof',action='store_true',help='Published selection-only display config, diagnostics and managed launch')
     parser.add_argument('--managed-rollback-proof',action='store_true',help='Published real IPC backup restoration with committed outcome')
     args = parser.parse_args()
+    publication=None
+    if args.prepare_gui:
+        if not args.cohort:parser.error('--prepare-gui requires an explicit --cohort snapshot publication')
+        from cohort_contract import validate_inputs
+        publication=validate_inputs(args.cohort,dict(launcher=args.launcher,server=args.server,synthetic=args.prepare_gui,
+            **({'developer':args.developer_launcher} if args.developer_launcher else {}),**({'agent':args.agent} if args.agent else {})))
     if args.managed_client_proof and (not args.agent or args.prepare_gui):parser.error('--managed-client-proof requires console Agent without GUI')
     if args.managed_rollback_proof and (not args.agent or args.prepare_gui):parser.error('--managed-rollback-proof requires console Agent without GUI')
     if args.gui_download_proof and not args.prepare_gui:parser.error('--gui-download-proof requires --prepare-gui')
@@ -100,6 +107,9 @@ def main():
     if (root / "server.json").exists():
         raise RuntimeError("Use a new isolated root; existing fixture will not be replaced")
     claim(root)
+    from evidence_contract import atomic
+    preparation={'schemaVersion':1,'phase':'provisioning','success':False,'complete':False,'commands':[]}
+    atomic(root/'preparation-status.json',preparation)
     if args.prepare_gui: snapshot_preferences(root)
     client = root / "client"
     private_root=client / ('portable-private' if args.prepare_gui and args.gui_mode=='portable' else 'agent')
@@ -127,12 +137,28 @@ def main():
     def run(binary, *arguments, expected=0):
         nonlocal counter
         counter += 1
-        result = subprocess.run([binary, *map(str, arguments)], env=env, capture_output=True, text=True,
-                                encoding="utf-8", errors="replace", timeout=120, creationflags=flags)
         sensitive = arguments[:2] in (("credential","set"),("credential","keygen")) or arguments[:1]==("token-issue",)
+        name=arguments[0] if arguments else 'start';preparation.update(phase=name)
+        atomic(root/'preparation-status.json',preparation)
+        try:
+            result = subprocess.run([binary, *map(str, arguments)], env=env, capture_output=True, text=True,
+                                    encoding="utf-8", errors="replace", timeout=120, creationflags=flags)
+        except subprocess.TimeoutExpired:
+            preparation.update(complete=True,success=False,failureType='timeout')
+            preparation['commands'].append({'index':counter,'name':name,'exitCode':None,'result':'timeout'})
+            atomic(root/'preparation-status.json',preparation);raise
+        except OSError:
+            preparation.update(complete=True,success=False,failureType='start-failed')
+            preparation['commands'].append({'index':counter,'name':name,'exitCode':None,'result':'start-failed'})
+            atomic(root/'preparation-status.json',preparation);raise
         (root / f"command-{counter:02d}.log").write_text("sensitive provisioning output omitted\n" if sensitive else result.stdout + result.stderr, encoding="utf-8")
         if result.returncode != expected:
+            preparation.update(complete=True,success=False,failureType='process-failed')
+            preparation['commands'].append({'index':counter,'name':name,'exitCode':result.returncode,'result':'failed'})
+            atomic(root/'preparation-status.json',preparation)
             raise RuntimeError(f"Command {counter} failed ({result.returncode}); inspect isolated log")
+        preparation['commands'].append({'index':counter,'name':name,'exitCode':result.returncode,'result':'passed'})
+        atomic(root/'preparation-status.json',preparation)
         return result.stdout
 
     def write(path, value):
@@ -435,6 +461,7 @@ http {{
             untracked=subprocess.check_output(['git','ls-files','--others','--exclude-standard','--','src','tools'],cwd=source_root,text=True).splitlines()
             source_evidence=source_diff+b''.join(name.encode()+b'\0'+(source_root/name).read_bytes() for name in sorted(untracked) if (source_root/name).is_file())
             write(root/'fixture.json',{'schemaVersion':2,'id':root.name,'deploymentMode':args.gui_mode,'platform':platform,'guiLongLabels':args.gui_long_labels,
+                  'productPublication':__import__('cohort_contract').fixture_provenance(publication),
                   'sourceHead':subprocess.check_output(['git','rev-parse','HEAD'],cwd=source_root,text=True).strip(),
                   'sourceDiffSha256':hashlib.sha256(source_evidence).hexdigest(),'sourceDirty':bool(source_evidence),
                   'binaries':{kind:{'path':value,'sha256':sha256(value)} for kind,value in gui_binaries.items()},
@@ -444,6 +471,7 @@ http {{
             summary['gui_long_labels']=args.gui_long_labels
             summary['view_only_projects']=['demo-secondary'] if args.gui_long_labels else []
             verify_cohort(root);wait_server_ready(process,origin)
+            preparation.update(phase='ready',complete=True,success=True);atomic(root/'preparation-status.json',preparation)
         if args.benchmark:
             from benchmark_intranet_auth import run_load
             load = run_load(origin, root, lambda path: run(server, "client-key", "add", "--client", "pc-test", "--public-key", path, "--config", root / "server.json"), platform, process.pid)

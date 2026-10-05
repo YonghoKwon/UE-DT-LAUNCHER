@@ -59,7 +59,7 @@ def mutation_guard(root,fixture,version):
 
 def preflight(root,fixture,version):
     control=inside(root,'control')
-    faults=[name for name in ('proxy-unthrottle','proxy-fail-version','proxy-fail-catalog-after-commit','auth-key-revoked') if (control/name).exists()]
+    faults=[name for name in ('proxy-unthrottle','proxy-fail-version','proxy-fail-catalog-after-commit','proxy-fail-catalog-after-restore','auth-key-revoked') if (control/name).exists()]
     original=control/'original-policy.json';policy=inside(root,'policy.json')
     if original.exists() and json.loads(original.read_text())!=json.loads(policy.read_text()):faults.append('policy-changed')
     if (control/'original-public.pem').exists() and (control/'original-public.pem').read_bytes()!=inside(root,'public.pem').read_bytes():faults.append('trust-changed')

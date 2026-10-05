@@ -25,3 +25,13 @@ stage-2 source2201486+제품 변경/hash ff23541424b7beab85337d430c2470b85511102
 Windows785개 전체는 통과했지만 첫 WSL 전체785건은783통과/1실패/1Windows-only skip이었다. `File.Move(overwrite:false)` 동시 작성이 두 번 성공해 기존 설정을 덮을 수 있음을 재현했다. Linux는 RENAME_NOREPLACE를 사용하며 WSL1 파일시스템에서 실제 errno22를 확인해 새로 flush한 임시 설정의 배타적 link 게시→임시 이름 제거를 지원한다. 설치 payload/기존 데이터의 hard link 재사용과 다르며 실패 시 기존 목적지를 변경하지 않는다.
 
 수정한 Windows/WSL 관련10개가 통과했고 WSL 게시 CLI로 설정 생성과 기존 파일 거부를 확인했다. 초기 LF/CRLF patch 적용 실패 뒤 실행된 이전 코드 검사는 수정 증거로 사용하지 않았다. 첫 RENAME_NOREPLACE-only 후보의 WSL2개 실패도 보존하며 최종 전체 회귀/게시본은 뒤에서 기록한다. WSL 임시 mirror 출처는7c6cb1a+명시적 패치이며 Git clean 상태로 보충하지 않는다.
+
+## 최종 시험 도구와 고정 게시본
+
+publisher는 커밋된 Git snapshot에서 General/Developer/Agent/server와 별도 합성 앱을 생성하고 입력 hash·SDK·역할/에디션·runtime sidecar·성공/실패 단계를 기록한다. 새 GUI fixture는 명시적 schema2 cohort manifest와 역할별 실제 경로/hash를 확인한 후 복사하며, 제품 출처와 harness 출처를 분리한다. 이전 root는 조회 가능하지만 최종 GUI 수용으로 채택하지 않는다.
+
+복원 조회 장애는 실제 rollback operation ID/ACK가 아닌 별도 file-transition 관측이다. 정확한 fixture/publication/install/release/backup/fingerprint/새 시도와 손상 사전 inventory·전체 정상 payload/metadata 전환·runtime 불변·설치 잠금 해제를 요구한다. 다른 작업·변경된 preview·미완료 적용·401/403에서는 발화하지 않으며 pending reset과 발화 이력을 보존한다. 게시본×모드×에디션×사례 ledger는 GUI 입력 주체·실제 display 로그·PNG·필수 checks를 요구하고 다른 게시본/비교 scope/CLI 설치/미실행을 전체 통과로 합산하지 않는다.
+
+도구 계약9개/기존fixture23개/proxy4개(합36개)가 통과했다. Windows/Linux final snapshot은 제품18db00d, source hasha93b4a3f89ad61ee9b01c4740ff9a6dcff79a705d0a9a531cacc919ff348a828이며 같은 입력에서 게시했다. 새 managed fixture를 실제 실행하고 상태 버튼 입력·미설치 inventory 불변·display1920×1080/scale1/text1/highContrastfalse를 확인했다. 네 조합 전체 수용은 아직 진행 전/중이며 이 도구 통과가 실제 모든 GUI 적용 통과는 아니다.
+
+이전 병렬 승인3건의 로그에는 IOException 일반 문장만 있어 원인/HResult를 확정할 수 없다. 새 준비는 단계·종료 코드·timeout/start-failed를 원자적으로 기록하고 승인/승격을 별도 기록한다. 새로운 fixture는 순차 준비하며 이를 병렬 실패 해결 증거로 사용하지 않는다.

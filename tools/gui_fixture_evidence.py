@@ -44,6 +44,8 @@ def copy_server_support(source_executable, destination_executable):
 
 def verify_cohort(root):
     fixture = json.loads(inside(root, 'fixture.json').read_text())
+    from cohort_contract import verify_fixture_publication
+    verify_fixture_publication(fixture)
     if fixture.get('schemaVersion') not in (1, 2): raise ValueError('Unsupported GUI fixture schema')
     if fixture.get('schemaVersion') == 2:
         if fixture.get('deploymentMode') not in ('managed', 'portable'): raise ValueError('Invalid GUI fixture mode')

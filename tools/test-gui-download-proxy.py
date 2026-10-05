@@ -6,9 +6,32 @@ from pathlib import Path
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 from gui_download_proxy import DownloadProxy
 
 class ProxyTests(unittest.TestCase):
+    def test_restore_file_fault_runs_only_after_upstream_authorization(self):
+        allowed=False
+        class Upstream(http.server.BaseHTTPRequestHandler):
+            def log_message(self,*_):pass
+            def do_GET(self):
+                body=b'catalog';self.send_response(200 if allowed else 403);self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
+        server=http.server.ThreadingHTTPServer(('127.0.0.1',0),Upstream)
+        thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as temporary:
+                root=Path(temporary);proxy=DownloadProxy(root,0,server.server_port);proxy.start()
+                (root/'fixture.json').write_text('{}');(root/'control/proxy-fail-catalog-after-restore').write_text('{}')
+                def request():
+                    connection=http.client.HTTPConnection('127.0.0.1',proxy.server.server_port,timeout=5);connection.request('GET','/api/v1/catalog')
+                    response=connection.getresponse();response.read();connection.close();return response.status
+                try:
+                    with patch('restore_file_witness.observe',return_value={'kind':'restore-file-transition','attemptId':'a'*32}) as observed:
+                        self.assertEqual(403,request());observed.assert_not_called()
+                        allowed=True;self.assertEqual(503,request());self.assertEqual(1,observed.call_count)
+                        self.assertEqual('restore-file-transition',json.loads((root/'control/proxy-restore-fired.json').read_text())['kind'])
+                finally:proxy.close()
+        finally:server.shutdown();server.server_close();thread.join(timeout=5)
     def test_restart_archives_the_previous_session_instead_of_overwriting_counts(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)

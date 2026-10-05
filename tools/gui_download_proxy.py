@@ -110,6 +110,15 @@ class DownloadProxy:
         self.thread.start()
     def fail_catalog_after_commit(self):
         with self.lock:
+            restore=inside(self.root,'control/proxy-fail-catalog-after-restore')
+            if restore.exists():
+                from restore_file_witness import observe
+                fixture=json.loads(inside(self.root,'fixture.json').read_text())
+                value=observe(self.root,fixture)
+                if value is not None:
+                    value['sessionId']=self.metrics['sessionId'];temporary=self.control/'proxy-restore-fired.tmp'
+                    temporary.write_text(json.dumps(value));temporary.replace(self.control/'proxy-restore-fired.json')
+                    self.metrics['catalogFaults']+=1;self.persist();return True
             arm=inside(self.root,'control/proxy-fail-catalog-after-commit')
             if not arm.exists():return False
             if arm.stat().st_size>65536:raise ValueError('Oversized Catalog fault binding')

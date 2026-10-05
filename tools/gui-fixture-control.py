@@ -5,11 +5,12 @@ from promotion_fixture_support import promote
 from gui_fixture_evidence import inside, verify_files, verify_cohort, preference_hash, restore_preferences, snapshot_preferences, fixture_mode, fixture_environment, record_control, agent_status, sha256,operation_root
 from gui_fixture_safety import mutation_guard, preflight, product_json
 p=argparse.ArgumentParser(); p.add_argument('--root',required=True)
-p.add_argument('action',choices=['smoke','gui-general','gui-developer','snapshot','compare','damage','release','stop-agent','start-agent','stop-server','start-server','stop-all','status','approve-v2','promote-v1','diagnostics','verify','verify-backup','invalidate-preview','prefs-snapshot','prefs-record-owned','prefs-restore','error-401','error-403','error-empty','error-config','config-reset','policy-reset','error-trust','trust-reset','proxy-status','proxy-fast','proxy-throttle','proxy-fail-version','proxy-reset-errors','proxy-fail-catalog-after-commit','cache-off','preflight'])
+p.add_argument('action',choices=['smoke','gui-general','gui-developer','snapshot','compare','damage','release','stop-agent','start-agent','stop-server','start-server','stop-all','status','approve-v2','promote-v1','diagnostics','verify','verify-backup','invalidate-preview','prefs-snapshot','prefs-record-owned','prefs-restore','error-401','error-403','error-empty','error-config','config-reset','policy-reset','error-trust','trust-reset','proxy-status','proxy-fast','proxy-throttle','proxy-fail-version','proxy-reset-errors','proxy-fail-catalog-after-commit','proxy-fail-catalog-after-restore','cache-off','preflight','case-start','case-finish','acceptance-summary'])
 p.add_argument('--version',choices=['1.0.0','2.0.0'],default='1.0.0'); p.add_argument('--name',default='before')
 p.add_argument('--scope',choices=['all','protected'],default='all',help='protected excludes transient staging/cache/runtime while retaining payload, manifests, state, backups and transaction journal')
 p.add_argument('--attempt', help='Exact synthetic child marker id to release')
 p.add_argument('--profile',choices=['general','developer'],default='general')
+p.add_argument('--result',choices=['passed','failed','blocked','not-run'],default='not-run');p.add_argument('--proof',help='Fixture-relative sanitized GUI evidence JSON')
 p.add_argument('--damage-cached-download',action='store_true',help='Test-only: corrupt the portable fixture synthetic cancellation.bin cache before an explicit repair')
 a=p.parse_args(); root=Path(a.root).resolve()
 assert (root/'summary.json').exists() and json.loads((root/'summary.json').read_text())['gui_prepared_empty']
@@ -52,7 +53,13 @@ def read_proxy_metrics():
 
 if a.action in ('stop-agent','start-agent') and mode=='portable':
     raise ValueError('Portable fixture has no Agent process or IPC')
-if a.damage_cached_download:
+if a.action in ('case-start','case-finish','acceptance-summary'):
+    from acceptance_ledger import record_case,summary
+    if a.action=='acceptance-summary':print(json.dumps(summary(root,fixture,a.profile)))
+    else:
+        proof=json.loads(inside(root,a.proof).read_text()) if a.proof else None
+        print(json.dumps(record_case(root,fixture,a.profile,a.name,'running' if a.action=='case-start' else a.result,proof)))
+elif a.damage_cached_download:
     if a.action!='status' or mode!='portable' or not fixture.get('guiDownloadProof'):raise ValueError('Only a quiescent portable synthetic download cache is eligible')
     target_id='demo/prod/stable/'+a.version+'/'+platform
     records=[path for path in (state/'resume-cache').rglob('resume.json') if json.loads(inside(root,str(path.relative_to(root))).read_text()).get('releaseId')==target_id]
@@ -77,6 +84,9 @@ elif a.action.startswith('proxy-'):
     if a.action=='proxy-status':print(read_proxy_metrics())
     elif a.action=='proxy-fast':inside(root,'control/proxy-unthrottle').touch();record_control(root,a.action);print('Disabled only synthetic transfer throttling')
     elif a.action=='proxy-fail-version':inside(root,'control/proxy-fail-version').touch();record_control(root,a.action);print('Test-only version.txt HTTP503 after upstream authorization')
+    elif a.action=='proxy-fail-catalog-after-restore':
+        from restore_file_witness import arm
+        print(json.dumps(arm(root,fixture,a.version)));record_control(root,a.action,version=a.version)
     elif a.action=='proxy-fail-catalog-after-commit':
         operations=operation_root(root,fixture)
         records=[f.stem for f in operations.glob('*.json')] if operations.exists() else []
@@ -85,7 +95,7 @@ elif a.action.startswith('proxy-'):
         atomic_bytes(control/'proxy-fail-catalog-after-commit',json.dumps({'version':a.version,'platform':platform,'beforeIds':records,'command':'repair','manifestSha256':sha256(manifest),'operationId':None,'operationsRelative':str(operations.relative_to(root))}).encode())
         record_control(root,a.action,version=a.version);print('Armed one authorized Catalog failure after the next exact repair commit')
     elif a.action=='proxy-reset-errors':
-        for name in ('proxy-fail-version','proxy-fail-catalog-after-commit'):inside(root,'control/'+name).unlink(missing_ok=True)
+        for name in ('proxy-fail-version','proxy-fail-catalog-after-commit','proxy-fail-catalog-after-restore'):inside(root,'control/'+name).unlink(missing_ok=True)
         record_control(root,a.action);print('Removed file and pending Catalog faults')
     else:inside(root,'control/proxy-unthrottle').unlink(missing_ok=True);record_control(root,a.action);print('Restored synthetic transfer throttling')
 elif a.action=='prefs-snapshot':
@@ -106,10 +116,19 @@ elif a.action=='promote-v1':
 elif a.action=='approve-v2':
     job=fixture['pendingJobs'].get('2.0.0')
     if not job: raise ValueError('No pending v2 in this fixture')
-    subprocess.run([fixture['binaries']['server']['path'],'approve',job,'--config',str(root/'server.json')],env=env,check=True,capture_output=True,creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
+    from evidence_contract import atomic
+    state={'schemaVersion':1,'jobId':job,'phase':'approve','success':False}
+    atomic(control/'approval-status.json',state)
+    result=subprocess.run([fixture['binaries']['server']['path'],'approve',job,'--config',str(root/'server.json')],env=env,capture_output=True,timeout=120,creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
+    (control/'approval-private.log').write_bytes(result.stdout+result.stderr)
+    state['exitCode']=result.returncode;atomic(control/'approval-status.json',state)
+    if result.returncode:raise RuntimeError('Fixture approval failed; private result retained')
+    record_control(root,'approve-v2-committed',jobId=job)
+    state['phase']='promote';atomic(control/'approval-status.json',state)
     def promotion_run(*values):
         return subprocess.check_output([fixture['binaries']['server']['path'],*map(str,values)],env=env,text=True,encoding='utf-8')
     promote(promotion_run,root/'server.json','demo','2.0.0',platform)
+    state.update(phase='complete',success=True);atomic(control/'approval-status.json',state)
     record_control(root,'approve-v2',jobId=job)
     print('Approved fixture v2')
 elif a.action=='error-config':
