@@ -34,6 +34,7 @@ public sealed partial class MainWindow : Window
     private readonly ILauncherUiBackend _uiBackend;
     private readonly Func<string,Task<LauncherConfig>> _runtimeConfigLoader;
     private readonly Func<LauncherConfig,RollbackPreview,Task<LauncherRestoreResult>> _restorePreview;
+    private readonly Func<LauncherConfig,Task<RollbackPreview?>> _managedRollbackPreview;
     private readonly Func<LauncherConfig,string,CancellationToken,Task<CatalogSnapshot>> _catalogLoader;
     private readonly Func<string,bool,DoctorTarget?,CancellationToken,Task<DoctorReport>> _doctor;
     private bool _windowMetricsInitialized;
@@ -82,10 +83,12 @@ public sealed partial class MainWindow : Window
         Func<LauncherConfig,string,CancellationToken,Task<CatalogSnapshot>>? catalogLoader=null,
         Func<string,bool,DoctorTarget?,CancellationToken,Task<DoctorReport>>? doctor=null,
         Func<string,Task<LauncherConfig>>? runtimeConfigLoader=null,
-        Func<LauncherConfig,RollbackPreview,Task<LauncherRestoreResult>>? restorePreview=null)
+        Func<LauncherConfig,RollbackPreview,Task<LauncherRestoreResult>>? restorePreview=null,
+        Func<LauncherConfig,Task<RollbackPreview?>>? managedRollbackPreview=null)
     {
         _uiBackend=backend??new LauncherUiBackend();
         _runtimeConfigLoader=runtimeConfigLoader??(path=>LauncherPaths.LoadResolvedAsync(path));
+        _managedRollbackPreview=managedRollbackPreview??PreviewManagedRollbackAsync;
         _restorePreview=restorePreview??((config,preview)=>config.IsManagedDeployment
             ? RestoreManagedPreviewAsync(config,preview)
             : Task.Run(async()=>{await RollbackPreviewService.RestoreExpectedAsync(config,preview.BackupId,preview.MetadataFingerprint);return new LauncherRestoreResult(LauncherRestoreDisposition.Applied);}));
@@ -1204,7 +1207,7 @@ public sealed partial class MainWindow : Window
                 EndCancellableUiPhase();
                 try
                 {
-                    var preview=context.Managed?await PreviewManagedRollbackAsync(config):await Task.Run(()=>RollbackPreviewService.ReadAsync(config));
+                    var preview=context.Managed?await _managedRollbackPreview(config):await Task.Run(()=>RollbackPreviewService.ReadAsync(config));
                     if(preview is {CanRestore:true} && await ConfirmPreviewAsync(preview))await RestoreUiPreviewAsync(context,config,preview);
                     else MarkError(ex,"문제 해결 실패");
                 }
@@ -1225,9 +1228,13 @@ public sealed partial class MainWindow : Window
         {
             var context=CaptureUiOperation();
             var config=await RunConfig(false,false);context.Pin(config);
-            if(context.Selection is not null)VersionedReleasePaths.Bind(config,context.Selection);
+            if(context.Selection is not null)
+            {
+                if(context.Managed)ManagedClientContext.Bind(config,context.Selection);
+                else VersionedReleasePaths.Bind(config,context.Selection);
+            }
             var preview=config.IsManagedDeployment
-                ? await PreviewManagedRollbackAsync(config)
+                ? await _managedRollbackPreview(config)
                 : await Task.Run(()=>RollbackPreviewService.ReadAsync(config));
             if(preview is null || !preview.CanRestore)
             {SetStatus("복원할 수 있는 백업 정보를 확인해 주세요.");return;}

@@ -1,6 +1,11 @@
 using System.Reflection;
 using System.Text.Json;
 using Avalonia.Headless.XUnit;
+using Avalonia.Automation;
+using Avalonia.Controls;
+using Avalonia.Interactivity;
+using Avalonia.VisualTree;
+using Avalonia.LogicalTree;
 using UeDtLauncher.Gui;
 using Xunit;
 
@@ -8,6 +13,30 @@ namespace UeDtLauncher.Tests;
 
 public class ManagedClientBoundaryTests
 {
+    [AvaloniaFact]
+    public async Task DeveloperRollbackButtonSendsSelectionWithoutResolvingProtectedPaths()
+    {
+        var platform=OperatingSystem.IsWindows()?"windows-x64":"linux-x64";
+        var selection=new ReleaseSelection("demo","prod","stable",platform,"1.0.0");
+        var config=new LauncherConfig{DeploymentMode="managed-agent",ProjectId="demo",TargetPlatform=platform,VersionPolicy="exact",RequestedVersion="1.0.0",Projects=[new(){ProjectId="demo"}]};
+        var model=new LauncherDashboardViewModel(LauncherEdition.Developer){Config=config,Catalog=new(){Projects=[new(){ProjectId="demo"}],Releases=[new(){ProjectId="demo",Environment="prod",Channel="stable",Platform=platform,Version="1.0.0",IsLatest=true}]}};
+        var reached=new TaskCompletionSource<LauncherConfig>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reads=0;
+        var window=new MainWindow(new(Path.Combine(Path.GetTempPath(),"absent-display.json"),LauncherConfigSource.Explicit,false),model,new(),false,
+            runtimeConfigLoader:_=>{reads++;throw new UnauthorizedAccessException("protected read");},
+            managedRollbackPreview:c=>{reached.TrySetResult(c);return Task.FromResult<RollbackPreview?>(null);});
+        try
+        {
+            window.Show();
+            var button=window.GetLogicalDescendants().OfType<Button>().Single(b=>AutomationProperties.GetAutomationId(b)=="rollback");
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var request=await reached.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(selection,request.SelectedRelease);Assert.Equal(0,reads);
+            Assert.Null(request.DistributionServerUrl);Assert.Null(request.VersionedInstallRoot);
+            Assert.False(Path.IsPathFullyQualified(request.StateRootDir));
+        }
+        finally{window.Close();}
+    }
     [Theory][InlineData(1)][InlineData(2)][InlineData(3)]
     public void RequestsAndShortcutProfilesNeverCarryOperationalSettings(int schema)
     {

@@ -23,3 +23,7 @@ Windows 전체741개(714+27), 실패/skip0. stage-b 게시 CLI의 최소 관리�
 ## 시험 결속
 
 Catalog 오류 제어는 실제 신규 작업ID를 한 번 고정하고 릴리스5필드·command·Manifest SHA-256·Completed를 모두 대조한다. 발화 기록과 프록시 세션을 보존하며 reset은 파일 오류와 미발생 Catalog 오류를 함께 해제한다. 계산된releaseId 추가 필드는 필수 선택 필드와 혼동하지 않는다. 합성 marker는 runtimeAttemptId와 결속하고 watchdog 종료 사유를 루프 종료 시 확정한다. 새 합성 실행 파일의 독립 수명 시험은 제한시간 경계를requested로 오인하지 않음을 확인했으며 GUI/감독 수용으로 합산하지 않는다.
+
+## 개발자 직접 복원 경로에서 추가 발견한 결함
+
+final-win2 관리형 개발자 직접 백업 복원 버튼에서 `Versioned install root must be resolved first` 오류를 재현했다. 문제 해결의 복원 제안 경로는 통과했지만 직접 버튼은 selection-only 설정에 portable 경로 바인딩을 적용하고 있었다. 관리형은 ManagedClientContext.Bind, portable만 VersionedReleasePaths.Bind하도록 수정했다. 실제 Button.ClickEvent 회귀는 보호 설정 loader 호출0건·정확한 선택·로컬 루트 미해석을 확인한다. 관련8개와 Windows 전체753개가 통과했으며 final-win3 게시 CLI/console Agent의 HTTP 서명·readiness·작업·최소 관리형 설정·정상 backup IPC 복원 proof가 통과했다. final-win3 source hash는5934cd8f9453d86e5ef865057dc02e7da671d482c36dfeb054818c2ee66650c5이고 게시 시 c6ede74/변경 존재를 기록했다. 직접 GUI 복원 재검증과 Linux 최종 회귀는 별도로 기록한다.
