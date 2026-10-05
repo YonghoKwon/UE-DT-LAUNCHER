@@ -43,6 +43,11 @@ def fixture_access_policy(long_labels=False):
     return {'clients':[{'id':'pc-test','addresses':['127.0.0.0/8'],'grants':grants}]}
 
 
+def managed_gui_config(config,profile):
+    return {'schemaVersion':config.get('schemaVersion',3),'deploymentMode':'managed-agent','manifestUrl':'','projectId':config['projectId'],
+            'environment':config.get('environment','prod'),'channel':config.get('channel','stable'),'targetPlatform':config['targetPlatform'],
+            'versionPolicy':config.get('versionPolicy','exact'),'requestedVersion':config.get('requestedVersion'),'clientProfile':profile}
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--launcher", required=True)
@@ -366,8 +371,8 @@ http {{
                         time.sleep(.1)
             if not args.defer_promotion:
                 run(launcher, "agent", "project-asset", "--project", "demo", "--kind", "hero", "--cache", client / "images")
-            gui = dict(config, clientProfile="general")
-            gui["security"] = dict(config["security"], credentialName="gui-must-not-read-private-key")
+            gui = managed_gui_config(config,'general') if args.prepare_gui else dict(config,clientProfile='general')
+            if not args.prepare_gui:gui["security"] = dict(config["security"], credentialName="gui-must-not-read-private-key")
             write(client / "general.json", gui)
             gui["clientProfile"] = "developer"
             write(client / "developer.json", gui)

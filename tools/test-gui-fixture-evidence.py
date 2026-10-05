@@ -29,6 +29,14 @@ def control(root,action,*arguments):
         runpy.run_path(str(TOOLS/'gui-fixture-control.py'),run_name='__main__')
 
 class EvidenceTests(unittest.TestCase):
+    def test_managed_gui_fixture_has_selection_only_not_operational_settings(self):
+        spec=importlib.util.spec_from_file_location('intranet_managed_display',TOOLS/'test-intranet-auth.py')
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        config={'schemaVersion':3,'projectId':'demo','targetPlatform':'windows-x64','requestedVersion':'1.0.0','security':{'credentialName':'SECRET'},'installDir':'PRIVATE','catalogUrl':'SECRET','launchArguments':['SECRET']}
+        for profile in ('general','developer'):
+            result=module.managed_gui_config(config,profile)
+            self.assertEqual('managed-agent',result['deploymentMode']);self.assertEqual(profile,result['clientProfile'])
+            self.assertNotIn('SECRET',json.dumps(result));self.assertNotIn('PRIVATE',json.dumps(result));self.assertNotIn('security',result)
     def test_fault_reset_clears_file_and_pending_catalog_faults(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)/'fixture';fixture=make_fixture(root);fixture['guiDownloadProof']=True;(root/'fixture.json').write_text(json.dumps(fixture))
