@@ -1,5 +1,13 @@
 # 로컬 기능·운영·GUI 수용 마무리
 
+## 인증·저장·자동 점검 회귀
+
+HTTP 요청 서명33개와 HTTPS-origin Bearer 서버 회귀36개는 opt-in 다운로드 제한을 켠 HEAD/Range/이미지/404/416/권한 변경/폐기/만료/시계 역행, handler 실패·클라이언트 연결 취소 후 슬롯 반환을 실제 Kestrel HTTP로 확인했다. Bearer 단위 서버는 loopback HTTP transport에 HTTPS 공개 origin을 사용하며 실제 TLS 증거는 별도 게시 HTTPS E2E로 구분한다.
+
+복원 활성화 다섯 내부 저장 경계의 예외 시험에서 fence·원본 파일을 보존했다. 재시도는 최신 자격 폐기와 sequence1201을 반영했다. 이는 프로세스 강제 종료/정전 내구성 시험으로 확대하지 않는다. 자동 점검13개는 단절만 최대2회, 인증/권한/검증 오류1회, 취소 시 이전 관측 보존·lease 반환·설치/state 생성0건을 확인했다.
+
+stage4 General/Agent/server Release publish 및 게시 HTTP 서명·준비도·자격 수명·조회형 schedule·selection-only 관리형 CLI·실제 IPC 복원이 통과했다. 같은 새 fixture에서 게시 offline backup/통제 복원/retention도 통과했다. 중간 게시본이며 최종 GUI51개와 합산하지 않는다.
+
 ## 승인되지 않은 정리 자료 보존
 
 RetentionPlan schema2는 파일뿐 아니라 빈 디렉터리의 OS 신원도 승인 목록에 포함한다. 승인 파일 삭제 후 새 파일/빈 폴더가 발견되면 재귀 삭제하지 않고 quarantine·DeleteIntent를 보존한다. schema1 적용은 거부하며 새 계획 또는 기존 중단 journal의 수동 점검이 필요하다. 디렉터리 탐색도 깊이128/개수500000으로 제한한다.

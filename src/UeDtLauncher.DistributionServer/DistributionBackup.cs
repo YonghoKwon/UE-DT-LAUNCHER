@@ -10,6 +10,7 @@ public sealed record DistributionBackupManifest(int SchemaVersion, string Source
 
 public static class DistributionBackup
 {
+    internal static readonly AsyncLocal<Action<string>?> Boundary=new(); // Tests only; no operational bypass input.
     private static StringComparison Comparison => OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
     private static bool Inside(string root, string target) => string.Equals(Path.GetFullPath(root), Path.GetFullPath(target), Comparison) ||
         Path.GetFullPath(target).StartsWith(Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, Comparison);
@@ -256,6 +257,7 @@ public static class DistributionBackup
         var refreshed = Path.Combine(target, ".authority-refresh-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(refreshed);
         using (var snapshot = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Path.Combine(refreshed, "distribution.db"), Pooling = false }.ToString()))
         { snapshot.Open(); source.BackupDatabase(snapshot); }
+        Boundary.Value?.Invoke("authority-snapshot");
         staged.Close(); source.Close();
         // Use the same verified rebase rules; preserve old staged DB until the new snapshot is ready.
         using (var db = Open(refreshed, false))
@@ -269,11 +271,15 @@ public static class DistributionBackup
             }
             tx.Commit();
         }
+        Boundary.Value?.Invoke("authority-rebased");
         var policy=await new FileAccessPolicyProvider(current.PolicyPath).LoadAsync(CancellationToken.None);_=CompiledAccessPolicy.Create(policy);
         await JsonFiles.WriteAsync(Path.Combine(target,"restored-policy.json"),policy);
+        Boundary.Value?.Invoke("policy-written");
         using (var pooled = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Path.Combine(Path.GetFullPath(target), "distribution.db") }.ToString()))
             SqliteConnection.ClearPool(pooled); // Stopped root only: release idle constructor/inspection handles before atomic replacement.
         File.Move(Path.Combine(refreshed, "distribution.db"), Path.Combine(target, "distribution.db"), true);
+        Boundary.Value?.Invoke("database-replaced");
+        Boundary.Value?.Invoke("before-public-fence");
         File.Delete(fence); // Final public fence transition; failures before this stay blocked.
         return new { Activated = true, Target = target, PolicyPath = Path.Combine(target, "restored-policy.json"), PrivateKeyIncluded = false };
     }

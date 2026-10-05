@@ -61,6 +61,32 @@ public sealed class DistributionBackupTests : IDisposable
         await Assert.ThrowsAsync<InvalidDataException>(() => DistributionBackup.ActivateAsync(target, settings, true));
         Assert.True(File.Exists(Path.Combine(target, "restore-staged.json")));
     }
+    [Theory]
+    [InlineData("authority-snapshot")]
+    [InlineData("authority-rebased")]
+    [InlineData("policy-written")]
+    [InlineData("database-replaced")]
+    [InlineData("before-public-fence")]
+    public async Task ActivationFailureLeavesFenceAndRetryRechecksLatestAuthority(string boundary)
+    {
+        var credential=new DistributionTokens(store);var token=credential.Issue("pc");var id=credential.List().Single().Id;
+        var backup=Path.Combine(root,"fault-backup");await DistributionBackup.CreateAsync(settings,backup);
+        var target=Path.Combine(root,"fault-restored");await DistributionBackup.StageAsync(backup,target,settings);
+        var original=await Hashing.Sha256FileAsync(Path.Combine(settings.Root,"incoming/private-upload.txt"));
+        DistributionBackup.Boundary.Value=phase=>{if(phase==boundary)throw new IOException("owned activation boundary");};
+        try{await Assert.ThrowsAsync<IOException>(()=>DistributionBackup.ActivateAsync(target,settings,true));}
+        finally{DistributionBackup.Boundary.Value=null;}
+        Assert.True(File.Exists(Path.Combine(target,"restore-staged.json")));
+        Assert.Throws<InvalidDataException>(()=>new IntakeStore(new(){Root=target}));
+        Assert.Equal(original,await Hashing.Sha256FileAsync(Path.Combine(settings.Root,"incoming/private-upload.txt")));
+        credential.RevokeId(id);
+        using(var db=store.Open())using(var command=db.CreateCommand()){command.CommandText="UPDATE sequence SET value=1201";command.ExecuteNonQuery();}
+        await DistributionBackup.ActivateAsync(target,settings,true);
+        var restored=new IntakeStore(new(){Root=target,PolicyPath=Path.Combine(target,"restored-policy.json"),SigningKeyPath=settings.SigningKeyPath,AuthenticationMode=settings.AuthenticationMode});
+        Assert.Null(new DistributionTokens(restored).Authenticate(token));
+        using var check=restored.Open();using var sequence=check.CreateCommand();sequence.CommandText="SELECT value FROM sequence";Assert.Equal(1201L,sequence.ExecuteScalar());
+        Assert.False(File.Exists(Path.Combine(target,"restore-staged.json")));
+    }
     [Fact]
     public async Task ReadOnlyPlanAndVerificationDoNotInitializeServer()
     {
