@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "baselineSource": "b26e148",
+  "candidateSource": "1a7740f",
+  "platform": "Windows",
+  "profile": "large 80MiB; next version content 90% identical",
+  "warmups": 1,
+  "runs": 3,
+  "cacheCondition": "fresh app/state each iteration; OS cache not flushed; shared workstation background applications remain",
+  "api": [
+    {"authentication":"request-signature-v1","clients":1,"baselineMedianP95Ms":8.0863,"candidateMedianP95Ms":7.8584,"failures":0},
+    {"authentication":"request-signature-v1","clients":10,"baselineMedianP95Ms":11.8467,"candidateMedianP95Ms":11.8601,"failures":0},
+    {"authentication":"request-signature-v1","clients":30,"baselineMedianP95Ms":30.8510,"candidateMedianP95Ms":28.4642,"failures":0},
+    {"authentication":"HTTPS bearer","clients":1,"baselineMedianP95Ms":7.1223,"candidateMedianP95Ms":7.0335,"failures":0},
+    {"authentication":"HTTPS bearer","clients":10,"baselineMedianP95Ms":10.0273,"candidateMedianP95Ms":10.5785,"failures":0},
+    {"authentication":"HTTPS bearer","clients":30,"baselineMedianP95Ms":24.5450,"candidateMedianP95Ms":24.1667,"failures":0}
+  ],
+  "clientMedianWallMs": {
+    "request-signature-v1":{"baseline":{"install":914.39,"unchanged":644.86,"nextVersion":847.49,"repair":969.81},"candidate":{"install":910.93,"unchanged":642.05,"nextVersion":826.60,"repair":974.62}},
+    "HTTPS bearer":{"baseline":{"install":1094.75,"unchanged":725.01,"nextVersion":949.43,"repair":1136.35},"candidate":{"install":1097.77,"unchanged":724.17,"nextVersion":952.99,"repair":1135.54}}
+  },
+  "nextVersionContentNetworkBytes":8388608,
+  "initialContentNetworkBytes":83886080,
+  "contentReductionPercent":90,
+  "performanceAcceptance":"PERF-03 remains open: 10-client improvement not reproduced; HTTPS 10-client p95 worsened",
+  "linuxNewBaselineComparison":"not-run",
+  "sqliteBusyWaitMs":null,
+  "sqliteBusyErrorLines":0,
+  "resources":{"method":"psutil sampling, not native allocation/wait instrumentation","candidateHttpClientCpuSecondsMedianAcrossMeasuredScenarios":1.03125,"candidateHttpClientMaxSampledPeakRssBytes":66207744,"serverApiResourceMetrics":"not collected in this benchmark result; not interpreted as zero"},
+  "companySlaVerified":false
+}

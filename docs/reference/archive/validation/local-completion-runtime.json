@@ -1,0 +1,21 @@
+{
+  "schemaVersion":1,
+  "sourceHead":"1a7740f5c755d286eb925fa21e725e0ed0cd594f",
+  "productSourceHash":"67f441e18d16e0843e4f1050680f2cdc97b7d15254641703ce2016a1a0e58532",
+  "windowsTests":849,
+  "linuxTests":848,
+  "linuxSkipped":1,
+  "windowsPublished":true,
+  "linuxPublished":true,
+  "httpE2e":true,
+  "httpsE2e":"Windows TLS bearer benchmark and runtime broker passed; Linux current broker timeout; prior Linux TLS proof is historical",
+  "companyValidated":false,
+  "requestLimitsActualHttpRegression":"passed",
+  "restoreActivationFaultBoundaries":5,
+  "scheduledReadOnlyPublished":"Windows and WSL passed",
+  "onlineDeniedLaunchChecks":["current-ip-policy","missing-exact-release","expired-device-key"],
+  "onlineDeniedLaunchProtectedUnchanged":true,
+  "runningChildAcrossDeniedNewLaunch":"not-run",
+  "linuxBroker":"environment constraint: readiness and owned termination timeout",
+  "guiCohortComplete":false
+}

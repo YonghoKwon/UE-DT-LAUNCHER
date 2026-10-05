@@ -144,6 +144,7 @@ class AcceptanceTests(unittest.TestCase):
             proof['checks']={name:True for name in CHECKS['v1-install-lifetime']}
             for changed in ({},{'guiInstall':True},{'guiInstall':True,'runtimeEndReason':'requested'}):
                 with self.assertRaises(ValueError):record_case(root,fixture,'general','v1-install-lifetime','passed',dict(proof,**changed))
-            record_case(root,fixture,'general','v1-install-lifetime','passed',dict(proof,guiInstall=True,runtimeEndReason='requested',runtimeAttemptId='a'*32))
+            row=record_case(root,fixture,'general','v1-install-lifetime','passed',dict(proof,guiInstall=True,runtimeEndReason='requested',runtimeAttemptId='a'*32))
+            self.assertEqual('a'*32,row['runtimeAttemptId']);self.assertEqual('requested',row['runtimeEndReason']);self.assertIs(True,row['guiInstall'])
 
 if __name__=='__main__':unittest.main()

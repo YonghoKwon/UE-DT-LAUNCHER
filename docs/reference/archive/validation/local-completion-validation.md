@@ -1,5 +1,19 @@
 # 로컬 기능·운영·GUI 수용 마무리
 
+## 현재 새 GUI 수용과 미완료
+
+현재 후보1a7740f의 독립 root accept-mg-02/accept-md/accept-pg/accept-pd에서 Computer Use 직접 입력과1920×1080·RenderScaling1·글자1·고대비false를 대조했다. 네 조합 모두 GUI 최초 설치(3파일), 정확한v1 실행과 창 종료 후 자식 유지·requested 종료를 확인했다. 개발자 실행 확인 취소는 보호 파일 무변경이었다. MD/PG의 첫 수명 시도는 watchdog 종료여서 제외하고 같은 게시본의 새 실행 시도로 요청 종료를 확인했다.
+
+관리형 일반v2의 실제 수신 중 취소·즉시 재개·Range22380544·전체4파일/v1 보존·자동 실행0건·명시 실행을 확인했다. 동일 실행 시도의 생존 전후와 개발자 보조 창의 update/repair/rollback 차단, protected inventory 불변을 확인했다. v2 종료는 별도 watchdog 이력이며 v1 requested 수명 증거로 쓰지 않았다. 잘못된 버전의 release 요청/Running 손상 주입은 도구가 거부했다.
+
+관리형 일반의 손상 복구→정확한 작업 commit 후 Catalog503은 복구 완료·Check-only 상태 버튼과 지원 ID를 유지했고 백업 복원을 제안하지 않았다. 정상 상태의 보조 개발자 GUI repair로4파일 정상 백업20261005171835를 만들었다. 재손상/다운로드503 뒤 복원 확인 취소와 변경된 preview 거부는 보호 파일 불변이었다. 새 확인 후 정상 복원·전체 hash와 restore-file-transition witness를 확인했고 Catalog503 뒤 retry 버튼은 추가 복원 없이 조회했다. 이 관측은 rollback operation ID/Agent ACK 증거가 아니다.
+
+엄격한51개 시나리오 중8개만 전부 충족해 통과로 기록했다(MG5/12,MD1/13,PG1/12,PD1/14). 나머지43개는 부분 관측을 합쳐 통과 처리하지 않는다. 관리형 일반 복구/정상 백업의 일부 세부 시험 성공도 해당 시나리오 전체 조건(정상/미설치 안내 등)이 남아 따로 기록한다. USER02/UI02는75% 유지한다. 이전75ea591의18/51은 현재8/51과 합산하지 않는다.
+
+성능은 [정제 비교](local-completion-performance.json), 전체 검증은 [게시/회귀 요약](local-completion-runtime.json)에서 확인한다. HTTP10 p95 11.8467→11.8601ms, HTTPS10은10.0273→10.5785ms여서 PERF03 완료를 선언하지 않는다. 신규 Linux 기준선 비교는 미실행이다.
+
+화면 근거: [관리형 일반v1](local-completion-screens/managed-general-v1.jpg), [관리형 개발자v1](local-completion-screens/managed-developer-v1.jpg), [portable 일반v1](local-completion-screens/portable-general-v1.jpg), [portable 개발자v1](local-completion-screens/portable-developer-v1.jpg), [실행 보호](local-completion-screens/v2-protected.jpg), [복구 후 조회](local-completion-screens/repair-followup.jpg), [preview 거부](local-completion-screens/preview-rejected.jpg), [복원 후 조회](local-completion-screens/restore-followup.jpg). 원본 native JPEG를 유지했다. [현재4개 진행표](local-completion-progress.md)는 루트 정본과 현재 ledger에서 생성했다.
+
 ## 고정 게시본과 실제 실행
 
 제품 후보1a7740f, 입력 hash67f441e18d16e0843e4f1050680f2cdc97b7d15254641703ce2016a1a0e58532의 Windows/Linux General·Developer·Agent·server 게시가 경고/오류0으로 통과했다. Windows849개, WSL848개+Windows delete-sharing 전용1개 제외. 양 OS 게시 HTTP 서명·readiness·schedule·자격·관리형 최소 화면 설정/IPC 복원·온라인 IP/exact누락/만료 거부는 설치/runtime 변경0건으로 통과했다. 양 OS offline backup/통제 restore/retention도 통과했다. 새 실행에서 살아 있는 기존 자식을 유지하는 단절/폐기 전수는 아직 별도다.

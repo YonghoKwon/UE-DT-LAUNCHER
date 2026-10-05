@@ -1,7 +1,8 @@
 """Generate evidence-bounded progress from the four authoritative documents, never an average score."""
 import argparse,hashlib,json,re
 from pathlib import Path
-from acceptance_ledger import aggregate
+from acceptance_ledger import aggregate,summary
+from gui_fixture_evidence import verify_cohort
 from evidence_contract import atomic
 
 
@@ -31,23 +32,34 @@ def markdown(result):
            '| 구분 | 완료 | 부분 | 대기 | 열린 항목 | 전체 |','|---|---:|---:|---:|---:|---:|']
     for label,key in [('작업 전','before'),('현재','after')]:
         c=result[key];lines.append(f"| {label} | {c['complete']} | {c['partial']} | {c['waiting']} | {c['open']} | {c['total']} |")
-    p=result['automation'];lines+=['','| 검증 구분 | 현재 근거 | 회사 인수 |','|---|---|---|',
-        f"| Windows 자동화/게시 | 테스트 {p.get('windowsTests')} / 게시 {p.get('windowsPublished')} | 별도 |",
-        f"| Linux 자동화/게시 | 테스트 {p.get('linuxTests')} / 제외 {p.get('linuxSkipped')} / 게시 {p.get('linuxPublished')} | 실제 RHEL 별도 |",
-        f"| 인증 E2E | HTTP {p.get('httpE2e')} / HTTPS {p.get('httpsE2e')} | 회사 CA/프록시/계정 별도 |",'','| 현재 GUI 조합 | 통과 | 실패 | 미실행 | 진행 | 환경 제약 |','|---|---:|---:|---:|---:|---:|']
+    p=result['automation'];passed=sum(r['counts']['passed'] for r in result['gui']['combinations'])
+    lines+=['','| 분야 | 구현 | 자동화 | 게시 실행 | 실제 GUI | 회사 인수 |','|---|---|---|---|---|---|',
+        f"| 클라이언트 | 재시도·선택·commit 후 오류·정리 보완 | Windows {p.get('windowsTests')} / Linux {p.get('linuxTests')}+제외{p.get('linuxSkipped')} | 양 에디션 {p.get('windowsPublished')}/{p.get('linuxPublished')} | 현재 {passed}/51 | 미검증 |",
+        '| 서버 정리·복원 | schema2 비재귀 정리·실패 fence 유지 | 저장 경계/새 자료 보존 통과 | 양 OS backup/restore/retention | 해당 없음 | 계정·복구 훈련 별도 |',
+        f"| 인증·실행 경계 | 보호 유지·거부/슬롯 회귀 보강 | 요청 서명·Bearer·취소/만료 회귀 | HTTP {p.get('httpE2e')} / HTTPS {p.get('httpsE2e')} | 오류 전수 대기 | CA·프록시·계정 별도 |",
+        '| 성능 | 이번은 비교 측정, 추가 최적화 미채택 | 90% 바이트 재사용 유지 | Windows 1/10/30,10연결 개선 미달 | 해당 없음 | 실제 규모/SLA 별도 |',
+        '| 설치본·CI | 이번 묶음의 변경 대상 아님 | 이전 근거 보존 | 이번 실제 MSI/RPM 설치·원격CI 미실행 | 해당 없음 | 인증서·VM·회사 인수 별도 |',
+        '','| 현재 GUI 조합 | 통과 | 실패 | 미실행 | 진행 | 환경 제약 |','|---|---:|---:|---:|---:|---:|']
     for row in result['gui']['combinations']:
         c=row['counts'];lines.append('| '+row['mode']+' / '+row['profile']+' | '+' | '.join(str(c[k]) for k in ('passed','failed','not-run','running','blocked'))+' |')
     if not result['gui']['combinations']:lines.append('| 현재 게시본 근거 없음 | 0 | 0 | 미확인 | 0 | 0 |')
     lines+=['','| 항목 | 진행 | 남은 체크포인트 | 완료 조건 |','|---|---:|---:|---|']
     for row in result['items']:
-        if row['percent']<100:lines.append(f"| {row['id']} | {row['percent']}% | {row['remainingCheckpointPercent']}% | {row['remainingCondition']} |")
+        if row['percent']<100:
+            condition=re.sub(r'\]\((?!https?://|#)([^)]+)\)',r'](../../../../\1)',row['remainingCondition'])
+            lines.append(f"| {row['id']} | {row['percent']}% | {row['remainingCheckpointPercent']}% | {condition} |")
     return '\n'.join(lines)+'\n'
 
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--validation',required=True);parser.add_argument('--gui-summary',action='append',default=[]);parser.add_argument('--output',required=True)
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--validation',required=True);parser.add_argument('--gui-summary',action='append',default=[]);parser.add_argument('--gui-fixture',action='append',default=[],help='Fixture root:general|developer; reads verified current case records');parser.add_argument('--output',required=True)
     args=parser.parse_args();repo=Path(__file__).resolve().parents[1]
-    value=build(repo,[json.loads(Path(p).read_text(encoding='utf-8-sig')) for p in args.gui_summary],json.loads(Path(args.validation).read_text(encoding='utf-8-sig')))
+    summaries=[json.loads(Path(p).read_text(encoding='utf-8-sig')) for p in args.gui_summary]
+    for reference in args.gui_fixture:
+        directory,profile=reference.rsplit(':',1)
+        if profile not in ('general','developer'):raise ValueError('Invalid GUI profile')
+        root=Path(directory).resolve();summaries.append(summary(root,verify_cohort(root),profile))
+    value=build(repo,summaries,json.loads(Path(args.validation).read_text(encoding='utf-8-sig')))
     output=Path(args.output);atomic(output.with_suffix('.json'),value)
     # Derived Markdown is the generated report, not a fifth maintained source of truth.
     output.with_suffix('.md').write_text(markdown(value),encoding='utf-8')

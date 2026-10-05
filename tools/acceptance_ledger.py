@@ -116,6 +116,8 @@ def record_case(root,fixture,profile,name,status,proof=None):
         if proof.get('guiInstall') is False:raise ValueError('CLI installation cannot pass GUI installation')
         if name=='v1-install-lifetime' and (proof.get('guiInstall') is not True or proof.get('runtimeEndReason')!='requested' or not re.fullmatch('[a-f0-9]{32}',proof.get('runtimeAttemptId',''))):
             raise ValueError('Actual GUI installation and exact requested runtime completion are mandatory')
+        for field in ('guiInstall','runtimeEndReason','runtimeAttemptId'):
+            if field in proof:row[field]=proof[field]
     row['status']=status;record['complete']=all(c['status']=='passed' for c in record['cases'])
     atomic(inside(root,'control/acceptance-ledger.json'),record);return row
 
