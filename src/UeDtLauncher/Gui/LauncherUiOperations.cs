@@ -27,7 +27,9 @@ internal sealed record LauncherUiOperationContext(bool Managed, string ProjectId
 }
 
 internal sealed record LauncherUiOperationResult(LauncherConfig Config, ReleaseSelection? Selection,
-    ManagedProjectStatus Status, RuntimeObservation? Runtime,LauncherUiCompletion Completion=LauncherUiCompletion.Checked);
+    ManagedProjectStatus Status, RuntimeObservation? Runtime,LauncherUiCompletion Completion=LauncherUiCompletion.Checked,
+    LauncherUiPostCommitFailure? FollowUpFailure=null);
+internal sealed record LauncherUiPostCommitFailure(string Stage,Exception Error);
 internal enum LauncherUiCompletion{Checked,Completed,CommittedLaunchSkipped,CommittedRefreshRequired}
 internal enum LauncherTroubleshootAction { OfferInstall, Complete, Repair }
 internal enum LauncherRestoreDisposition { Applied,InspectionRequired,Unknown }
@@ -123,6 +125,8 @@ internal static class LauncherUiOperations
             {
                 try{_=await ManagedAppLauncher.LaunchAsync(config,token);}
                 catch(OperationCanceledException)when(committed){completed=LauncherUiCompletion.CommittedLaunchSkipped;}
+                catch(Exception error)when(committed)
+                {return CommittedFailure(config,response.ProjectStatus,"Launch",error);}
             }
             if(response.ProjectStatus is null && committed)
                 return new(config,config.SelectedRelease,new(true,config.SelectedRelease?.Version,null,false,0,0,false),null,LauncherUiCompletion.CommittedRefreshRequired);
@@ -137,8 +141,10 @@ internal static class LauncherUiOperations
             var registry=new OperationRegistry(Path.Combine(config.StateRootDir,"operations"));
             using var operation=registry.Begin(Guid.NewGuid().ToString("N"),RuntimeIdentities.Current(),config.SelectedRelease,token,repair?"repair":"update");
             LauncherEngine? running=null;
+            var completionStage="Inspection";
             using var engine=new LauncherEngine(config,value=>
             {
+                if(value.Stage is "Integration" or "Launch" or "Complete")completionStage=value.Stage;
                 if(running?.ManifestSha256 is { } digest)operation.Bind(config.SelectedRelease,digest);
                 if(value.Stage=="Download")operation.Phase("Downloading");else if(value.Stage=="Apply")operation.Phase("Applying");
                 progress(value);
@@ -147,6 +153,8 @@ internal static class LauncherUiOperations
             try{await engine.RunAsync(operation.Token);operation.Finish(true);}
             catch(OperationCanceledException)when(engine.InstallationCommitted){operation.Finish(true);}
             catch(OperationCanceledException){operation.Finish(false);throw new LauncherUiCancelledException(operation.Status);}
+            catch(Exception error)when(engine.InstallationCommitted)
+            {operation.Finish(true);return CommittedFailure(config,null,completionStage,error);}
             catch{operation.Finish(engine.InstallationCommitted,failed:true);throw;}
             LauncherManifest installed;
             try{installed=await JsonFiles.ReadAsync<LauncherManifest>(config.InstalledManifestPath);}
@@ -156,6 +164,10 @@ internal static class LauncherUiOperations
             context.Validate(result);return result;
         },token);
     }
+
+    internal static LauncherUiOperationResult CommittedFailure(LauncherConfig config,ManagedProjectStatus? status,string stage,Exception error)=>
+        new(config,config.SelectedRelease,status??new(true,config.SelectedRelease?.Version,null,false,0,0,false),null,
+            LauncherUiCompletion.CommittedRefreshRequired,new(stage,error));
 
     private static void BindManagedSelection(LauncherUiOperationContext context,LauncherConfig config,ManagedAgentResponse response)
     {

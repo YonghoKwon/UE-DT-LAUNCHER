@@ -43,7 +43,7 @@ public sealed partial class MainWindow
             BeginOperation(LauncherUiOperation.Update);StartCancellableUiOperation(cancellation);
             var result=await _uiBackend.ExecuteAsync(context,config,previous.Command=="repair",false,CreateUiProgress(),_fileLogger,cancellation.Token);
             _resumeOperation=null;
-            if(result.Completion==LauncherUiCompletion.CommittedRefreshRequired){CommittedUiRefreshRequired();return;}
+            if(result.Completion==LauncherUiCompletion.CommittedRefreshRequired){CommittedUiRefreshRequired(failure:result.FollowUpFailure);return;}
             if(ApplyUiResult(context,result)){_presentation.Complete("다운로드 재개 및 검증 완료");Build();}
         }
         catch(LauncherUiCancelledException cancelled){RecordCancelledOperation(cancelled.Operation);}
@@ -51,11 +51,13 @@ public sealed partial class MainWindow
         catch(Exception error){MarkError(error,"작업 재개 실패");}
         finally{FinishUiOperation();}
     }
-    private void CommittedUiRefreshRequired(string completedTitle="설치 완료")
+    private void CommittedUiRefreshRequired(string completedTitle="설치 완료",LauncherUiPostCommitFailure? failure=null)
     {
+        EndCancellableUiPhase();
         _readOnlyRecoveryFollowUp=true;
         _presentation.Retry=CurrentContext(LauncherUiOperation.Check);
-        MarkError(new AgentOperationException("status-refresh-required",Guid.NewGuid().ToString("N"),"설치는 완료됐습니다. 설치 상태를 다시 확인해 주세요."),completedTitle+" · 상태 재확인 필요",showDialog:false);
+        var detail=failure?.Stage switch{"Launch"=>"실행 상태 재확인 필요","Integration"=>"바로가기 상태 재확인 필요",_=>"상태 재확인 필요"};
+        MarkError(failure?.Error??new AgentOperationException("status-refresh-required",Guid.NewGuid().ToString("N"),"설치는 완료됐습니다. 설치 상태를 다시 확인해 주세요."),completedTitle+" · "+detail,showDialog:false);
     }
     private void ClearResumeAfterMutation(LauncherUiOperationContext context)
     {

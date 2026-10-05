@@ -1118,7 +1118,7 @@ public sealed partial class MainWindow : Window
             var config=await RunConfig(repair,launch);
             var result=await _uiBackend.ExecuteAsync(context,config,repair,launch,CreateUiProgress(),_fileLogger,operationCancellation.Token);
             _resumeOperation=null;
-            if(result.Completion==LauncherUiCompletion.CommittedRefreshRequired){CommittedUiRefreshRequired();return;}
+            if(result.Completion==LauncherUiCompletion.CommittedRefreshRequired){CommittedUiRefreshRequired(failure:result.FollowUpFailure);return;}
             _presentation.Complete(result.Completion==LauncherUiCompletion.CommittedLaunchSkipped?"설치 완료 · 프로그램 실행은 생략했습니다.":launch?"실행 준비 완료":repair?"파일 복구 완료":"업데이트 확인 완료");
             if(ApplyUiResult(context,result))Build();
         }
@@ -1175,7 +1175,7 @@ public sealed partial class MainWindow : Window
                 var repaired=await _uiBackend.ExecuteAsync(context,config,true,false,CreateUiProgress(),_fileLogger,cancellation.Token);
                 ValidateUiResult(context,repaired);
                 repairCommitted=true;ClearResumeAfterMutation(context);
-                if(repaired.Completion==LauncherUiCompletion.CommittedRefreshRequired || cancellation.IsCancellationRequested){CommittedUiRefreshRequired("파일 복구 완료");return;}
+                if(repaired.Completion==LauncherUiCompletion.CommittedRefreshRequired || cancellation.IsCancellationRequested){CommittedUiRefreshRequired("파일 복구 완료",repaired.FollowUpFailure);return;}
                 BeginReadOnlyFollowUp("파일 복구 완료");
                 _viewModel.RequireRuntimeQuiescent(repaired.Runtime);
                 checkedResult=await _uiBackend.CheckAsync(context,config,CreateUiProgress());
@@ -1386,7 +1386,7 @@ public sealed partial class MainWindow : Window
         try
         {
             var context=CaptureUiOperation();
-            _presentation.Retry=CurrentContext(backups?LauncherUiOperation.PruneBackups:LauncherUiOperation.ClearStaging);
+            BeginOperation(backups?LauncherUiOperation.PruneBackups:LauncherUiOperation.ClearStaging);
             if(context.Managed)throw new InvalidOperationException("관리형 정리는 업데이트 서비스의 별도 관리 기능이 필요합니다.");
             var config=await RunConfig(false,false);context.Pin(config);
             if(context.Selection is not null)VersionedReleasePaths.Bind(config,context.Selection);
@@ -1398,7 +1398,18 @@ public sealed partial class MainWindow : Window
                 AppendLog($"정리 결과: 삭제 {result.RemovedCount}개 / 실패 {result.FailedCount}개 / 남은 {result.RemainingCount}개",true);
                 MarkError(new AgentOperationException("maintenance-partial",Guid.NewGuid().ToString("N"),"사용 중인 파일과 권한을 확인한 뒤 정리를 다시 시도해 주세요."),backups?"일부 백업 정리 필요":"일부 임시 파일 정리 필요",showDialog:false);
             }
-            else SetStatus(backups?$"백업 정리 완료 · 삭제 {result.RemovedCount}개 · 남은 {result.RemainingCount}개 (보관 기준 {config.MaxBackupCount}개)":"임시 파일 정리 완료 · 이어받기 기록 보존");
+            else
+            {
+                var title=backups?$"백업 정리 완료 · 삭제 {result.RemovedCount}개 · 남은 {result.RemainingCount}개 (보관 기준 {config.MaxBackupCount}개)":"임시 파일 정리 완료 · 이어받기 기록 보존";
+                BeginReadOnlyFollowUp("정리 완료");
+                try
+                {
+                    var checkedResult=await _uiBackend.CheckAsync(context,config,CreateUiProgress());
+                    if(ApplyUiResult(context,checkedResult)){_presentation.Complete(title);_presentation.Retry=null;Build();}
+                }
+                catch(Exception error)
+                {_readOnlyRecoveryFollowUp=true;_presentation.Retry=CurrentContext(LauncherUiOperation.Check);MarkError(error,"정리 완료 · 상태 재확인 필요",showDialog:false);}
+            }
         }
         catch(Exception ex){MarkError(ex,"정리할 수 없습니다",showDialog:false);}
         finally{FinishUiOperation();}

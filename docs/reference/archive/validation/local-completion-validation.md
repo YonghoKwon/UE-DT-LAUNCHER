@@ -1,5 +1,11 @@
 # 로컬 기능·운영·GUI 수용 마무리
 
+## 설치 완료 이후 오류와 정리 결과
+
+GUI 내부 결과에 후속 단계/원래 오류를 전달한다. commit 뒤 Launch/Integration의 비취소 오류는 완료된 설치 기록으로 남고 Check-only 재시도로 연결된다. 취소/오래된 resume를 제거하고 원래 지원 ID를 보존하며 실행 상태를 추정하지 않는다. 정리 성공은 이전 오류/지원 정보를 지우고 설치 상태를 재조회한다. 조회 실패는 정리 완료 사실을 보존한다.
+
+Windows 관련69개와 정리 UI2개가 통과했다. 실제 portable backend가 HTTP manifest/파일을 받아 설치한 뒤 Launch/Integration callback에서 오류를 발생시킨2개는 설치 파일/Manifest와 Completed operation을 보존했다. 네 조합 실제 retry 버튼 회귀는 추가 변경/복원0건과 지원 ID 보존을 확인했다. 중간 General Release publish 및 게시 CLI build-info/최소 화면 설정 생성이 통과했다. 관리형 실제 launch와 최종 GUI 수용은 뒤의 고정 후보에서 확인한다.
+
 2026-10-06 / 기준 b26e148 / codex/local-completion-sprint. 기존75ea591 GUI18/51은 이력이며 새 제품 후보의 수용에 합산하지 않는다.
 
 ## 재시도·선택 갱신

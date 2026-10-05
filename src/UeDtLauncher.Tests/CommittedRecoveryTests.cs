@@ -15,6 +15,20 @@ namespace UeDtLauncher.Tests;
 public class CommittedRecoveryTests
 {
     [AvaloniaTheory][InlineData(false,false)][InlineData(false,true)][InlineData(true,false)][InlineData(true,true)]
+    public async Task CompletionFailureKeepsInstallFactAndOriginalSupportAndOnlyChecks(bool managed,bool developer)
+    {
+        using var f=new Fixture(managed,developer);f.Backend.AfterRepair="launch-failed";f.Window.Show();f.SetResume();
+        var method=typeof(MainWindow).GetMethod("RunAsync",BindingFlags.Instance|BindingFlags.NonPublic)!;
+        await (Task)method.Invoke(f.Window,new object?[]{true,false,null})!;
+        Assert.Equal("good",File.ReadAllText(f.Payload));Assert.Contains("설치 완료",f.Presentation.Title);
+        Assert.Equal("synthetic-launch",f.Presentation.SupportId);Assert.Equal(LauncherUiOperation.Check,f.Presentation.Retry?.Operation);
+        Assert.Null(Button(f.Window,"resume-operation"));Assert.Null(Button(f.Window,"cancel-operation"));
+        f.Backend.AfterRepair="success";f.Backend.NextCheck=new(TaskCreationOptions.RunContinuationsAsynchronously);
+        Button(f.Window,"retry-operation")!.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
+        await f.Backend.NextCheck.Task.WaitAsync(TimeSpan.FromSeconds(5));Dispatcher.UIThread.RunJobs();
+        Assert.Equal(1,f.Backend.Executions);Assert.Equal(0,f.Restores);
+    }
+    [AvaloniaTheory][InlineData(false,false)][InlineData(false,true)][InlineData(true,false)][InlineData(true,true)]
     public async Task CommittedRepairClosesMutationCancellationDuringDelayedReadOnlyCheck(bool managed,bool developer)
     {
         using var f=new Fixture(managed,developer);f.Window.Show();f.SetResume();
@@ -165,6 +179,7 @@ public class CommittedRecoveryTests
         public Task<LauncherUiOperationResult> ExecuteAsync(LauncherUiOperationContext c,LauncherConfig config,bool repair,bool launch,Action<LauncherProgress> progress,FileLogger? logger,CancellationToken token=default)
         {
             Assert.True(repair);Assert.False(launch);Executions++;File.WriteAllText(f.Payload,"good");
+            if(AfterRepair=="launch-failed")return Task.FromResult(f.Result(config,false,LauncherUiCompletion.CommittedRefreshRequired) with{FollowUpFailure=new("Launch",new AgentOperationException("launch-failed","synthetic-launch","synthetic launch failure"))});
             return Task.FromResult(f.Result(config,false,AfterRepair=="committed"?LauncherUiCompletion.CommittedRefreshRequired:LauncherUiCompletion.Completed));
         }
     }
