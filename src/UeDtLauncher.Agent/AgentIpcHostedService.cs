@@ -195,7 +195,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
             response = Error(request, "invalid-request", ex.Message, identity);
         }
 
-        response.AgentCapabilities = [ManagedAgentProtocol.RuntimeCapability, RollbackPreviewService.Capability, RuntimeDataPolicy.Capability, DoctorPresentation.Capability, OperationRegistry.Capability, ManagedOperationCoordinator.Capability];
+        response.AgentCapabilities = [ManagedAgentProtocol.RuntimeCapability, RollbackPreviewService.Capability, RuntimeDataPolicy.Capability, DoctorPresentation.Capability, OperationRegistry.Capability, ManagedOperationCoordinator.Capability,ManagedClientPresentation.Capability];
         await ManagedAgentFrameCodec.WriteAsync(stream, response, cancellationToken);
     }
 
@@ -380,7 +380,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     await LaunchPolicy.VerifyOnlineAsync(config, cancellationToken);
                     var hostPath = Path.Combine(Path.GetDirectoryName(Environment.ProcessPath!)!, OperatingSystem.IsWindows() ? "UeDtLauncher.exe" : "UeDtLauncher");
                     var ticket = RuntimeStore.Begin(config, peer!, hostPath);
-                    return new() { CorrelationId = request.CorrelationId, Success = true, RuntimeTicket = ticket, SelectedRelease = config.SelectedRelease };
+                    return new() { CorrelationId = request.CorrelationId, Success = true, RuntimeTicket = ticket, SelectedRelease = config.SelectedRelease,ClientPresentation=Presentation(config,true) };
                 case "launch-attach":
                 case "launch-abort":
                 case "launch-started":
@@ -430,6 +430,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                         var projectStatus = await ManagedProjectStatusInspector.InspectAsync(config, document.Manifest, cancellationToken);
                         var checkedResponse = Success(request, identity, "checked", $"Release {document.Manifest.Version}: missing {projectStatus.MissingFiles}, changed {projectStatus.ChangedFiles}. Metadata signature verified.", progress, projectStatus, config.SelectedRelease);
                         checkedResponse.Runtime = RuntimeStore.Observe(config);
+                        checkedResponse.ClientPresentation=Presentation(config,projectStatus.IsInstalled);
                         return checkedResponse;
                     }
                 case "update":
@@ -462,7 +463,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     var installed = await JsonFiles.ReadAsync<LauncherManifest>(config.InstalledManifestPath, cancellationToken);
                     var completedStatus = await ManagedProjectStatusInspector.InspectAsync(config, installed, cancellationToken);
                     var result = Success(request, identity, "completed", config.RepairMode ? "Repair completed." : "Update completed.", progress, completedStatus, config.SelectedRelease);
-                    result.Operation = operation.Status; result.InstallationCommitted=true; return result;
+                    result.Operation = operation.Status; result.InstallationCommitted=true;result.ClientPresentation=Presentation(config,true); return result;
                     }
                     catch (OperationCanceledException) when (operation.Token.IsCancellationRequested)
                     {
@@ -553,6 +554,11 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
         return config;
     }
 
+    private static ManagedClientPresentation? Presentation(LauncherConfig config,bool installed)
+    {
+        try{return ManagedClientPresentation.FromAgent(config,installed);}
+        catch(Exception error)when(error is IOException or ArgumentException or UnauthorizedAccessException or InvalidDataException){return null;}
+    }
     private static ManagedAgentResponse Success(
         ManagedAgentRequest request,
         string? identity,

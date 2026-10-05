@@ -16,6 +16,9 @@ public sealed class LauncherConfig
     public string? DistributionServerUrl { get; set; }
     [JsonIgnore] public string? VersionedInstallRoot { get; set; }
     [JsonIgnore] public ReleaseSelection? SelectedRelease { get; set; }
+    [JsonIgnore] public ManagedClientPresentation? ManagedPresentation { get; set; }
+    [JsonIgnore] public string? ManagedIntegrationWarning { get; set; }
+    [JsonIgnore] internal bool IsManagedClientContext { get; set; }
     [JsonIgnore] internal bool CatalogAuthenticated { get; set; }
     [JsonIgnore] internal DistributionCatalog? AuthenticatedCatalog { get; set; }
     [JsonIgnore] internal string? ExpectedResumeManifestSha256 { get; set; }

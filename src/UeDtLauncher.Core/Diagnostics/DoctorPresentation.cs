@@ -16,7 +16,7 @@ public sealed record DoctorTarget(string DeploymentMode, string? ProjectId, stri
         new ReleaseSelection(ProjectId ?? "", Environment, Channel, Platform,
             VersionPolicy == "exact" ? RequestedVersion ?? "" : "diagnostic").Validate();
         if (VersionPolicy == "latest" && RequestedVersion is not null) throw new ArgumentException("Latest diagnostics cannot request an exact version.");
-        if (string.IsNullOrWhiteSpace(config.DistributionServerUrl) && ProjectId != config.ProjectId && !config.Projects.Any(p => p.ProjectId == ProjectId))
+        if (!config.IsManagedClientContext && string.IsNullOrWhiteSpace(config.DistributionServerUrl) && ProjectId != config.ProjectId && !config.Projects.Any(p => p.ProjectId == ProjectId))
             throw new UnauthorizedAccessException("Diagnostic project is not declared in managed settings.");
         config.ProjectId = ProjectId; config.Environment = Environment; config.Channel = Channel;
         config.VersionPolicy = VersionPolicy; config.RequestedVersion = RequestedVersion; config.ClientProfile = ClientProfile;

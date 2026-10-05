@@ -39,10 +39,11 @@ public static class LauncherDoctor
         ReleaseSelection? selected=null;
         try
         {
-            config = await LauncherPaths.LoadResolvedAsync(configPath, cancellationToken, readOnly: true);
+            var display=await JsonFiles.ReadAsync<LauncherConfig>(configPath,cancellationToken);
+            config=display.IsManagedDeployment&&!agentContext?ManagedClientContext.Create(display):await LauncherPaths.LoadResolvedAsync(configPath,cancellationToken,readOnly:true);
             if (!string.IsNullOrWhiteSpace(config.Security.CredentialName)) DeviceCredentials.ValidateIdentifier(config.Security.CredentialName);
             target?.Apply(config);
-            LauncherConfigValidator.Validate(config);
+            if(!config.IsManagedClientContext)LauncherConfigValidator.Validate(config);
             checks.Add(new DoctorCheck("config", true, $"schemaVersion {config.SchemaVersion}"));
         }
         catch (Exception) when (!cancellationToken.IsCancellationRequested)
@@ -144,13 +145,14 @@ public static class DiagnosticsExporter
         CancellationToken cancellationToken = default,
         bool agentContext = false)
     {
-        var config = await LauncherPaths.LoadResolvedAsync(configPath, cancellationToken, readOnly: true);
+        var display=await JsonFiles.ReadAsync<LauncherConfig>(configPath,cancellationToken);
+        var config=display.IsManagedDeployment&&!agentContext?ManagedClientContext.Create(display):await LauncherPaths.LoadResolvedAsync(configPath,cancellationToken,readOnly:true);
         var doctor = await LauncherDoctor.RunAsync(configPath, online: false, cancellationToken, agentContext);
         var fullOutput = Path.GetFullPath(outputPath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullOutput)!);
         using var archive = ZipFile.Open(fullOutput, ZipArchiveMode.Create);
         AddText(archive, "doctor.json", DiagnosticRedactor.Redact(JsonSerializer.Serialize(doctor, JsonFiles.Options)));
-        AddText(archive, "config.sanitized.json", DiagnosticRedactor.Redact(await File.ReadAllTextAsync(Path.GetFullPath(configPath), cancellationToken)));
+        AddText(archive, "config.sanitized.json", DiagnosticRedactor.Redact(config.IsManagedClientContext?JsonSerializer.Serialize(config,JsonFiles.Options):await File.ReadAllTextAsync(Path.GetFullPath(configPath), cancellationToken)));
         // Client-side managed bundles include only display config and Agent diagnostics.
         // Protected state and logs may be exported by the Agent's administrator path.
         if (!config.IsManagedDeployment || agentContext)

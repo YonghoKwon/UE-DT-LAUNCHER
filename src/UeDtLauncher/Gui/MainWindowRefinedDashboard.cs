@@ -70,7 +70,7 @@ public sealed partial class MainWindow : Window
                 runtime.InstalledManifestPath, runtime.InstallStatePath, runtime.AppPidPath, LauncherPaths.UpdateLockPath(runtime))
             : LauncherPaths.For(_config, ConfigPath, _selectedProject.ProjectId, CurrentPlatform);
     private LauncherConfig? _selectedRuntimeConfig;
-    private bool UsesDistributionServer => !string.IsNullOrWhiteSpace(_config.DistributionServerUrl);
+    private bool UsesDistributionServer => _config.IsManagedDeployment || !string.IsNullOrWhiteSpace(_config.DistributionServerUrl);
 
     public MainWindow() : this(LauncherStartupOptions.Discover(Array.Empty<string>()))
     {
@@ -97,7 +97,7 @@ public sealed partial class MainWindow : Window
         _preferences = preferences ?? (startServices ? LauncherUiPreferences.Load() : new());
         InitializeComponent();
         if (model is null) LoadConfig(); else SelectProject();
-        if (startServices) { try { _fileLogger = new FileLogger(LauncherPaths.ResolveConfigRelative(ConfigPath, _config.LogDir)); } catch { _fileLogger = null; } }
+        if (startServices) { try { _fileLogger = new FileLogger(_config.IsManagedDeployment?ManagedClientContext.UserLogRoot(ConfigPath):LauncherPaths.ResolveConfigRelative(ConfigPath, _config.LogDir)); } catch { _fileLogger = null; } }
         Build();
         if (startServices && PlatformSettings is not null)
         {
@@ -1064,13 +1064,12 @@ public sealed partial class MainWindow : Window
 
     private async Task<LauncherConfig> RunConfig(bool repair, bool launch)
     {
-        var runtimePath = UsesDistributionServer && _config.IsManagedDeployment
-            ? Path.Combine(ManagedLauncherPathLayout.Current().ConfigRoot, "launcher.config.json") : ConfigPath;
-        var c = await _runtimeConfigLoader(runtimePath);
+        var runtimePath=ConfigPath;
+        var c = _config.IsManagedDeployment ? ManagedClientContext.Create(_config) : await _runtimeConfigLoader(runtimePath);
         c.ProjectId = _selectedProject.ProjectId; c.Environment = _config.Environment; c.Channel = _config.Channel; c.TargetPlatform = CurrentPlatform; c.VersionPolicy = _config.VersionPolicy; c.RequestedVersion = _config.RequestedVersion; c.RepairMode = repair; c.LaunchAfterUpdate = launch;
         c.ClientProfile = _viewModel.EffectiveProfile;
         c.SelfUpdate = null;
-        LauncherPaths.ResolveInPlace(c, runtimePath, UsesDistributionServer ? null : _selectedProject.InstallPath);
+        if(!c.IsManagedDeployment)LauncherPaths.ResolveInPlace(c, runtimePath, UsesDistributionServer ? null : _selectedProject.InstallPath);
         return c;
     }
 
@@ -1377,7 +1376,7 @@ public sealed partial class MainWindow : Window
         catch(Exception ex){MarkError(ex,"지원 로그 저장 실패");}
     }
 
-    private string StorageSummary() => $"캐시 {FormatBytes(DirSize(SelectedStatePaths.StagingDir))} / 백업 {FormatBytes(DirSize(SelectedStatePaths.BackupDir))}";
+    private string StorageSummary() => _config.IsManagedDeployment?"업데이트 서비스에서 관리":$"임시 파일 {FormatBytes(DirSize(SelectedStatePaths.StagingDir))} / 백업 {FormatBytes(DirSize(SelectedStatePaths.BackupDir))}";
     private static long DirSize(string path) { try { return Directory.Exists(path) ? Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories).Sum(f => new FileInfo(f).Length) : 0; } catch { return 0; } }
     private static string FormatBytes(long b) { string[] u = { "B", "KB", "MB", "GB", "TB" }; double v = b; var i = 0; while (v >= 1024 && i < u.Length - 1) { v /= 1024; i++; } return $"{v:0.##} {u[i]}"; }
     private string ResolvePath(string path) => Path.IsPathRooted(path) ? path : Path.Combine(BaseDir, path);

@@ -103,6 +103,7 @@ public sealed class ManagedAgentResponse
     public RuntimeObservation? Runtime { get; set; }
     public OperationStatus? Operation { get; set; }
     public bool? InstallationCommitted { get; set; }
+    public ManagedClientPresentation? ClientPresentation { get; set; }
 }
 
 public sealed record ManagedAssetChunk(long Offset, long TotalBytes, string Sha256, string Extension, byte[] Data);
@@ -494,15 +495,10 @@ public sealed class ManagedAgentClient(string? endpoint = null)
 public static class ManagedAppLauncher
 {
     public static async Task<Process> LaunchAsync(LauncherConfig config, CancellationToken cancellationToken = default)
+        => await LaunchAsync(config,cancellationToken,RuntimeLauncher.LaunchAsync);
+    internal static Task<Process> LaunchAsync(LauncherConfig config,CancellationToken cancellationToken,Func<LauncherConfig,CancellationToken,Task<Process>> supervisedLaunch)
     {
-        if (!File.Exists(config.InstalledManifestPath))
-            throw new FileNotFoundException("Installed manifest was not found.", config.InstalledManifestPath);
-        var manifest = await JsonFiles.ReadAsync<LauncherManifest>(config.InstalledManifestPath, cancellationToken);
-        LauncherEngine.ValidateManifest(manifest, config);
-        var entryPoint = SafePath.ResolveInsideChecked(config.InstallDir, manifest.EntryPoint);
-        if (!File.Exists(entryPoint)) throw new FileNotFoundException("Managed application entry point was not found.", entryPoint);
-        if (config.WindowsIntegration.CreateDesktopShortcut || config.WindowsIntegration.CreateStartMenuShortcut || config.WindowsIntegration.RegisterAppEntry)
-            WindowsIntegration.Apply(config, Path.Combine(ManagedLauncherPathLayout.Current().InstallRoot, OperatingSystem.IsWindows() ? "UeDtLauncher.exe" : "UeDtLauncher"));
-        return await RuntimeLauncher.LaunchAsync(config, cancellationToken);
+        if(!config.IsManagedDeployment)throw new InvalidDataException("Managed launch requires a managed client context.");
+        return supervisedLaunch(config,cancellationToken);
     }
 }

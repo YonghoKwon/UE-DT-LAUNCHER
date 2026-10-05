@@ -144,8 +144,12 @@ internal static class LauncherUiOperations
 
     private static void BindManagedSelection(LauncherUiOperationContext context,LauncherConfig config,ManagedAgentResponse response)
     {
-        if(context.Selection is null)return;
-        if(response.SelectedRelease!=context.Selection)throw new InvalidDataException("업데이트 서비스가 다른 배포를 선택했습니다.");
-        VersionedReleasePaths.Bind(config,context.Selection);
+        if(context.Selection is not null)
+        {
+            if(response.SelectedRelease!=context.Selection)throw new InvalidDataException("업데이트 서비스가 다른 배포를 선택했습니다.");
+            ManagedClientContext.Bind(config,context.Selection);
+        }
+        response.ClientPresentation?.Validate(config.SelectedRelease);
+        config.ManagedPresentation=response.ClientPresentation;
     }
 }

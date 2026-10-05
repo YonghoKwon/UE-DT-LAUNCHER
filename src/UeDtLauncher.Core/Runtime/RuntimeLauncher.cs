@@ -27,6 +27,8 @@ public static class RuntimeLauncher
             if (!response.Success || response.RuntimeTicket is null) throw new RuntimeBlockedException(response.Runtime ?? new(RuntimeState.Unknown, response.Status, response.Message));
             ticket = response.RuntimeTicket;
             PinManagedSelection(config, response);
+            response.ClientPresentation?.Validate(config.SelectedRelease,ticket.InstallationId);
+            config.ManagedPresentation=response.ClientPresentation;
             var installedHost = Path.Combine(ManagedLauncherPathLayout.Current().InstallRoot, OperatingSystem.IsWindows() ? "UeDtLauncher.exe" : "UeDtLauncher");
             if (!SafePath.FileSystemComparer.Equals(ticket.HostExecutable, Path.GetFullPath(installedHost))) throw new InvalidDataException("Runtime host must use the installed launcher beside the Agent.");
         }
@@ -36,7 +38,23 @@ public static class RuntimeLauncher
             Boundary.Value?.Invoke("authorized");cancellationToken.ThrowIfCancellationRequested();
             ticket = RuntimeStore.Begin(config, RuntimeIdentities.Current(), HostExecutable());
         }
-        try{return await StartHostAsync(new RuntimeHostSession(config, ticket, config.IsManagedDeployment ? ManagedAgentProtocol.ResolveEndpoint() : null, config.SelectedRelease), cancellationToken);}
+        try
+        {
+            var sessionConfig=config.IsManagedDeployment?ManagedClientContext.Create(config):config;
+            sessionConfig.SelectedRelease=config.SelectedRelease;
+            var process=await StartHostAsync(new RuntimeHostSession(sessionConfig, ticket, config.IsManagedDeployment ? ManagedAgentProtocol.ResolveEndpoint() : null, config.SelectedRelease), cancellationToken);
+            if(config.IsManagedDeployment)
+            {
+                if(config.ManagedPresentation is not { } presentation)config.ManagedIntegrationWarning="바로가기와 설치 폴더 정보를 확인하려면 업데이트 서비스를 갱신해 주세요.";
+                else
+                {
+                    try{WindowsIntegration.ApplyManaged(presentation,ticket.HostExecutable);}
+                    catch(Exception e)when(e is IOException or UnauthorizedAccessException or ArgumentException or System.Runtime.InteropServices.COMException or InvalidDataException)
+                    {config.ManagedIntegrationWarning="프로그램은 실행됐습니다. 바로가기 생성 상태를 관리자에게 문의해 주세요.";}
+                }
+            }
+            return process;
+        }
         catch(OperationCanceledException)
         {
             if(config.IsManagedDeployment)(await new ManagedAgentClient().SendRuntimeAsync("launch-abort",config,ticket,cancellationToken:CancellationToken.None)).ThrowIfFailed();
@@ -57,7 +75,8 @@ public static class RuntimeLauncher
         if (config.SelectedRelease is not null && config.SelectedRelease != selection) throw new InvalidDataException("Runtime release selection mismatch.");
         if (config.ProjectId != selection.ProjectId || config.Environment != selection.Environment ||
             config.Channel != selection.Channel || config.TargetPlatform != selection.Platform) throw new InvalidDataException("Runtime release track mismatch.");
-        VersionedReleasePaths.Bind(config, selection);
+        if(config.IsManagedDeployment)ManagedClientContext.Bind(config,selection);
+        else VersionedReleasePaths.Bind(config, selection);
         config.VersionPolicy = "exact"; config.RequestedVersion = selection.Version;
     }
 

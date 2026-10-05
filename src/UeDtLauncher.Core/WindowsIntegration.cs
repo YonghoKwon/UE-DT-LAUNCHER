@@ -7,6 +7,35 @@ namespace UeDtLauncher;
 
 public static class WindowsIntegration
 {
+    public static void ApplyManaged(ManagedClientPresentation presentation,string launcherTargetPath)
+    {
+        presentation.Validate();
+        if(!OperatingSystem.IsWindows() || !(presentation.Shortcuts.Desktop||presentation.Shortcuts.StartMenu||presentation.Shortcuts.Registration))return;
+        var root=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"UE-DT Launcher","shortcuts",presentation.InstallationId);
+        var profile=CreateManagedLaunchProfile(presentation,root);
+        var arguments="run --config "+NativeProcessFamily.QuoteWindows(profile);
+        var options=presentation.Shortcuts;
+        var name=options.Name+" - "+presentation.Selection!.Version;
+        var icon=options.IconRelativePath is not null&&presentation.InstallDirectory is not null?SafePath.ResolveInsideChecked(presentation.InstallDirectory,options.IconRelativePath):null;
+        if(options.Desktop)CreateLauncherShortcut(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),name+".lnk"),launcherTargetPath,arguments,icon);
+        if(options.StartMenu)CreateLauncherShortcut(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu),"Programs",options.Publisher,name+".lnk"),launcherTargetPath,arguments,icon);
+        if(options.Registration)File.WriteAllText(SafePath.ResolveInsideChecked(root,"registration.txt"),$"AppName={options.Name}{System.Environment.NewLine}Version={presentation.Selection.Version}{System.Environment.NewLine}");
+    }
+    internal static string CreateManagedLaunchProfile(ManagedClientPresentation presentation,string root)
+    {
+        presentation.Validate();
+        var release=presentation.Selection??throw new InvalidDataException("An exact release is required for managed shortcuts.");
+        var value=new {schemaVersion=3,deploymentMode="managed-agent",manifestUrl="",projectId=release.ProjectId,environment=release.Environment,channel=release.Channel,targetPlatform=release.Platform,versionPolicy="exact",requestedVersion=release.Version};
+        var expected=JsonSerializer.Serialize(value,JsonFiles.Options);
+        Directory.CreateDirectory(root);
+        var path=SafePath.ResolveInsideChecked(root,release.Version+".client.json");
+        if(File.Exists(path))
+        {
+            if(File.ReadAllText(path)!=expected)throw new InvalidDataException("Existing shortcut profile differs; it was preserved.");
+        }
+        else File.WriteAllText(path,expected);
+        return path;
+    }
     public static void Apply(LauncherConfig config, string launcherTargetPath, Action<string, string, double?>? log = null)
     {
         if (!OperatingSystem.IsWindows())

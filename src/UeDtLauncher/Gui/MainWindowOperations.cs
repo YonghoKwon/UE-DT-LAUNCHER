@@ -112,7 +112,7 @@ public sealed partial class MainWindow
         if(!_viewModel.ApplyRuntimeObservation(result.Runtime))
         {
             if(result.Runtime?.State==RuntimeState.Running)
-            {_presentation.Retry=null;_presentation.Complete("프로그램 실행 중");Build();}
+            {_presentation.Retry=null;if(result.Config.ManagedIntegrationWarning is { } warning){_installDetail+=" "+warning;AppendLog(warning,true);}_presentation.Complete("프로그램 실행 중");Build();}
             else MarkError(new RuntimeBlockedException(LauncherDashboardViewModel.RequireRuntimeObservation(result.Runtime)),"실행 상태 확인",showDialog:false);
             return false;
         }

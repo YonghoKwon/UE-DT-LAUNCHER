@@ -207,14 +207,15 @@ public static class Program
         var action = args.FirstOrDefault() ?? "inspect";
         if (action is not ("inspect" or "recover")) throw new ArgumentException("runtime supports inspect or recover.");
         var configPath = Required(args, "--config");
-        var config = await JsonFiles.ReadAsync<LauncherConfig>(configPath);
-        LauncherPaths.ResolveInPlace(config, configPath);
-        LauncherConfigValidator.Validate(config);
-        if (!string.IsNullOrWhiteSpace(config.DistributionServerUrl))
+        var display = await JsonFiles.ReadAsync<LauncherConfig>(configPath);
+        var config=display.IsManagedDeployment?ManagedClientContext.Create(display):display;
+        if(!config.IsManagedDeployment){LauncherPaths.ResolveInPlace(config,configPath);LauncherConfigValidator.Validate(config);}
+        if (config.IsManagedDeployment || !string.IsNullOrWhiteSpace(config.DistributionServerUrl))
         {
             var version = Get(args, "--version") ?? (config.VersionPolicy == "exact" ? config.RequestedVersion : null)
                 ?? throw new ArgumentException("Runtime inspection/recovery requires an exact --version.");
-            VersionedReleasePaths.Bind(config, new(config.ProjectId!, config.Environment, config.Channel, config.TargetPlatform, version));
+            var selection=new ReleaseSelection(config.ProjectId!, config.Environment, config.Channel, config.TargetPlatform, version);
+            if(config.IsManagedDeployment)ManagedClientContext.Bind(config,selection);else VersionedReleasePaths.Bind(config,selection);
         }
         var confirm = Has(args, "--confirm-stopped");
         var serviceVersion = Has(args, "--service-selection") ? Get(args, "--version") ?? config.SelectedRelease?.Version ?? config.RequestedVersion
@@ -251,7 +252,8 @@ public static class Program
         var noLaunch = Has(args, "--no-launch");
         using var cancel = new ConsoleCancellation();
 
-        var config = await LauncherPaths.LoadResolvedAsync(configPath, cancellationToken: cancel.Token);
+        var display = await JsonFiles.ReadAsync<LauncherConfig>(configPath,cancel.Token);
+        var config = display.IsManagedDeployment?ManagedClientContext.Create(display):await LauncherPaths.LoadResolvedAsync(configPath, cancellationToken: cancel.Token);
         var portableOperations = new OperationRegistry(Path.Combine(config.StateRootDir, "operations"));
         if (Get(args, "--resume-id") is { } resumeId)
         {
@@ -269,13 +271,13 @@ public static class Program
         if (config.IsManagedDeployment)
         {
             ReleaseSelection? selection = null;
-            if (!string.IsNullOrWhiteSpace(config.DistributionServerUrl))
+            if (string.IsNullOrWhiteSpace(display.ManifestUrl) || !string.IsNullOrWhiteSpace(display.DistributionServerUrl) || !string.IsNullOrWhiteSpace(display.CatalogUrl) || display.VersionPolicy=="exact")
             {
                 var catalogResponse = await new ManagedAgentClient().SendStreamingAsync("catalog", config.ProjectId, _ => { });
                 if (!catalogResponse.Success || catalogResponse.Catalog is null) throw new InvalidOperationException("업데이트 서비스에서 배포 목록을 가져오지 못했습니다.");
                 var release = CatalogResolver.SelectRelease(catalogResponse.Catalog, config);
                 selection = new ReleaseSelection(config.ProjectId!, release.Environment, release.Channel, release.Platform, release.Version);
-                VersionedReleasePaths.Bind(config, selection);
+                ManagedClientContext.Bind(config,selection);
             }
             var operationId = Get(args, "--operation-id") ?? Guid.NewGuid().ToString("N");
             Console.WriteLine("Operation ID: " + operationId);
@@ -324,7 +326,8 @@ public static class Program
         var id = Required(args, "--id");
         if (Get(args, "--config") is { } path)
         {
-            var config = await LauncherPaths.LoadResolvedAsync(path, readOnly: true);
+            var display=await JsonFiles.ReadAsync<LauncherConfig>(path);
+            var config=display.IsManagedDeployment?ManagedClientContext.Create(display):await LauncherPaths.LoadResolvedAsync(path,readOnly:true);
             if (!config.IsManagedDeployment)
             {
                 var registry = new OperationRegistry(Path.Combine(config.StateRootDir, "operations"));

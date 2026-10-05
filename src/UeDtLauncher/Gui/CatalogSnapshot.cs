@@ -32,13 +32,13 @@ public static class CatalogSnapshotService
 {
     public static async Task<CatalogSnapshot> LoadAsync(LauncherConfig config, string currentPlatform, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(config.CatalogUrl))
+        if (!config.IsManagedDeployment && string.IsNullOrWhiteSpace(config.CatalogUrl))
         {
             return new CatalogSnapshot { Status = "직접 manifest 모드" };
         }
 
         DistributionCatalog catalog;
-        if (config.IsManagedDeployment && !string.IsNullOrWhiteSpace(config.DistributionServerUrl))
+        if (config.IsManagedDeployment)
         {
             var response = await new ManagedAgentClient().SendStreamingAsync("catalog", null, _ => { }, cancellationToken: cancellationToken);
             response.ThrowIfFailed();

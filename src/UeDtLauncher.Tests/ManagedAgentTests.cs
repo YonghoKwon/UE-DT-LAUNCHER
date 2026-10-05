@@ -187,7 +187,7 @@ public class ManagedAgentTests
     }
 
     [Fact]
-    public async Task ManagedLaunch_RequiresInstalledManifestBeforeStartingAnything()
+    public async Task ManagedLaunch_DelegatesToSupervisionWithoutReadingProtectedManifest()
     {
         using var temp = new TempDirectory();
         var config = new LauncherConfig
@@ -197,7 +197,9 @@ public class ManagedAgentTests
             InstalledManifestPath = Path.Combine(temp.Path, "state", "installed-manifest.json")
         };
         Assert.True(config.IsManagedDeployment);
-        await Assert.ThrowsAsync<FileNotFoundException>(() => ManagedAppLauncher.LaunchAsync(config));
+        var requested=false;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => ManagedAppLauncher.LaunchAsync(config,default,(_,_)=>{requested=true;throw new InvalidOperationException("supervised-boundary");}));
+        Assert.True(requested);Assert.False(Directory.Exists(Path.Combine(temp.Path,"state")));
     }
 
     private sealed class TempDirectory : IDisposable

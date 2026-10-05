@@ -136,7 +136,9 @@ public class CommittedRecoveryTests
         }
         public LauncherUiOperationResult Result(LauncherConfig config,bool damaged,LauncherUiCompletion completion=LauncherUiCompletion.Completed)
         {
-            Context.Pin(config);VersionedReleasePaths.Bind(config,Selection);
+            Context.Pin(config);
+            if(config.IsManagedDeployment)ManagedClientContext.Bind(config,Selection);
+            else VersionedReleasePaths.Bind(config,Selection);
             return new(config,Selection,new(true,Selection.Version,Selection.Version,damaged,0,damaged?1:0,true),new(RuntimeState.Quiescent,"stopped",""),completion);
         }
         public void SetResume()=>Set(Window,"_resumeOperation",new OperationStatus(1,Guid.NewGuid().ToString("N"),"owner","session",Selection,"Cancelled",true,DateTimeOffset.UtcNow.ToString("O"),new string('a',64)));
