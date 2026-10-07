@@ -10,6 +10,8 @@ PR #6은 main 이후 누적 기능을 회사 파일럿 검토 대상으로 통�
 
 후속 원격 Ubuntu CI(37558615249)는 모든 단계를 통과했다. 같은 실행의 Windows broker는 기대한 preview 거부 전에 runtime-record-invalid를 반환했다. 수동 Python 경로 hash/JSON으로 상태를 추측하는 fixture 준비를 제거하고, 아직 payload를 실행하지 않은 소유한 fixture에만 제품 CLI runtime recover를 사용해 정확한 native 설치 ID/수동 정지 확인 기록을 생성한다. 이는 제품 검사를 끄거나 실제 회사 앱의 종료를 추정하는 경로가 아니다. CI와 같은 Agent publish 형식의 로컬 broker 재시험은 통과했고 원격 후속 결과는 별도 checks로 확인한다.
 
+1b40ae6의 원격 Ubuntu는 전수 통과했고 Windows는 native broker/저장 경계/서비스/runtime-data 실제 시험을 모두 통과한 뒤 마지막 cohort 단위 시험의 정규화 경로 대조에서 실패했다. 실제 준비 코드처럼 단위 시험의 TEMP/publication 입력을 resolve하여 alias 경로를 정규화한다. cohort/hash/변조 거부 조건을 변경하지 않으며 실제 UE 실행을 이 단위 시험으로 대신하지 않는다.
+
 ## 현재 새 GUI 수용과 미완료
 
 현재 후보1a7740f의 독립 root accept-mg-02/accept-md/accept-pg/accept-pd에서 Computer Use 직접 입력과1920×1080·RenderScaling1·글자1·고대비false를 대조했다. 네 조합 모두 GUI 최초 설치(3파일), 정확한v1 실행과 창 종료 후 자식 유지·requested 종료를 확인했다. 개발자 실행 확인 취소는 보호 파일 무변경이었다. MD/PG의 첫 수명 시도는 watchdog 종료여서 제외하고 같은 게시본의 새 실행 시도로 요청 종료를 확인했다.
