@@ -10,6 +10,13 @@ import hashlib
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_error_classification_keeps_native_platform_and_rejects_other_errors(self):
+        from evidence_contract import _retryable_replace_error
+        from types import SimpleNamespace
+        import os
+        for code in (5,32,33):self.assertEqual(os.name=='nt',_retryable_replace_error(SimpleNamespace(winerror=code)))
+        self.assertFalse(_retryable_replace_error(SimpleNamespace(winerror=2)))
+        self.assertFalse(_retryable_replace_error(PermissionError('native failure without a Windows error code')))
     def test_atomic_windows_replace_has_bounded_retry_without_nonatomic_fallback(self):
         from evidence_contract import atomic
         import os
@@ -20,11 +27,12 @@ class EvidenceTests(unittest.TestCase):
                 if len(calls)<3:
                     error=PermissionError('owned reader');error.winerror=5;raise error
                 return real(source,target)
-            with patch('evidence_contract.os.name','nt'),patch('evidence_contract.os.replace',side_effect=transient),patch('evidence_contract.time.sleep'):
+            # Emulate only the error classifier, not os.name (pathlib must retain host semantics).
+            with patch('evidence_contract._retryable_replace_error',return_value=True),patch('evidence_contract.os.replace',side_effect=transient),patch('evidence_contract.time.sleep'):
                 atomic(path,{'new':True})
             self.assertEqual(3,len(calls));self.assertTrue(json.loads(path.read_text())['new'])
             before=path.read_bytes();error=PermissionError('persistent denial');error.winerror=5
-            with patch('evidence_contract.os.name','nt'),patch('evidence_contract.os.replace',side_effect=error) as replace,patch('evidence_contract.time.sleep'):
+            with patch('evidence_contract._retryable_replace_error',return_value=True),patch('evidence_contract.os.replace',side_effect=error) as replace,patch('evidence_contract.time.sleep'):
                 with self.assertRaises(PermissionError):atomic(path,{'mustNotAppear':True})
                 self.assertEqual(5,replace.call_count)
             self.assertEqual(before,path.read_bytes());self.assertEqual([path],list(Path(root).iterdir()))

@@ -1,5 +1,11 @@
 # 로컬 기능·운영·GUI 수용 마무리
 
+## 2026-10-07 PR 통합 사전 검사
+
+PR #6은 main 이후 누적 기능을 회사 파일럿 검토 대상으로 통합한다. 22c671f의 Windows849개/동일 제품 소스 WSL848개+Windows 전용1개 제외를 재검증했고 solution/Developer Release 경고·오류0, 새 snapshot 게시와 Windows CLI/console Agent/server 실제 HTTP/준비도/자격/조회형 schedule/관리형 표시 설정/IPC 복원/온라인 실행 거부가 통과했다. 현재 NuGet 소스의 transitive 취약 패키지 조회는 보고된 취약 패키지0이었다. 이는 회사/GUI 전수 수용이 아니다.
+
+최초 원격 Ubuntu CI(37557130492)는 evidence 도구의 Windows 오류 재현 테스트가 전역 os.name을 바꾸어 pathlib의 WindowsPath까지 선택하는 문제로 실패했다. 제품 소스를 변경하지 않고 오류 분류 함수만 대체하는 시험 경계로 수정했다. 실제 플랫폼별 오류 분류·제한 재시도/영구 실패의 원본 보존을 Windows/WSL에서 확인한다. 원격 재시험 결과는 PR checks를 기준으로 확인하며 이 기록만으로 통과로 보충하지 않는다. 배포 서버 원본이나 서비스 계정/회사 OS는 변경하지 않았다.
+
 ## 현재 새 GUI 수용과 미완료
 
 현재 후보1a7740f의 독립 root accept-mg-02/accept-md/accept-pg/accept-pd에서 Computer Use 직접 입력과1920×1080·RenderScaling1·글자1·고대비false를 대조했다. 네 조합 모두 GUI 최초 설치(3파일), 정확한v1 실행과 창 종료 후 자식 유지·requested 종료를 확인했다. 개발자 실행 확인 취소는 보호 파일 무변경이었다. MD/PG의 첫 수명 시도는 watchdog 종료여서 제외하고 같은 게시본의 새 실행 시도로 요청 종료를 확인했다.
