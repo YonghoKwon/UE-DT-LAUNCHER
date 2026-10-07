@@ -1,0 +1,47 @@
+{
+  "date": "2026-10-03",
+  "base": "71d8e74",
+  "source": "d665d67",
+  "branch": "codex/launcher-readiness-ux",
+  "windowsTests": { "passed": 587, "failed": 0, "skipped": 0 },
+  "wslTests": { "passed": 587, "failed": 0, "skipped": 0 },
+  "pythonFixtureContracts": { "passed": 13 },
+  "releaseBuild": { "warnings": 0, "errors": 0 },
+  "latestWindowsBinaries": {
+    "launcher": "eaff390dc6ec75aea18dfd2c0a19501b99f1208909b856e43da06fe7ce87c0ac",
+    "agent": "b342f15b688a976d2c0e466250883fbed9647d74ab01ecab112a475d94db3aa9",
+    "server": "2f31d6715a9892e27b47ca87329ff521c73b5b81481f0a45252e0cf8c535a5f2"
+  },
+  "publishedProofs": {
+    "windowsHttpRequestSignature": "passed",
+    "wslHttpRequestSignature": "passed",
+    "wslHttpsBearerNginx": "passed-small-synthetic-fixture",
+    "offlineManagedAndPortableInventoryUnchanged": "passed",
+    "selectedTrackPromotionExactAndMissingProject": "passed",
+    "revokedDeviceKeyRejected": "passed",
+    "legacyAgentUpgradeRequiredWithoutProtectedChanges": "passed",
+    "sanitizedSupportZipAndManagedStateExclusion": "passed"
+  },
+  "guiHistory": {
+    "final": {
+      "launcherSha256": "3d453707c30d8ce933302b06a6b43d854d60f5689cd444e785d9ba9e1faa1263",
+      "modes": ["managed", "portable"],
+      "profiles": ["general", "developer"],
+      "display": { "width": 1920, "height": 1080, "renderScaling": 1, "textScale": 1, "highContrast": false },
+      "actor": "agent-computer-use",
+      "installationUpdateLifetimeRecoveryNormalBackupCancelRestorePreviewRejection": "passed-see-markdown-case-table",
+      "queryRetryAndConfigurationCorrectionWithoutInstallationOrLaunch": "passed",
+      "developerExactV2ConfirmationCancelAndAccept": "passed",
+      "normalTroubleshootingWithoutMutationOrLaunch": "passed"
+    },
+    "final02": {
+      "bothGeneralModes403CauseActionSupportId": "passed",
+      "fullAcceptance": "not-complete",
+      "pause": "user-requested-mouse-and-gui-verification-pause"
+    }
+  },
+  "progress": { "USER-02": 75, "UI-02": 75, "UI-03": 75 },
+  "companyApproval": false,
+  "actualUnrealDataAcceptance": false,
+  "otherResolutionDpiNarratorVoice": "not-tested-in-this-work"
+}

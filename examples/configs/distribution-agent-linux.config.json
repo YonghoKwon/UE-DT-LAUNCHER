@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 3,
+  "deploymentMode": "managed-agent",
+  "distributionServerUrl": "http://10.20.30.40",
+  "projectId": "ue-dt-simulator",
+  "clientProfile": "developer",
+  "environment": "prod",
+  "channel": "stable",
+  "versionPolicy": "latest",
+  "targetPlatform": "linux-x64",
+  "installDir": "/var/lib/ue-dt-launcher/apps",
+  "stateRootDir": "/var/lib/ue-dt-launcher/state",
+  "logDir": "/var/log/ue-dt-launcher",
+  "requireSignedManifests": true,
+  "security": {
+    "authenticationMode": "request-signature-v1",
+    "requireHttps": false,
+    "credentialName": "ue-dt-device",
+    "allowedDownloadHosts": ["10.20.30.40"],
+    "trustedSigningKeys": [{"keyId": "release-1", "publicKeyPath": "release-public.pem"}]
+  }
+}

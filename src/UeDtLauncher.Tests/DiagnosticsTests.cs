@@ -6,6 +6,18 @@ namespace UeDtLauncher.Tests;
 public class DiagnosticsTests
 {
     [Fact]
+    public void RequestProofsAndPrivateKeyJsonAreRedacted()
+    {
+        var input = "Signature: secret-proof\nSignature-Input: secret-input\nX-UE-DT-Challenge: secret-challenge\n" +
+            "{\"privateKeyPem\":\"secret-private\",\"challenge\":\"secret-json-challenge\",\"signature\":\"secret-json-proof\"}";
+        var redacted = DiagnosticRedactor.Redact(input);
+        Assert.DoesNotContain("secret-", redacted);
+        Assert.Contains("<redacted>", redacted);
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var serialized = System.Text.Json.JsonSerializer.Serialize(new { path = profile + "/support" });
+        Assert.DoesNotContain(System.Text.Json.JsonSerializer.Serialize(profile)[1..^1], DiagnosticRedactor.Redact(serialized));
+    }
+    [Fact]
     public void Redactor_RemovesBearerUrlCredentialsJsonSecretsAndUserProfile()
     {
         var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);

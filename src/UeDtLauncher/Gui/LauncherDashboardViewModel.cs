@@ -12,7 +12,9 @@ public enum GeneralLauncherState
     UpdateAvailable,
     Ready,
     Working,
-    RecoverableError
+    RecoverableError,
+    RuntimeBlocked,
+    AwaitingPromotion
 }
 
 public enum PrimaryActionKind
@@ -53,16 +55,15 @@ public sealed record LauncherLayoutPolicy(
 {
     public static LauncherLayoutPolicy For(double width, int visibleProjectCount, bool developer)
     {
-        if (developer) return new LauncherLayoutPolicy(4, true, false, 124, 1160, 760);
-        var infoColumns = width < 760 ? 1 : width < 1100 ? 2 : 3;
-        var topSelector = visibleProjectCount > 1 && width < 980;
+        var infoColumns = width < 800 ? 1 : width < 1100 ? 2 : 3;
+        var topSelector = visibleProjectCount > 1 && width < 1100;
         return new LauncherLayoutPolicy(
             infoColumns,
-            visibleProjectCount > 1 && !topSelector,
+            width >= 1100 && (developer || visibleProjectCount > 1),
             topSelector,
-            168,
-            720,
-            500);
+            108,
+            640,
+            360);
     }
 }
 
@@ -82,6 +83,10 @@ public sealed record LauncherUiCapabilities(
 
 public sealed class LauncherDashboardViewModel : INotifyPropertyChanged
 {
+    private readonly LauncherEdition _edition;
+    public LauncherDashboardViewModel() : this(LauncherBuildInfo.Edition) { }
+    internal LauncherDashboardViewModel(LauncherEdition edition) => _edition=edition;
+    public string EffectiveProfile => _edition==LauncherEdition.Developer?"developer":"general";
     private LauncherConfig _config = new();
     private ProjectUiConfig _selectedProject = new();
     private CatalogSnapshot _catalog = new();
@@ -96,7 +101,7 @@ public sealed class LauncherDashboardViewModel : INotifyPropertyChanged
     private LauncherWorkflowStage _workflowStage;
     private bool _running;
 
-    public LauncherConfig Config { get => _config; set => Set(ref _config, value); }
+    public LauncherConfig Config { get => _config; set { value.ClientProfile=EffectiveProfile; Set(ref _config, value); } }
     public ProjectUiConfig SelectedProject { get => _selectedProject; set => Set(ref _selectedProject, value); }
     public CatalogSnapshot Catalog { get => _catalog; set => Set(ref _catalog, value); }
     public string Search { get => _search; set => Set(ref _search, value); }
@@ -110,7 +115,7 @@ public sealed class LauncherDashboardViewModel : INotifyPropertyChanged
     public LauncherWorkflowStage WorkflowStage { get => _workflowStage; set => Set(ref _workflowStage, value); }
     public bool Running { get => _running; set => Set(ref _running, value); }
     public bool IsDeveloper => Capabilities.CanViewTechnicalErrors;
-    public LauncherUiCapabilities Capabilities => LauncherUiCapabilities.ForProfile(Config.ClientProfile);
+    public LauncherUiCapabilities Capabilities => LauncherUiCapabilities.ForProfile(EffectiveProfile);
     public PrimaryActionKind PrimaryAction => GeneralState switch
     {
         GeneralLauncherState.NotInstalled => PrimaryActionKind.InstallAndLaunch,
@@ -126,18 +131,39 @@ public sealed class LauncherDashboardViewModel : INotifyPropertyChanged
         PrimaryActionKind.UpdateAndLaunch => "업데이트 후 실행",
         PrimaryActionKind.Launch => "실행",
         PrimaryActionKind.RetryCheck => "다시 확인",
-        _ => "상태 확인 중..."
+        _ => GeneralState == GeneralLauncherState.AwaitingPromotion ? "실행 버전 지정 대기" : GeneralState == GeneralLauncherState.RuntimeBlocked ? "프로그램 종료 후 다시 확인" : "상태 확인 중..."
     };
 
     public void ApplyProjectStatus(ManagedProjectStatus status)
     {
         ProjectStatus = status;
-        GeneralState = !status.IsInstalled
+        GeneralState = !status.IsInstalled && (IsDeveloper || status.PreviousInstallation is null)
             ? GeneralLauncherState.NotInstalled
             : status.UpdateRequired
                 ? GeneralLauncherState.UpdateAvailable
                 : GeneralLauncherState.Ready;
     }
+
+    public static RuntimeObservation RequireRuntimeObservation(RuntimeObservation? runtime) => runtime ??
+        new(RuntimeState.Unknown, "runtime-observation-missing", "실행 상태 확인이 필요합니다. 업데이트 서비스 연결을 다시 확인해 주세요.");
+
+    public bool ApplyRuntimeObservation(RuntimeObservation? runtime)
+    {
+        var observed = RequireRuntimeObservation(runtime);
+        if (observed.State == RuntimeState.Quiescent) return true;
+        GeneralState = GeneralLauncherState.RuntimeBlocked;
+        InstallState = observed.State == RuntimeState.Running ? "실행 중" : "실행 상태 확인 필요";
+        InstallDetail = observed.Message;
+        return false;
+    }
+
+    public void RequireRuntimeQuiescent(RuntimeObservation? runtime)
+    {
+        if (!ApplyRuntimeObservation(runtime)) throw new RuntimeBlockedException(RequireRuntimeObservation(runtime));
+    }
+
+    public static bool CanOfferRecoveryRollback(bool repairAttempted, bool hasBackup, Exception error) =>
+        repairAttempted && hasBackup && error.GetBaseException() is not RuntimeBlockedException;
 
     public static string ConnectionLabel(
         bool developer,
@@ -179,7 +205,7 @@ public sealed class LauncherDashboardViewModel : INotifyPropertyChanged
     {
         return Config.Projects
             .Where(project => project.VisibleToProfiles.Count == 0 ||
-                              project.VisibleToProfiles.Any(profile => profile.Equals(Config.ClientProfile, StringComparison.OrdinalIgnoreCase)))
+                              project.VisibleToProfiles.Any(profile => profile.Equals(EffectiveProfile, StringComparison.OrdinalIgnoreCase)))
             .OrderByDescending(project => project.IsPinned)
             .ThenBy(project => project.SortOrder)
             .ThenBy(project => project.DisplayName, StringComparer.CurrentCultureIgnoreCase);
@@ -187,21 +213,9 @@ public sealed class LauncherDashboardViewModel : INotifyPropertyChanged
 
     public string FriendlyError(Exception exception)
     {
-        var message = DiagnosticRedactor.Redact(exception.GetBaseException().Message);
-        if (IsDeveloper) return message;
-        if (message.Contains("requestedVersion is required", StringComparison.OrdinalIgnoreCase))
-            return "exact 버전을 사용하려면 요청 버전을 입력해야 합니다.";
-        if (message.Contains("Forbidden", StringComparison.OrdinalIgnoreCase) || message.Contains("401", StringComparison.OrdinalIgnoreCase))
-            return "이 PC의 업데이트 서버 접근 권한을 확인해 주세요.";
-        if (message.Contains("No release", StringComparison.OrdinalIgnoreCase))
-            return "현재 받을 수 있는 배포 버전이 없습니다.";
-        if (message.Contains("No such host", StringComparison.OrdinalIgnoreCase) || message.Contains("actively refused", StringComparison.OrdinalIgnoreCase))
-            return "업데이트 서버에 연결할 수 없습니다. 네트워크를 확인해 주세요.";
-        if (message.Contains("signature", StringComparison.OrdinalIgnoreCase) || message.Contains("certificate", StringComparison.OrdinalIgnoreCase))
-            return "업데이트 보안 검증에 실패했습니다. 관리자에게 문의해 주세요.";
-        return "작업 중 문제가 발생했습니다. 잠시 후 다시 시도하거나 관리자에게 문의하세요.";
+        var error=LauncherUiError.From(exception);
+        return IsDeveloper?DiagnosticRedactor.Redact(exception.Message):error.Message;
     }
-
     public event PropertyChangedEventHandler? PropertyChanged;
 
     private void Set<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)

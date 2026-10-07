@@ -2,6 +2,7 @@ namespace UeDtLauncher.Gui;
 
 public sealed class CatalogSnapshot
 {
+    public string? SelectionPolicy { get; init; }
     public string Status { get; init; } = "카탈로그 미확인";
     public List<CatalogProjectOption> Projects { get; init; } = new();
     public List<CatalogReleaseOption> Releases { get; init; } = new();
@@ -9,6 +10,8 @@ public sealed class CatalogSnapshot
 
 public sealed class CatalogProjectOption
 {
+    public string? HeroPath { get; init; }
+    public string? ThumbnailPath { get; init; }
     public string ProjectId { get; init; } = string.Empty;
     public string DisplayName { get; init; } = string.Empty;
     public int ReleaseCount { get; init; }
@@ -29,13 +32,24 @@ public static class CatalogSnapshotService
 {
     public static async Task<CatalogSnapshot> LoadAsync(LauncherConfig config, string currentPlatform, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(config.CatalogUrl))
+        if (!config.IsManagedDeployment && string.IsNullOrWhiteSpace(config.CatalogUrl))
         {
             return new CatalogSnapshot { Status = "직접 manifest 모드" };
         }
 
-        using var httpClient = SecureHttpClientFactory.Create(config);
-        var catalog = await CatalogResolver.DownloadCatalogAsync(config, httpClient, cancellationToken: cancellationToken);
+        DistributionCatalog catalog;
+        if (config.IsManagedDeployment)
+        {
+            var response = await new ManagedAgentClient().SendStreamingAsync("catalog", null, _ => { }, cancellationToken: cancellationToken);
+            response.ThrowIfFailed();
+            if (response.Catalog is null) throw new InvalidDataException("배포 목록을 가져오지 못했습니다.");
+            catalog = response.Catalog;
+        }
+        else
+        {
+            using var httpClient = SecureHttpClientFactory.Create(config);
+            catalog = await CatalogResolver.DownloadCatalogAsync(config, httpClient, cancellationToken: cancellationToken);
+        }
 
         var allowedProjects = new List<CatalogProjectOption>();
         var allowedReleases = new List<CatalogReleaseOption>();
@@ -45,12 +59,15 @@ public static class CatalogSnapshotService
             var releases = project.Releases
                 .Where(release => string.Equals(release.Platform, currentPlatform, StringComparison.OrdinalIgnoreCase))
                 .Where(release => release.AllowedClientProfiles.Any(profile => string.Equals(profile, config.ClientProfile, StringComparison.OrdinalIgnoreCase)))
+                .Where(release => config.ClientProfile == "developer" || (release.Environment == "prod" && release.Channel == "stable"))
                 .ToList();
 
             if (releases.Count == 0) continue;
 
             allowedProjects.Add(new CatalogProjectOption
             {
+                HeroPath = await LoadImageAsync(project.ProjectId, "hero", project.Hero, config, cancellationToken),
+                ThumbnailPath = await LoadImageAsync(project.ProjectId, "thumbnail", project.Thumbnail, config, cancellationToken),
                 ProjectId = project.ProjectId,
                 DisplayName = string.IsNullOrWhiteSpace(project.DisplayName) ? project.ProjectId : project.DisplayName,
                 ReleaseCount = releases.Count
@@ -70,6 +87,7 @@ public static class CatalogSnapshotService
 
         return new CatalogSnapshot
         {
+            SelectionPolicy = catalog.SelectionPolicy,
             Status = $"카탈로그 확인 완료 · 프로젝트 {allowedProjects.Count}개 · 릴리스 {allowedReleases.Count}개",
             Projects = allowedProjects
                 .OrderBy(project => project.DisplayName, StringComparer.CurrentCultureIgnoreCase)
@@ -79,6 +97,16 @@ public static class CatalogSnapshotService
                 .ThenByDescending(release => VersionSortKey.Parse(release.Version))
                 .ToList()
         };
+    }
+
+    private static async Task<string?> LoadImageAsync(string projectId, string kind, RemoteProjectAsset? asset, LauncherConfig config, CancellationToken token)
+    {
+        if (asset is null) return null;
+        var cache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UE-DT Launcher", "images");
+        if (!config.IsManagedDeployment) return await ProjectAssetCache.GetAsync(asset, config, cache, token);
+        try { return await new ManagedAgentClient().GetProjectAssetAsync(projectId, kind, cache, token); }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or OperationCanceledException or UnauthorizedAccessException)
+        { return null; } // Never fall back to reading the machine credential in the GUI.
     }
 
     private readonly record struct VersionSortKey(int Major, int Minor, int Patch, string Raw) : IComparable<VersionSortKey>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>Opt-in UE-DT read-only check; replace placeholders and review identity before registration.</Description></RegistrationInfo>
+  <Triggers><TimeTrigger><Repetition><Interval>@ADMIN_ISO_DURATION@</Interval><StopAtDurationEnd>false</StopAtDurationEnd></Repetition><StartBoundary>@ADMIN_START_BOUNDARY@</StartBoundary><Enabled>false</Enabled></TimeTrigger></Triggers>
+  <Principals><Principal id="Author"><UserId>@ADMIN_REVIEWED_SERVICE_SID@</UserId><LogonType>ServiceAccount</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><StartWhenAvailable>false</StartWhenAvailable><Enabled>false</Enabled><ExecutionTimeLimit>PT10M</ExecutionTimeLimit></Settings>
+  <Actions Context="Author"><Exec><Command>@INSTALLED_LAUNCHER_PATH@</Command><Arguments>scheduled-check --config &quot;@REVIEWED_CONFIG_PATH@&quot;</Arguments></Exec></Actions>
+</Task>

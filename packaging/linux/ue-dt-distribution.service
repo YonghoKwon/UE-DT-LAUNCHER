@@ -1,0 +1,20 @@
+[Unit]
+Description=UE-DT ZIP intake and authorized distribution
+After=network.target
+
+[Service]
+Type=simple
+User=uedt-distribution
+Group=uedt-distribution
+UMask=0077
+ExecStart=/opt/ue-dt-distribution/UeDtLauncher.DistributionServer serve --config /etc/ue-dt-distribution/server.json
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/ue-dt-distribution
+
+[Install]
+WantedBy=multi-user.target

@@ -1,6 +1,7 @@
 name: build
 
 on:
+  workflow_call:
   push:
     branches:
       - main
@@ -30,6 +31,26 @@ jobs:
       - name: Restore
         run: dotnet restore UeDtLauncher.sln
 
+      - name: Synthetic fixture dependencies and fast contracts
+        shell: bash
+        run: |
+          python -m pip install cryptography psutil
+          python tools/test-fixture-contract.py
+          python tools/test-metric-contract.py
+          python tools/test-performance-summary.py
+          python tools/test-evidence-contract.py
+          python tools/test-readiness-summary.py
+          python tools/test-rpm-contract.py
+          python tools/check-headless-artifacts.py
+          python tools/check-documentation.py
+          python tools/check-improvement-ledger.py
+
+      - name: Linux headless rendering prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1 libfreetype6 fonts-dejavu-core
+
       - name: Build
         run: dotnet build UeDtLauncher.sln -c Release --no-restore
 
@@ -44,6 +65,13 @@ jobs:
         if: runner.os == 'Windows'
         run: dotnet publish src/UeDtLauncher.Agent/UeDtLauncher.Agent.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish/agent-win-x64
 
+      - name: Publish compiled Developer client
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then rid=win-x64; suffix=.exe; else rid=linux-x64; suffix=; fi
+          dotnet publish src/UeDtLauncher/UeDtLauncher.csproj -c Release -r "$rid" --self-contained true -p:PublishSingleFile=true -p:LauncherEdition=Developer -o "publish/developer-$rid"
+          publish/developer-$rid/UeDtLauncher.Developer$suffix --build-info
+
       - name: Publish Linux
         if: runner.os == 'Linux'
         run: dotnet publish src/UeDtLauncher/UeDtLauncher.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -o publish/linux-x64
@@ -51,3 +79,119 @@ jobs:
       - name: Publish Linux Agent
         if: runner.os == 'Linux'
         run: dotnet publish src/UeDtLauncher.Agent/UeDtLauncher.Agent.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -o publish/agent-linux-x64
+
+      - name: Publish Distribution Server
+        if: runner.os == 'Linux'
+        run: dotnet publish src/UeDtLauncher.DistributionServer -c Release -r linux-x64 --self-contained true -o publish/distribution-server
+
+      - name: Publish Windows distribution server for promotion proof
+        if: runner.os == 'Windows'
+        run: dotnet publish src/UeDtLauncher.DistributionServer -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish/distribution-server
+
+      - name: Controlled promotion published process proof
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            rid=win-x64; suffix=.exe; py=python
+          else
+            rid=linux-x64; suffix=; py=python3
+          fi
+          "$py" tools/test-release-promotion.py --root "$PWD/publish/promotion-proof" --server "publish/distribution-server/UeDtLauncher.DistributionServer$suffix" --launcher "publish/$rid/UeDtLauncher$suffix" --catalog-proof
+
+      - name: Install isolated distribution E2E prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nginx zip unzip openssl curl
+
+      - name: Published readiness regression without GUI
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            rid=win-x64; suffix=.exe; py=python
+          else
+            rid=linux-x64; suffix=; py=python3
+          fi
+          "$py" tools/run-readiness-regression.py --launcher "publish/$rid/UeDtLauncher$suffix" --agent "publish/agent-$rid/UeDtLauncher.Agent$suffix" --server "publish/distribution-server/UeDtLauncher.DistributionServer$suffix" --output publish/readiness-summary/summary.json
+
+      - name: Save sanitized readiness summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: readiness-summary-${{ runner.os }}
+          path: publish/readiness-summary/summary.json
+          if-no-files-found: ignore
+          retention-days: 7
+        # Exact summary only. Never upload private E2E roots, keys, configs or raw logs.
+
+      - name: Published headless operations
+        timeout-minutes: 12
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            rid=win-x64; suffix=.exe; py=python
+          else
+            rid=linux-x64; suffix=; py=python3
+          fi
+          "$py" tools/run-headless-operations.py --launcher "publish/$rid/UeDtLauncher$suffix" --agent "publish/agent-$rid/UeDtLauncher.Agent$suffix" --server "publish/distribution-server/UeDtLauncher.DistributionServer$suffix" --output publish/headless-summary/summary.json
+
+      - name: Save sanitized headless summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: headless-summary-${{ runner.os }}
+          path: publish/headless-summary/summary.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Signed HTTPS distribution end to end
+        if: runner.os == 'Linux'
+        timeout-minutes: 10
+        run: bash tools/test-distribution-e2e.sh publish/distribution-server/UeDtLauncher.DistributionServer publish/linux-x64/UeDtLauncher /usr/sbin/nginx
+        # Functional gate only. Shared-runner wall times are not a performance acceptance gate.
+        # Do not upload the temporary server root: it contains test keys and credentials.
+
+      - name: Signed intranet HTTP and managed Agent end to end
+        if: runner.os == 'Linux'
+        timeout-minutes: 10
+        run: python3 tools/test-intranet-auth.py --server publish/distribution-server/UeDtLauncher.DistributionServer --launcher publish/linux-x64/UeDtLauncher --agent publish/agent-linux-x64/UeDtLauncher.Agent --nginx /usr/sbin/nginx --service-proof --promotion-proof
+        # Functional only; test keys and private roots must never become public CI artifacts.
+
+      - name: Runtime descendant and managed broker proof
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            python tools/test-runtime-family.py --launcher publish/win-x64/UeDtLauncher.exe
+            python tools/test-runtime-broker.py --launcher publish/win-x64/UeDtLauncher.exe --agent publish/agent-win-x64/UeDtLauncher.Agent.exe
+          else
+            python3 tools/test-runtime-family.py --launcher publish/linux-x64/UeDtLauncher
+            python3 tools/test-runtime-broker.py --launcher publish/linux-x64/UeDtLauncher --agent publish/agent-linux-x64/UeDtLauncher.Agent
+          fi
+
+      - name: Windows packaging failure gates
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/test-windows-packaging.ps1
+
+      - name: Runtime safety persistence and service proof
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            rid=win-x64; suffix=.exe; py=python
+          else
+            rid=linux-x64; suffix=; py=python3
+          fi
+          dotnet publish tools/RuntimeFaultHarness -c Release -r "$rid" --self-contained true -p:PublishSingleFile=true -o publish/fault-harness
+          "$py" tools/test-runtime-crash-boundaries.py --harness "publish/fault-harness/UeDtLauncher.RuntimeFaultHarness$suffix" --launcher "publish/$rid/UeDtLauncher$suffix"
+          "$py" tools/test-runtime-validation.py --launcher "publish/$rid/UeDtLauncher$suffix"
+          "$py" tools/test-migration-safety.py --launcher "publish/$rid/UeDtLauncher$suffix" --agent "publish/agent-$rid/UeDtLauncher.Agent$suffix"
+          "$py" tools/test-service-runtime.py --launcher "publish/$rid/UeDtLauncher$suffix"
+          "$py" tools/test-agent-service-target.py --agent "publish/agent-$rid/UeDtLauncher.Agent$suffix"
+          publish/fault-harness/UeDtLauncher.RuntimeFaultHarness$suffix runtime-data-smoke "$PWD/publish/runtime-data-smoke" "$PWD/publish/$rid/UeDtLauncher$suffix"
+          "$py" -m unittest discover -s tools -p 'test*real_ue_fixture.py'
+          "$py" tools/check-improvement-ledger.py
+        # Test-only harness/temporary roots are never release artifacts; no keys or raw logs uploaded.

@@ -1,0 +1,437 @@
+{
+  "schemaVersion": 1,
+  "scope": "Windows-synthetic-HTTP-signature-private-proxy-5ms",
+  "warmupRuns": 1,
+  "measuredRuns": 3,
+  "cache": "fresh install/state; warm OS cache; order/ambient-load uncontrolled",
+  "baseline": {
+    "binarySha256": {
+      "launcher": "d33f4cc4600db12141a1eb97cfc1cdf16203ef2a6ace0a0a1257e85f040c4bd8",
+      "server": "6b79351142a5b5a1e4cd4f60b8936588cdb843737d511fe962e637254f1008e5"
+    },
+    "client": {
+      "small": {
+        "install": {
+          "medianMs": 8972.70889999345,
+          "medianContentBytes": 4096000
+        },
+        "unchanged": {
+          "medianMs": 765.4050001874566,
+          "medianContentBytes": 0
+        },
+        "next-version": {
+          "medianMs": 5036.243699956685,
+          "medianContentBytes": 409600
+        },
+        "repair": {
+          "medianMs": 12431.919599883258,
+          "medianContentBytes": 4096000
+        }
+      },
+      "large": {
+        "install": {
+          "medianMs": 890.1744000613689,
+          "medianContentBytes": 83886080
+        },
+        "unchanged": {
+          "medianMs": 599.2382999975234,
+          "medianContentBytes": 0
+        },
+        "next-version": {
+          "medianMs": 764.0192999970168,
+          "medianContentBytes": 8388608
+        },
+        "repair": {
+          "medianMs": 948.120899964124,
+          "medianContentBytes": 83886080
+        }
+      },
+      "mixed": {
+        "install": {
+          "medianMs": 8196.92899985239,
+          "medianContentBytes": 45629440
+        },
+        "unchanged": {
+          "medianMs": 785.1237999275327,
+          "medianContentBytes": 0
+        },
+        "next-version": {
+          "medianMs": 4642.166999867186,
+          "medianContentBytes": 4562944
+        },
+        "repair": {
+          "medianMs": 11671.202400000766,
+          "medianContentBytes": 45629440
+        }
+      }
+    },
+    "api": {
+      "1": {
+        "medianP95Ms": 8.183499798178673,
+        "failedRequests": 0,
+        "startupFailures": 0
+      },
+      "10": {
+        "medianP95Ms": 26.380799943581223,
+        "failedRequests": 0,
+        "startupFailures": 0
+      },
+      "30": {
+        "medianP95Ms": 108.29639993607998,
+        "failedRequests": 0,
+        "startupFailures": 0
+      }
+    }
+  },
+  "preoptimization": {
+    "binarySha256": {
+      "launcher": "0a2f13ef9bccb19b17ef7be16ff32a3a7d0fcbf8c7d1931ee707ad472dc2048d",
+      "server": "94fadc9b416149d559aa5cf13276f775881c2e9a450e1748bcd0225bb690dcce"
+    },
+    "client": {
+      "small": {
+        "install": {
+          "medianMs": 8798.375600017607,
+          "medianContentBytes": 4096000
+        },
+        "unchanged": {
+          "medianMs": 805.2211999893188,
+          "medianContentBytes": 0
+        },
+        "next-version": {
+          "medianMs": 5162.003800040111,
+          "medianContentBytes": 409600
+        },
+        "repair": {
+          "medianMs": 11657.385200029239,
+          "medianContentBytes": 4096000
+        }
+      },
+      "large": {
+        "install": {
+          "medianMs": 1011.3311000168324,
+          "medianContentBytes": 83886080
+        },
+        "unchanged": {
+          "medianMs": 600.3409998957068,
+          "medianContentBytes": 0
+        },
+        "next-version": {
+          "medianMs": 764.4022998865694,
+          "medianContentBytes": 8388608
+        },
+        "repair": {
+          "medianMs": 1092.3702998552471,
+          "medianContentBytes": 83886080
+        }
+      },
+      "mixed": {
+        "install": {
+          "medianMs": 8312.491700053215,
+          "medianContentBytes": 45629440
+        },
+        "unchanged": {
+          "medianMs": 805.1827000454068,
+          "medianContentBytes": 0
+        },
+        "next-version": {
+          "medianMs": 4670.813800068572,
+          "medianContentBytes": 4562944
+        },
+        "repair": {
+          "medianMs": 11626.07410014607,
+          "medianContentBytes": 45629440
+        }
+      }
+    },
+    "api": {
+      "1": {
+        "medianP95Ms": 7.70880002528429,
+        "failedRequests": 0,
+        "startupFailures": 0
+      },
+      "10": {
+        "medianP95Ms": 26.204199995845556,
+        "failedRequests": 0,
+        "startupFailures": 0
+      },
+      "30": {
+        "medianP95Ms": 109.9201999604702,
+        "failedRequests": 0,
+        "startupFailures": 0
+      }
+    }
+  },
+  "candidate": {
+    "binarySha256": {
+      "launcher": "5deba1305139bf20075baa9ea3ce398a936632d6f6e6b2b9d7316db00f8af05e",
+      "server": "bee510cfb48117f55c252824ab7485ba7b4210397edebd3034cb5ab239c5ab7e"
+    },
+    "client": {
+      "small": {
+        "install": {
+          "medianMs": 8914.348700083792,
+          "medianContentBytes": 4096000
+        },
+        "unchanged": {
+          "medianMs": 786.6378999315202,
+          "medianContentBytes": 0
+        },
+        "next-version": {
+          "medianMs": 4927.2597001399845,
+          "medianContentBytes": 409600
+        },
+        "repair": {
+          "medianMs": 12581.824399996549,
+          "medianContentBytes": 4096000
+        }
+      },
+      "large": {
+        "install": {
+          "medianMs": 805.9495000634342,
+          "medianContentBytes": 83886080
+        },
+        "unchanged": {
+          "medianMs": 579.1987001430243,
+          "medianContentBytes": 0
+        },
+        "next-version": {
+          "medianMs": 762.259199982509,
+          "medianContentBytes": 8388608
+        },
+        "repair": {
+          "medianMs": 828.1099000014365,
+          "medianContentBytes": 83886080
+        }
+      },
+      "mixed": {
+        "install": {
+          "medianMs": 7989.075999939814,
+          "medianContentBytes": 45629440
+        },
+        "unchanged": {
+          "medianMs": 808.8348999153823,
+          "medianContentBytes": 0
+        },
+        "next-version": {
+          "medianMs": 4483.6541002150625,
+          "medianContentBytes": 4562944
+        },
+        "repair": {
+          "medianMs": 11286.165500059724,
+          "medianContentBytes": 45629440
+        }
+      }
+    },
+    "api": {
+      "1": {
+        "medianP95Ms": 8.52690008468926,
+        "failedRequests": 0,
+        "startupFailures": 0
+      },
+      "10": {
+        "medianP95Ms": 11.466099880635738,
+        "failedRequests": 0,
+        "startupFailures": 0
+      },
+      "30": {
+        "medianP95Ms": 30.23939998820424,
+        "failedRequests": 0,
+        "startupFailures": 0
+      }
+    }
+  },
+  "againstOriginal": {
+    "client": [
+      {
+        "profile": "small",
+        "scenario": "install",
+        "beforeMs": 8972.70889999345,
+        "afterMs": 8914.348700083792,
+        "ratio": 0.993495810400168
+      },
+      {
+        "profile": "small",
+        "scenario": "unchanged",
+        "beforeMs": 765.4050001874566,
+        "afterMs": 786.6378999315202,
+        "ratio": 1.02774073822207
+      },
+      {
+        "profile": "small",
+        "scenario": "next-version",
+        "beforeMs": 5036.243699956685,
+        "afterMs": 4927.2597001399845,
+        "ratio": 0.9783600623183429
+      },
+      {
+        "profile": "small",
+        "scenario": "repair",
+        "beforeMs": 12431.919599883258,
+        "afterMs": 12581.824399996549,
+        "ratio": 1.0120580573988507
+      },
+      {
+        "profile": "large",
+        "scenario": "install",
+        "beforeMs": 890.1744000613689,
+        "afterMs": 805.9495000634342,
+        "ratio": 0.905383821426309
+      },
+      {
+        "profile": "large",
+        "scenario": "unchanged",
+        "beforeMs": 599.2382999975234,
+        "afterMs": 579.1987001430243,
+        "ratio": 0.9665582125598748
+      },
+      {
+        "profile": "large",
+        "scenario": "next-version",
+        "beforeMs": 764.0192999970168,
+        "afterMs": 762.259199982509,
+        "ratio": 0.997696262365997
+      },
+      {
+        "profile": "large",
+        "scenario": "repair",
+        "beforeMs": 948.120899964124,
+        "afterMs": 828.1099000014365,
+        "ratio": 0.8734222608453958
+      },
+      {
+        "profile": "mixed",
+        "scenario": "install",
+        "beforeMs": 8196.92899985239,
+        "afterMs": 7989.075999939814,
+        "ratio": 0.9746425765166055
+      },
+      {
+        "profile": "mixed",
+        "scenario": "unchanged",
+        "beforeMs": 785.1237999275327,
+        "afterMs": 808.8348999153823,
+        "ratio": 1.0302004600930939
+      },
+      {
+        "profile": "mixed",
+        "scenario": "next-version",
+        "beforeMs": 4642.166999867186,
+        "afterMs": 4483.6541002150625,
+        "ratio": 0.9658536843554619
+      },
+      {
+        "profile": "mixed",
+        "scenario": "repair",
+        "beforeMs": 11671.202400000766,
+        "afterMs": 11286.165500059724,
+        "ratio": 0.9670096630368593
+      }
+    ],
+    "maxRatio": 1.0419625215347368,
+    "withinTenPercent": true,
+    "apiP95Ratios": {
+      "1": 1.0419625215347368,
+      "10": 0.4346380665164622,
+      "30": 0.2792281184420951
+    }
+  },
+  "againstPreoptimization": {
+    "client": [
+      {
+        "profile": "small",
+        "scenario": "install",
+        "beforeMs": 8798.375600017607,
+        "afterMs": 8914.348700083792,
+        "ratio": 1.0131811944998066
+      },
+      {
+        "profile": "small",
+        "scenario": "unchanged",
+        "beforeMs": 805.2211999893188,
+        "afterMs": 786.6378999315202,
+        "ratio": 0.9769214967787173
+      },
+      {
+        "profile": "small",
+        "scenario": "next-version",
+        "beforeMs": 5162.003800040111,
+        "afterMs": 4927.2597001399845,
+        "ratio": 0.9545246169911183
+      },
+      {
+        "profile": "small",
+        "scenario": "repair",
+        "beforeMs": 11657.385200029239,
+        "afterMs": 12581.824399996549,
+        "ratio": 1.07930073374988
+      },
+      {
+        "profile": "large",
+        "scenario": "install",
+        "beforeMs": 1011.3311000168324,
+        "afterMs": 805.9495000634342,
+        "ratio": 0.7969195252178245
+      },
+      {
+        "profile": "large",
+        "scenario": "unchanged",
+        "beforeMs": 600.3409998957068,
+        "afterMs": 579.1987001430243,
+        "ratio": 0.9647828488203282
+      },
+      {
+        "profile": "large",
+        "scenario": "next-version",
+        "beforeMs": 764.4022998865694,
+        "afterMs": 762.259199982509,
+        "ratio": 0.997196371721568
+      },
+      {
+        "profile": "large",
+        "scenario": "repair",
+        "beforeMs": 1092.3702998552471,
+        "afterMs": 828.1099000014365,
+        "ratio": 0.7580853306897593
+      },
+      {
+        "profile": "mixed",
+        "scenario": "install",
+        "beforeMs": 8312.491700053215,
+        "afterMs": 7989.075999939814,
+        "ratio": 0.9610928092582239
+      },
+      {
+        "profile": "mixed",
+        "scenario": "unchanged",
+        "beforeMs": 805.1827000454068,
+        "afterMs": 808.8348999153823,
+        "ratio": 1.0045358648040619
+      },
+      {
+        "profile": "mixed",
+        "scenario": "next-version",
+        "beforeMs": 4670.813800068572,
+        "afterMs": 4483.6541002150625,
+        "ratio": 0.9599299591324403
+      },
+      {
+        "profile": "mixed",
+        "scenario": "repair",
+        "beforeMs": 11626.07410014607,
+        "afterMs": 11286.165500059724,
+        "ratio": 0.970763251880351
+      }
+    ],
+    "maxRatio": 1.106125474356795,
+    "withinTenPercent": false,
+    "apiP95Ratios": {
+      "1": 1.106125474356795,
+      "10": 0.4375672557244101,
+      "30": 0.27510321123031994
+    }
+  },
+  "candidatePassesOriginalBaselineTimeGate": true,
+  "candidatePassesLocalTimeGates": false,
+  "companySlaAccepted": false
+}

@@ -5,6 +5,21 @@ namespace UeDtLauncher.Tests;
 public class ManagedAgentTests
 {
     [Fact]
+    public async Task DisconnectedStreamingUsesConnectionDeadlineNotOperationDeadline()
+    {
+        var endpoint=OperatingSystem.IsWindows()?"uedt-absent-"+Guid.NewGuid().ToString("N"):Path.Combine(Path.GetTempPath(),"uedt-absent-"+Guid.NewGuid().ToString("N"));
+        using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var error=await Assert.ThrowsAsync<AgentConnectionException>(()=>new ManagedAgentClient(endpoint).SendStreamingAsync("catalog",null,_=>{},cancellationToken:deadline.Token));
+        Assert.Equal("service-unavailable",LauncherFailure.Code(error));
+    }
+    [Fact]
+    public async Task ExplicitCancellationIsPreserved()
+    {
+        using var cancelled=new CancellationTokenSource();cancelled.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>new ManagedAgentClient("uedt-unused").SendStreamingAsync("catalog",null,_=>{},cancellationToken:cancelled.Token));
+    }
+
+    [Fact]
     public void Protocol_RejectsUnknownCommandsAndVersions()
     {
         Assert.NotNull(ManagedAgentProtocol.Validate(new ManagedAgentRequest
@@ -133,7 +148,7 @@ public class ManagedAgentTests
     }
 
     [Fact]
-    public async Task PortableMigration_PlansAndAppliesWithoutGuessingPaths()
+    public async Task PortableMigration_DryRunExplainsBlockedApplyAndPreservesSource()
     {
         using var temp = new TempDirectory();
         var sourceConfig = Path.Combine(temp.Path, "portable", "launcher.config.json");
@@ -144,6 +159,7 @@ public class ManagedAgentTests
         {
             ProjectId = "project-a",
             StateRootDir = ".state",
+            TargetPlatform = "windows-x64",
             InstallDir = "app",
             LogDir = "logs"
         });
@@ -159,17 +175,19 @@ public class ManagedAgentTests
         var plan = await PortableMigrationService.PlanAsync(sourceConfig, layout);
         Assert.False(plan.TargetAlreadyExists);
         Assert.Contains("project-a", plan.ProjectIds);
-        await PortableMigrationService.ApplyAsync(plan);
-
-        Assert.True(File.Exists(plan.TargetConfigPath));
-        Assert.True(File.Exists(Path.Combine(layout.StateRoot, "project-a", "windows-x64", "install-state.json")));
-        var migrated = await JsonFiles.ReadAsync<LauncherConfig>(plan.TargetConfigPath);
-        Assert.Equal(layout.StateRoot, migrated.StateRootDir);
-        Assert.True(Path.IsPathRooted(migrated.InstallDir));
+        Assert.False(plan.CanApply);
+        Assert.Contains("ownership", plan.BlockingReason);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => PortableMigrationService.ApplyAsync(plan));
+        var stopped = await JsonFiles.ReadAsync<LauncherConfig>(sourceConfig);
+        LauncherPaths.ResolveInPlace(stopped, sourceConfig); RuntimeTestSupport.Stopped(stopped);
+        var before = File.ReadAllBytes(RuntimeStore.RecordPath(stopped));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => PortableMigrationService.ApplyAsync(plan));
+        Assert.False(Directory.Exists(managedRoot));
+        Assert.Equal(before, File.ReadAllBytes(RuntimeStore.RecordPath(stopped)));
     }
 
     [Fact]
-    public async Task ManagedLaunch_RequiresInstalledManifestBeforeStartingAnything()
+    public async Task ManagedLaunch_DelegatesToSupervisionWithoutReadingProtectedManifest()
     {
         using var temp = new TempDirectory();
         var config = new LauncherConfig
@@ -179,7 +197,9 @@ public class ManagedAgentTests
             InstalledManifestPath = Path.Combine(temp.Path, "state", "installed-manifest.json")
         };
         Assert.True(config.IsManagedDeployment);
-        await Assert.ThrowsAsync<FileNotFoundException>(() => ManagedAppLauncher.LaunchAsync(config));
+        var requested=false;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => ManagedAppLauncher.LaunchAsync(config,default,(_,_)=>{requested=true;throw new InvalidOperationException("supervised-boundary");}));
+        Assert.True(requested);Assert.False(Directory.Exists(Path.Combine(temp.Path,"state")));
     }
 
     private sealed class TempDirectory : IDisposable

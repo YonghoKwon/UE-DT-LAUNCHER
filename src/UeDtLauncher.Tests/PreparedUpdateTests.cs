@@ -21,6 +21,7 @@ public class PreparedUpdateTests
 
         using var http = CreateHttpClient(Manifest("1.0.0", updated), updated);
         using var engine = new LauncherEngine(temp.Config, null, null, echoToConsole: false, httpClient: http);
+        RuntimeTestSupport.Stopped(temp.Config);
         using var prepared = await engine.PrepareAsync();
 
         Assert.True(prepared.HasLiveChanges);
@@ -42,6 +43,7 @@ public class PreparedUpdateTests
 
         using var http = CreateHttpClient(Manifest("1.0.0", updated), updated);
         using var engine = new LauncherEngine(temp.Config, null, null, echoToConsole: false, httpClient: http);
+        RuntimeTestSupport.Stopped(temp.Config);
         using var prepared = await engine.PrepareAsync();
         var backupRoot = await engine.CommitPreparedAsync(prepared);
 

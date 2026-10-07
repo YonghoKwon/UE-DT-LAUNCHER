@@ -23,6 +23,11 @@ public static class Program
             var plan = await PortableMigrationService.PlanAsync(configPath, ManagedLauncherPathLayout.Current());
             if (args.Contains("--apply", StringComparer.OrdinalIgnoreCase))
             {
+                if (!plan.CanApply)
+                {
+                    Console.Error.WriteLine(plan.BlockingReason);
+                    return 1; // Expected refusal, not an unhandled crash that writes target diagnostics.
+                }
                 await PortableMigrationService.ApplyAsync(plan);
                 Console.WriteLine(JsonSerializer.Serialize(plan with { Applied = true }));
             }

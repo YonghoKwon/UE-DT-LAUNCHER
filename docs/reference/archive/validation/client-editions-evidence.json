@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-03",
+  "scope": "isolated-synthetic-Windows-WSL",
+  "baselineSource": "eea1dd3e81cc55fc9c126c27dfa5a249ead96c8d",
+  "candidateSource": "69a269d-with-recorded-working-diff",
+  "candidateProductSourceHash": "9f62497188351d0868d488df9dc06a45dac422a0e9a7ff18bc07550f9abb0fab",
+  "binarySha256": {
+    "General": "21684950228585e8c841d614f35205ca7fcff24f8b3fff005a67bcb53984764d",
+    "Developer": "998ac1905400ff8f5a3de453c25001a8df06505b83fedc2572f113c8ba38bcf5",
+    "Agent": "1f9354581dfd51ef6b6d8f59991eed72762f7ba116bd8654858e6ccc2e8da42f",
+    "Server": "11f453250fa8b66287891a46fcc9c53418fede9853f8e82069cb9d01c92ce694"
+  },
+  "regression": { "windowsPassed": 667, "wslPassed": 667, "failed": 0, "releaseWarnings": 0, "releaseErrors": 0 },
+  "packages": { "generalMsiPayloadVerified": true, "developerMsiPayloadVerified": true, "baseRpmVerified": true, "developerRpmExactDependencyVerified": true, "hostInstalled": false, "corporateSigningVerified": false },
+  "compatibility": { "commonCli": true, "windowsHeadlessChecks": 3, "windowsDeveloperReadinessChecks": 8, "linuxHeadlessChecks": 3, "linuxDeveloperReadinessChecks": 8, "linuxHttpsBearer": true },
+  "gui": { "initialGeneralWindowRead": true, "initialDeveloperControlsRead": true, "initialWindowIsFinalWorkflowBuild": false, "successfulMouseActions": 0, "applyTestsStatus": "environment-blocked", "errorCode": "0x80070005", "errorOperation": "GetCursorPos", "sessionState": "Disconnected", "cliPreinstallationUsedAsGuiProof": false },
+  "performance": { "profile": "large-80MiB", "warmupRuns": 1, "measuredRuns": 3, "clientCounts": [1,10,30], "baselineP95Ms": [8.13,11.52,30.17], "candidateP95Ms": [7.90,11.39,30.54], "requestFailures": 0, "networkContentReductionPercent": 90, "fullPerf03Accepted": false },
+  "resumedSessionChecks": {
+    "date": "2026-10-03", "fixture": "accept-managed", "successfulMouseActions": 2,
+    "awaitingPromotionRead": true, "serviceDisconnectErrorAndSupportId": true,
+    "queryRetryRecoveredToAwaitingPromotion": true, "uninstalledSnapshotUnchanged": true,
+    "installedPayloadFiles": 0, "appLaunches": 0,
+    "observedScreenPixels": [1440,900], "renderScaling": 1,
+    "connectionDroppedAgain": true, "lastSessionState": "Disconnected",
+    "lastErrors": ["GetCursorPos 0x80070005","CreateForMonitor 0x80070057"],
+    "installationAndRecoveryAcceptanceComplete": false
+  },
+  "activeSessionAcceptance": {
+    "date": "2026-10-03", "fixture": "accept-managed", "sameFrozenProductCohort": true,
+    "generalV1InstallLaunch": true, "generalV2UpdateLaunch": true,
+    "installedManifestFilesPerVersion": 3, "v2AllManifestHashesPassed": true,
+    "v1PayloadAndStateSnapshotUnchanged": true,
+    "childSurvivedGuiClose": true, "exactChildNaturalExit": true,
+    "runtimeAfterNaturalExit": "Quiescent",
+    "developerExactV2Selection": true, "developerLaunchDialogExactV2": true,
+    "developerLaunchCancelSnapshotUnchanged": true, "developerLaunchCancelNewMarkers": 0,
+    "observedScreenPixels": [1440,900], "renderScaling": 1,
+    "knownDefects": ["cancel-operation button remains visible after completed launch; UI cleanup fix pending"],
+    "fullAcceptanceComplete": false
+  },
+  "remaining": ["remaining-developer-and-portable-GUI-workflows", "normal-backup-repair-restore-preview-acceptance", "completed-operation-cancel-button-cleanup", "actual-download-cancel-resume-clicks", "OS-display-condition-confirmation", "corporate-installer-lifecycle", "remote-CI"]
+}

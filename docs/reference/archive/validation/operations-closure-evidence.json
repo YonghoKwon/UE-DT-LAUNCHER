@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-03",
+  "scope": "local-headless-Windows-and-Ubuntu-WSL1",
+  "source": "8af82c8f96ed1379353632685122cd731a3d3fce",
+  "productSourceHash": "be24973e4a09f74326ca96b8ab5e6175b8e8fa61dfbe7954e2a881974658998b",
+  "windowsCohortProductSourceDirty": false,
+  "linuxSourceCopy": { "matched": true, "comparedFiles": 193, "buildAttestation": false, "gitMetadataAvailableInCopy": false },
+  "windowsBinarySha256": {
+    "launcher": "d4e9fe8df10e9c99acb8fa057e6293aa25c0f5d815b20446d7d2e25ae2f27bc1",
+    "agent": "7b8471634b3dd6424ae3173b0fc64eb809866cb947ad38d68e73cf9fe1986f53",
+    "server": "d4159ef8efbfb869504abc09b7e9818413eeee1ede2a69b57839787b9b6537ec"
+  },
+  "linuxBinarySha256": {
+    "launcher": "4a6e0b5918e6a1c896468aff734ebc2a46b3b2f23d4519eb693f5d3f1a1adb69",
+    "agent": "d66e7d09fd83460dab216299ac40c43580445da0508fffe8ec56acd1c8f9c2a5",
+    "server": "0548d7421ca3da574cd607b3430ce351ae843b912be5b3a8f2e7a884f494531a"
+  },
+  "regression": { "windowsPassed": 664, "linuxPassed": 664, "failed": 0, "skipped": 0, "releaseWarnings": 0, "releaseErrors": 0 },
+  "publishedHeadlessChecks": { "windowsPassed": 3, "linuxPassed": 3, "failed": 0 },
+  "publishedReadinessChecks": { "windowsPassed": 8, "linuxPassed": 8, "failed": 0 },
+  "compatibility": { "httpRequestSignature": true, "httpsBearerViaPrivateNginx": true, "legacyIpcCorrelation": true },
+  "runtimeProofs": { "processTerminationBoundariesPerPlatform": 36, "nativeDescendants": true, "managedBroker": true, "healthFailures": true, "readOnlyInspection": true, "migrationApplyRefused": true, "exactServiceTarget": true, "allStateMutationCombinationsProven": false },
+  "packages": { "developmentMsiGenerated": true, "msiCabPayloadHashMatched": true, "mockWindowsSigningContractCases": 11, "developmentRpmGenerated": true, "rpmDataOnlyPayloadHashMatched": true, "rpmPermissionsAndConfigPreservationMatched": true, "duplicateBuildIdWarningResolved": true, "actualCompanySigningVerified": false, "hostInstalled": false, "guestLifecycleExecuted": false },
+  "nugetVulnerabilitiesReported": 0,
+  "performance": {
+    "warmupRuns": 1, "measuredRuns": 3,
+    "windowsPreOptimizationP95Ms": [7.71, 26.20, 109.92],
+    "windowsCandidateP95Ms": [8.53, 11.47, 30.24],
+    "wslPreOptimizationP95Ms": [7.18, 29.25, 90.41],
+    "wslCandidateP95Ms": [7.08, 10.21, 26.40],
+    "clientCounts": [1, 10, 30],
+    "requestFailures": 0,
+    "contentNetworkReductionPercent": 90,
+    "windowsOriginalBaselineTimeGatePassed": true,
+    "windowsPreOptimizationSingleClientRegressionPercent": 10.6,
+    "fullPerformanceAcceptance": false,
+    "companySlaAccepted": false
+  },
+  "notPerformed": ["actual-GUI-input", "narrator-audio", "company-UE-data-acceptance", "company-RHEL", "service-account-installation", "actual-signing-certificate", "remote-CI", "push", "pull-request"]
+}

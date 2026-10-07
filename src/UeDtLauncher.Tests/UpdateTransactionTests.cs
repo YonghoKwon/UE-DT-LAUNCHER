@@ -12,6 +12,7 @@ public class UpdateTransactionTests
         Directory.CreateDirectory(config.InstallDir);
         Directory.CreateDirectory(config.BackupDir);
         var livePath = Path.Combine(config.InstallDir, "game.exe");
+        RuntimeTestSupport.Stopped(config);
         await File.WriteAllTextAsync(livePath, "live");
         var backupRoot = BackupManager.CreateBackupRoot(config.BackupDir);
         await File.WriteAllTextAsync(Path.Combine(backupRoot, "partial.tmp"), "partial");
@@ -39,6 +40,7 @@ public class UpdateTransactionTests
         Directory.CreateDirectory(config.BackupDir);
         var livePath = Path.Combine(config.InstallDir, "game.exe");
         var addedPath = Path.Combine(config.InstallDir, "new.dll");
+        RuntimeTestSupport.Stopped(config);
         await File.WriteAllTextAsync(livePath, "old-binary");
         await JsonFiles.WriteAsync(config.InstalledManifestPath, new LauncherManifest
         {

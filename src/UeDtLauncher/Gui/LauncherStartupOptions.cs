@@ -30,14 +30,11 @@ public sealed record LauncherStartupOptions(
         }
 
         var layout = managedLayout ?? ManagedLauncherPathLayout.Current();
-        var managedPath = Path.Combine(layout.ConfigRoot, "launcher.config.json");
-        if (File.Exists(managedPath))
-            return new LauncherStartupOptions(Path.GetFullPath(managedPath), LauncherConfigSource.Managed, true);
-
+        var localConfig = Path.Combine(baseDirectory, "launcher.config.json");
+        if (File.Exists(localConfig))
+            return new LauncherStartupOptions(Path.GetFullPath(localConfig), LauncherConfigSource.Portable, true);
+        // A service-only configuration is not a GUI display configuration.
         var portablePath = Path.Combine(baseDirectory, "launcher.config.json");
-        if (File.Exists(portablePath))
-            return new LauncherStartupOptions(Path.GetFullPath(portablePath), LauncherConfigSource.Portable, true);
-
         return new LauncherStartupOptions(Path.GetFullPath(portablePath), LauncherConfigSource.Missing, false);
     }
 

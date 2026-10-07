@@ -1,0 +1,532 @@
+{
+  "schemaVersion": 1,
+  "recordedDate": "2026-09-28",
+  "scope": "isolated synthetic Windows GUI acceptance",
+  "candidate": {
+    "sourceCommit": "ab37fcbb68d5fb045d913e77861ead624d1da673",
+    "sourceDirty": false,
+    "sourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "status": "superseded-requires-new-candidate-reacceptance",
+    "fixture": "accept-portable-01",
+    "mode": "portable",
+    "agentStarted": false,
+    "binarySha256": {
+      "launcher": "d104fcb28491e90397def9133e99433d809ec7d1161f9626f3c55c7e15eb0801",
+      "server": "46886ec6dd582934ca3b85777bec2c371afa8d904ec6c9ae7102868b054cde3d",
+      "synthetic": "9c29acfbb5bfa31eee462c53257707cea08ef16a7a24fbde7a121f4c20ca5bfb"
+    }
+  },
+  "display": {
+    "screenPixels": [
+      1920,
+      1080
+    ],
+    "workAreaPixels": [
+      1920,
+      1032
+    ],
+    "renderScaling": 1,
+    "generalClientDip": [
+      1120,
+      740
+    ],
+    "developerClientDip": [
+      1280,
+      740
+    ],
+    "applicationTextScale": 1,
+    "highContrast": false,
+    "originalOsSettingsConfirmed": false,
+    "osRestorationConfirmed": false,
+    "evidence": "application diagnostics plus native GUI screenshot and UIA observations in task transcript"
+  },
+  "cases": [
+    {
+      "id": "portable-v1-install-run",
+      "result": "pass",
+      "actor": "assistant-after-action-approval",
+      "verifiedFiles": 3,
+      "runtime": "Running",
+      "limit": "v1 later timed out naturally; not GUI-close lifetime evidence"
+    },
+    {
+      "id": "portable-v2-update-run",
+      "result": "pass",
+      "actor": "assistant-after-action-approval",
+      "verifiedFiles": 3,
+      "previousVersionSnapshotUnchanged": true
+    },
+    {
+      "id": "portable-v2-gui-close-lifetime",
+      "result": "pass",
+      "sameChildSurvivedGuiCloseAndReopen": true,
+      "afterSyntheticRelease": "Quiescent"
+    },
+    {
+      "id": "portable-running-developer-blocks",
+      "result": "pass",
+      "disabledActions": [
+        "run",
+        "update",
+        "repair",
+        "rollback"
+      ],
+      "protectedSnapshotUnchanged": true,
+      "limit": "UI controls observed; not exhaustive forced mutation requests"
+    },
+    {
+      "id": "portable-server-disconnect",
+      "result": "pass",
+      "friendlyErrorAndSupportIdObserved": true
+    },
+    {
+      "id": "portable-general-troubleshoot-repair",
+      "result": "pass",
+      "actor": "user-interaction-assisted-result-observed",
+      "verifiedFiles": 3,
+      "newApplicationMarker": false
+    },
+    {
+      "id": "portable-normal-backup",
+      "result": "pass",
+      "actor": "assistant-after-action-approval",
+      "backupId": "20260928141004",
+      "verifiedFiles": 3
+    },
+    {
+      "id": "portable-rollback-cancel",
+      "result": "pass",
+      "protectedSnapshotUnchanged": true,
+      "focusRestoredTo": "status-check"
+    },
+    {
+      "id": "portable-rollback-apply",
+      "result": "pass",
+      "actor": "assistant-after-action-approval",
+      "backupId": "20260928141004",
+      "verifiedFiles": 3,
+      "previousVersionSnapshotUnchanged": true,
+      "newApplicationMarker": false,
+      "runtime": "Quiescent"
+    }
+  ],
+  "automation": {
+    "ab37Windows": {
+      "passed": 500,
+      "skipped": 0
+    },
+    "ab37Wsl": {
+      "passed": 500,
+      "skipped": 0
+    },
+    "ab37LinuxHttpRequestSignatureE2e": "pass",
+    "ab37LinuxHttpsBearerNginxE2e": "pass",
+    "fixturePythonTestsPassed": 13,
+    "postCandidateRecoveryFixWindows": {
+      "passed": 510,
+      "skipped": 0,
+      "scope": "source regression, not final GUI acceptance"
+    },
+    "postCandidateRecoveryFixWsl": {
+      "passed": 510,
+      "skipped": 0,
+      "scope": "source regression, not final GUI acceptance"
+    }
+  },
+  "screenshots": {
+    "storage": "native tool images in task transcript; no fabricated local image artifact",
+    "observedViews": [
+      "local-mode-previous-and-latest-version",
+      "running-disabled-primary",
+      "developer-exact-v2-disabled-maintenance",
+      "repair-complete",
+      "exact-backup-confirmation",
+      "cancel-focus-restored",
+      "backup-restore-complete"
+    ]
+  },
+  "postCandidatePreflight": {
+    "fixture": "recovery-preflight-01",
+    "build": "recovery-candidate-01-working-source",
+    "case": "initial-catalog-failure-then-first-troubleshoot-reconnect",
+    "result": "pass",
+    "actor": "assistant-read-only-action",
+    "oldErrorCleared": true,
+    "resultingStatus": "not-installed-latest-v1-install-and-run",
+    "installDirectoryExists": false,
+    "applicationMarkerCount": 0,
+    "finalAcceptance": false
+  },
+  "newFrozenCandidate": {
+    "sourceCommit": "8ce5060563c6294e55fbbcf086682a84ccef1c98",
+    "productFixCommit": "fa87eaa",
+    "sourceDirty": false,
+    "nativeGuiApply": "partial-both-mode-install-update-repair-restore-pass",
+    "nativeGeneralStartup": "pass-local-mode-not-installed-latest-v1-install-and-run-button-observed-without-click",
+    "fixtures": [
+      "accept-portable-02",
+      "accept-managed-02"
+    ],
+    "fixtureState": {
+      "portable": "v1-unchanged-v2-healthy-stopped-normal-backup-present-preview-rejection-tested",
+      "managed": "v1-unchanged-v2-healthy-stopped-agent-reconnected"
+    },
+    "managedCapabilities": [
+      "runtime-supervision-v1",
+      "rollback-preview-v1"
+    ],
+    "linuxHttpRequestSignatureAgentE2e": "pass",
+    "linuxHttpsBearerNginxE2e": "pass",
+    "binarySha256": {
+      "windowsLauncher": "2a809f4c6729aff6b60ab4e17c2380d196c4a18ad5069787e2bee9164670a4ab",
+      "windowsAgent": "a6c09dcced93b1b7ae22e876d0105844cd94a3456237fb5e68805f1133196549",
+      "windowsServer": "75d9553cc872220fa9aabf9c705b8a3c3536072ad8eb3bb3e976d984f8d0019f",
+      "windowsSynthetic": "997be6f2252b6250c0267c6f29a1086eb0c06998da7b73b85a73d8d265836972",
+      "linuxCli": "87a3ce297960006656653b9b2683b4306f4041d31c8fa759c59124b0590874b8",
+      "linuxAgent": "a840434a7662d92b72834c4e24249b8fdc6b3dadfea6e0edf7b3397072ed3ad9",
+      "linuxServer": "d966b016a56c841bd08d193318cd3ad9be1dc6aba5214b7dc9e81939feb403c8"
+    },
+    "cases": [
+      {
+        "id": "portable-v1-install-run",
+        "result": "pass",
+        "actor": "assistant-after-action-approval",
+        "verifiedFiles": 3,
+        "runtime": "Running"
+      },
+      {
+        "id": "portable-v1-gui-close-lifetime",
+        "result": "pass",
+        "sameChildSurvivedGuiCloseAndReopen": true,
+        "afterSyntheticRelease": "Quiescent",
+        "refreshResult": "ready-launch-enabled"
+      },
+      {
+        "id": "portable-new-release-notice",
+        "result": "pass",
+        "previousVersion": "1.0.0",
+        "latestVersion": "2.0.0",
+        "primaryAction": "update-and-launch",
+        "applied": false
+      },
+      {
+        "id": "portable-v2-update-run",
+        "result": "pass",
+        "actor": "assistant-after-action-approval",
+        "verifiedFiles": 3,
+        "previousVersionSnapshotUnchanged": true,
+        "runtime": "Running"
+      },
+      {
+        "id": "portable-v2-running-developer-blocks",
+        "result": "pass",
+        "selectedVersion": "2.0.0",
+        "payloadAliveBeforeObservation": true,
+        "disabledActions": [
+          "run",
+          "update",
+          "repair",
+          "rollback"
+        ],
+        "protectedSnapshotUnchangedBeforeExit": true,
+        "afterSyntheticRelease": "Quiescent",
+        "refreshResult": "ready-actions-enabled",
+        "limit": "disabled GUI controls and snapshots; not exhaustive forced mutation requests"
+      },
+      {
+        "id": "portable-v2-repair-preparation",
+        "result": "prepared-then-repaired",
+        "damagedFile": "version.txt",
+        "missingFiles": 0,
+        "changedFiles": 1,
+        "previousVersionSnapshotUnchanged": true,
+        "repairApplied": true
+      },
+      {
+        "id": "portable-v2-developer-repair",
+        "result": "pass",
+        "actor": "assistant-after-action-approval",
+        "verifiedFiles": 3,
+        "previousVersionSnapshotUnchanged": true,
+        "newApplicationMarker": false,
+        "runtime": "Quiescent",
+        "display": "repair-complete-ready",
+        "backupLimit": "pre-repair damaged files are not a normal rollback proof"
+      },
+      {
+        "id": "portable-v2-normal-backup",
+        "result": "pass",
+        "actor": "assistant-after-action-approval",
+        "backupId": "20260928143144",
+        "verifiedFiles": 3,
+        "newApplicationMarker": false
+      },
+      {
+        "id": "portable-v2-restore-cancel",
+        "result": "pass",
+        "backupId": "20260928143144",
+        "protectedSnapshotUnchanged": true,
+        "displayPreserved": "update-available",
+        "defaultFocus": "dialog-cancel",
+        "restoredFocus": "status-check"
+      },
+      {
+        "id": "portable-v2-normal-restore",
+        "result": "pass",
+        "actor": "assistant-after-action-approval",
+        "backupId": "20260928143144",
+        "verifiedFiles": 3,
+        "previousVersionSnapshotUnchanged": true,
+        "newApplicationMarker": false,
+        "runtime": "Quiescent",
+        "display": "ready-launch-enabled-backup-restore-complete"
+      },
+      {
+        "id": "portable-v2-preview-change-rejected",
+        "result": "pass",
+        "actor": "assistant-after-action-approval",
+        "errorCode": "backup-preview-changed",
+        "protectedSnapshotUnchanged": true,
+        "verifiedFiles": 3,
+        "retryRequiresNewConfirmation": true,
+        "cancelledRetryUnchanged": true
+      },
+      {
+        "id": "portable-healthy-troubleshoot-after-reconnect",
+        "result": "pass",
+        "actor": "assistant-read-only-action",
+        "verifiedFiles": 3,
+        "protectedSnapshotUnchanged": true,
+        "applicationMarkerCount": 2,
+        "newApplicationMarker": false,
+        "display": "ready-installation-check-complete",
+        "oldErrorCleared": true
+      },
+      {
+        "id": "managed-v1-install-run",
+        "fixture": "accept-managed-02",
+        "result": "pass",
+        "actor": "assistant-after-action-approval",
+        "verifiedFiles": 3,
+        "version": "1.0.0",
+        "payloadMarker": "d526dc315cb547dbad1ba2281d40d6f3",
+        "runtimeAttempt": "50d40afb20904df09bb50c2398c36a34",
+        "runtime": "Running",
+        "cliPreinstall": false
+      },
+      {
+        "id": "managed-v1-gui-close-lifetime",
+        "fixture": "accept-managed-02",
+        "result": "pass",
+        "sameChildAndAttemptSurvivedGuiCloseAndReopen": true,
+        "reopenedGuiRuntime": "Running",
+        "afterSyntheticRelease": "Quiescent",
+        "refreshResult": "ready-launch-enabled",
+        "oldErrorCleared": true,
+        "serviceConnected": true,
+        "additionalApplicationLaunch": false
+      },
+      {
+        "id": "managed-new-release-notice",
+        "fixture": "accept-managed-02",
+        "result": "pass",
+        "previousVersion": "1.0.0",
+        "latestVersion": "2.0.0",
+        "primaryAction": "update-and-launch",
+        "previousVersionSnapshotUnchanged": true,
+        "applied": false,
+        "nextApply": "subsequently-tested-separately-after-fresh-user-approval"
+      },
+      {
+        "id": "managed-v2-update-run",
+        "fixture": "accept-managed-02",
+        "result": "pass",
+        "actor": "assistant-after-action-approval",
+        "verifiedFiles": 3,
+        "version": "2.0.0",
+        "payloadMarker": "628abab938184fecab9bcfcc1d244716",
+        "runtime": "Running",
+        "previousVersionSnapshotUnchanged": true
+      },
+      {
+        "id": "managed-v2-runtime-blocks",
+        "fixture": "accept-managed-02",
+        "result": "pass",
+        "selectedVersion": "2.0.0",
+        "payloadAliveBeforeObservation": true,
+        "observedPayloadPid": 62636,
+        "observedPayloadStartLocalTime": "23:45:28",
+        "disabledActions": [
+          "run",
+          "update",
+          "repair",
+          "rollback"
+        ],
+        "protectedSnapshotUnchangedBeforeExit": true,
+        "afterSyntheticRelease": "both-versions-Quiescent",
+        "refreshResult": "ready-files-match-run-repair-rollback-enabled",
+        "additionalApplicationLaunch": false,
+        "limit": "disabled GUI controls and snapshots; not exhaustive forced mutation requests"
+      },
+      {
+        "id": "managed-v2-repair-preparation",
+        "fixture": "accept-managed-02",
+        "result": "prepared-then-repaired",
+        "selectedVersion": "2.0.0",
+        "damagedFile": "version.txt",
+        "missingFiles": 0,
+        "changedFiles": 1,
+        "previousVersionSnapshotUnchanged": true,
+        "repairApplied": true
+      },
+      {
+        "id": "managed-v2-developer-repair",
+        "fixture": "accept-managed-02",
+        "result": "pass",
+        "actor": "assistant-after-action-approval",
+        "verifiedFiles": 3,
+        "previousVersionSnapshotUnchanged": true,
+        "newApplicationMarker": false,
+        "runtime": "Quiescent",
+        "display": "repair-complete-ready"
+      },
+      {
+        "id": "managed-v2-normal-backup",
+        "fixture": "accept-managed-02",
+        "result": "pass",
+        "actor": "assistant-after-action-approval",
+        "backupId": "20260928145009",
+        "verifiedFiles": 3,
+        "newApplicationMarker": false
+      },
+      {
+        "id": "managed-v2-restore-cancel",
+        "fixture": "accept-managed-02",
+        "result": "pass",
+        "backupId": "20260928145009",
+        "protectedSnapshotUnchanged": true,
+        "displayPreserved": "update-available",
+        "defaultFocus": "dialog-cancel",
+        "restoredFocus": "status-check"
+      },
+      {
+        "id": "managed-v2-normal-restore",
+        "fixture": "accept-managed-02",
+        "result": "pass",
+        "actor": "assistant-after-action-approval",
+        "backupId": "20260928145009",
+        "verifiedFiles": 3,
+        "previousVersionSnapshotUnchanged": true,
+        "newApplicationMarker": false,
+        "runtime": "both-versions-Quiescent",
+        "display": "ready-launch-enabled-backup-restore-complete"
+      },
+      {
+        "id": "managed-v2-preview-change-rejected",
+        "fixture": "accept-managed-02",
+        "result": "pass",
+        "actor": "assistant-after-action-approval",
+        "errorCode": "backup-preview-changed",
+        "protectedSnapshotUnchanged": true,
+        "verifiedFiles": 3,
+        "retryRequiresNewConfirmation": true,
+        "cancelledRetryUnchanged": true
+      },
+      {
+        "id": "managed-healthy-troubleshoot-after-agent-restart",
+        "fixture": "accept-managed-02",
+        "result": "pass",
+        "actor": "assistant-read-only-action",
+        "errorBeforeReconnect": "service-unavailable",
+        "verifiedFiles": 3,
+        "protectedSnapshotUnchanged": true,
+        "applicationMarkerCount": 2,
+        "newApplicationMarker": false,
+        "display": "ready-installation-check-complete",
+        "oldErrorCleared": true,
+        "serviceConnected": true
+      }
+    ],
+    "displayEvidence": {
+      "testedDate": "2026-09-28",
+      "reviewedDate": "2026-09-29",
+      "source": "existing native GUI observations and uidisplay records in both fixture client/logs/launcher-20260928.jsonl",
+      "fixtures": [
+        "accept-portable-02",
+        "accept-managed-02"
+      ],
+      "profiles": [
+        "general",
+        "developer"
+      ],
+      "screenPixels": [
+        1920,
+        1080
+      ],
+      "workAreaPixels": [
+        1920,
+        1032
+      ],
+      "renderScaling": 1,
+      "textScale": 1,
+      "highContrast": false,
+      "generalClientDip": [
+        1120,
+        740
+      ],
+      "developerClientDip": [
+        1280,
+        740
+      ]
+    }
+  },
+  "remaining": [
+    "new-candidate-managed-and-portable-workflow-reacceptance",
+    "full-error-and-uninstalled-retry-matrix",
+    "original-os-settings-and-restoration-confirmation",
+    "narrator-listening-deferred",
+    "company-ue-rhel-service-account-validation"
+  ],
+  "progress": {
+    "UI-01": 100,
+    "UI-02": 75,
+    "UI-03": 75,
+    "UI-04": 0
+  },
+  "companyProductionApproval": false,
+  "progressUpdatedDate": "2026-09-29",
+  "acceptanceScopeChange": {
+    "date": "2026-09-29",
+    "requestedBy": "user",
+    "item": "UI-01",
+    "previousProgress": 75,
+    "previousCriterion": "all-18-os-display-combinations-and-worst-case",
+    "acceptedScope": "1920x1080 only, currently verified OS100/app100/contrast-off general and developer in both deployment modes",
+    "progress": 100,
+    "reason": "user-narrowed-acceptance-with-existing-evidence",
+    "newGuiTestsPerformed": false,
+    "otherItemsAutoCompleted": false,
+    "untestedConditionsAcceptedAsTested": false
+  },
+  "deferredDisplayTests": {
+    "status": "additional-testing-required-not-verified",
+    "resolutions": [
+      [
+        1366,
+        768
+      ],
+      [
+        1280,
+        720
+      ]
+    ],
+    "otherResolutionsAlsoUnverified": true,
+    "osScalingPercent": [
+      125,
+      150
+    ],
+    "applicationTextPercent": 200,
+    "highContrast": true,
+    "previous18CombinationMatrixPreservedInDatedMarkdown": true
+  }
+}

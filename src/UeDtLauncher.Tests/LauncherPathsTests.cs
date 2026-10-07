@@ -58,6 +58,9 @@ public class LauncherPathsTests
         Directory.CreateDirectory(Path.GetDirectoryName(legacyBackupFile)!);
         await File.WriteAllTextAsync(legacyBackupFile, "old");
 
+        await Assert.ThrowsAsync<RuntimeBlockedException>(() => LauncherPaths.LoadResolvedAsync(configPath));
+        var stopped = Config("project-a"); LauncherPaths.ResolveInPlace(stopped, configPath);
+        RuntimeTestSupport.Stopped(stopped);
         var resolved = await LauncherPaths.LoadResolvedAsync(configPath);
 
         Assert.True(File.Exists(resolved.InstalledManifestPath));

@@ -1,0 +1,960 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-05",
+  "sourceCommit": "75ea591082efb460ff63e56f3ddea14253825f5c",
+  "productSourceHash": "eda71c82c6bd1254b0bd81813752715ab00140feea1d347bfd8667c43281f124",
+  "complete": false,
+  "windowsTests": {
+    "passed": 789,
+    "failed": 0,
+    "skipped": 0
+  },
+  "wslTests": {
+    "passed": 788,
+    "failed": 0,
+    "skipped": 1,
+    "skipReason": "Windows delete-sharing test is Windows only"
+  },
+  "published": {
+    "windowsSignedHttp": true,
+    "linuxSignedHttp": true,
+    "linuxHttpsBearer": true,
+    "releaseWarnings": 0,
+    "releaseErrors": 0
+  },
+  "combinations": [
+    {
+      "schemaVersion": 1,
+      "mode": "managed",
+      "profile": "general",
+      "productSourceHash": "eda71c82c6bd1254b0bd81813752715ab00140feea1d347bfd8667c43281f124",
+      "binarySha256": {
+        "launcher": "248377458e41435fad9752d89357b867ddd97340f6a4eb934fe66a6a9392889c",
+        "developer": "9fef5b3d175ce26b285c4226f27768984f0e4e5dad67eb33179821a135a1c880",
+        "agent": "de8fffee9bf62ae2a9bcf5d1e114f0c4108ee496001963144e78e7687e138210",
+        "server": "db25373291d77861d4c8dc6625fa798efa438e3e37312552d5719d0ef9f0abb4"
+      },
+      "complete": false,
+      "counts": {
+        "passed": 9,
+        "failed": 0,
+        "not-run": 3,
+        "running": 0,
+        "blocked": 0
+      },
+      "cases": [
+        {
+          "profile": "general",
+          "name": "authentication-errors",
+          "status": "not-run"
+        },
+        {
+          "profile": "general",
+          "name": "connection-errors",
+          "status": "passed",
+          "screenshots": [
+            {
+              "name": "server-unavailable.jpg",
+              "sha256": "8f858407789b0179c6ae2676988f5c801eb4b9b97398f3be796557932e413017"
+            },
+            {
+              "name": "server-reconnected.jpg",
+              "sha256": "2938e0fe074587139356a44a7eb9f77b88b95ddcd4e8a55bbecba4bae9ef254b"
+            },
+            {
+              "name": "service-unavailable.jpg",
+              "sha256": "25fa58f9a2f60167efc7f5da49b679cf1949cf4bcffdf70b8c794e4f1c2ab055"
+            }
+          ],
+          "checks": {
+            "server-reconnect": true,
+            "retry-no-mutation": true,
+            "service-reconnect": true
+          },
+          "inputActor": "computer-use",
+          "screen": {
+            "pixels": [
+              1920,
+              1080
+            ],
+            "renderScaling": 1,
+            "textScale": 1,
+            "highContrast": false
+          },
+          "snapshotScope": "all"
+        },
+        {
+          "profile": "general",
+          "name": "diagnostics",
+          "status": "not-run"
+        },
+        {
+          "profile": "general",
+          "name": "empty-and-promotion",
+          "status": "passed",
+          "screenshots": [
+            {
+              "name": "configuration-reloaded-general-fixed.jpg",
+              "sha256": "985aa1e7fa4ad93029e97d3bc21925c725092ae812cf338563cb271faaf2c91b"
+            },
+            {
+              "name": "empty-authorized-list.jpg",
+              "sha256": "9fdc4670a3bcf70597137880ae3e920a94f9c5fbef025af16fb757a1c59fb585"
+            },
+            {
+              "name": "promotion-refresh-install-required.jpg",
+              "sha256": "2a500c18d1b158aa4ffae5a250bf4a254375fa1c850119260e9be3fdb0fed694"
+            }
+          ],
+          "checks": {
+            "empty-cleared": true,
+            "promotion-wait": true,
+            "promotion-refresh-readonly": true
+          },
+          "inputActor": "computer-use",
+          "screen": {
+            "pixels": [
+              1920,
+              1080
+            ],
+            "renderScaling": 1,
+            "textScale": 1,
+            "highContrast": false
+          },
+          "snapshotScope": "all"
+        },
+        {
+          "profile": "general",
+          "name": "initial-configuration",
+          "status": "passed",
+          "screenshots": [
+            {
+              "name": "missing-configuration.jpg",
+              "sha256": "360a2f477f80029ff9829289f2372d41501e89151fd6ca6de29ce386309ba616"
+            },
+            {
+              "name": "invalid-configuration.jpg",
+              "sha256": "97df0d0c6add8158a19d1a7fb2cbdd45204f9f259478152f9251bc0cb4861634"
+            },
+            {
+              "name": "configuration-reloaded-general-fixed.jpg",
+              "sha256": "985aa1e7fa4ad93029e97d3bc21925c725092ae812cf338563cb271faaf2c91b"
+            }
+          ],
+          "checks": {
+            "missing-help": true,
+            "invalid-config-retry-readonly": true,
+            "edition-fixed": true
+          },
+          "inputActor": "computer-use",
+          "screen": {
+            "pixels": [
+              1920,
+              1080
+            ],
+            "renderScaling": 1,
+            "textScale": 1,
+            "highContrast": false
+          },
+          "snapshotScope": "all"
+        },
+        {
+          "profile": "general",
+          "name": "normal-backup",
+          "status": "passed",
+          "screenshots": [
+            {
+              "name": "normal-backup-auxiliary-developer-complete.jpg",
+              "sha256": "656af7caca2c607c144be036fa11498001d66a83789c8cac48852b0e13ac4ecd"
+            }
+          ],
+          "checks": {
+            "healthy-extra-repair": true,
+            "all-backup-hashes": true
+          },
+          "inputActor": "computer-use",
+          "screen": {
+            "pixels": [
+              1920,
+              1080
+            ],
+            "renderScaling": 1,
+            "textScale": 1,
+            "highContrast": false
+          }
+        },
+        {
+          "profile": "general",
+          "name": "repair-followup",
+          "status": "passed",
+          "screenshots": [
+            {
+              "name": "promotion-refresh-install-required.jpg",
+              "sha256": "2a500c18d1b158aa4ffae5a250bf4a254375fa1c850119260e9be3fdb0fed694"
+            },
+            {
+              "name": "repair-committed-followup-error.jpg",
+              "sha256": "6e0be7b3a1f071197465fb5e5d8930df37cd11d4b16f70ed5ce6b42fa6a88cec"
+            },
+            {
+              "name": "repair-primary-readonly-error.jpg",
+              "sha256": "f60046cda662775b1ae4a10365a6fbf7eb0b97252b198d52f1ff128ea354aabc"
+            },
+            {
+              "name": "repair-status-readonly-error.jpg",
+              "sha256": "7010cb7478be1d14b1e29f2ab218f6a3be393959542476313782d55c06041baf"
+            },
+            {
+              "name": "repair-retry-readonly-error.jpg",
+              "sha256": "443a3021074412c656263d8af8778708218874bacff8ad0a725220012fb213a3"
+            },
+            {
+              "name": "repair-f6-readonly-restored.jpg",
+              "sha256": "78a6ec9bd947946d143cc83f4e0aced28bdb2639f68c99896801f36ada0d5a55"
+            },
+            {
+              "name": "repair-normal-query-no-apply.jpg",
+              "sha256": "8f154a8fdd84a658ba4461ff6880612642595d2ee7c74b67f02fc1ca993d86a5"
+            }
+          ],
+          "checks": {
+            "normal-query-only": true,
+            "missing-install-guidance": true,
+            "damaged-repaired": true,
+            "post-commit-query-failure": true,
+            "buttons-query-only": true
+          },
+          "inputActor": "computer-use",
+          "screen": {
+            "pixels": [
+              1920,
+              1080
+            ],
+            "renderScaling": 1,
+            "textScale": 1,
+            "highContrast": false
+          },
+          "snapshotScope": "protected"
+        },
+        {
+          "profile": "general",
+          "name": "restore-confirmation",
+          "status": "passed",
+          "screenshots": [
+            {
+              "name": "general-normal-backup-confirmation.jpg",
+              "sha256": "e62530fca69c4ca6f014d4f54b43eb287b30cd9a109eff96a144389cec90d59d"
+            },
+            {
+              "name": "general-restore-cancelled-no-mutation.jpg",
+              "sha256": "6865bd18d20e253dcc6e00628d2557b230463e1659b6849c7da2539b0e5d4feb"
+            },
+            {
+              "name": "general-changed-preview-rejected.jpg",
+              "sha256": "5f9cfec5856426e3ea34584dec3063e04b4f7f746967fbaad76a20a09b30eec1"
+            },
+            {
+              "name": "general-new-preview-normal-restore.jpg",
+              "sha256": "b5b42d7ab9610c083ff4ec51b24b45daea590dd9faa70efd79d99b204ff01237"
+            },
+            {
+              "name": "general-restore-committed-query-required.jpg",
+              "sha256": "476815e2849a811193b33d77f09cea71b18c8c0eb4f7251a3a32ec5323ecd60a"
+            }
+          ],
+          "checks": {
+            "cancel-unchanged": true,
+            "changed-preview-rejected": true,
+            "new-confirmation": true,
+            "normal-restored": true
+          },
+          "inputActor": "computer-use",
+          "screen": {
+            "pixels": [
+              1920,
+              1080
+            ],
+            "renderScaling": 1,
+            "textScale": 1,
+            "highContrast": false
+          },
+          "snapshotScope": "protected"
+        },
+        {
+          "profile": "general",
+          "name": "restore-followup",
+          "status": "passed",
+          "screenshots": [
+            {
+              "name": "general-restore-committed-query-required.jpg",
+              "sha256": "476815e2849a811193b33d77f09cea71b18c8c0eb4f7251a3a32ec5323ecd60a"
+            },
+            {
+              "name": "general-restore-query-only-complete.jpg",
+              "sha256": "0bded8ef6e03c994db118c23bd56076062ac507f22daf6fd088ebac4795fffc5"
+            }
+          ],
+          "checks": {
+            "restore-file-witness": true,
+            "query-only-retry": true,
+            "no-second-restore": true
+          },
+          "inputActor": "computer-use",
+          "screen": {
+            "pixels": [
+              1920,
+              1080
+            ],
+            "renderScaling": 1,
+            "textScale": 1,
+            "highContrast": false
+          },
+          "snapshotScope": "protected"
+        },
+        {
+          "profile": "general",
+          "name": "runtime-protection",
+          "status": "not-run"
+        },
+        {
+          "profile": "general",
+          "name": "v1-install-lifetime",
+          "status": "passed",
+          "screenshots": [
+            {
+              "name": "v1-running.jpg",
+              "sha256": "3ccf4c87b4164fb0519a01f5ff7bd25c32b40744c1d87f191df2b740887d5f2b"
+            }
+          ],
+          "checks": {
+            "gui-install": true,
+            "all-file-hashes": true,
+            "child-survives-gui-close": true,
+            "requested-end": true
+          },
+          "inputActor": "computer-use",
+          "screen": {
+            "pixels": [
+              1920,
+              1080
+            ],
+            "renderScaling": 1,
+            "textScale": 1,
+            "highContrast": false
+          }
+        },
+        {
+          "profile": "general",
+          "name": "v2-cancel-resume-launch",
+          "status": "passed",
+          "screenshots": [
+            {
+              "name": "v2-receiving.jpg",
+              "sha256": "bb765477c61e96ec94636af5645798f3eb4f63a841bd6624b28a36118f232ed0"
+            },
+            {
+              "name": "v2-cancelled-immediate-resume.jpg",
+              "sha256": "43ea95c939f8e3c7440f422f47b7d07c5d6aa0447b7e2e03806ec514dfe58382"
+            },
+            {
+              "name": "v2-resume-complete-no-launch.jpg",
+              "sha256": "d60939c8f3f3791a878e50c07df2dde5e283cac719eb78c25f60834868038168"
+            },
+            {
+              "name": "v2-explicit-running.jpg",
+              "sha256": "90c9d23b0c4ca04fad34602942b883619354c718cdb9d92b92fcaa94385119c9"
+            }
+          ],
+          "checks": {
+            "received-bytes": true,
+            "safe-cancel": true,
+            "immediate-resume": true,
+            "range-request": true,
+            "all-file-hashes": true,
+            "v1-preserved": true,
+            "no-auto-launch": true,
+            "explicit-launch": true
+          },
+          "inputActor": "computer-use",
+          "screen": {
+            "pixels": [
+              1920,
+              1080
+            ],
+            "renderScaling": 1,
+            "textScale": 1,
+            "highContrast": false
+          },
+          "snapshotScope": "protected"
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "mode": "managed",
+      "profile": "developer",
+      "productSourceHash": "eda71c82c6bd1254b0bd81813752715ab00140feea1d347bfd8667c43281f124",
+      "binarySha256": {
+        "launcher": "248377458e41435fad9752d89357b867ddd97340f6a4eb934fe66a6a9392889c",
+        "developer": "9fef5b3d175ce26b285c4226f27768984f0e4e5dad67eb33179821a135a1c880",
+        "agent": "de8fffee9bf62ae2a9bcf5d1e114f0c4108ee496001963144e78e7687e138210",
+        "server": "db25373291d77861d4c8dc6625fa798efa438e3e37312552d5719d0ef9f0abb4"
+      },
+      "complete": false,
+      "counts": {
+        "passed": 3,
+        "failed": 0,
+        "not-run": 10,
+        "running": 0,
+        "blocked": 0
+      },
+      "cases": [
+        {
+          "profile": "developer",
+          "name": "authentication-errors",
+          "status": "not-run"
+        },
+        {
+          "profile": "developer",
+          "name": "connection-errors",
+          "status": "passed",
+          "screenshots": [
+            {
+              "name": "server-unavailable.jpg",
+              "sha256": "ac7d8fd865f981a1b2cbb773e52579e2495e37d6e68bb6626d61ea7d14042ca3"
+            },
+            {
+              "name": "server-reconnected.jpg",
+              "sha256": "187fd0279ebf8e4b300512052f5ead956471b0aa357555bc224b27ba78601fe9"
+            },
+            {
+              "name": "service-unavailable.jpg",
+              "sha256": "263f50d11a30a28a3a82c22e5dfb547d5666e5a9c5a5b69d5e87d2d12da994e5"
+            }
+          ],
+          "checks": {
+            "server-reconnect": true,
+            "retry-no-mutation": true,
+            "service-reconnect": true
+          },
+          "inputActor": "computer-use",
+          "screen": {
+            "pixels": [
+              1920,
+              1080
+            ],
+            "renderScaling": 1,
+            "textScale": 1,
+            "highContrast": false
+          },
+          "snapshotScope": "all"
+        },
+        {
+          "profile": "developer",
+          "name": "diagnostics",
+          "status": "not-run"
+        },
+        {
+          "profile": "developer",
+          "name": "empty-and-promotion",
+          "status": "not-run"
+        },
+        {
+          "profile": "developer",
+          "name": "exact-confirmation",
+          "status": "not-run"
+        },
+        {
+          "profile": "developer",
+          "name": "initial-configuration",
+          "status": "passed",
+          "screenshots": [
+            {
+              "name": "missing-configuration.jpg",
+              "sha256": "11a628b1e7a5c4198f3b4518d2814971ae01c67bbf74642957177fc425fa847c"
+            },
+            {
+              "name": "invalid-configuration.jpg",
+              "sha256": "8d7a386074d2e491abcb08f2e2639cb73c91ed9facc9b41ef07fca2491d9f8e7"
+            },
+            {
+              "name": "configuration-reloaded-developer-fixed.jpg",
+              "sha256": "ca965f91e6404e5dd7acdca2976898f77300f989e0c34e49863292d05b8ebf94"
+            }
+          ],
+          "checks": {
+            "missing-help": true,
+            "invalid-config-retry-readonly": true,
+            "edition-fixed": true
+          },
+          "inputActor": "computer-use",
+          "screen": {
+            "pixels": [
+              1920,
+              1080
+            ],
+            "renderScaling": 1,
+            "textScale": 1,
+            "highContrast": false
+          },
+          "snapshotScope": "all"
+        },
+        {
+          "profile": "developer",
+          "name": "normal-backup",
+          "status": "not-run"
+        },
+        {
+          "profile": "developer",
+          "name": "repair-followup",
+          "status": "not-run"
+        },
+        {
+          "profile": "developer",
+          "name": "restore-confirmation",
+          "status": "not-run"
+        },
+        {
+          "profile": "developer",
+          "name": "restore-followup",
+          "status": "not-run"
+        },
+        {
+          "profile": "developer",
+          "name": "runtime-protection",
+          "status": "not-run"
+        },
+        {
+          "profile": "developer",
+          "name": "v1-install-lifetime",
+          "status": "passed",
+          "screenshots": [
+            {
+              "name": "v1-running.jpg",
+              "sha256": "9979aa39fc266512e51c6d6aeae0aabc4398391befcad290463e7fd3832f9e64"
+            },
+            {
+              "name": "v1-exact-confirmation.jpg",
+              "sha256": "2f8fc82a49790fee95c34268eaa153cab89e271c48a18d5a989676005ed2b905"
+            }
+          ],
+          "checks": {
+            "gui-install": true,
+            "all-file-hashes": true,
+            "child-survives-gui-close": true,
+            "requested-end": true
+          },
+          "inputActor": "computer-use",
+          "screen": {
+            "pixels": [
+              1920,
+              1080
+            ],
+            "renderScaling": 1,
+            "textScale": 1,
+            "highContrast": false
+          }
+        },
+        {
+          "profile": "developer",
+          "name": "v2-cancel-resume-launch",
+          "status": "not-run"
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "mode": "portable",
+      "profile": "general",
+      "productSourceHash": "eda71c82c6bd1254b0bd81813752715ab00140feea1d347bfd8667c43281f124",
+      "binarySha256": {
+        "launcher": "248377458e41435fad9752d89357b867ddd97340f6a4eb934fe66a6a9392889c",
+        "developer": "9fef5b3d175ce26b285c4226f27768984f0e4e5dad67eb33179821a135a1c880",
+        "agent": "de8fffee9bf62ae2a9bcf5d1e114f0c4108ee496001963144e78e7687e138210",
+        "server": "db25373291d77861d4c8dc6625fa798efa438e3e37312552d5719d0ef9f0abb4"
+      },
+      "complete": false,
+      "counts": {
+        "passed": 3,
+        "failed": 0,
+        "not-run": 9,
+        "running": 0,
+        "blocked": 0
+      },
+      "cases": [
+        {
+          "profile": "general",
+          "name": "authentication-errors",
+          "status": "not-run"
+        },
+        {
+          "profile": "general",
+          "name": "connection-errors",
+          "status": "passed",
+          "screenshots": [
+            {
+              "name": "server-unavailable.jpg",
+              "sha256": "eb0b04e2a85d97fd01c3083fbcd08306f92473b00aeb7d9ff9c8211c1abb9620"
+            },
+            {
+              "name": "server-reconnected.jpg",
+              "sha256": "12506bf9257d7e6ae3e560ed50830368d68556033f796932a7d281cb6fdce163"
+            }
+          ],
+          "checks": {
+            "server-reconnect": true,
+            "retry-no-mutation": true
+          },
+          "inputActor": "computer-use",
+          "screen": {
+            "pixels": [
+              1920,
+              1080
+            ],
+            "renderScaling": 1,
+            "textScale": 1,
+            "highContrast": false
+          },
+          "snapshotScope": "all"
+        },
+        {
+          "profile": "general",
+          "name": "diagnostics",
+          "status": "not-run"
+        },
+        {
+          "profile": "general",
+          "name": "empty-and-promotion",
+          "status": "not-run"
+        },
+        {
+          "profile": "general",
+          "name": "initial-configuration",
+          "status": "passed",
+          "screenshots": [
+            {
+              "name": "missing-configuration.jpg",
+              "sha256": "1828049211a7f1f9eb490db397c29c3091b2c7e7740914873fe4008d29749c09"
+            },
+            {
+              "name": "invalid-configuration.jpg",
+              "sha256": "c4abe05700e85d1cea3a199cfafa37479dc542409c20a8ba0266bd821216f50e"
+            },
+            {
+              "name": "configuration-reloaded-general-fixed.jpg",
+              "sha256": "60f81b07280dcaafd13272e7da5c6b450ce416132a8fb22f46f938a1432bb636"
+            }
+          ],
+          "checks": {
+            "missing-help": true,
+            "invalid-config-retry-readonly": true,
+            "edition-fixed": true
+          },
+          "inputActor": "computer-use",
+          "screen": {
+            "pixels": [
+              1920,
+              1080
+            ],
+            "renderScaling": 1,
+            "textScale": 1,
+            "highContrast": false
+          },
+          "snapshotScope": "all"
+        },
+        {
+          "profile": "general",
+          "name": "normal-backup",
+          "status": "not-run"
+        },
+        {
+          "profile": "general",
+          "name": "repair-followup",
+          "status": "not-run"
+        },
+        {
+          "profile": "general",
+          "name": "restore-confirmation",
+          "status": "not-run"
+        },
+        {
+          "profile": "general",
+          "name": "restore-followup",
+          "status": "not-run"
+        },
+        {
+          "profile": "general",
+          "name": "runtime-protection",
+          "status": "not-run"
+        },
+        {
+          "profile": "general",
+          "name": "v1-install-lifetime",
+          "status": "passed",
+          "screenshots": [
+            {
+              "name": "v1-running.jpg",
+              "sha256": "9f509f445580e3b98f5994108700910b0b74bdfddba59209b10a107af645f0dd"
+            }
+          ],
+          "checks": {
+            "gui-install": true,
+            "all-file-hashes": true,
+            "child-survives-gui-close": true,
+            "requested-end": true
+          },
+          "inputActor": "computer-use",
+          "screen": {
+            "pixels": [
+              1920,
+              1080
+            ],
+            "renderScaling": 1,
+            "textScale": 1,
+            "highContrast": false
+          }
+        },
+        {
+          "profile": "general",
+          "name": "v2-cancel-resume-launch",
+          "status": "not-run"
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "mode": "portable",
+      "profile": "developer",
+      "productSourceHash": "eda71c82c6bd1254b0bd81813752715ab00140feea1d347bfd8667c43281f124",
+      "binarySha256": {
+        "launcher": "248377458e41435fad9752d89357b867ddd97340f6a4eb934fe66a6a9392889c",
+        "developer": "9fef5b3d175ce26b285c4226f27768984f0e4e5dad67eb33179821a135a1c880",
+        "agent": "de8fffee9bf62ae2a9bcf5d1e114f0c4108ee496001963144e78e7687e138210",
+        "server": "db25373291d77861d4c8dc6625fa798efa438e3e37312552d5719d0ef9f0abb4"
+      },
+      "complete": false,
+      "counts": {
+        "passed": 3,
+        "failed": 0,
+        "not-run": 11,
+        "running": 0,
+        "blocked": 0
+      },
+      "cases": [
+        {
+          "profile": "developer",
+          "name": "authentication-errors",
+          "status": "not-run"
+        },
+        {
+          "profile": "developer",
+          "name": "connection-errors",
+          "status": "passed",
+          "screenshots": [
+            {
+              "name": "server-unavailable.jpg",
+              "sha256": "167a8875fd128362332462a3cf29c87033098b93c06d912b14c4f8b16985d2d6"
+            },
+            {
+              "name": "server-reconnected.jpg",
+              "sha256": "22c5a275d950ce23fb4ce5a30beff23f4ed104ea04d993a0b8ce81ab1c3f010a"
+            }
+          ],
+          "checks": {
+            "server-reconnect": true,
+            "retry-no-mutation": true
+          },
+          "inputActor": "computer-use",
+          "screen": {
+            "pixels": [
+              1920,
+              1080
+            ],
+            "renderScaling": 1,
+            "textScale": 1,
+            "highContrast": false
+          },
+          "snapshotScope": "all"
+        },
+        {
+          "profile": "developer",
+          "name": "diagnostics",
+          "status": "not-run"
+        },
+        {
+          "profile": "developer",
+          "name": "empty-and-promotion",
+          "status": "not-run"
+        },
+        {
+          "profile": "developer",
+          "name": "exact-confirmation",
+          "status": "not-run"
+        },
+        {
+          "profile": "developer",
+          "name": "initial-configuration",
+          "status": "passed",
+          "screenshots": [
+            {
+              "name": "missing-configuration.jpg",
+              "sha256": "135085df0184caeebd9d4e9e170cad3f8a1650154d27792bfa8a3e16566eff53"
+            },
+            {
+              "name": "invalid-configuration.jpg",
+              "sha256": "143ffe4f62e28347c71f299682d12eee4c89ef41476432f9ea547ecb8b6871a5"
+            },
+            {
+              "name": "configuration-reloaded-developer-fixed.jpg",
+              "sha256": "883438283c9b44a17276f94a22fdc6c7230dc17a0201b3389fa24556996810a5"
+            }
+          ],
+          "checks": {
+            "missing-help": true,
+            "invalid-config-retry-readonly": true,
+            "edition-fixed": true
+          },
+          "inputActor": "computer-use",
+          "screen": {
+            "pixels": [
+              1920,
+              1080
+            ],
+            "renderScaling": 1,
+            "textScale": 1,
+            "highContrast": false
+          },
+          "snapshotScope": "all"
+        },
+        {
+          "profile": "developer",
+          "name": "maintenance-outcomes",
+          "status": "not-run"
+        },
+        {
+          "profile": "developer",
+          "name": "normal-backup",
+          "status": "not-run"
+        },
+        {
+          "profile": "developer",
+          "name": "repair-followup",
+          "status": "not-run"
+        },
+        {
+          "profile": "developer",
+          "name": "restore-confirmation",
+          "status": "not-run"
+        },
+        {
+          "profile": "developer",
+          "name": "restore-followup",
+          "status": "not-run"
+        },
+        {
+          "profile": "developer",
+          "name": "runtime-protection",
+          "status": "not-run"
+        },
+        {
+          "profile": "developer",
+          "name": "v1-install-lifetime",
+          "status": "passed",
+          "screenshots": [
+            {
+              "name": "v1-running.jpg",
+              "sha256": "7505e1cb847d2c62f224afd806e043ad57f5f968fd7aaf8b36b56ad27789460d"
+            },
+            {
+              "name": "v1-exact-confirmation.jpg",
+              "sha256": "0bafb6db577a6ea9d22625ec8f6854771c373bcda45c0e280d35d15656f9fa32"
+            }
+          ],
+          "checks": {
+            "gui-install": true,
+            "all-file-hashes": true,
+            "child-survives-gui-close": true,
+            "requested-end": true
+          },
+          "inputActor": "computer-use",
+          "screen": {
+            "pixels": [
+              1920,
+              1080
+            ],
+            "renderScaling": 1,
+            "textScale": 1,
+            "highContrast": false
+          }
+        },
+        {
+          "profile": "developer",
+          "name": "v2-cancel-resume-launch",
+          "status": "not-run"
+        }
+      ]
+    }
+  ],
+  "observation": {
+    "rangeStart": 11993088,
+    "cancelledThrottledBytes": 12025856,
+    "managedGeneralInstalledFilesV1": 3,
+    "managedGeneralInstalledFilesV2": 4,
+    "v1ProtectedUnchanged": true,
+    "resumeAutomaticLaunch": false,
+    "requestedSyntheticExit": true,
+    "repairFollowUp": {
+      "catalogFaults": 1,
+      "installedFiles": 4,
+      "repairOperations": 1,
+      "retryOperationRecords": 5,
+      "retryOperationRecordHashesUnchanged": true,
+      "additionalRepairOrRestoreDuringRetry": false,
+      "readonlyInputs": [
+        "primary-action",
+        "status-check",
+        "retry-operation",
+        "F6"
+      ],
+      "normalInstallationQueryOnly": true,
+      "v1ProtectedUnchanged": true,
+      "repeatQueryFailureTitle": "상태 확인 실패"
+    },
+    "normalBackup": {
+      "id": "20261005150434",
+      "files": 4,
+      "auxiliarySetupProfile": "developer",
+      "completedInGui": true,
+      "automaticLaunch": false,
+      "temporaryCaptureObstructionResolvedByUser": true
+    },
+    "restoreConfirmationPartial": {
+      "cancelProtectedUnchanged": true,
+      "changedPreviewRejected": true,
+      "changedPreviewProtectedUnchanged": true,
+      "backupFilesStillValid": 4,
+      "normalRestoreApplied": true,
+      "complete": true
+    },
+    "restoreFollowUp": {
+      "kind": "restore-file-transition",
+      "attemptId": "e3b488a481a344aea4eb36a49fbe2df6",
+      "backupId": "20261005150434",
+      "files": 4,
+      "catalogFaultsTotal": 2,
+      "queryRetryProtectedUnchanged": true,
+      "reappliedRestore": false,
+      "appLaunched": false,
+      "v1ProtectedUnchanged": true
+    }
+  },
+  "excluded": [
+    "company UE and RHEL",
+    "service-account ACL",
+    "remote CI",
+    "real signing certificates",
+    "narrator speech"
+  ],
+  "updatedDate": "2026-10-06",
+  "harnessSourceCommit": "1248251"
+}

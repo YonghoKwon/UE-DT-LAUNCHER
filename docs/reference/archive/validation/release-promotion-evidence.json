@@ -1,0 +1,16 @@
+{
+  "date": "2026-10-02",
+  "branch": "codex/release-promotion-control",
+  "productHead": "a8080eaee5dd604cccac507be8e6aa65d5ac4ae9",
+  "productSourceDirty": false,
+  "productSourceHash": "9c0cd33f0b6f908fb141d9ba7286357c1d64720e0052ebd0ee51810946deb39c",
+  "windowsTests": {"passed": 568, "failed": 0, "skipped": 0},
+  "linuxTests": {"passed": 568, "failed": 0, "skipped": 0},
+  "pythonFixtureTestsPassed": 12,
+  "publishedCatalogMigration": {"windows": "passed", "linux": "passed"},
+  "httpSignatureAgentPromotionRuntime": {"windows": "passed", "linux": "passed"},
+  "httpsBearerNginx": "passed-linux-synthetic",
+  "gui": {"generalWaitingText": "observed", "primaryDisabled": "observed", "installation": "not-tested-in-this-promotion-fixture"},
+  "progress": {"OPS-03": 100, "USER-01": 50, "UI-02": 75, "OPS-06": 50},
+  "companyAcceptance": "not-approved"
+}

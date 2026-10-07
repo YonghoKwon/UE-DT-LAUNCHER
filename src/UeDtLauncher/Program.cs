@@ -10,15 +10,22 @@ public static class Program
 {
     private static readonly string[] KnownSubcommands =
     {
-        "run", "service", "rollback", "generate-manifest", "update-catalog",
-        "list-releases", "generate-nginx-acl", "sign-manifest", "generate-signing-key", "sample-config", "publish-release", "doctor", "diagnostics", "agent", "credential"
+        "run", "service", "rollback", "runtime", "generate-manifest", "update-catalog", "release-metadata", "import-install",
+        "list-releases", "generate-nginx-acl", "sign-manifest", "generate-signing-key", "sample-config", "publish-release", "doctor", "diagnostics", "agent", "credential", "operation", "scheduled-check"
     };
 
     [STAThread]
     public static int Main(string[] args)
     {
+        if (args.SequenceEqual(new[] { "runtime-host", "--capability-probe" })) return RuntimeHost.RunProbe();
+        if (args.SequenceEqual(new[] { "runtime-host" })) return RuntimeHost.RunSessionAsync().GetAwaiter().GetResult();
         CrashReporter.Install(Path.Combine(AppContext.BaseDirectory, "logs"));
-        if (args.Any(arg => arg.Equals("--version", StringComparison.OrdinalIgnoreCase)))
+        if (args.SequenceEqual(new[] { "--build-info" }))
+        {
+            Console.WriteLine(JsonSerializer.Serialize(new { version=LauncherBuildInfo.Version, edition=LauncherBuildInfo.Edition.ToString(), platform=LauncherBuildInfo.Platform },JsonFiles.Options));
+            return 0;
+        }
+        if (args.Length == 1 && args[0].Equals("--version", StringComparison.OrdinalIgnoreCase))
         {
             Console.WriteLine(typeof(Program).Assembly.GetCustomAttributes(false)
                 .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
@@ -42,7 +49,8 @@ public static class Program
         // window. For CLI subcommands launched from a terminal, attach to that terminal so output is visible.
         if (!isGui && OperatingSystem.IsWindows()) AttachParentConsole();
 
-        if (SelfUpdateManager.TryApplyPendingUpdate(args)) return 0;
+        var diagnosticCommand = !isGui && CliArgs(args, wantsCli).FirstOrDefault() is "doctor" or "diagnostics" or "scheduled-check" or "operation";
+        if (File.Exists(SelfUpdateManager.PendingFilePath)) Console.Error.WriteLine(LauncherBuildInfo.UpdateNotice);
 
         if (isGui)
         {
@@ -125,7 +133,7 @@ public static class Program
             .LogToTrace();
     }
 
-    private static async Task<int> MainAsync(string[] args)
+    internal static async Task<int> MainAsync(string[] args)
     {
         try
         {
@@ -138,7 +146,12 @@ public static class Program
             var command = args[0].ToLowerInvariant();
             return command switch
             {
+                "release-metadata" => await GenerateSidecarAsync(args.Skip(1).ToArray()),
+                "import-install" => await ImportInstallAsync(args.Skip(1).ToArray()),
                 "run" => await RunLauncherAsync(args.Skip(1).ToArray()),
+                "operation" => await RunOperationAsync(args.Skip(1).ToArray()),
+                "scheduled-check" => await RunScheduledCheckAsync(args.Skip(1).ToArray()),
+                "runtime" => await RunRuntimeCommandAsync(args.Skip(1).ToArray()),
                 "service" => await RunServiceAsync(args.Skip(1).ToArray()),
                 "rollback" => await RollbackAsync(args.Skip(1).ToArray()),
                 "generate-manifest" => await GenerateManifestAsync(args.Skip(1).ToArray()),
@@ -165,22 +178,115 @@ public static class Program
         }
     }
 
+    private static async Task<int> GenerateSidecarAsync(string[] args)
+    {
+        var zip = Required(args, "--zip");
+        var metadata = new ReleaseSidecar
+        {
+            ProjectId = Required(args, "--project-id"),
+            DisplayName = Get(args, "--display-name") ?? Required(args, "--project-id"),
+            Version = Required(args, "--version"),
+            Environment = Get(args, "--environment") ?? "prod",
+            Channel = Get(args, "--channel") ?? "stable",
+            Platform = Required(args, "--platform"),
+            PayloadRoot = Get(args, "--payload-root") ?? ".",
+            EntryPoint = Required(args, "--entry-point"),
+            ExecutablePaths = (Get(args, "--executable-paths") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).ToList(),
+            Notes = Get(args, "--notes"),
+            HeroPath = Get(args, "--hero-path"),
+            ThumbnailPath = Get(args, "--thumbnail-path")
+        };
+        var output = Get(args, "--output") ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(zip))!, "release.json");
+        await SidecarPackageValidator.GenerateAsync(zip, output, metadata);
+        Console.WriteLine("Created external release metadata: " + output);
+        return 0;
+    }
+
+    private static async Task<int> RunRuntimeCommandAsync(string[] args)
+    {
+        var action = args.FirstOrDefault() ?? "inspect";
+        if (action is not ("inspect" or "recover")) throw new ArgumentException("runtime supports inspect or recover.");
+        var configPath = Required(args, "--config");
+        var display = await JsonFiles.ReadAsync<LauncherConfig>(configPath);
+        var config=display.IsManagedDeployment?ManagedClientContext.Create(display):display;
+        if(!config.IsManagedDeployment){LauncherPaths.ResolveInPlace(config,configPath);LauncherConfigValidator.Validate(config);}
+        if (config.IsManagedDeployment || !string.IsNullOrWhiteSpace(config.DistributionServerUrl))
+        {
+            var version = Get(args, "--version") ?? (config.VersionPolicy == "exact" ? config.RequestedVersion : null)
+                ?? throw new ArgumentException("Runtime inspection/recovery requires an exact --version.");
+            var selection=new ReleaseSelection(config.ProjectId!, config.Environment, config.Channel, config.TargetPlatform, version);
+            if(config.IsManagedDeployment)ManagedClientContext.Bind(config,selection);else VersionedReleasePaths.Bind(config,selection);
+        }
+        var confirm = Has(args, "--confirm-stopped");
+        var serviceVersion = Has(args, "--service-selection") ? Get(args, "--version") ?? config.SelectedRelease?.Version ?? config.RequestedVersion
+            ?? throw new ArgumentException("Service selection requires --version.") : null;
+        if (serviceVersion is not null) ReleaseSidecar.Segment(serviceVersion);
+        if (action == "recover" && confirm == Has(args, "--dry-run")) throw new ArgumentException("Choose --dry-run or explicit --confirm-stopped after closing every application process.");
+        if (serviceVersion is not null && action != "recover") throw new ArgumentException("Service selection requires recovery.");
+        RuntimeRecoveryRequest.Validate(config, confirm, serviceVersion);
+        RuntimeObservation observation;
+        if (config.IsManagedDeployment)
+        {
+            var response = await new ManagedAgentClient().SendRuntimeAsync("runtime-" + action, config, confirm: confirm, serviceVersion: serviceVersion);
+            if (!response.Success || response.Runtime is null) throw new InvalidOperationException(response.Message);
+            observation = response.Runtime;
+        }
+        else
+        {
+            observation = serviceVersion is not null ? RuntimeServiceState.ConfirmSelection(config, RuntimeIdentities.Current(), serviceVersion)
+                : action == "recover" ? RuntimeStore.Recover(config, RuntimeIdentities.Current(), confirm) : RuntimeStore.Observe(config);
+        }
+        Console.WriteLine(JsonSerializer.Serialize(observation, JsonFiles.Options)); return 0;
+    }
+
+    private static async Task<int> ImportInstallAsync(string[] args)
+    {
+        var plan = await LegacyInstallImport.RunAsync(Required(args, "--config"), Required(args, "--destination-root"), Has(args, "--apply"));
+        Console.WriteLine(JsonSerializer.Serialize(plan, JsonFiles.Options)); return 0;
+    }
+
     private static async Task<int> RunLauncherAsync(string[] args)
     {
         var configPath = Get(args, "--config") ?? "launcher.config.json";
         var repair = Has(args, "--repair");
         var noLaunch = Has(args, "--no-launch");
+        using var cancel = new ConsoleCancellation();
 
-        var config = await LauncherPaths.LoadResolvedAsync(configPath);
+        var display = await JsonFiles.ReadAsync<LauncherConfig>(configPath,cancel.Token);
+        var config = display.IsManagedDeployment?ManagedClientContext.Create(display):await LauncherPaths.LoadResolvedAsync(configPath, cancellationToken: cancel.Token);
+        var portableOperations = new OperationRegistry(Path.Combine(config.StateRootDir, "operations"));
+        if (Get(args, "--resume-id") is { } resumeId)
+        {
+            if (config.IsManagedDeployment) throw new ArgumentException("Use operation resume for managed deployments.");
+            var previous = portableOperations.Inspect(resumeId, RuntimeIdentities.Current());
+            if (previous.Phase is not ("Interrupted" or "Cancelled" or "Failed") || previous.Selection is null || previous.ManifestSha256 is null)
+                throw new InvalidOperationException("Operation cannot be resumed.");
+            config.ProjectId = previous.Selection.ProjectId; config.Environment = previous.Selection.Environment; config.Channel = previous.Selection.Channel;
+            config.TargetPlatform = previous.Selection.Platform; config.VersionPolicy = "exact"; config.RequestedVersion = previous.Selection.Version;
+            config.ExpectedResumeManifestSha256 = previous.ManifestSha256; config.RepairMode = previous.Command == "repair";
+        }
         if (repair) config.RepairMode = true;
         if (noLaunch) config.LaunchAfterUpdate = false;
 
         if (config.IsManagedDeployment)
         {
-            var managedResponse = await new ManagedAgentClient().SendAsync(repair ? "repair" : "update", config.ProjectId);
+            ReleaseSelection? selection = null;
+            if (string.IsNullOrWhiteSpace(display.ManifestUrl) || !string.IsNullOrWhiteSpace(display.DistributionServerUrl) || !string.IsNullOrWhiteSpace(display.CatalogUrl) || display.VersionPolicy=="exact")
+            {
+                var catalogResponse = await new ManagedAgentClient().SendStreamingAsync("catalog", config.ProjectId, _ => { });
+                if (!catalogResponse.Success || catalogResponse.Catalog is null) throw new InvalidOperationException("업데이트 서비스에서 배포 목록을 가져오지 못했습니다.");
+                var release = CatalogResolver.SelectRelease(catalogResponse.Catalog, config);
+                selection = new ReleaseSelection(config.ProjectId!, release.Environment, release.Channel, release.Platform, release.Version);
+                ManagedClientContext.Bind(config,selection);
+            }
+            var operationId = Get(args, "--operation-id") ?? Guid.NewGuid().ToString("N");
+            Console.WriteLine("Operation ID: " + operationId);
+            var managedResponse = await new ManagedAgentClient().SendCancellableAsync(repair ? "repair" : "update", config.ProjectId,
+                progress => Console.WriteLine($"[{progress.Stage}] {progress.Message}"), selection: selection,token:cancel.Token,operationId: operationId);
             PrintAgentResponse(managedResponse);
             if (!managedResponse.Success) return 1;
-            if (!noLaunch) _ = await ManagedAppLauncher.LaunchAsync(config);
+            if (selection is not null && managedResponse.SelectedRelease != selection) throw new InvalidDataException("Agent release mismatch.");
+            if (!noLaunch && !cancel.Token.IsCancellationRequested) _ = await ManagedAppLauncher.LaunchAsync(config,cancel.Token);
             return 0;
         }
 
@@ -191,8 +297,21 @@ public static class Program
         try
         {
             await ResolveCatalogForCliAsync(config, (stage, message, percent) => reporter.Report(new LauncherProgress(stage, message, percent)));
-            using var engine = new LauncherEngine(config, reporter.Report, fileLogger, echoToConsole: false);
-            await engine.RunAsync();
+            var id = Get(args, "--operation-id") ?? Guid.NewGuid().ToString("N");
+            Console.WriteLine("Operation ID: " + id);
+            using var operation = portableOperations.Begin(id, RuntimeIdentities.Current(), config.SelectedRelease, cancel.Token, config.RepairMode ? "repair" : "update");
+            LauncherEngine? running = null;
+            using var engine = new LauncherEngine(config, progress =>
+            {
+                if (running?.ManifestSha256 is { } digest) operation.Bind(config.SelectedRelease, digest);
+                if (progress.Stage == "Download") operation.Phase("Downloading");
+                else if (progress.Stage == "Apply") operation.Phase("Applying");
+                reporter.Report(progress);
+            }, fileLogger, echoToConsole: false);
+            running = engine;
+            try { await engine.RunAsync(operation.Token); operation.Finish(true); }
+            catch (OperationCanceledException) { operation.Finish(engine.InstallationCommitted); throw; }
+            catch { operation.Finish(engine.InstallationCommitted, failed: true); throw; }
         }
         finally
         {
@@ -201,12 +320,52 @@ public static class Program
         return 0;
     }
 
+    private static async Task<int> RunOperationAsync(string[] args)
+    {
+        var action = args.FirstOrDefault() ?? "status";
+        var id = Required(args, "--id");
+        if (Get(args, "--config") is { } path)
+        {
+            var display=await JsonFiles.ReadAsync<LauncherConfig>(path);
+            var config=display.IsManagedDeployment?ManagedClientContext.Create(display):await LauncherPaths.LoadResolvedAsync(path,readOnly:true);
+            if (!config.IsManagedDeployment)
+            {
+                var registry = new OperationRegistry(Path.Combine(config.StateRootDir, "operations"));
+                var peer = RuntimeIdentities.Current();
+                if (action == "resume") return await RunLauncherAsync(["--config", path, "--resume-id", id, "--no-launch"]);
+                var status = action switch { "status" => registry.Inspect(id, peer), "cancel" => registry.Cancel(id, peer),
+                    "discard" => registry.Discard(id, peer), _ => throw new ArgumentException("Unknown operation action.") };
+                Console.WriteLine(JsonSerializer.Serialize(status, JsonFiles.Options)); return 0;
+            }
+        }
+        var response = await new ManagedAgentClient(Get(args, "--endpoint")).SendOperationAsync(action, id);
+        Console.WriteLine(JsonSerializer.Serialize(response, JsonFiles.Options)); return response.Success ? 0 : 1;
+    }
+    private static async Task<int> RunScheduledCheckAsync(string[] args)
+    {
+        using var cancellation=new ConsoleCancellation();
+        var result=await ScheduledChecks.RunOnceAsync(Required(args,"--config"),cancellation.Token);
+        Console.WriteLine(JsonSerializer.Serialize(result,JsonFiles.Options));return result.Status=="failed"?1:0;
+    }
+
     private static async Task<int> RunAgentClientAsync(string[] args)
     {
         var command = args.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal)) ?? "status";
         var endpoint = Get(args, "--endpoint");
         var projectId = Get(args, "--project");
-        var response = await new ManagedAgentClient(endpoint).SendAsync(command, projectId);
+        var version = Get(args, "--version");
+        var selection = version is null ? null : new ReleaseSelection(projectId ?? throw new ArgumentException("--project is required"),
+            Get(args, "--environment") ?? "prod", Get(args, "--channel") ?? "stable",
+            Get(args, "--platform") ?? (OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64"), version);
+        if (command == "project-asset")
+        {
+            var path = await new ManagedAgentClient(endpoint).GetProjectAssetAsync(projectId ?? throw new ArgumentException("--project is required"), Required(args, "--kind"), Required(args, "--cache"));
+            Console.WriteLine(path is null ? "Project image is unavailable." : "Verified project image: " + path);
+            return path is null ? 1 : 0;
+        }
+        var response = await new ManagedAgentClient(endpoint).SendStreamingAsync(command, projectId, _ => { }, selection: selection);
+        if (selection is not null && response.Success && response.SelectedRelease != selection)
+            throw new InvalidDataException("Agent did not confirm the requested release.");
         PrintAgentResponse(response);
         if (!string.IsNullOrWhiteSpace(response.ClientIdentity)) Console.WriteLine($"Client: {response.ClientIdentity}");
         return response.Success ? 0 : 1;
@@ -224,15 +383,33 @@ public static class Program
     {
         var action = args.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal)) ?? "status";
         var name = Get(args, "--name") ?? throw new ArgumentException("credential requires --name <credential-name>.");
+        var layout = DeviceCredentials.StorageLayout(Get(args, "--storage") ?? "managed");
         if (action.Equals("status", StringComparison.OrdinalIgnoreCase))
         {
-            Console.WriteLine(CredentialStore.Exists(name) ? $"Credential '{name}' is configured." : $"Credential '{name}' is not configured.");
-            return CredentialStore.Exists(name) ? 0 : 1;
+            var inspection = DeviceCredentials.Inspect(name, layout);
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(inspection, JsonFiles.Options));
+            return inspection.Ready ? 0 : 1;
+        }
+        if (action == "keygen")
+        {
+            var output = Path.GetFullPath(Required(args, "--public-out"));
+            if (File.Exists(output)) throw new IOException("Public registration file already exists.");
+            var key = DeviceCredentials.Generate(name, Required(args, "--key-id"), layout);
+            using var stream = new FileStream(output, FileMode.CreateNew, FileAccess.Write);
+            System.Text.Json.JsonSerializer.Serialize(stream, key, JsonFiles.Options);
+            Console.WriteLine($"Device key '{key.KeyId}' stored. Only the public registration file was exported.");
+            return 0;
+        }
+        if (action == "repair-permissions")
+        {
+            if (args.Contains("--apply") == args.Contains("--dry-run")) throw new ArgumentException("Choose --dry-run or --apply.");
+            Console.WriteLine(DeviceCredentials.RepairPermissions(name, args.Contains("--apply"), layout));
+            return 0;
         }
         if (action.Equals("delete", StringComparison.OrdinalIgnoreCase))
         {
-            CredentialStore.Delete(name);
-            Console.WriteLine($"Credential '{name}' was deleted.");
+            DeviceCredentials.Delete(name, layout);
+            Console.WriteLine($"Local credential '{name}' was deleted. Server revocation is a separate administrator operation.");
             return 0;
         }
         if (!action.Equals("set", StringComparison.OrdinalIgnoreCase))
@@ -240,7 +417,7 @@ public static class Program
 
         var token = Environment.GetEnvironmentVariable("UE_DT_CREDENTIAL_TOKEN");
         if (string.IsNullOrWhiteSpace(token)) token = ReadSecretFromConsole("Bearer token: ");
-        CredentialStore.Save(name, token);
+        CredentialStore.Save(name, token, layout);
         Console.WriteLine($"Credential '{name}' was stored. The token value will not be displayed.");
         return 0;
     }
@@ -294,9 +471,11 @@ public static class Program
 
     private static async Task<int> RunDoctorAsync(string[] args)
     {
+        var format = Get(args, "--format") ?? "json";
+        if (format is not ("json" or "text")) throw new ArgumentException("doctor --format must be json or text.");
         var configPath = Get(args, "--config") ?? "launcher.config.json";
         var report = await LauncherDoctor.RunAsync(configPath, Has(args, "--online"));
-        Console.WriteLine(JsonSerializer.Serialize(report, JsonFiles.Options));
+        Console.WriteLine(format == "text" ? DoctorPresentation.FormatText(report) : DiagnosticRedactor.Redact(JsonSerializer.Serialize(report, JsonFiles.Options)));
         return report.Healthy ? 0 : 1;
     }
 
@@ -409,7 +588,6 @@ public static class Program
         }
 
         var fileLogger = new FileLogger(config.LogDir);
-        using var instanceLock = SingleInstanceLock.Acquire(LauncherPaths.UpdateLockPath(config));
         Console.WriteLine($"Rolling back using backup {Path.GetFileName(selected.BackupRoot)}...");
         await BackupManager.RestoreAsync(selected.BackupRoot, config.InstallDir, config.InstalledManifestPath, config.InstallStatePath, message =>
         {
@@ -567,6 +745,37 @@ public static class Program
     private static async Task<int> WriteSampleConfigAsync(string[] args)
     {
         var output = Get(args, "--output") ?? "launcher.config.json";
+        if (File.Exists(output) && !Has(args, "--force")) throw new IOException("Config already exists; use a new output or explicit --force.");
+        var mode = Get(args, "--mode") ?? "distribution";
+        if(mode=="managed-client")
+        {
+            var allowed=new HashSet<string>(StringComparer.OrdinalIgnoreCase){"--mode","--project-id","--platform","--environment","--channel","--version-policy","--version","--output","--force"};
+            var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for(var i=0;i<args.Length;i++)
+            {
+                if(!allowed.Contains(args[i]) || !seen.Add(args[i]))throw new ArgumentException("Unsupported or duplicate managed-client option. Operational settings belong in the Agent configuration.");
+                if(!args[i].Equals("--force",StringComparison.OrdinalIgnoreCase))
+                {if(i+1>=args.Length || args[i+1].StartsWith("--",StringComparison.Ordinal))throw new ArgumentException("Missing managed-client option value.");i++;}
+            }
+            var client=LauncherConfigurationTemplates.ManagedClient(Required(args,"--project-id"),Get(args,"--platform"),
+                Get(args,"--environment")??"prod",Get(args,"--channel")??"stable",Get(args,"--version-policy")??"latest",Get(args,"--version"));
+            await JsonFiles.WriteAsync(output,client,overwrite:Has(args,"--force"));
+            Console.WriteLine("Managed client display configuration written. Provision the Agent operational configuration separately; the client edition is fixed by its build.");
+            return 0;
+        }
+        if (mode == "distribution")
+        {
+            var distribution = LauncherConfigurationTemplates.Distribution(new DistributionTemplateOptions(
+                ServerUrl: Get(args, "--server-url") ?? "http://10.20.30.40", ProjectId: Get(args, "--project-id") ?? "ue-dt-simulator",
+                Profile: Get(args, "--profile") ?? "general", Platform: Get(args, "--platform"),
+                DeploymentMode: Get(args, "--deployment-mode") ?? "managed-agent", AuthenticationMode: Get(args, "--auth") ?? "request-signature-v1",
+                CredentialName: Get(args, "--credential-name") ?? "ue-dt-device", SigningKeyId: Get(args, "--signing-key-id") ?? "release-1",
+                PublicKeyPath: Get(args, "--public-key") ?? "release-public.pem"));
+            await JsonFiles.WriteAsync(output, distribution);
+            Console.WriteLine("Distribution config written. Provision the device key and trusted release public key, then run doctor --online. HTTP is not encrypted.");
+            return 0;
+        }
+        if (mode != "legacy-catalog") throw new ArgumentException("--mode must be distribution, managed-client or legacy-catalog.");
         var config = new LauncherConfig
         {
             SchemaVersion = 2,
@@ -660,8 +869,19 @@ public static class Program
         Console.WriteLine("UE-DT-LAUNCHER");
         Console.WriteLine();
         Console.WriteLine("Commands:");
+        Console.WriteLine("  runtime inspect --config <file> [--version <exact version>]");
+        Console.WriteLine("  runtime recover --config <file> --dry-run|--confirm-stopped [--version <exact version>] [--service-selection]");
+        Console.WriteLine("  release-metadata --zip <zip> --project-id <id> --version <version> --platform <platform> --entry-point <path> [--payload-root <path>] [--output <release.json>]");
         Console.WriteLine("  gui                 (also: --gui forces GUI; --cli forces CLI -> defaults to 'run')");
-        Console.WriteLine("  sample-config --output launcher.config.json");
+        Console.WriteLine("  sample-config --output launcher.config.json [--mode distribution|managed-client|legacy-catalog] [--force]");
+        Console.WriteLine("    managed-client: --project-id id [--platform windows-x64|linux-x64] [--environment prod|dev] [--channel stable|beta|dev] [--version-policy latest|exact] [--version exact-version]");
+        Console.WriteLine("    [--server-url http://10.20.30.40] [--project-id id] [--platform windows-x64|linux-x64] [--profile general|developer]");
+        Console.WriteLine("    [--deployment-mode managed-agent|portable] [--auth request-signature-v1|bearer] [--credential-name name] [--signing-key-id id] [--public-key path]");
+        Console.WriteLine("  credential keygen --name name --key-id pc-key --public-out device-public.json [--storage managed|portable]");
+        Console.WriteLine("  operation status|cancel|resume|discard --id <operation-id> [--config portable.json] [--endpoint pipe-or-socket]");
+        Console.WriteLine("  scheduled-check --config <config.json> (one query/status cycle; default disabled, explicit interval required; never installs/starts apps)");
+        Console.WriteLine("  run --config config.json [--operation-id <32-hex-id>] [--no-launch]; persistent resume requires performance.resumeCacheBytes");
+        Console.WriteLine("  credential repair-permissions --name name --dry-run|--apply [--storage managed|portable]");
         Console.WriteLine("  generate-manifest --package-dir <dir> --base-url <url> --entry-point <relative path> --version <version> [--app-id <id>] --output <manifest.json>");
         Console.WriteLine("  update-catalog --catalog <catalog.json> --project-id <id> --version <version> --environment <prod|dev> --channel <stable|beta|dev> --platform <windows-x64|linux-x64> --manifest-url <url> [--display-name <name>] [--allowed-profiles general,developer] [--notes <text>] [--set-latest] [--remove] [--remove-project-if-empty]");
         Console.WriteLine("  list-releases --catalog <catalog.json> [--project <id>]");
@@ -674,7 +894,7 @@ public static class Program
         Console.WriteLine("  credential <set|status|delete> --name <credential-name>");
         Console.WriteLine("  publish-release --package-dir <dir> --server-root <dir> --base-url-root <url> --project-id <id> --version <version> --platform <platform> --entry-point <path> --private-key <pem> --key-id <id> [--dry-run] [--replace] [--set-latest]");
         Console.WriteLine("  generate-signing-key --private-key <private.pem> --public-key <public.pem>");
-        Console.WriteLine("  doctor --config launcher.config.json [--online]");
+        Console.WriteLine("  doctor --config launcher.config.json [--online] [--format json|text]");
         Console.WriteLine("  diagnostics export --config launcher.config.json [--output <diagnostics.zip>]");
     }
 }

@@ -1,5 +1,6 @@
 Name:           ue-dt-launcher
 %global __os_install_post %{nil}
+%global _build_id_links none
 Version:        %{launcher_version}
 Release:        1%{?dist}
 Summary:        UE-DT managed application launcher and update agent
@@ -11,6 +12,13 @@ Requires(pre):  shadow-utils
 %description
 Machine-wide UE-DT launcher CLI and managed update/recovery agent.
 
+%package developer
+Summary:        Developer client for the shared UE-DT launcher agent
+Requires:       ue-dt-launcher = %{version}-%{release}
+
+%description developer
+Compiled developer interface. Uses the base package's launcher/runtime-host and Agent.
+
 %prep
 %setup -q
 
@@ -18,6 +26,7 @@ Machine-wide UE-DT launcher CLI and managed update/recovery agent.
 mkdir -p %{buildroot}/opt/ue-dt-launcher %{buildroot}/etc/ue-dt-launcher/credentials %{buildroot}/var/lib/ue-dt-launcher/state %{buildroot}/var/lib/ue-dt-launcher/apps %{buildroot}/var/log/ue-dt-launcher %{buildroot}/usr/lib/systemd/system
 install -m 0755 UeDtLauncher %{buildroot}/opt/ue-dt-launcher/UeDtLauncher
 install -m 0755 UeDtLauncher.Agent %{buildroot}/opt/ue-dt-launcher/UeDtLauncher.Agent
+install -m 0755 UeDtLauncher.Developer %{buildroot}/opt/ue-dt-launcher/UeDtLauncher.Developer
 install -m 0644 ue-dt-launcher-agent.service %{buildroot}/usr/lib/systemd/system/ue-dt-launcher-agent.service
 install -m 0640 launcher.config.json %{buildroot}/etc/ue-dt-launcher/launcher.config.json
 
@@ -44,3 +53,6 @@ systemctl daemon-reload >/dev/null 2>&1 || :
 %dir %attr(0750,uedt,uedt) /var/lib/ue-dt-launcher/state
 %dir %attr(0755,uedt,uedt) /var/lib/ue-dt-launcher/apps
 %dir %attr(0750,uedt,uedt) /var/log/ue-dt-launcher
+
+%files developer
+/opt/ue-dt-launcher/UeDtLauncher.Developer

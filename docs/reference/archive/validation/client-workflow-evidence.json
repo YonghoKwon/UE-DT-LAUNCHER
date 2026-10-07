@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-03",
+  "branch": "codex/client-workflow-completion",
+  "productCommit": "7cec991",
+  "cohort": "final-05",
+  "productSourceHash": "64e958ac46731516c6435b879b8ee0eaff512f74c60d03da8bf8c48a41db9d53",
+  "windowsPublicationProductDirty": true,
+  "linuxPublicationProductDirty": false,
+  "windowsExecutableSha256": {
+    "general": "30521b41f51f21caf9e26f450041510f6aaad5acdfab199a00dd604c29da0dd4",
+    "developer": "c56648f25616bded17d7387635e5237e8b3ac09ad78419352b2a4ecb93479964",
+    "agent": "5cd3a7222e01825630363bab24fb5c1f726c4a22a916a1973a8d5d129a1055db",
+    "server": "6cde1faf99b136f8491d8331e2d51ce3e8abc4d78d809921804e9ac658fc4974"
+  },
+  "regressions": {
+    "windows": {"passed": 698, "failed": 0, "skipped": 0},
+    "wsl": {"passed": 698, "failed": 0, "skipped": 0},
+    "fixtureTools": {"passed": 14},
+    "downloadProxy": {"passed": 1},
+    "windowsPublishedSignedHttp": "passed-on-fresh-root-retry",
+    "firstWindowsPublishedRun": "failed-approval-ioexception",
+    "wslPublishedSignedHttp": "passed",
+    "wslPublishedHttpsBearerNginx": "passed-with-default-log-path-alert"
+  },
+  "guiEnvironment": {
+    "width": 1440,
+    "height": 900,
+    "workAreaHeight": 852,
+    "renderScaling": 1,
+    "appTextScale": 1,
+    "highContrast": false,
+    "acceptedByUserForCurrentFunctionalAndVisualEvidence": true,
+    "countsAs1920Acceptance": false,
+    "operator": "agent-mouse",
+    "syntheticApplicationsOnly": true
+  },
+  "guiCases": [
+    {"fixture": "accept-mg", "edition": "General", "mode": "managed", "readOnlyReconnect": "passed", "emptyCatalogRecovery": "passed", "v1GuiInstallHashAndLaunch": "passed", "guiCloseChildLifetime": "passed", "v2DownloadCancel": "passed", "v2Resume": "passed", "rangeStart": 9371648, "cancelledThrottledBytes": 9404416, "v1Unchanged": true, "v2FileHashesVerified": 4, "v2AutomaticLaunchesAfterResume": 0, "v2ExplicitLaunch": "pending", "repairRollbackAcceptance": "pending"},
+    {"fixture": "accept-md", "edition": "Developer", "mode": "managed", "readOnlyReconnect": "passed", "emptyCatalogRecovery": "passed", "exactV1ConfirmationCancel": "passed", "v1GuiInstallHashAndLaunch": "passed", "guiCloseChildLifetime": "passed", "v2DownloadCancel": "passed", "cancelledThrottledBytes": 10649600, "v1Unchanged": true, "v2Resume": "pending", "repairRollbackAcceptance": "pending"},
+    {"fixture": "accept-pg", "edition": "General", "mode": "portable", "readOnlyReconnect": "passed", "emptyCatalogRecovery": "passed", "v1GuiInstallHashAndLaunch": "passed", "guiCloseChildLifetime": "passed", "v2DownloadCancel": "passed", "cancelledThrottledBytes": 9404416, "v1Unchanged": true, "v2Resume": "pending", "repairRollbackAcceptance": "pending"},
+    {"fixture": "accept-pd", "edition": "Developer", "mode": "portable", "readOnlyReconnect": "passed", "emptyCatalogRecovery": "passed", "exactV1ConfirmationCancel": "passed", "v1GuiInstallHashAndLaunch": "pending", "v2DownloadCancel": "pending", "v2Resume": "pending", "repairRollbackAcceptance": "pending"}
+  ],
+  "fullGuiAcceptance": false,
+  "narratorVoiceVerified": false,
+  "companyProductionAcceptance": false,
+  "progressChanged": false
+}

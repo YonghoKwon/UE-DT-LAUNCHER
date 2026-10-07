@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-05",
+  "branch": "codex/client-usability-hardening",
+  "productCommit": "a241397",
+  "productSourceHashWindows": "5934cd8f9453d86e5ef865057dc02e7da671d482c36dfeb054818c2ee66650c5",
+  "binaries": {
+    "windowsGeneral": "10fbe1871f359a86a20656781e2b22af24748d55e36c017891e8aba61d89e4b8",
+    "windowsDeveloper": "857e193a71deda5108990330c857676fd021e48adb0c1d97b949e7813ee1655f",
+    "windowsAgent": "5a27d1bc7b4a376fe5c9b64f520e594bec63f84e987d9299eb9202cb2bc2dde8",
+    "windowsServer": "b34de486bdf4ef435e64c7748c37e132fbeaaca4c0885fee9bf469de952e2bf1",
+    "linuxGeneral": "3c459338268696dfad1774d11fd2a647ec4cb6f0e0033141d75d61b6f31983fe",
+    "linuxDeveloper": "497a0a837ef39549669372cdd5b5635fd54f85771d7905eefa192ad1af416e19",
+    "linuxAgent": "50503ca0bfa310dcf214b8e5f68a7faf9fcf5a4892bf6994d807abc585f996af",
+    "linuxServer": "be3901bd0b72818d7dda73d76715e7f17ce89798d3de66faf972545befda7d4c"
+  },
+  "tests": {"windows": {"passed": 753, "failed": 0, "skipped": 0}, "wsl": {"passed": 753, "failed": 0, "skipped": 0}},
+  "published": {"windowsHttpSignature": "passed", "linuxHttpSignature": "passed", "linuxHttpsBearer": "passed", "managedSelectionOnlyClient": "passed", "ipcCommittedRestore": "passed"},
+  "screen": {"pixels": [1920, 1080], "workAreaPixels": [1920, 1032], "renderScaling": 1, "textScale": 1, "highContrast": false},
+  "guiInput": "computer-use",
+  "guiCohorts": [
+    {"id": "final-win2", "fourModesV1GuiInstallAndLifetime": "passed", "fourModesDownloadCancelAndRangeResume": "passed", "fullErrorAndRecoveryMatrix": "not-run"},
+    {"id": "final-win3", "managedDeveloperDirectRestoreCancelAndPreviewRejectionAndApply": "passed", "fullFourModeAcceptance": "not-run"}
+  ],
+  "downloadResumeRanges": {"managedGeneral": 24412160, "managedDeveloper": 26542080, "portableGeneral": 22872064, "portableDeveloper": 30441472},
+  "unverified": ["final-candidate-four-mode-error-and-restore-matrix", "actual-post-restore-query-fault-gui", "service-account-acl", "company-environment", "narrator", "other-resolution-and-dpi"],
+  "failuresPreserved": ["initial-fixture-ipc-collision", "three-parallel-fixture-approval-failures", "linux-final2-first-run-one-concurrent-http-failure", "tool-path-startup-errors", "snapshot-scope-rejection"],
+  "progress": {"USER-02": 75, "UI-02": 75, "USER-03": 75, "UI-03": 75},
+  "companyApproval": false
+}

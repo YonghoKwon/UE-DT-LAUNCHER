@@ -5,8 +5,9 @@
     <ProductVersion Condition="'$(ProductVersion)' == ''">1.0.0</ProductVersion>
     <PublishRoot Condition="'$(PublishRoot)' == ''">$(MSBuildThisFileDirectory)..\..\artifacts\windows-installer\payload</PublishRoot>
     <BuildLabel Condition="'$(BuildLabel)' == ''">UNSIGNED-DEV</BuildLabel>
-    <DefineConstants>ProductVersion=$(ProductVersion);PublishRoot=$(PublishRoot);BuildLabel=$(BuildLabel)</DefineConstants>
-    <OutputName>UeDtLauncher-$(ProductVersion)-$(BuildLabel)-x64</OutputName>
+    <LauncherEdition Condition="'$(LauncherEdition)' == ''">General</LauncherEdition>
+    <DefineConstants>ProductVersion=$(ProductVersion);PublishRoot=$(PublishRoot);BuildLabel=$(BuildLabel);LauncherEdition=$(LauncherEdition)</DefineConstants>
+    <OutputName>UeDtLauncher-$(ProductVersion)-$(LauncherEdition)-$(BuildLabel)-x64</OutputName>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="WixToolset.Util.wixext" Version="6.0.2" />

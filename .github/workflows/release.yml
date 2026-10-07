@@ -8,6 +8,9 @@ permissions:
   contents: read
 
 jobs:
+  functional-gate:
+    uses: ./.github/workflows/build.yml
+
   verify-signing-gate:
     runs-on: windows-latest
     steps:
@@ -27,7 +30,10 @@ jobs:
           }
 
   windows-package:
-    needs: verify-signing-gate
+    needs: [verify-signing-gate, functional-gate]
+    strategy:
+      matrix:
+        edition: [General, Developer]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -48,30 +54,22 @@ jobs:
           "UE_DT_SIGNING_CERT_THUMBPRINT=$($cert.Thumbprint)" | Out-File $env:GITHUB_ENV -Append
       - name: Build MSI payload
         shell: pwsh
-        run: ./scripts/build-windows-installer.ps1 -Version $env:VERSION -OfficialBuild
-      - name: Sign executables and MSI
-        shell: pwsh
-        run: |
-          $files = @(
-            'artifacts/windows-installer/payload/gui/UeDtLauncher.exe',
-            'artifacts/windows-installer/payload/agent/UeDtLauncher.Agent.exe'
-          ) + @(Get-ChildItem artifacts/windows-installer -Filter *.msi | ForEach-Object FullName)
-          ./scripts/sign-windows.ps1 -Files $files -RequireSignature
+        run: ./scripts/build-windows-installer.ps1 -Version $env:VERSION -Edition '${{ matrix.edition }}' -OfficialBuild
       - name: Generate SBOM
         shell: pwsh
         run: |
           dotnet tool install --tool-path .tools Microsoft.Sbom.DotNetTool --version 4.1.5
-          ./.tools/sbom-tool generate -b artifacts/windows-installer -bc . -pn UeDtLauncher -pv $env:VERSION -ps UE-DT -nsb https://ue-dt.local/sbom
+          ./.tools/sbom-tool generate -b $env:UE_DT_PACKAGE_DIR -bc . -pn UeDtLauncher -pv $env:VERSION -ps UE-DT -nsb https://ue-dt.local/sbom
       - name: Checksums
         shell: pwsh
-        run: Get-ChildItem artifacts/windows-installer -Recurse -File | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $($_.Path)" } | Set-Content artifacts/windows-installer/SHA256SUMS.txt
+        run: Get-ChildItem $env:UE_DT_PACKAGE_DIR -Recurse -File | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $($_.Path)" } | Set-Content (Join-Path $env:UE_DT_PACKAGE_DIR SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
-          name: ue-dt-launcher-windows-${{ env.VERSION }}
-          path: artifacts/windows-installer
+          name: ue-dt-launcher-windows-${{ matrix.edition }}-${{ env.VERSION }}
+          path: ${{ env.UE_DT_PACKAGE_DIR }}
 
   linux-package:
-    needs: verify-signing-gate
+    needs: [verify-signing-gate, functional-gate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -88,13 +86,37 @@ jobs:
           RPM_GPG_PRIVATE_KEY: ${{ secrets.RPM_GPG_PRIVATE_KEY }}
           RPM_GPG_KEY_ID: ${{ secrets.RPM_GPG_KEY_ID }}
         run: |
+          set -euo pipefail
+          [[ "$RPM_GPG_KEY_ID" =~ ^[A-Fa-f0-9]{40}$ ]] || { echo 'An exact primary signing fingerprint is required'; exit 1; }
+          export GNUPGHOME=$(mktemp -d "$RUNNER_TEMP/rpm-sign.XXXXXXXX")
+          trap 'rm -rf -- "$GNUPGHOME"' EXIT
+          chmod 700 "$GNUPGHOME"
           printf '%s' "$RPM_GPG_PRIVATE_KEY" | gpg --batch --import
-          printf '%%_signature gpg\n%%_gpg_name %s\n%%__gpg /usr/bin/gpg\n' "$RPM_GPG_KEY_ID" > ~/.rpmmacros
-          find artifacts/linux-rpm/rpmbuild/RPMS -type f -name '*.rpm' -exec rpmsign --addsign {} \;
-          find artifacts/linux-rpm/rpmbuild/RPMS -type f -name '*.rpm' -exec rpm --checksig {} \;
+          actual=$(gpg --with-colons --list-secret-keys "$RPM_GPG_KEY_ID" | awk -F: '$1=="fpr" {print $10; exit}')
+          test "${actual^^}" = "${RPM_GPG_KEY_ID^^}"
+          test -f "$UE_DT_RPM_PATH"
+          rpmsign --define "_gpg_name $actual" --define "_gpg_path $GNUPGHOME" --define '__gpg /usr/bin/gpg' --addsign "$UE_DT_RPM_PATH"
+          rpmsign --define "_gpg_name $actual" --define "_gpg_path $GNUPGHOME" --define '__gpg /usr/bin/gpg' --addsign "$UE_DT_DEVELOPER_RPM_PATH"
+          gpg --batch --export "$actual" > "$GNUPGHOME/public.gpg"
+          mkdir "$GNUPGHOME/rpmdb"
+          rpm --define "_dbpath $GNUPGHOME/rpmdb" --import "$GNUPGHOME/public.gpg"
+          rpm --define "_dbpath $GNUPGHOME/rpmdb" --checksig --verbose "$UE_DT_RPM_PATH" > "$GNUPGHOME/verification.txt"
+          ! grep -Eq 'NOKEY|NOT OK|BAD' "$GNUPGHOME/verification.txt"
+          grep -Ei 'signature.*: OK' "$GNUPGHOME/verification.txt"
+          rpm --define "_dbpath $GNUPGHOME/rpmdb" --checksig --verbose "$UE_DT_DEVELOPER_RPM_PATH" > "$GNUPGHOME/developer-verification.txt"
+          ! grep -Eq 'NOKEY|NOT OK|BAD' "$GNUPGHOME/developer-verification.txt"
+          grep -Ei 'signature.*: OK' "$GNUPGHOME/developer-verification.txt"
+          python3 tools/verify-rpm-payload.py --rpm "$UE_DT_RPM_PATH" --payload "${UE_DT_RPM_PACKAGE_DIR%/artifacts}/ue-dt-launcher-$VERSION" --version "$VERSION" --output "$UE_DT_RPM_PACKAGE_DIR/package-result.json"
+          python3 tools/verify-rpm-payload.py --rpm "$UE_DT_DEVELOPER_RPM_PATH" --payload "${UE_DT_RPM_PACKAGE_DIR%/artifacts}/ue-dt-launcher-$VERSION" --version "$VERSION" --developer --output "$UE_DT_RPM_PACKAGE_DIR/developer-package-result.json"
+          python3 -c 'import json,os,pathlib; p=pathlib.Path(os.environ["UE_DT_RPM_PACKAGE_DIR"])/"package-result.json"; d=json.loads(p.read_text()); d.update(classification="SIGNED-RELEASE",signerFingerprint=os.environ["RPM_GPG_KEY_ID"],functionalGateSource=os.environ["GITHUB_SHA"]); p.write_text(json.dumps(d,indent=2))'
+          python3 -c 'import json,os,pathlib; p=pathlib.Path(os.environ["UE_DT_RPM_PACKAGE_DIR"])/"developer-package-result.json"; d=json.loads(p.read_text()); d.update(classification="SIGNED-RELEASE",signerFingerprint=os.environ["RPM_GPG_KEY_ID"],functionalGateSource=os.environ["GITHUB_SHA"]); p.write_text(json.dumps(d,indent=2))'
+      - name: Generate SBOM
+        run: |
+          dotnet tool install --tool-path .tools Microsoft.Sbom.DotNetTool --version 4.1.5
+          ./.tools/sbom-tool generate -b "$UE_DT_RPM_PACKAGE_DIR" -bc . -pn UeDtLauncher -pv "$VERSION" -ps UE-DT -nsb https://ue-dt.local/sbom
       - name: Generate checksum
-        run: find artifacts/linux-rpm/rpmbuild/RPMS -type f -name '*.rpm' -print0 | xargs -0 sha256sum > artifacts/linux-rpm/SHA256SUMS.txt
+        run: cd "$UE_DT_RPM_PACKAGE_DIR" && sha256sum "$(basename "$UE_DT_RPM_PATH")" "$(basename "$UE_DT_DEVELOPER_RPM_PATH")" > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: ue-dt-launcher-linux-${{ env.VERSION }}
-          path: artifacts/linux-rpm
+          path: ${{ env.UE_DT_RPM_PACKAGE_DIR }}
