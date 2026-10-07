@@ -26,6 +26,10 @@ def provenance(binaries):
             'sourceDiffSha256':hashlib.sha256(diff).hexdigest() if available else None,'binarySha256':hashes}
 
 
+def _retryable_replace_error(error):
+    return os.name=='nt' and getattr(error,'winerror',None) in (5,32,33)
+
+
 def atomic(path,record):
     path=Path(path).absolute()
     if path.is_symlink() or getattr(path,'is_junction',lambda:False)():raise ValueError('Linked evidence output')
@@ -41,7 +45,7 @@ def atomic(path,record):
             except OSError as error:
                 # Windows readers/scanners can temporarily prevent an atomic replacement.
                 # Never alter ACLs, retry the product command, or fall back to a non-atomic write.
-                if os.name!='nt' or getattr(error,'winerror',None) not in (5,32,33) or attempt==4:raise
+                if not _retryable_replace_error(error) or attempt==4:raise
                 time.sleep(.02*(2**attempt))
     finally:
         if temporary.exists():temporary.unlink()

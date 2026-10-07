@@ -1,5 +1,17 @@
 # 로컬 기능·운영·GUI 수용 마무리
 
+## 2026-10-07 PR 통합 사전 검사
+
+PR #6은 main 이후 누적 기능을 회사 파일럿 검토 대상으로 통합한다. 22c671f의 Windows849개/동일 제품 소스 WSL848개+Windows 전용1개 제외를 재검증했고 solution/Developer Release 경고·오류0, 새 snapshot 게시와 Windows CLI/console Agent/server 실제 HTTP/준비도/자격/조회형 schedule/관리형 표시 설정/IPC 복원/온라인 실행 거부가 통과했다. 현재 NuGet 소스의 transitive 취약 패키지 조회는 보고된 취약 패키지0이었다. 이는 회사/GUI 전수 수용이 아니다.
+
+최초 원격 Ubuntu CI(37557130492)는 evidence 도구의 Windows 오류 재현 테스트가 전역 os.name을 바꾸어 pathlib의 WindowsPath까지 선택하는 문제로 실패했다. 제품 소스를 변경하지 않고 오류 분류 함수만 대체하는 시험 경계로 수정했다. 실제 플랫폼별 오류 분류·제한 재시도/영구 실패의 원본 보존을 Windows/WSL에서 확인한다. 원격 재시험 결과는 PR checks를 기준으로 확인하며 이 기록만으로 통과로 보충하지 않는다. 배포 서버 원본이나 서비스 계정/회사 OS는 변경하지 않았다.
+
+두 번째 원격 Windows CI(37557435046)는 새 fixture의 명시적 추가 ACL을 private 검사에서 거부했다. 빈 fixture root만 reset→inheritance 제거→기존3개 principal만 grant하고 marker/key 생성 전 실제 descriptor를 다시 검증하도록 보강했다. Everyone 명시 read ACE가 있는 소유한 빈 폴더의 실제 Windows 회귀를 추가했다. 기존 검사의 허용 SID를 늘리거나 개인키 보호를 완화하지 않는다. subprocess 전체를 대체하는 provisioning 단위 테스트는 native ACL 경계도 대체하며, 실제 ACL 시험은 별도 Windows 계약으로 수행한다.
+
+후속 원격 Ubuntu CI(37558615249)는 모든 단계를 통과했다. 같은 실행의 Windows broker는 기대한 preview 거부 전에 runtime-record-invalid를 반환했다. 수동 Python 경로 hash/JSON으로 상태를 추측하는 fixture 준비를 제거하고, 아직 payload를 실행하지 않은 소유한 fixture에만 제품 CLI runtime recover를 사용해 정확한 native 설치 ID/수동 정지 확인 기록을 생성한다. 이는 제품 검사를 끄거나 실제 회사 앱의 종료를 추정하는 경로가 아니다. CI와 같은 Agent publish 형식의 로컬 broker 재시험은 통과했고 원격 후속 결과는 별도 checks로 확인한다.
+
+1b40ae6의 원격 Ubuntu는 전수 통과했고 Windows는 native broker/저장 경계/서비스/runtime-data 실제 시험을 모두 통과한 뒤 마지막 cohort 단위 시험의 정규화 경로 대조에서 실패했다. 실제 준비 코드처럼 단위 시험의 TEMP/publication 입력을 resolve하여 alias 경로를 정규화한다. cohort/hash/변조 거부 조건을 변경하지 않으며 실제 UE 실행을 이 단위 시험으로 대신하지 않는다.
+
 ## 현재 새 GUI 수용과 미완료
 
 현재 후보1a7740f의 독립 root accept-mg-02/accept-md/accept-pg/accept-pd에서 Computer Use 직접 입력과1920×1080·RenderScaling1·글자1·고대비false를 대조했다. 네 조합 모두 GUI 최초 설치(3파일), 정확한v1 실행과 창 종료 후 자식 유지·requested 종료를 확인했다. 개발자 실행 확인 취소는 보호 파일 무변경이었다. MD/PG의 첫 수명 시도는 watchdog 종료여서 제외하고 같은 게시본의 새 실행 시도로 요청 종료를 확인했다.

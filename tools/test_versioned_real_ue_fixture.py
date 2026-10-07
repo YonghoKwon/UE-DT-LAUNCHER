@@ -51,7 +51,8 @@ class VersionedRealFixtureTests(unittest.TestCase):
 
     def test_frozen_cohort_rejects_dirty_source_or_changed_binary(self):
         with tempfile.TemporaryDirectory() as d:
-            root = Path(d); binary = root/'UeDtLauncher.exe'; binary.write_bytes(b'fixture binary')
+            # The real preparation resolves publication inputs; CI TEMP can use a Windows alias.
+            root = Path(d).resolve(); binary = root/'UeDtLauncher.exe'; binary.write_bytes(b'fixture binary')
             record = {'schemaVersion': 1, 'rid': 'win-x64', 'sourceHead': 'a'*40,
                 'productSourceHash': 'b'*64, 'productSourceDirty': False,
                 'binaries': {'launcher': {'path': str(binary), 'sha256': sha256(binary)}}}

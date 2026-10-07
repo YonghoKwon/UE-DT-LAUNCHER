@@ -3,11 +3,19 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
-from fixture_contract import claim,seal,verify,inside
+from fixture_contract import claim,seal,verify,inside,private_windows_acl
 from evidence_contract import Evidence
 
 
 class ContractTests(unittest.TestCase):
+    @unittest.skipUnless(os.name=='nt','Actual Windows ACL regression')
+    def test_empty_owned_fixture_removes_explicit_extra_access_before_marker(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)/'fixture';root.mkdir()
+            subprocess.run(['icacls.exe',str(root),'/grant','*S-1-1-0:(OI)(CI)R'],check=True,capture_output=True,creationflags=subprocess.CREATE_NO_WINDOW)
+            claim(root);private_windows_acl(root)
+            self.assertTrue((root/'.headless-owner.json').exists())
     def test_marker_not_name_authorizes_contained_config_and_binary(self):
         with tempfile.TemporaryDirectory() as temp:
             root=claim(Path(temp)/'fixture');binary=root/'server-exe';binary.write_bytes(b'binary')

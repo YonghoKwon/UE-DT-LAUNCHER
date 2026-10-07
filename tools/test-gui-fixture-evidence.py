@@ -288,7 +288,10 @@ class EvidenceTests(unittest.TestCase):
             publication={'sourceHead':'a'*40,'productSourceHash':'b'*64,'rid':'win-x64','binaries':{'launcher':{'sha256':sha256(base/'UeDtLauncher.exe')},'server':{'sha256':sha256(base/'Distribution.exe')}},'supportFiles':{},'fixtureAssets':{'synthetic':{'sha256':sha256(base/'Synthetic.exe')}}}
             import urllib.error
             with patch('cohort_contract.validate_inputs',return_value=publication),patch.object(sys,'argv',arguments),patch.object(module.subprocess,'run',side_effect=run),patch.object(module.subprocess,'Popen',return_value=process) as popen,patch.object(module.subprocess,'check_output',side_effect=lambda cmd,**kw: ('"test","S-1-5-21-123-456-789-1001"' if cmd[0]=='whoami' else 'test-head\n' if 'rev-parse' in cmd else '') if kw.get('text') else b''),patch.object(module.urllib.request,'urlopen',side_effect=urllib.error.HTTPError('loopback',401,'unauthorized',{},None)),patch.object(module,'hold_fixture') as hold,patch.object(module,'snapshot_preferences'),contextlib.redirect_stdout(io.StringIO()):
-                module.main()
+                # This provisioning unit replaces every subprocess (including icacls).
+                # Actual descriptor creation/verification is exercised by fixture-contract tests.
+                with patch('fixture_contract.private_windows_acl'):
+                    module.main()
             self.assertEqual(1,popen.call_count)
             self.assertTrue(all(command[1] not in ('agent','doctor','run') for command in commands))
             approvals=[command for command in commands if command[1]=='approve']
