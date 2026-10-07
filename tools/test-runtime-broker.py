@@ -18,7 +18,7 @@ def main():
     parser.add_argument("--launcher", required=True)
     parser.add_argument("--agent", required=True)
     args = parser.parse_args()
-    root = Path(tempfile.mkdtemp(prefix="uedt-broker-proof-"))
+    root = Path(tempfile.mkdtemp(prefix="uedt-broker-proof-")).resolve()
     suffix = ".exe" if os.name == "nt" else ""
     launcher = root / ("UeDtLauncher" + suffix)
     agent = root / ("UeDtLauncher.Agent" + suffix)
@@ -43,13 +43,17 @@ def main():
     meta = backup / '.uedt-meta'; meta.mkdir()
     (meta / 'backup-info.json').write_text(json.dumps(dict(previousVersion='1.0.0',newVersion='1.0.0',createdAtUtc='2026-09-28T00:00:00Z',addedPaths=[])))
     (meta / 'installed-manifest.json').write_text(json.dumps(manifest))
-    canonical = str(app).upper() if os.name == "nt" else str(app)
-    (state / "runtime-state.json").write_text(json.dumps({"schemaVersion": 1, "installationId": hashlib.sha256(canonical.encode()).hexdigest(), "state": 0, "origin": "new-install"}))
     endpoint = "uedt-proof-" + uuid.uuid4().hex if os.name == "nt" else str(root / "agent.sock")
     env = dict(os.environ, UE_DT_AGENT_DATA_ROOT=str(root), UE_DT_AGENT_ENDPOINT=endpoint)
     from signed_legacy_fixture import configure
     web=root/'web';web.mkdir();shutil.copy2(app/entry,web/entry)
     tls_server,manifest=configure(root,launcher,web,manifest,env,config,'broker')
+    # This owned fixture has not started any payload. Let the product create its exact
+    # installation identity and valid stopped record; Python must not guess .NET path rules.
+    seed=root/'seed-runtime.json';seed.write_text(json.dumps(dict(config,deploymentMode='portable')))
+    initialized=subprocess.run([str(launcher),'runtime','recover','--config',str(seed),'--confirm-stopped'],env=env,capture_output=True,timeout=30,
+                               creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
+    if initialized.returncode:raise RuntimeError('Owned stopped fixture initialization failed')
     (root/'config'/'launcher.config.json').write_text(json.dumps(config))
     flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     log = (root / "agent.log").open("w")
@@ -89,6 +93,7 @@ def main():
         from gui_fixture_evidence import wait_agent_ready
         wait_agent_ready(service,endpoint,timeout=30)
         assert "runtime-supervision-v1" in rpc("status")["agentCapabilities"]
+        assert rpc('runtime-inspect')['runtime']['state']==0,'Native fixture identity is not quiescent'
         if "rollback-preview-v1" in rpc("status")["agentCapabilities"]:
             preview = rpc("rollback-preview")["rollbackPreview"]
             assert preview['canRestore'] and preview['restoreVersion']=='1.0.0'

@@ -8,6 +8,8 @@ PR #6은 main 이후 누적 기능을 회사 파일럿 검토 대상으로 통�
 
 두 번째 원격 Windows CI(37557435046)는 새 fixture의 명시적 추가 ACL을 private 검사에서 거부했다. 빈 fixture root만 reset→inheritance 제거→기존3개 principal만 grant하고 marker/key 생성 전 실제 descriptor를 다시 검증하도록 보강했다. Everyone 명시 read ACE가 있는 소유한 빈 폴더의 실제 Windows 회귀를 추가했다. 기존 검사의 허용 SID를 늘리거나 개인키 보호를 완화하지 않는다. subprocess 전체를 대체하는 provisioning 단위 테스트는 native ACL 경계도 대체하며, 실제 ACL 시험은 별도 Windows 계약으로 수행한다.
 
+후속 원격 Ubuntu CI(37558615249)는 모든 단계를 통과했다. 같은 실행의 Windows broker는 기대한 preview 거부 전에 runtime-record-invalid를 반환했다. 수동 Python 경로 hash/JSON으로 상태를 추측하는 fixture 준비를 제거하고, 아직 payload를 실행하지 않은 소유한 fixture에만 제품 CLI runtime recover를 사용해 정확한 native 설치 ID/수동 정지 확인 기록을 생성한다. 이는 제품 검사를 끄거나 실제 회사 앱의 종료를 추정하는 경로가 아니다. CI와 같은 Agent publish 형식의 로컬 broker 재시험은 통과했고 원격 후속 결과는 별도 checks로 확인한다.
+
 ## 현재 새 GUI 수용과 미완료
 
 현재 후보1a7740f의 독립 root accept-mg-02/accept-md/accept-pg/accept-pd에서 Computer Use 직접 입력과1920×1080·RenderScaling1·글자1·고대비false를 대조했다. 네 조합 모두 GUI 최초 설치(3파일), 정확한v1 실행과 창 종료 후 자식 유지·requested 종료를 확인했다. 개발자 실행 확인 취소는 보호 파일 무변경이었다. MD/PG의 첫 수명 시도는 watchdog 종료여서 제외하고 같은 게시본의 새 실행 시도로 요청 종료를 확인했다.
