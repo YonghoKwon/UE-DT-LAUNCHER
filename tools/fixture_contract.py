@@ -75,9 +75,14 @@ def claim(root):
     if os.name!='nt':root.chmod(0o700)
     else:
         sid=owner()
+        # A newly created empty directory can receive explicit default-DACL entries on CI.
+        # Reset only this empty fixture root, then remove inheritance and grant the exact principals.
+        # No configuration/key is written until the final descriptor has passed verification.
+        subprocess.run(['icacls.exe',str(root),'/reset'],check=True,capture_output=True,creationflags=subprocess.CREATE_NO_WINDOW)
         subprocess.run(['icacls.exe',str(root),'/inheritance:r','/grant:r',
                         '*'+sid+':(OI)(CI)F','*S-1-5-18:(OI)(CI)F','*S-1-5-32-544:(OI)(CI)F'],
                        check=True,capture_output=True,creationflags=subprocess.CREATE_NO_WINDOW)
+        private_windows_acl(root)
     record={'schemaVersion':1,'id':uuid.uuid4().hex,'owner':owner(),'root':str(root)}
     (root/'.headless-owner.json').write_text(json.dumps(record),encoding='utf-8')
     return root
