@@ -94,7 +94,8 @@ def main():
             assert preview['canRestore'] and preview['restoreVersion']=='1.0.0'
             (app / entry).write_bytes(b'damaged')
             mismatch = rpc("rollback",expectedBackupId=preview['backupId'],expectedBackupFingerprint='0'*64)
-            assert not mismatch['success'] and mismatch['errorCode']=='backup-preview-changed'
+            assert not mismatch['success'] and mismatch['errorCode']=='backup-preview-changed', \
+                'Expected preview rejection; status='+str(mismatch.get('status'))+' code='+str(mismatch.get('errorCode'))
             assert (app / entry).read_bytes()==b'damaged'
             restored = rpc("rollback",expectedBackupId=preview['backupId'],expectedBackupFingerprint=preview['metadataFingerprint'])
             assert restored['success'],restored
