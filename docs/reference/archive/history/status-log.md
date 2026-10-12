@@ -109,3 +109,49 @@ Headless 주요 묶음은 구현·양 OS 회귀/게시 시험을 진행했다. �
 2026-10-02 OPS-03 완료(로컬 범위): 승인/승격 분리, revision·감사·schema4 기준선 이전, 현재 권한별 추천·구형 요청 제한, Core/Agent/GUI explicit policy 처리를 검증했다. 후보a8080ea Windows/WSL 각568개·게시본 이력/이전/실행 티켓·Running 불변·HTTP/HTTPS 통과, 실제 일반 GUI의 지정 대기/주 버튼 비활성화 관측. [승격 검증](../validation/release-promotion-validation.md)
 
 2026-10-02 후속 `cf99ba1`: 데이터 릴리스/설치 결속·명시적 root 선택·host credential 중첩·Linux 권한·로그 write/flush 보강, Windows/WSL 각552개와 게시 프로세스/HTTP·HTTPS 회귀 통과. 자동 GUI 입력은0x80070005로 거부되어 사용자 직접 조작 협업 대기다. USER-01은 실제 데이터 보존 결과 전까지50%를 유지한다. [후속 기록](../validation/runtime-data-acceptance-completion.md)
+
+## 2단계(README·PROJECT_GOALS 재구성)에서 이동
+
+2026-10-12 2단계 재구성에서 기준 커밋 `df34fc1`의 날짜·후보별 문단을 원문 그대로 옮겼습니다. 같은 문단의 현재 정책은 루트 정본이나 현행 가이드에 요약해 남겼습니다.
+
+### README.md — 원래 위치별
+
+#### 최신 상태 — 로컬 보완 스프린트
+
+2026-10-06 / `codex/local-completion-sprint`, 제품 후보 `1a7740f`. 재시도 준비 실패·Catalog 선택 갱신, 설치 commit 뒤 실행/바로가기 오류, 정리 후 상태 재조회, 승인되지 않은 정리 자료 보존을 수정했습니다. Windows849개, WSL848개+Windows 전용1개 제외 및 양 OS General/Developer/Agent/server Release 게시가 통과했습니다. [현재 검증](../validation/local-completion-validation.md).
+
+인증 제한·복원 저장 경계·조회형 예약 장애 회귀와 양 OS 게시 HTTP/운영 CLI를 확인했습니다. 네 새 GUI 조합의 v1 설치·실행·수명과 관리형 일반의 취소/재개/실행 보호/복원 핵심 흐름을 확인했습니다. **최종51개 중8개 전부 통과·43개 전수 미완료**입니다. USER-02/UI-02는75%, 전체 대장은 완료6·부분19·대기3/열린22개를 유지합니다. [전체 진행표·남은 조건](../validation/local-completion-progress.md). 실환경·내레이터·원격CI·인증서 인수를 자동 상향하지 않습니다. 아래75ea591/789개 기록은 직전 후보 이력입니다.
+
+#### 프로젝트 목표와 처음 읽을 안내
+
+Catalog 순번은64개를 먼저 durable high-water로 예약하고 요청마다 서로 다른 번호를 발급합니다. 재시작 시 미사용 번호는 건너뛰며, 서명 응답이나 권한 허용 결과는 캐시하지 않습니다. Windows 재현 시험의10/30연결 p95는26.20/109.92→11.47/30.24ms로 개선됐지만 직전 후보의1연결 비교는10.6% 악화했습니다. PERF-03은75%를 유지합니다. 회사 SLA나 GUI 성능 보장은 아닙니다. [비교 조건](../validation/operations-closure-validation.md)
+
+이 headless 묶음 당시에는 마우스·키보드·실제 GUI 검증을 중단했고, 현재 에디션 수용에서는 격리된 합성 앱 GUI 검증을 재개했습니다. MSI/RPM은 정확한 실행별 package와 payload hash를 확인하며, 현재 호스트에 설치/서비스/계정을 생성하지 않았습니다. 회사 인수용 미실행 계획은 `tools/prepare-company-acceptance.py`로 생성합니다. [설치본과 인수 준비](../../commercial-deployment.md)
+
+#### UE 사용자 데이터 분리 — 선택 기능
+
+추가 보강: 실행 티켓의 확정 릴리스·설치 경로와 데이터 계획을 대조하고, 사용자 host의 credential 경로도 보호합니다. Linux 실제 데이터 폴더는 sticky bit가 있어도 공용 쓰기를 거부하며, UserDir와 로그 폴더 양쪽에서 쓰기·flush를 확인합니다. [이번 후속 결과·직접 조작 순서](../validation/runtime-data-acceptance-completion.md)
+
+[정확한 설정과 권한 조건](../../guide-03-launcher-usage.md), [이번 구현·검증·GUI 대기 기록](../validation/real-ue-data-safety-validation.md)을 확인하세요. 이번 후보의 실제 UE 업데이트·복구·복원은 Windows 입력 접근 거부로 아직 미실행입니다. CLI 시험을 GUI 수용으로 대체하지 않았습니다.
+
+#### 성능 설정과 현재 결과
+
+Windows 재현 시험에서 작은 파일 최초 설치는 중앙값 10.96초→5.98초, 다음 버전 설치는 11.01초→3.29초였고 콘텐츠 전송량은 90% 줄었습니다. 서버 30개 연결의 혼합 API p95는 833.44ms→81.23ms, 측정 요청 실패는 32→0이었습니다. **10개 연결의 혼합 p95는 5.43ms→24.66ms로 악화되어 PERF-03은 부분 완료**입니다. 회사 성능 보장이나 운영 배포 승인이 아닙니다. [설정·재현·한계](../validation/performance-validation.md)
+
+### PROJECT_GOALS.md — 원래 위치별
+
+#### 최신 위치 — 로컬 구현과 회사 인수 분리
+
+2026-10-06 / `codex/local-completion-sprint`, 제품 후보1a7740f. Windows849개/WSL848개+Windows 전용1개 제외와 양 OS 동일 입력 snapshot 게시가 통과했습니다. 재시도/선택·설치 commit 후 오류·조회·정리 보존·인증/운영 장애 검증을 보완했습니다. [현재 검증](../validation/local-completion-validation.md).
+
+네 새 합성 GUI 조합의 최초 설치와 실행 수명을 직접 확인했습니다. 현재8/51 전부 통과이며43개 전수, WSL1 broker 준비/종료 timeout, 회사 계정/UE/RHEL/인증서/원격CI·운영 정책은 남아 있습니다. [전체 진행표](../validation/local-completion-progress.md). 완료6·부분19·대기3/열린22개와 회사 승인 미완료를 유지하며, UI01의 합의된1920×1080 범위를 다른 DPI·음성 수용으로 확대하지 않습니다. 아래75ea591 기록은 직전 후보 이력입니다.
+
+#### 회사 운영 승인 조건
+
+G1~G6의 증거가 확보된 뒤 전사 확대를 승인합니다. 게시본 `ab37fcb`의 Windows/WSL 자동화 각 500개와 Linux HTTP/HTTPS E2E 통과나 합성 성능 개선만으로 대신하지 않습니다. 관리자 웹 화면·회사 API·추가 알림 등은 필요성/범위가 확정되기 전 필수 완료 조건으로 임의 추가하지 않습니다.
+
+#### 개발·도입 진행 순서
+
+2차 구현: MSI payload 선서명 gate와 runtime-host/설치 변경 조정기를 추가했다. OPS-08은 실제 인증서 미검증으로 50%, OPS-09는 합성 실행 검증 75%이며 후속 저장 경계 강제 종료·health 실패·서비스 대상 구분은 합성 환경에서 검증했다. 이전 관리형 GUI 설치/실행·창 종료 수명, 개발자 선택/취소·v2 복구/rollback과 이번 portable 실행 중 버튼 차단은 각각의 게시본 이력이다. 모든 변경 진입점·실행 상태 조합의 실제 전수 시험, 새 최종 GUI 수용 및 회사 UE/계정 검증을 대체하지 않는다. [runtime 후속 검증](../validation/runtime-safety-completion-validation.md)
+
+관리형 GUI의 실행 후 관측·문제 해결 차단을 추가 보완했다. 이전 관리형 이력과 별개로 새 고정 후보의 관리형 v1 미설치→실행→창 종료/재실행→자식 정상 종료도 실제 합성 앱으로 통과했다. 같은 후보의 portable·관리형 정확한 버전 backup 복원/취소·preview 거부도 확인했다. 남은 기능/오류 조합은 별도이며 다른 해상도 재시험은2026-09-29 합의에 따라 후속으로 분리한다. [현재 후보별 증거](../validation/ui-acceptance-finalization.md)를 기준으로 판단한다.
