@@ -1,8 +1,6 @@
 # 현재 운영 문서 색인
 
-최신 작업은2026-10-06 `codex/local-completion-sprint`입니다. [스프린트 검증](archive/validation/local-completion-validation.md)에 고정 제품1a7740f,849개 전체 회귀, 운영 CLI·현재 GUI 근거와 미완료를 기록합니다. 아래75ea591/closure 기록은 직전 이력입니다. 루트4종 정본과 상세9개를 유지하고 새 실행 근거는 archive/validation 아래에만 보관합니다.
-
-정리: 2026-10-05 / 작업 기준 `codex/client-acceptance-closure`. 상시 관리 정본은 루트 4개이며, 이 폴더에는 **현재 사용하는 상세 가이드 9개와 이 색인**만 둡니다. 최소 화면 설정 생성과 재시도·정리 결과는 현재 설정/GUI/기능 지도에 반영했습니다. [최종 고정 후보의 검증·미실행 사례](archive/validation/client-acceptance-closure-validation.md)는 과거 후보와 구분합니다.
+상시 관리 정본은 루트 4개이며, 이 폴더에는 **현재 사용하는 상세 가이드 9개와 이 색인**만 둡니다. 최신 후보의 검증은 [자동 생성 진행표](archive/validation/local-completion-progress.md)와 [스프린트 검증](archive/validation/local-completion-validation.md), 날짜·후보별 이전 현황은 [현황 이력](archive/history/status-log.md)에서 확인합니다.
 
 | 루트 정본 | 역할 |
 |---|---|
@@ -29,10 +27,6 @@
 
 ## 검증 증거와 과거 자료
 
-최신 에디션 분리: [일반/개발자 빌드·설치본·사용 흐름](archive/validation/client-editions-validation.md). 두 실행 파일과667개 회귀, 실제 마우스 입력의 환경 제약을 구분합니다.
-
-최신 추가: [운영 안전성·게시 프로그램 검증](archive/validation/operations-closure-validation.md). 취소/캐시/정리/복원/인증/점검·설치본과 실제 GUI/회사 미검증을 구분합니다. 이전 [UE 데이터 경로](archive/validation/real-ue-data-safety-validation.md)는 당시 후보의 이력입니다.
-
 [아카이브 색인](archive/README.md)에서 찾습니다. **보관된 검증 결과는 유효한 이력**이지만 해당 날짜·환경·범위를 넘는 보장은 아닙니다.
 
 - `archive/validation/`: 배포·성능·인증·runtime·GUI 실행 기록과 관련 측정 JSON.
@@ -47,4 +41,3 @@
 - 과거 실행 날짜·수치를 새 문서 점검 날짜나 재시험 결과로 바꾸지 않습니다.
 - 이동 시 Markdown 상대 링크와 코드/스크립트의 문서 경로 참조를 함께 확인합니다.
 - `python tools/check-documentation.py`와 `python tools/check-improvement-ledger.py`로 구조·링크·집계를 검사합니다.
-- 이번 UI 변경은 `ab37fcb`의 각500개·portable 실제 적용과 추가 상태 보완 소스의 각510개·미설치 재연결 사전 시험을 확인했습니다. 새 최종 후보 전체 수용은 대기입니다. [최신 증거·미완료 조건](archive/validation/ui-acceptance-finalization.md)을 따르며 과거 게시본 성공을 합산하지 않습니다.

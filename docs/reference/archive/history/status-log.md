@@ -178,3 +178,40 @@ PERF-03: Windows10/30연결 p95 26.20/109.92→11.47/30.24ms, WSL10/30연결29.2
 |---|---|---|
 | 새 UI | 포스코DX/에디션 고정·현재 재시도/정리 결과/설정 재읽기 보완. Windows789/WSL788+1 제외 | UI-01은1920×1080 합의 범위 완료. 최종 네 조합 전체 수용·다른 해상도/DPI·음성 별도 |
 | GUI 직접 확인 | 최종75ea591 네 조합 초기 설정/에디션·연결 오류 재시도·v1 GUI 설치/수명, 관리형 일반v2 취소/Range 재개/명시 실행 통과 | 18/51 사례 완료,33사례 미완료. 관리형 일반 복구 후 조회·정상 백업 준비·복원 취소/변경 거부/정상 적용/조회 재시도 통과. 나머지v2/실행 보호·복원/정리/오류. 이전 후보를 합산하지 않음 |
+
+## 5단계(상세 가이드 정리)에서 이동
+
+2026-10-12 5단계 정리에서 기준 커밋 `3303e64`의 상세 가이드·색인에 남아 있던 날짜·후보별 현황을 원문 그대로 옮겼습니다. 체크리스트의 확인 기준 열은 가이드에 남기고, 직전 후보 `75ea591` 기준 판정 열만 옮겼습니다.
+
+### docs/reference/README.md — 색인 머리말
+
+최신 작업은2026-10-06 `codex/local-completion-sprint`입니다. [스프린트 검증](../validation/local-completion-validation.md)에 고정 제품1a7740f,849개 전체 회귀, 운영 CLI·현재 GUI 근거와 미완료를 기록합니다. 아래75ea591/closure 기록은 직전 이력입니다. 루트4종 정본과 상세9개를 유지하고 새 실행 근거는 archive/validation 아래에만 보관합니다.
+정리: 2026-10-05 / 작업 기준 `codex/client-acceptance-closure`. 상시 관리 정본은 루트 4개이며, 이 폴더에는 **현재 사용하는 상세 가이드 9개와 이 색인**만 둡니다. 최소 화면 설정 생성과 재시도·정리 결과는 현재 설정/GUI/기능 지도에 반영했습니다. [최종 고정 후보의 검증·미실행 사례](../validation/client-acceptance-closure-validation.md)는 과거 후보와 구분합니다.
+
+### docs/reference/README.md — 검증 증거와 과거 자료
+
+최신 에디션 분리: [일반/개발자 빌드·설치본·사용 흐름](../validation/client-editions-validation.md). 두 실행 파일과667개 회귀, 실제 마우스 입력의 환경 제약을 구분합니다.
+최신 추가: [운영 안전성·게시 프로그램 검증](../validation/operations-closure-validation.md). 취소/캐시/정리/복원/인증/점검·설치본과 실제 GUI/회사 미검증을 구분합니다. 이전 [UE 데이터 경로](../validation/real-ue-data-safety-validation.md)는 당시 후보의 이력입니다.
+
+### docs/reference/README.md — 관리 규칙
+
+- 이번 UI 변경은 `ab37fcb`의 각500개·portable 실제 적용과 추가 상태 보완 소스의 각510개·미설치 재연결 사전 시험을 확인했습니다. 새 최종 후보 전체 수용은 대기입니다. [최신 증거·미완료 조건](../validation/ui-acceptance-finalization.md)을 따르며 과거 게시본 성공을 합산하지 않습니다.
+
+### docs/reference/guide-03-launcher-usage.md — 현재 GUI 수용 체크리스트 — 직전 후보 판정
+
+2026-10-05 closure 최종 제품75ea591에서 Windows789개/WSL788개 통과·Windows 전용1개 제외, 양 OS publish HTTP 인증/IPC·Linux HTTPS를 확인했습니다. 실제 화면은1920×1080/OS100%/앱100%/고대비끔입니다. 이전 후보의 설치/복원 수용은 이력이며 새 네 root의 사례별 ledger만 최종 전체 수용으로 계산합니다. [현재 근거](../validation/client-acceptance-closure-validation.md), [이전 usability 이력](../validation/client-usability-validation.md)을 구분합니다.
+
+| 사례 | 재개 후 확인 기준 | 현재 최신 후보 전체 판정 |
+|---|---|---|
+| 초기 설정·연결 | 수정 후 조회만·에디션 고정·서비스/서버 재연결·파일 불변 | 네 조합 직접 통과. Portable Agent 요청0건. 실제 서비스 계정ACL과 별도 |
+| 빈 목록·승격 | 이전 카드 제거·추천 대기→promote 후 조회만 | 관리형 일반 통과. 다른 세 조합 남음 |
+| 설치·실행·수명 | v1→v2 정확한 실행, v1 보존·GUI 종료 후 자식 유지 | 네 조합v1 GUI 설치/3파일 hash·창 종료 후 자식 생존·정상 요청 종료 통과. 관리형 일반 외v2 남음 |
+| 개발자 exact 확인 | 취소 불변·승인 대상만 실행 | 두 개발자 exact1 확인 취소(all 불변)/승인 대상 실행 통과. exact2와 나머지 조건 남음 |
+| 취소·재개 | 실제 수신 중 취소·즉시 재개·Range·hash·완료 버튼 정리 | 관리형 일반v2 수신 중 취소/즉시 재개·Range11993088·4파일 hash·v1 보존·자동 실행0건·별도 승인 후v2 명시 실행/정상 종료 통과. 다른 세 조합 남음 |
+| 실행 중 보호 | 생존 전후·변경 차단·보호 hash 동일 | 최종 네 조합의 변경/정리 시험 남음 |
+| 문제 해결 | 정상은 조회만·손상은 복구·commit 후 조회 오류에서 재적용0회 | 관리형 일반의 실제 손상 복구/조회 오류1회/주·상태·재시도·F6 조회만·작업 기록 hash 불변 통과. 다른 세 조합 남음 |
+| 정상 backup/복원 | 정상 추가 repair·전체 backup hash·취소/변경preview 거부/새 확인/적용 | 관리형 일반 시험의 보조 Developer 추가repair로 정상 backup4파일 확인·General 복원 확인 취소 불변. General 변경preview 거부/새 확인/정상 복원/취소 불변도 통과. 다른 세 조합 남음 |
+| 복원 후 조회 | file-transition 뒤 실제 Catalog 오류1회·조회만 재시도 | 관리형 일반의 file-transition witness·Catalog 오류1회·조회 재시도/재복원0건·v1 보존 통과. 다른 세 조합 남음 |
+| 정리·진단·인증 오류 | partial failure/잔여 수·정리만 재시도·ZIP·401/403/서명/지원ID | Windows held-handle/headless 및 게시 인증 회귀 통과. 실제 GUI 적용 전수 남음 |
+
+현재 단계별 근거와 게시본 소스/파일 해시는 [클라이언트 closure 검증](../validation/client-acceptance-closure-validation.md)에 기록합니다. [클라이언트 작업 흐름 검증](../validation/client-workflow-validation.md)은 이전 이력입니다. 설치/실행·GUI 삭제의 적용은 Computer Use 지침에 따라 실행 직전 확인받으며 GUI 설치를 CLI 선설치로 대체하지 않습니다.

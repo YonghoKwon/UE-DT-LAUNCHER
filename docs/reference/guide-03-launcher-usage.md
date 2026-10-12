@@ -184,26 +184,26 @@ GUI 설정에서 **연결·준비 상태 점검**을 열면 오프라인 설정 
 
 ### 현재 GUI 수용 체크리스트
 
-2026-10-05 closure 최종 제품75ea591에서 Windows789개/WSL788개 통과·Windows 전용1개 제외, 양 OS publish HTTP 인증/IPC·Linux HTTPS를 확인했습니다. 실제 화면은1920×1080/OS100%/앱100%/고대비끔입니다. 이전 후보의 설치/복원 수용은 이력이며 새 네 root의 사례별 ledger만 최종 전체 수용으로 계산합니다. [현재 근거](archive/validation/client-acceptance-closure-validation.md), [이전 usability 이력](archive/validation/client-usability-validation.md)을 구분합니다.
+최신 후보의 사례별 판정은 [로컬 보완 스프린트 검증](archive/validation/local-completion-validation.md#현재-새-gui-수용과-미완료)과 [자동 생성 진행표](archive/validation/local-completion-progress.md)에 기록합니다. 아래 사례 하나의 전체 조건을 같은 고정 게시본에서 모두 충족한 경우만 통과로 계산하고, 부분 관측이나 이전 후보의 통과를 합산하지 않습니다.
 
 동일 제품 snapshot/cohort에서 accept-mg(관리형 일반), accept-md(관리형 개발자), accept-pg(portable 일반), accept-pd(portable 개발자)를 순차 준비했습니다. CLI 선설치가 없고 각 root/IPC가 독립적입니다. 제품을 다시 수정하면 영향받는 실제 GUI 수용을 새 게시본으로 수행합니다.
 
-| 사례 | 재개 후 확인 기준 | 현재 최신 후보 전체 판정 |
-|---|---|---|
-| 초기 설정·연결 | 수정 후 조회만·에디션 고정·서비스/서버 재연결·파일 불변 | 네 조합 직접 통과. Portable Agent 요청0건. 실제 서비스 계정ACL과 별도 |
-| 빈 목록·승격 | 이전 카드 제거·추천 대기→promote 후 조회만 | 관리형 일반 통과. 다른 세 조합 남음 |
-| 설치·실행·수명 | v1→v2 정확한 실행, v1 보존·GUI 종료 후 자식 유지 | 네 조합v1 GUI 설치/3파일 hash·창 종료 후 자식 생존·정상 요청 종료 통과. 관리형 일반 외v2 남음 |
-| 개발자 exact 확인 | 취소 불변·승인 대상만 실행 | 두 개발자 exact1 확인 취소(all 불변)/승인 대상 실행 통과. exact2와 나머지 조건 남음 |
-| 취소·재개 | 실제 수신 중 취소·즉시 재개·Range·hash·완료 버튼 정리 | 관리형 일반v2 수신 중 취소/즉시 재개·Range11993088·4파일 hash·v1 보존·자동 실행0건·별도 승인 후v2 명시 실행/정상 종료 통과. 다른 세 조합 남음 |
-| 실행 중 보호 | 생존 전후·변경 차단·보호 hash 동일 | 최종 네 조합의 변경/정리 시험 남음 |
-| 문제 해결 | 정상은 조회만·손상은 복구·commit 후 조회 오류에서 재적용0회 | 관리형 일반의 실제 손상 복구/조회 오류1회/주·상태·재시도·F6 조회만·작업 기록 hash 불변 통과. 다른 세 조합 남음 |
-| 정상 backup/복원 | 정상 추가 repair·전체 backup hash·취소/변경preview 거부/새 확인/적용 | 관리형 일반 시험의 보조 Developer 추가repair로 정상 backup4파일 확인·General 복원 확인 취소 불변. General 변경preview 거부/새 확인/정상 복원/취소 불변도 통과. 다른 세 조합 남음 |
-| 복원 후 조회 | file-transition 뒤 실제 Catalog 오류1회·조회만 재시도 | 관리형 일반의 file-transition witness·Catalog 오류1회·조회 재시도/재복원0건·v1 보존 통과. 다른 세 조합 남음 |
-| 정리·진단·인증 오류 | partial failure/잔여 수·정리만 재시도·ZIP·401/403/서명/지원ID | Windows held-handle/headless 및 게시 인증 회귀 통과. 실제 GUI 적용 전수 남음 |
+| 사례 | 확인 기준 |
+|---|---|
+| 초기 설정·연결 | 수정 후 조회만·에디션 고정·서비스/서버 재연결·파일 불변 |
+| 빈 목록·승격 | 이전 카드 제거·추천 대기→promote 후 조회만 |
+| 설치·실행·수명 | v1→v2 정확한 실행, v1 보존·GUI 종료 후 자식 유지 |
+| 개발자 exact 확인 | 취소 불변·승인 대상만 실행 |
+| 취소·재개 | 실제 수신 중 취소·즉시 재개·Range·hash·완료 버튼 정리 |
+| 실행 중 보호 | 생존 전후·변경 차단·보호 hash 동일 |
+| 문제 해결 | 정상은 조회만·손상은 복구·commit 후 조회 오류에서 재적용0회 |
+| 정상 backup/복원 | 정상 추가 repair·전체 backup hash·취소/변경preview 거부/새 확인/적용 |
+| 복원 후 조회 | file-transition 뒤 실제 Catalog 오류1회·조회만 재시도 |
+| 정리·진단·인증 오류 | partial failure/잔여 수·정리만 재시도·ZIP·401/403/서명/지원ID |
 
 지원 해상도 추가 조건·내레이터·실제 UE 데이터·회사 계정은 각각 UI-01/03·USER-01·운영 인수 항목에서 별도 관리합니다.
 
-현재 단계별 근거와 게시본 소스/파일 해시는 [클라이언트 closure 검증](archive/validation/client-acceptance-closure-validation.md)에 기록합니다. [클라이언트 작업 흐름 검증](archive/validation/client-workflow-validation.md)은 이전 이력입니다. 설치/실행·GUI 삭제의 적용은 Computer Use 지침에 따라 실행 직전 확인받으며 GUI 설치를 CLI 선설치로 대체하지 않습니다.
+이전 후보의 사례별 판정은 [현황 이력](archive/history/status-log.md), 단계별 근거는 [클라이언트 closure 검증](archive/validation/client-acceptance-closure-validation.md)과 [클라이언트 작업 흐름 검증](archive/validation/client-workflow-validation.md)에 이력으로 남아 있습니다. GUI 설치를 CLI 선설치로 대체하지 않습니다.
 
 ### 실행 안전성
 
