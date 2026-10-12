@@ -8,9 +8,7 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 
 인증 제한·복원 저장 경계·조회형 예약 장애 회귀와 양 OS 게시 HTTP/운영 CLI를 확인했습니다. 네 새 GUI 조합의 v1 설치·실행·수명과 관리형 일반의 취소/재개/실행 보호/복원 핵심 흐름을 확인했습니다. **최종51개 중8개 전부 통과·43개 전수 미완료**입니다. USER-02/UI-02는75%, 전체 대장은 완료6·부분19·대기3/열린22개를 유지합니다. [전체 진행표·남은 조건](docs/reference/archive/validation/local-completion-progress.md). 실환경·내레이터·원격CI·인증서 인수를 자동 상향하지 않습니다. 아래75ea591/789개 기록은 직전 후보 이력입니다.
 
-### 직전 후보와 공통 사용 안내
-
-문서 점검: **2026-10-06**, 작업 기준: `codex/client-acceptance-closure`. 일반 `UeDtLauncher.exe`와 개발자 `UeDtLauncher.Developer.exe`는 별도 빌드이며 설정으로 GUI 종류를 바꾸지 못합니다. 복원 preview·정리 재시도의 정확한 작업 결속, 복구 적용 후 조회/취소 상태, 정리의 부분 실패·실제 잔여 수, 최소 화면 설정 생성과 개발자 설정 재읽기를 보완했습니다. 최종 제품 `75ea591`에서 Windows **789개 통과**, WSL **788개 통과·Windows 전용 1개 명시적 제외**, 양 에디션/Agent/서버 Release publish와 HTTP 요청 서명·Linux HTTPS/Bearer E2E를 확인했습니다. **최종 네 조합 전체 GUI 수용은 미완료**이며 과거 후보의 설치/복원 통과를 합산하지 않습니다. [현재 검증과 남은 사례](docs/reference/archive/validation/client-acceptance-closure-validation.md), [이전 후보 이력](docs/reference/archive/validation/client-usability-validation.md)을 구분하세요.
+### 공통 사용 안내
 
 기본 빌드는 `LauncherEdition=General`입니다. 개발자는 `dotnet publish src/UeDtLauncher -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:LauncherEdition=Developer`로 생성합니다. `--build-info`에서 에디션을 확인하세요. Developer 배포에는 공통 runtime-host인 일반 실행 파일도 포함해야 하며, `tools/publish_runtime_cohort.py --output <새폴더> --rid win-x64`는 두 EXE·Agent·서버와 두 클라이언트 ZIP을 함께 생성합니다.
 
@@ -27,8 +25,6 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 복원 preview 오류의 재시도는 새 preview와 확인창으로 돌아갑니다. 임시 파일/백업 정리의 재시도는 같은 선택의 해당 정리만 수행합니다. `일부 백업 정리 필요`는 삭제 실패가 있다는 뜻이며 성공/실패/실제 잔여 수를 확인한 뒤 사용 중인 파일이나 권한 문제를 해결하세요. 복구 적용 완료 후에는 취소 버튼을 종료하고 `파일 복구 완료 · 설치 상태 확인 중` 또는 `상태 재확인 필요`로 안내합니다.
 
 **현재 판단: 합성 앱 기반 배포·설치·실행·복구는 활용 가능한 단계이며, 회사 정식 운영 인수는 미완료입니다.** 현재 수치와 남은 작업은 [개선 진행 현황](IMPROVEMENTS.md), 상세 명령은 [운영 문서 색인](docs/reference/README.md)을 확인하세요.
-
-이번 고정 게시본의 실제 GUI 수용은 **18/51 사례 통과·33사례 미완료**입니다. 네 조합의 초기 설정/재연결·최초v1 설치/실행·창 종료 후 수명, 관리형 일반의v2 취소/Range 재개/명시 실행을 확인했습니다. 관리형 일반의 복구 후 조회 전용 재시도·정상 백업 준비·복원 취소/preview 거부/정상 복원·복원 후 조회 재시도도 확인했습니다. 나머지v2·복원·정리/인증 오류 전수가 남아 USER-02/UI-02는75%를 유지합니다. 이 사례 비율은 제품 완성률이 아닙니다.
 
 ## 프로젝트 목표와 처음 읽을 안내
 
@@ -112,14 +108,6 @@ Agent가 확인한 대상·준비도·검사 상태가 누락되면 미검증 �
 그 외 자료는 [참고 문서 모음](docs/reference/README.md)에 있습니다. 현재 가이드 9개와 색인은 `docs/reference/`, 검증 이력·중복 입문/구 운영 자료는 그 아래 `archive/`에 보존합니다. 아카이브로 옮긴 검증 증거를 폐기한 것은 아닙니다. 과거 서버 절차를 신규 설치 지침으로 사용하지 않습니다.
 
 ## 현재 구현
-
-2026-09-29에는 합성 demo 대신 **실제 ma0t10_dt UE5.3 Windows Development 패키지**로 ZIP/외부 JSON 접수·서명 게시·GUI 설치/실행·런처 종료 후 UE 수명 유지·정상 종료를 확인했습니다. 328개 Manifest 파일 해시가 일치했습니다. 실제 UE 버전 업데이트/복구·Linux/RHEL·회사 서비스 계정은 별도 미검증이며, 설치 경로에 쓰는 CustomLogs는 추가 보완이 필요합니다. [실제 UE 시험·명령·제한](docs/reference/archive/validation/real-ue-package-validation.md)
-
-현재 보완 소스는 **Windows/WSL 각 510개 통과, Release 경고·오류 0**입니다. 변경 없는 소스로 고정한 `8ce5060`의 Windows/Linux publish와 Linux HTTP 요청 서명+Agent·HTTPS/Bearer+nginx E2E도 통과했습니다. 관리형·portable의 정확한 선택/설치/runtime 표시, 최초 연결 실패 재시도와 복원 후 상태 재확인, 제목 글자 배율·작은 화면·포커스를 보완했습니다. Portable은 Agent 없이 `로컬 모드`로 동작하고, 문제 해결은 설치된 손상 대상만 복구하며 미설치 버전을 자동 설치하거나 앱을 실행하지 않습니다.
-
-새 고정 후보의 portable v1→v2 설치/실행·파일 해시·v1 보존·창 종료 후 자식 수명·실행 중 변경 버튼 차단을 확인했습니다. 개발자 손상 복구, 정상 백업 생성 후 복원 취소/적용, 변경 preview 거부와 재확인, 서버 재연결 후 정상 설치의 점검 전용 문제 해결도 통과했습니다. 같은 후보의 **관리형 v1 최초 설치/실행·3파일 해시·GUI 종료/재실행 중 동일 자식 수명·정상 종료 후 실행 가능 복귀**도 확인했습니다. 관리형 v2 업데이트/실행·3파일 해시·v1 보존·생존 중 개발자 변경 버튼 차단·정상 종료도 확인했습니다. 관리형 개발자 손상 복구와 정상 상태에서 추가 repair로 만든 백업20260928145009의 3파일 해시도 통과했습니다. 해당 백업의 복원 취소/적용·v1 보존·완료 제목과 최신 상태 복귀도 확인했습니다. 관리형 변경 preview 거부/새 확인 요구와 서비스 재연결 후 정상 설치의 점검 전용 문제 해결도 통과했습니다. 일반 화면 손상 복구 등 남은 오류 조합과 전체 DPI 수용은 남았습니다. 미설치 재연결 첫 클릭 복귀·설치/실행0건은 작업 중 게시본의 별도 사전 시험입니다. 서로 다른 게시본의 성공을 합산하지 않습니다. [게시본별 실제 증거와 남은 조건](docs/reference/archive/validation/ui-acceptance-finalization.md)
-
-기존 GUI 검증 이력에서는 일반 GUI 설치·실행·실행 중 버튼 차단·창 종료/재실행·자식 정상 종료, 개발자 선택/취소·v2 파일 복구·같은 설치의 정상 backup rollback을 실제로 확인했습니다. [GUI 실행 이력](docs/reference/archive/validation/managed-gui-safety-validation.md), [runtime 장애 이력](docs/reference/archive/validation/runtime-safety-completion-validation.md)
 
 **UI-01은 100%(1920×1080의 현재 검증 범위 한정), UI-02·03은 75% 유지**합니다. 2026-09-29 사용자 합의로 이번 화면 수용을 1920×1080으로 한정했습니다. 고정 후보 `8ce5060`의 관리형·portable 일반/개발자 화면을 OS 배율100%·앱 글자100%·고대비 끔에서 실제 확인한 근거를 사용합니다. 남은 기능/오류·개발자 실행 확인(UI-02), 접근성·내레이터 음성(UI-03), 회사 UE/RHEL·서비스 계정·정식 운영 인수는 별도입니다.
 
@@ -218,11 +206,7 @@ Linux 클라이언트/Agent는 `-r linux-x64`로 생성합니다. 네이티브 �
 
 ## 검증 범위와 제약
 
-2026-10-03 진단 후속: Windows/WSL 각587개, Release 경고·오류0, 게시 HTTP 요청 서명·HTTPS/Bearer·구형 Agent·지원 ZIP 검증을 확인했습니다. GUI의 상세 실제 통과는 [게시본별 표](docs/reference/archive/validation/readiness-validation.md)에 있습니다. 사용자 요청으로 마우스·GUI 자동 검증은 잠시 중단했으며 새 후보 전체 GUI 수용을 이전 후보 성공과 합산하지 않습니다. USER-02·UI-02는75%를 유지합니다.
-
-2026-09-12 [기존 실행 기록](docs/reference/archive/validation/distribution-validation.md): Windows 210/210, WSL Ubuntu 210/210, Release 경고·오류 0. 테스트 프로그램으로 HTTPS 배포와 Windows GUI/Agent·Linux CLI 설치·실행을 확인했습니다.
-
-2026-09-28 성능 작업: Windows/Linux 각각 전체 293개 테스트 통과, Python 측정 도구 계약 테스트 16개 통과. Release build/publish 및 실제 Windows 일반·개발자 GUI/Agent, Linux CLI/Agent 실행을 확인했습니다. Linux nginx HTTPS E2E의 작은 파일은 통과했지만 WSL1 nginx의 1MiB 응답 중단이 관측되어 큰 파일 GUI 검증은 격리된 Windows HTTPS 프록시로 분리했습니다. 실제 회사 RHEL·UE 패키지·IP/CA·설치본 수명주기는 별도 검증해야 합니다. 코드서명 없는 개발 산출물을 운영용 서명 제품으로 배포하지 않습니다.
+날짜·후보별 이전 검증 기록은 [현황 이력](docs/reference/archive/history/status-log.md)으로 옮겼습니다. 현재 수치는 [자동 생성 진행표](docs/reference/archive/validation/local-completion-progress.md)를 따릅니다.
 
 - latest는 같은 환경/채널/OS에서 해당 PC에 허용된 승격 이력의 마지막 판입니다. 승인만으로 추천이 바뀌지 않고, 첫 버전도 promote가 필요합니다. 개발자는 허용된 미승격판을 exact로 선택할 수 있습니다. [승격·기존 서버 이전](docs/reference/distribution-workflow.md)
 - 신규 프로젝트 게시가 PC 권한을 자동 부여하지 않습니다.

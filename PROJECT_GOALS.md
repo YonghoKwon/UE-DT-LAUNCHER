@@ -6,10 +6,6 @@
 
 네 새 합성 GUI 조합의 최초 설치와 실행 수명을 직접 확인했습니다. 현재8/51 전부 통과이며43개 전수, WSL1 broker 준비/종료 timeout, 회사 계정/UE/RHEL/인증서/원격CI·운영 정책은 남아 있습니다. [전체 진행표](docs/reference/archive/validation/local-completion-progress.md). 완료6·부분19·대기3/열린22개와 회사 승인 미완료를 유지하며, UI01의 합의된1920×1080 범위를 다른 DPI·음성 수용으로 확대하지 않습니다. 아래75ea591 기록은 직전 후보 이력입니다.
 
-### 직전 기준점
-
-갱신: 2026-10-06 / 작업 기준 `codex/client-acceptance-closure`. **최상위 목표는 확정**됐습니다. 재시도의 정확한 선택/작업 결속·적용 완료 후 조회·수동 정리 부분 실패·관리형 화면 설정 생성과 개발자 설정 재읽기를 보완했습니다. 최종 제품75ea591의 Windows789개/WSL788개 통과(Windows 전용1개 제외), 양 OS 게시 인증/IPC·Linux HTTPS를 확인했습니다. 네 새 fixture의 실제 초기 설정·재연결 검증은 진행했고 전체 설치/취소/복원 수용과 회사 서비스 계정 ACL은 남아 있습니다. 회사 SLA·출시 인수 완료가 아닙니다. [현재 후보별 기록](docs/reference/archive/validation/client-acceptance-closure-validation.md).
-
 ## 확정한 최종 목표
 
 > Unreal Engine 프로젝트로 제작한 DT 프로그램을 Windows/Linux로 배포하고, 회사에서 안전하고 편리하게 설치·업데이트·실행·복구할 수 있는 운영 준비된 배포 시스템을 개발한다.
@@ -22,19 +18,11 @@
 
 ## 현재 위치
 
-최신 후보는 커밋 snapshot75ea591이며 Windows/Linux 제품 입력 hash가 같다. 합성 앱과 시험 harness 출처를 별도로 기록하고, 설정/credential·인증 방식·서버 권한·runtime/transaction 보호를 유지한다. 수동 정리 실패를 성공으로 숨기지 않으며 설정 생성은 운영 설정 대신 최소 표시 선택만 제공한다. USER-02/UI-02는 최종 네 조합 전체 수용 전75%, USER-03/UI-03도75%를 유지한다. 현재 집계는완료6·부분19·대기3/열린22개이며 다음 과거 후보의 기록과 합산하지 않는다.
+날짜·후보별 이전 검증 기록은 [현황 이력](docs/reference/archive/history/status-log.md)으로 옮겼습니다. 현재 수치는 [자동 생성 진행표](docs/reference/archive/validation/local-completion-progress.md)를 따릅니다.
 
-이번 GUI는 네 조합 초기 설정/재연결·각GUI 최초v1 설치/수명과 관리형 일반v2 취소/Range 재개/명시 실행까지18/51사례를 통과했다. 나머지33사례와 회사 인수를 유지하며 이 숫자를 제품 개발 공수·완성률로 해석하지 않는다. 관리형 일반의 복구 후 네 조회 경로·정상 백업·복원 취소/변경preview 거부/정상 복원/조회 재시도도 실제 확인했다. GUI 적용은 실행 직전 확인에 따라 수행한다.
-
-### 이전 단계 이력 (아래의 후보·테스트 수는 당시 근거)
-
-최신 경계는 **사용자 세션 클라이언트는 선택/표시·Agent는 보호 설정/credential/Manifest/상태 검사**다. 같은 계정 console Agent 검증을 실제 서비스 계정 일반 사용자 ACL 인수로 확대하지 않는다. final-win2에서 네 조합 취소/재개와 일부 복원, final-win3에서 관리형 개발자 직접 복원 취소/preview 거부/정상 적용을 확인했다. 서로 다른 후보의 부분 통과를 최종 전체 수용으로 합산하지 않아 USER-02/UI-02는75%를 유지한다. USER-03은 네 조합 실제 취소/재개와 로컬 장애 회귀 근거로75%이며 회사 계정·전체 장애 인수는 별도다. 다른 SEC/OPS/PERF·회사 Gate는 자동 상향하지 않는다.
-
-완료 후 취소 버튼 잔존과 작업 세대/재개 표시 결함을 수정했다. 실제 시험에서 추가 발견한 관리형 재개 선택 거부·빈 Catalog 이전 카드 잔존·권한 복귀 후 설치 상태 누락도 수정했다. 최종 제품 소스의 Windows/WSL698개 회귀와 관리형 일반의 v1 설치/실행·GUI 종료 후 자식 유지·v2 취소/Range 재개·v1 보존·재개 후 자동 실행0건을 확인했다. 네 조합의 잔여 오류/복원 수용은 진행 중이다. 사용자 합의에 따라 이번 화면/기능 증거는1440×900·100%로 기록하며 회사 Gate와 USER/UI 완료 조건을 상향하지 않는다.
+### 유지 중인 정책·범위 기록
 
 2026-10-03 결정: 일반/개발자 클라이언트는 별도 빌드·실행 파일로 고정한다. 일반 MSI와 개발자 MSI(일반 포함)는 Agent를 공유하고, Linux developer RPM은 동일 버전 base RPM을 요구한다. GUI 설정의 clientProfile로 화면을 전환하지 않으며 기존 운영 CLI는 공통으로 유지한다.
-
-698개 양 OS 회귀·최종 게시 CLI/Agent HTTP 요청 서명·취소/재개 시험과 위 실제 관리형 부분 수용을 확인했다. MSI/RPM 비설치 검증은 이전 에디션 이력이며 실제 설치 인수는 별도다. 전체 기능 수용은 아직 남아 USER-02/UI-02·음성 보류의 UI-03은75%를 유지한다. [현재 기록](docs/reference/archive/validation/client-workflow-validation.md)
 
 예약 점검은 정확한 허용 선택/준비도를 표시하고 query-only로 유지한다. 실제 예약 등록/사용자 실행 준비는 별도 증거가 필요하다.
 
@@ -52,10 +40,6 @@
 
 이번 회사 인수 준비 결과는 CLI 운영 도구·자동화·게시 프로세스에 한정한다. 실제 GUI 재개, 새 취소/모든 장애조합, 회사 RHEL/UE·서비스 계정·실제 인증서·MSI/RPM 설치 수명주기·remote CI·성능 수용을 완료 조건에서 빼지 않는다.
 
-성능 후보는 durable 순번 예약으로10/30연결 지연을 줄였고90% 콘텐츠 재사용을 유지했다. 직전1연결의 악화·통제된 재현 및 proxy/회사 환경 인수는 남으므로 PERF-03 전체 수용이나 회사 운영 승인을 선언하지 않는다.
-
-Core 물리 이동·취소/재개·온라인 실행·자격 수명·통제된 backup/restore·확인형 retention·조회 전용 예약을 구현하고, 취소 ACK/commit·owner cache 예산·삭제 ledger·staged fence/독립 서명·HTTP 한도·정확한 선택을 보강했다. 양 OS 회귀/게시 프로그램은 GUI·회사·정전 수용을 대체하지 않는다. [최신 증거](docs/reference/archive/validation/operations-closure-validation.md)
-
 OPS-07은 외부 scheduler의 opt-in 조회 전용 한 회차 및 비활성 템플릿으로 구현한다. 자동 설치/실행/앱 종료·버전 handoff는 제외하고 실제 예약/서비스 계정 인수는 별도다.
 
 OPS-04 정리는 관리자 확인형 비공개 실패/거절·임시 자료만 구현한다. 공개판/모든 승격/진행 자료는 보존하며 기간·공개판 삭제 정책을 임의로 정하지 않는다.
@@ -64,25 +48,11 @@ OPS-05의 오프라인 수동 백업·살아 있는 최신 원본과 대조하�
 
 Headless 자격 수명 구현: 기본 TTL 없이 관리자 만료 지정·개별 폐기·교체·audit을 지원한다. 요청 한도는 명시 opt-in이며 회사 보안 정책·망 경로 인수는 별도다.
 
-빠른 개선 묶음은 진단 근거 보존과 모순 검증, 중복 조치 제거, 게시 준비도 검증의 Windows/Linux CI 연결까지 로컬 검증했다. 양 OS601개·준비도 각8개와 정제 요약/실패 기록을 확인했다. GUI 중단 중이므로 USER-02/UI-02는75%, 원격 CI 미확인으로 OPS-06은50%를 유지한다. [비대화형 결과](docs/reference/archive/validation/quick-wins-validation.md)
-
 최신 후보 GUI 수용은 [한 곳의 체크리스트](docs/reference/guide-03-launcher-usage.md#현재-gui-수용-체크리스트)에서 관리한다. 예전 게시본에서 이미 통과한 작업을 미구현으로 표현하지 않으며, 새 후보의 미실행을 구현 완료와 구분한다.
 
 최초 연결 준비도 진단과 사용자 조치 안내를 보강했다. 오프라인 점검은 설치 상태를 생성/이전하지 않으며 온라인은 인증·서명·권한·승격·신뢰 기록을 유지한다. 기술 점검 통과는 실제 사용자 쓰기/설치/실행 보장이 아니고, 회사 계정·서비스·UE/RHEL 인수와 분리한다. [이번 증거와 게시본별 실제 GUI 수용](docs/reference/archive/validation/readiness-validation.md)
 
-이번 후속은 Windows/WSL 각587개와 게시 E2E를 통과했다. 사용자 요청으로 마우스·GUI 자동 검증을 잠시 중단했고 마지막 표시 보강 이후 새 후보의 전체 수용은 보류다. USER-02·UI-02는75%로 유지하며 재개 후 같은 후보에서 남은 사례를 확인한다. 이전 후보의 성공으로 회사 G1~G6 또는 새 후보100%를 선언하지 않는다.
-
-OPS-03의 명시적 승격과 기존 기준선 이전을 구현·로컬 수용했다. 후보a8080ea의 양 OS 각568개와 게시 CLI/API·HTTP/HTTPS·티켓/실행 불변·실제 일반 대기 화면을 확인했다. 이는 회사 Gate 승인 또는 기존 실제 UE 데이터 수용 완료가 아니다. [승격 결과](docs/reference/archive/validation/release-promotion-validation.md)
-
-후속 `cf99ba1`은 데이터 계획의 정확한 릴리스 결속과 host 권한/로그 쓰기를 보강했고 Windows/WSL 각552개·게시 프로세스 및 인증 호환을 확인했다. 실제 UE GUI 자동 입력이 실패하면 사용자가 직접 조작하고 결과를 관측하는 방식으로 합의했다. 새 fixture 적용/SaveGame 보존은 사용자 조작 결과 전까지 미실행이며 USER-01은50% 유지다. [후속 수용 기록](docs/reference/archive/validation/runtime-data-acceptance-completion.md)
-
-2026-10-02 런처만 수정하여 schema3 opt-in 사용자/버전별 UE 데이터 경로와 유지보수 보호를 추가했습니다. 후보 `64c4ad0`의 Windows/WSL 각542개, 게시 runtime-host 합성 v1/v2, HTTP 요청 서명·HTTPS/Bearer 회귀를 통과했습니다. 실제 UE 포함 두 릴리스 fixture의 UE 바이너리는 동일하며 시험 텍스트 파일만 다릅니다. GUI 입력 접근 거부로 실제 UE 업데이트/복원/데이터 수용은 미실행입니다. USER-01은50%, OPS-01은50% 유지이며 회사 Gate 완료가 아닙니다. [구현·검증·남은 조건](docs/reference/archive/validation/real-ue-data-safety-validation.md)
-
-2026-09-29 실제 ma0t10_dt Windows Development 패키지의 로컬 접수→승인→GUI 설치/실행→런처 종료 후 수명 유지→정상 종료 증거를 확보했습니다. OPS-01은50%(로컬 증거)이며 G3는 여전히 미완료입니다. 실제 UE 업데이트/복구·Shipping/Linux·회사 TLS/CA/권한/서비스 계정과 데이터 보존은 이 결과로 대체하지 않습니다. [실제 UE 결과](docs/reference/archive/validation/real-ue-package-validation.md)
-
 기본 배포 시스템과 실행 안전성은 구현·합성 검증 단계까지 진행했지만 회사 인수 G1~G6는 아직 완료되지 않았습니다. 현행 가이드는 [운영 문서 색인](docs/reference/README.md), 실행 이력은 [검증 아카이브](docs/reference/archive/README.md), 진행률은 [개선 대장](IMPROVEMENTS.md)에서 관리합니다.
-
-포스코DX 일반 라이트/개발자 다크·100~200% 글자/고대비를 유지하며, 관리형·portable의 정확한 선택/설치/runtime 표시와 문제 해결 정책을 통일했습니다. 보완 소스의 양 OS 각510개와 고정 후보 `8ce5060`의 portable v1→v2 설치/실행·해시·v1 보존·수명·변경 버튼 차단·개발자 복구·정상 복원/취소·preview 거부·정상 설치 문제 해결을 확인했습니다. 같은 후보의 관리형 v1 최초 설치/실행·3파일 해시·GUI 종료/재실행 중 동일 자식 생존·정상 종료 후 실행 가능 복귀도 통과했습니다. 관리형 v2 업데이트/실행·파일 해시·v1 보존·생존 중 개발자 변경 버튼 차단·정상 종료도 확인했습니다. 관리형 손상 복구·정상 백업 생성·복원 취소/적용·변경 preview 거부·서비스 재연결 점검도 통과했습니다. 일반 화면 손상 복구 등 남은 오류/개발자 확인 조합과 전체 화면 수용은 남습니다. 과거 게시본과 작업 중 게시본의 사전 시험은 별도 이력으로 보존합니다. [이번 증거와 제약](docs/reference/archive/validation/ui-acceptance-finalization.md)
 
 2026-09-29 사용자 합의로 **UI-01은 1920×1080의 현재 검증 범위에 한정해 100%**로 수용합니다. 실제 근거는 고정 후보8ce5060·양 모드/두 프로필·OS 배율100%·앱 글자100%·고대비 끔입니다. 이는 범위를 좁힌 수용이지 새로운 화면 시험을 수행한 결과가 아닙니다. UI-02·03은 75%, UI-04는0%를 유지합니다. 남은 기능/오류·개발자 실행 확인, 접근성·내레이터 음성, OS 원래 설정/원복과 회사 G1~G6는 별도이며 자동 완료되지 않습니다.
 
