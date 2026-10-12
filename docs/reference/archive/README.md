@@ -35,6 +35,7 @@
 | 기록 | 내용 |
 |---|---|
 | [현황 이력](history/status-log.md) | 2026-10-12 문서 정리 1단계에서 README·PROJECT_GOALS·IMPROVEMENTS의 날짜·후보별 현황 문단을 원문 그대로 이동. 문장의 “현재/최신”은 당시 기준 |
+| [AGENTS 결정 이력·규칙 대응표](history/agents-decisions-log.md) | 2026-10-12 AGENTS 구조 정리에서 옮긴 날짜별 승인·시험 회차 기록(원문)과 원래 규칙 줄별 새 위치 |
 
 ## 현재 문서에 통합한 입문 가이드
 
