@@ -1,12 +1,36 @@
 # 개선 진행 현황과 보완 필요 사항
 
-## 최신 작업 — 2026-10-06 로컬 스프린트
+**이 파일은 남은 일만 적은 목록이 아닙니다. 완료 이력도 삭제하지 않고 함께 관리합니다.**
 
-`codex/local-completion-sprint` 제품 후보1a7740f의 Windows849개/WSL848개+Windows 전용1개 제외, 양 OS 고정 게시를 확인했습니다. 재시도 준비·선택 갱신·commit 뒤 실행/바로가기 실패·정리 결과를 보완하고 retention schema2의 새 자료 보존, 인증 제한/슬롯 반환, 복원 저장 경계/예약 조회 실패 회귀를 추가했습니다. 양 OS 게시 HTTP·관리형 진단/복원·온라인 IP/exact/만료 거부·운영 backup/restore/retention이 통과했습니다. [현재 근거](docs/reference/archive/validation/local-completion-validation.md).
+P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선. 우선순위는 제안이며 일정·수치 목표는 미정입니다. 미검증과 미구현을 구분합니다.
 
-새 네 GUI 조합은 v1 최초 설치/실행/수명, 관리형 일반 v2 취소·Range 재개·명시 실행과 실행 중 보호를 확인했습니다. 최종51개 전수와 WSL1 HTTPS broker timeout은 미완료입니다. USER-02/UI-02/USER-03/UI-03은75%, OPS-08은50%를 유지합니다. **집계 완료6·부분19·대기3/열린22개는 변하지 않았으며 코드 보완을 항목100%로 바꾸지 않았습니다.** 아래75ea591/789개/18개 GUI 근거는 직전 후보 이력입니다.
+날짜·후보별 이전 검증 기록은 [현황 이력](docs/reference/archive/history/status-log.md)으로 옮겼습니다. 현재 수치는 [자동 생성 진행표](docs/reference/archive/validation/local-completion-progress.md)를 따릅니다.
 
-### 직전 작업 이력
+## 먼저 확인할 진행 현황
+
+| 완료 | 부분 진행 | 대기 | 전체 |
+|---:|---:|---:|---:|
+| 6개 | 19개 | 3개 | 28개 |
+
+완료를 제외하면 열린 항목은 **22개**입니다. 각 분야 표에서 `진행률`과 `상태`를 먼저 보면 됩니다.
+
+회사 UE/RHEL/서비스 계정·실제 인증서·내레이터 음성·원격 CI는 별도 미검증입니다. 대부분의 headless 기능은 구현돼 있지만 열린 항목이 전부 미구현이라는 뜻은 아닙니다.
+
+### 현재 진행 상태 요약
+
+| 구분 | 확인된 상태 | 아직 남은 조건 |
+|---|---|---|
+| 기본 배포 흐름 | ZIP+외부 JSON → 검사/승인 → 권한 확인 → 설치/실행·repair 구현, 합성 E2E 통과 | 로컬 Windows 실제 UE 최초 흐름 확인. 회사 UE 업데이트/복구·RHEL·규모별 인수는 별도 |
+| 성능 | PERF-01/02/04 재현 범위 완료 | PERF-03의 10개 연결 지연 기준 미달 유지 |
+| 인증·초기 설정 | USER-05 완료, SEC-03/04 각각 75% | Windows 서비스 계정·WSL proxy/계측 제약·회사 HTTP 위험 수용 |
+| 서명·실행 안전성 | OPS-08 50%, OPS-09 75%; 서명 순서·실행 중 변경 차단·장애 시험 구현 | 실제 인증서/설치본, 회사 계정·UE, 남은 GUI 직접 시험 |
+| 새 UI | 포스코DX/에디션 고정·재시도/정리 결과/설정 재읽기 보완 | UI-01은1920×1080 합의 범위 완료. 최신 후보 네 조합 전체 수용·다른 해상도/DPI·음성 별도 |
+| GUI 직접 확인 | 최신 후보 네 조합의 초기 설정·v1 설치/실행/수명, 관리형 일반의 v2 취소/Range 재개·실행 보호·복원 핵심 흐름 통과. 사례 수는 [자동 생성 진행표](docs/reference/archive/validation/local-completion-progress.md) | 최신 후보 GUI 사례 전수 미완료([체크리스트](docs/reference/guide-03-launcher-usage.md#현재-gui-수용-체크리스트)). 이전 후보 성공을 합산하지 않음 |
+| 운영 인수 | 현재는 제한된 테스트 활용 단계 | MSI/RPM 설치 수명주기·데이터 보존·백업 복원·운영 정책·G1~G6 |
+
+가까운 다음 작업은 **남은 로컬 GUI 확인 → 회사 자료/권한이 필요한 검증 준비 → 데이터/운영 정책 확정**입니다. 새 기능을 한꺼번에 추가하거나 인증서·회사 계정 미준비 항목을 완료로 올리지 않습니다. 검증 문서가 archive로 이동해도 위 근거와 진행률은 바뀌지 않습니다.
+
+### 최근 스프린트 추가 체크포인트 — 2026-10-06 `1a7740f`
 
 현재 수용은 [자동 생성 전체 진행표](docs/reference/archive/validation/local-completion-progress.md)와 [현재 정제 근거](docs/reference/archive/validation/local-completion-runtime.json)에서 확인합니다. 새 GUI는8/51이며, 아래18/51은 직전 게시본 이력입니다. 숫자만 합산하지 않습니다.
 
@@ -20,74 +44,6 @@
 | PERF-03 | 현행 인증 별 준비1/측정3·1/10/30 비교 | 75% | 10연결 개선 미달,새 Linux 비교/실환경 |
 
 이 표는 추가 체크포인트이며 아래28개 항목의 완료 기준과 퍼센트는 낮추지 않습니다.
-
-점검: 2026-10-06 / `codex/client-acceptance-closure`. 재시도 선택/작업 결속·복구 commit 뒤 조회/취소 상태·정리 부분 실패·최소 화면 설정 생성·개발자 설정 재읽기를 수정했습니다. 최종 제품75ea591의 Windows789개 통과/WSL788개 통과·Windows 전용1개 제외, 양 OS 고정 publish·HTTP/HTTPS·최소 관리형 설정/IPC가 통과했습니다. 네 새 GUI fixture의 초기 설정·연결 오류 조회 재시도는 직접 확인했으며 관리형 일반의 v1 설치/수명과 v2 취소를 진행했습니다. **최종 네 조합 전체 수용은 미완료**입니다. [현재 근거](docs/reference/archive/validation/client-acceptance-closure-validation.md). USER-02/UI-02/USER-03은75% 유지하며 완료6·부분19·대기3·열린22개입니다.
-
-P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선. 우선순위는 제안이며 일정·수치 목표는 미정입니다. 미검증과 미구현을 구분합니다.
-
-## 먼저 확인할 진행 현황
-
-최신 구현·회귀·직접 입력은 위 기록과 현재 수용 체크리스트가 기준입니다. 이하 usability/final-05/각753·698개, 이전 GUI 중단 문장은 **당시 이력**이며 현재 후보 통과나 현재 중단을 의미하지 않습니다. 제품 수정 후 최종75ea591의 네 root를 새로 만들었으며 이전 후보의 부분 성공을 합쳐100%로 표시하지 않습니다.
-
-이전 workflow 후속 이력: 작업 시작/종료·취소 요청·재개 조건·세대별 진행 이벤트와 정상 Running 안내를 수정했다. 실제 GUI에서 발견한 관리형 resume 선택 거부, 빈 목록의 이전 카드 잔존, 권한 복귀 후 설치 상태 누락도 수정했다. 당시 Windows/WSL각698개, 시험 도구14+프록시1개와 게시 HTTP 요청 서명·취소/재개가 통과했다. `final-05` 관리형 일반의 추천 대기/빈 목록/재연결 무변경·설치/수명·취소/Range·hash·v1 보존 근거는 archive에 보존한다. 당시 USER-03의50%와1440×900 화면 조건은 현재 값이 아니며 위 최신75%/1920×1080 기록을 따른다.
-
-이전 에디션 작업 이력: 별도 General/Developer 빌드·MSI 두 종·base/developer RPM, 공통 CLI/Agent/runtime-host, GUI 취소 완료/재개 결속을 구현했다. 당시 Windows/WSL각667개·게시 headless/readiness·비설치 payload 검증 통과. 현재 작업 수명/GUI 수용은 위 최신 기록을 따르고 [에디션 검증](docs/reference/archive/validation/client-editions-validation.md)은 당시 이력으로 보존한다.
-
-현재 집계: **완료6·부분19·대기3, 열린22개**를 유지합니다. 실제 합성 GUI 부분 수용은 위 최신 기록을 따르며 회사 UE/RHEL/서비스 계정·실제 인증서·내레이터 음성·원격 CI는 별도 미검증입니다. 대부분의 headless 기능은 구현돼 있지만 열린 항목이 전부 미구현이라는 뜻은 아닙니다.
-
-PERF-03: Windows10/30연결 p95 26.20/109.92→11.47/30.24ms, WSL10/30연결29.25/90.41→10.21/26.40ms를 관측했습니다. 실패0·90% 콘텐츠 절감 유지. Windows 직전1연결은10.6% 악화했고 측정 순서/ambient load는 완전 통제하지 못했으므로75%를 유지합니다. 원래 d756af2 비교와 최적화 직전 비교를 구분하며 원시 키/로그는 보관하지 않습니다.
-
-OPS-07 closure: selected target과 준비도/설치검사 결속을 보강했다. default1/exact2 실제 게시 점검 및 inventory 불변 확인. 실제 OS 예약/서비스 계정은 후속이다.
-
-SEC-01/02 closure: HTTP429·slot 반환·window 회복·만료endpoint·expiry audit 동시/실패 원자성을 보강했다. Windows48개와 게시 경계 통과, 회사 proxy/계정·범위 밖 인수는 유지한다.
-
-OPS-05 closure: stage/live 공통 차단·전체 예약, 삭제 ledger 연결, 필수 그래프 양방향 대조와 latest policy 검증을 보강했다. Windows16개 및 활성화한 게시 서버의 인증된 실제 설치 확인. 회사 RPO/RTO/완전 유실/계정 인수는 유지한다.
-
-OPS-04 closure: 후보별 durable 상태·directory identity·잔여 파일 삭제·private quarantine·schema6 삭제 이력을 구현했다. Windows16개/게시 통과. 실제 계정·전체 경합/후속 복원 연결 검증 전 전체 수용 완료로 올리지 않는다.
-
-closure 캐시/기록 수명: requester partition·쓰기 예약·copy temporary 정리·discard archive/슬롯 회복을 구현했다. Windows18개 및 게시 headless 확인. USER-03 전체 수용/GUI·회사 계정 조건은 후속으로 유지한다.
-
-closure 취소 보완: 등록 ACK·취소 보존·commit 결과·unstarted launch abort·Backend token을 구현하고 관련18개/게시 headless를 확인했다. 실제 GUI 취소와 회사 계정 조건은 유지한다. 후속 cohort로 최종 token/결과 흐름을 재검증한다.
-
-후속 closure 시작: fixture 실제 소유/경로/게시본 확인과 비밀 stdout 비보관, 실패 checkpoint를 추가했다. Windows 계약3개와 기존 게시본의 headless 실행 통과. 항목 전체 진행률은 새 결함 수정·후속 게시 검증 후 판단한다. [현재 기록](docs/reference/archive/validation/operations-closure-validation.md)
-
-이하635개 등은 이전 단계 이력이다. 당시 headless runner·broker/health/native family·Windows36개 종료 경계, 개발 MSI 추출·Ubuntu RPM을 확인했다. 현재664개와 추가 수용 조건은 위 요약·체크포인트를 따른다. 과거 RPM 중복 build-id 경고는 이번에 해소했으며 원격CI/실설치/회사 인증서는 여전히 미검증이다.
-
-PERF-03 최신 cohort-06 재측정은1/10/30 p95가18.16/97.01/365.33ms, 실패0이나 비교 기준 개선 미달이다. 새 signer pool은 제거했고 계측만 남겼다. 75%와 시간 미달을 유지한다. [정제 비교](docs/reference/archive/validation/headless-performance-results.json). 90% 콘텐츠 절감 성공을 API 지연 완료로 합산하지 않는다.
-
-Headless 주요 묶음은 구현·양 OS 회귀/게시 시험을 진행했다. 완료6·부분19·대기3, 열린22개다. 새 취소 GUI·장애 전수·회사 인수가 남아 신규 USER/SEC/OPS/DEV 항목은50%로 보수적으로 유지한다. PERF-03 10연결 개선 미확인, UI 중단/음성/원격CI·실제 인증서 상한도 유지한다. 부분 진행 수가 늘어난 것을 회사 출시 완료율로 해석하지 않는다.
-
-2026-10-03 headless 후속 진행: 현재 계약으로 측정 도구를 정상화하고 fe10488 Windows 게시 HTTP 서명 E2E·80MiB 최초/변경 없음/다음 버전/repair·1/10/30 연결을 수행했다. 90% 콘텐츠 재사용 유지. 최종 후보 비교 전 PERF-03/SEC-04 진행률은 유지한다. [현재 검증](docs/reference/archive/validation/headless-operations-validation.md). GUI 수용은 중단 중이다.
-
-2026-10-03 빠른 개선: `4a37061` 문서 정합성, `f215e62` 진단 근거 보존/모순 검증·중복 안내 수정, `9788de1` 준비도 CI 연결을 완료했다. Windows/WSL 각601개, 게시 CLI/Agent 준비도 각8개·요약 계약3개·fixture 계약13개 통과. 세부 체크포인트 완료이며 GUI 중단/원격 CI 조건으로 USER-02·UI-02는75%, OPS-06은50% 유지. [정제 결과와 조건](docs/reference/archive/validation/quick-wins-validation.md)
-
-2026-10-03 최초 연결 진단 후속: USER-02는0%→75%. 최신 소스d665d67 Windows/WSL 각587개와 실제 게시 E2E 통과, 이전 후보의 양 모드/두 프로필 설치·실행·수명·복구·복원·오류/설정 재시도를 직접 확인했다. 일반 오류의 다음 조치를 보강한 새 후보는 양 모드403 화면을 확인했다. 사용자 요청으로 마우스·GUI 자동 검증은 잠시 중단했으며, 새 후보 전체 수용 전까지 USER-02·UI-02는75%다. [게시본별 증거](docs/reference/archive/validation/readiness-validation.md)
-
-2026-10-02 OPS-03 완료(로컬 범위): 승인/승격 분리, revision·감사·schema4 기준선 이전, 현재 권한별 추천·구형 요청 제한, Core/Agent/GUI explicit policy 처리를 검증했다. 후보a8080ea Windows/WSL 각568개·게시본 이력/이전/실행 티켓·Running 불변·HTTP/HTTPS 통과, 실제 일반 GUI의 지정 대기/주 버튼 비활성화 관측. [승격 검증](docs/reference/archive/validation/release-promotion-validation.md)
-
-2026-10-02 후속 `cf99ba1`: 데이터 릴리스/설치 결속·명시적 root 선택·host credential 중첩·Linux 권한·로그 write/flush 보강, Windows/WSL 각552개와 게시 프로세스/HTTP·HTTPS 회귀 통과. 자동 GUI 입력은0x80070005로 거부되어 사용자 직접 조작 협업 대기다. USER-01은 실제 데이터 보존 결과 전까지50%를 유지한다. [후속 기록](docs/reference/archive/validation/runtime-data-acceptance-completion.md)
-
-**이 파일은 남은 일만 적은 목록이 아닙니다. 완료 이력도 삭제하지 않고 함께 관리합니다.**
-
-| 완료 | 부분 진행 | 대기 | 전체 |
-|---:|---:|---:|---:|
-| 6개 | 19개 | 3개 | 28개 |
-
-완료를 제외하면 열린 항목은 **22개**입니다. 각 분야 표에서 `진행률`과 `상태`를 먼저 보면 됩니다.
-
-### 현재 진행 상태 요약
-
-| 구분 | 확인된 상태 | 아직 남은 조건 |
-|---|---|---|
-| 기본 배포 흐름 | ZIP+외부 JSON → 검사/승인 → 권한 확인 → 설치/실행·repair 구현, 합성 E2E 통과 | 로컬 Windows 실제 UE 최초 흐름 확인. 회사 UE 업데이트/복구·RHEL·규모별 인수는 별도 |
-| 성능 | PERF-01/02/04 재현 범위 완료 | PERF-03의 10개 연결 지연 기준 미달 유지 |
-| 인증·초기 설정 | USER-05 완료, SEC-03/04 각각 75% | Windows 서비스 계정·WSL proxy/계측 제약·회사 HTTP 위험 수용 |
-| 서명·실행 안전성 | OPS-08 50%, OPS-09 75%; 서명 순서·실행 중 변경 차단·장애 시험 구현 | 실제 인증서/설치본, 회사 계정·UE, 남은 GUI 직접 시험 |
-| 새 UI | 포스코DX/에디션 고정·현재 재시도/정리 결과/설정 재읽기 보완. Windows789/WSL788+1 제외 | UI-01은1920×1080 합의 범위 완료. 최종 네 조합 전체 수용·다른 해상도/DPI·음성 별도 |
-| GUI 직접 확인 | 최종75ea591 네 조합 초기 설정/에디션·연결 오류 재시도·v1 GUI 설치/수명, 관리형 일반v2 취소/Range 재개/명시 실행 통과 | 18/51 사례 완료,33사례 미완료. 관리형 일반 복구 후 조회·정상 백업 준비·복원 취소/변경 거부/정상 적용/조회 재시도 통과. 나머지v2/실행 보호·복원/정리/오류. 이전 후보를 합산하지 않음 |
-| 운영 인수 | 현재는 제한된 테스트 활용 단계 | MSI/RPM 설치 수명주기·데이터 보존·백업 복원·운영 정책·G1~G6 |
-
-가까운 다음 작업은 **남은 로컬 GUI 확인 → 회사 자료/권한이 필요한 검증 준비 → 데이터/운영 정책 확정**입니다. 새 기능을 한꺼번에 추가하거나 인증서·회사 계정 미준비 항목을 완료로 올리지 않습니다. 검증 문서가 archive로 이동해도 위 근거와 진행률은 바뀌지 않습니다.
 
 ### 퍼센트의 의미
 
