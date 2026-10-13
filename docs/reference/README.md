@@ -21,6 +21,7 @@
 | 이름·이미지·표시 설정 | [UI 커스터마이징](launcher-ui-customization.md) |
 | 실행 중 변경 차단·Unknown·수동 정지 확인·이전 제한 | [실행 안전성](runtime-safety.md) |
 | 무인 service 한 회차·health 실패·수동 전환 | [서비스 모드](service-mode.md) |
+| 회사 서버·PC에 처음 시범 환경 구축(단계별) | [회사 시범 환경 구축](commercial-deployment.md#회사-시범-환경-구축--단계별-안내) |
 | MSI/RPM 제작·서명 gate·설치 전 체크 | [설치본·상용 배포](commercial-deployment.md) |
 
 처음에는 **기능 지도 → 인증·초기 준비 → 서버 운영 → 설정/GUI 안내** 순서로 읽으세요. HTTPS/Bearer 예제의 URL만 HTTP로 바꾸지 않습니다. HTTP는 요청 서명을 사용해도 암호화되지 않습니다.
