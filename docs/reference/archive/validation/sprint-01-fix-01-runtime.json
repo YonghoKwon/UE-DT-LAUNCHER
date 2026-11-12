@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "sourceHead": "2e4b8f9d917079808ad406988d5430dd359837ff",
+  "productSourceHash": "4192ce75e8923f4acc5e44b0deff55709b7e1adbb2ab692051cb24e73c803216",
+  "validationDate": "2026-11-13 KST",
+  "windowsTests": 966,
+  "linuxTests": null,
+  "linuxSkipped": null,
+  "windowsPublished": true,
+  "linuxPublished": null,
+  "httpE2e": true,
+  "httpsE2e": "not run in fix-01; historical proofs preserved separately",
+  "companyValidated": false,
+  "remoteCi": "prior cef9f53 build38359989748 success; fix-01 commits not run remotely",
+  "guiCohortComplete": false
+}

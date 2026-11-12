@@ -45,6 +45,7 @@ publish/bin/obj, 테스트 logs·DB·인증서·토큰, 패키지·설치 데이
 | src/UeDtLauncher/Program.cs | GUI/CLI 명령 |
 | src/UeDtLauncher/Cli/ | 책임별 CLI handler·인수/도움말·upload 명령 |
 | src/UeDtLauncher.Core/Distribution/ReleaseUploader.cs | 셸 없는 OpenSSH 전송·프로필·실패 단계·dry-run |
+| src/UeDtLauncher.Core/Distribution/UploadPreflight.cs·UploadWork.cs·UploadPresentation.cs | 변경 없는 접속 점검·소유 작업 사본 정리·사람용 출력 |
 | src/UeDtLauncher.DistributionServer/OperationsConsole.cs | 동작별 lease·확인 입력을 사용하는 서버 운영 콘솔 |
 | src/UeDtLauncher/Gui/ | programmatic Avalonia View·ViewModel·시각 토큰 |
 | src/UeDtLauncher.Core/ | 공용 assembly, Distribution 메타데이터·경로·이미지 |

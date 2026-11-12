@@ -260,3 +260,5 @@ UE 인수는 앱의 독자적인 쓰기 위치를 강제 변경하지 않습니�
 개발자 업로드는 공통 CLI `upload`이며 일반/개발자 빌드 모두 사용할 수 있습니다. 서버 권한을 늘리는 옵션은 없습니다. 프로필 최초 준비와 버전마다 전송·서버 console 확인 순서는 [기능 지도 B2~B6](feature-workflow.md#b2-releasejson-만들기--개발-pc-powershell)를 따릅니다.
 
 무인 실행은 [서비스 모드](service-mode.md), 이전은 [통합 운영](distribution-workflow.md), 패키징은 [상용 배포 준비](commercial-deployment.md)를 참고하세요. [2026-09-12 검증](archive/validation/distribution-validation.md)은 Windows GUI/Agent·Linux CLI 테스트 패키지 결과이며 실제 회사 RHEL·실제 UE 검증 완료를 뜻하지 않습니다.
+
+fix-01 업로드 안내: upload는 기본 한국어 요약이며 --format json으로 기존 기계 출력을 유지합니다. upload check는 키 인증/접속/권한 조회만 수행합니다. 성공 사본은 정리하고 실패/--keep-work는 보존합니다. 번호 선택·확인 값과 실제 화면 예시는 [기능 지도 B2~B6](feature-workflow.md#b2-releasejson-만들기--개발-pc-powershell)를 따릅니다. 다른 CLI 명령의 JSON 기본값과 보안/진단 코드 계약은 유지합니다.

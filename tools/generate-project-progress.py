@@ -30,7 +30,7 @@ def build(repo,summaries,validation):
 def markdown(result):
     lines=['# 현재 전체 진행 상태','', '4종 정본과 현재 게시본 근거에서 생성한 자료입니다. 항목 퍼센트 평균을 제품 완성률로 해석하지 않습니다.','',
            '| 구분 | 완료 | 부분 | 대기 | 열린 항목 | 전체 |','|---|---:|---:|---:|---:|---:|']
-    for label,key in [('작업 전','before'),('현재','after')]:
+    for label,key in [('SPRINT-01 시작','before'),('현재','after')]:
         c=result[key];lines.append(f"| {label} | {c['complete']} | {c['partial']} | {c['waiting']} | {c['open']} | {c['total']} |")
     p=result['automation'];passed=sum(r['counts']['passed'] for r in result['gui']['combinations'])
     def show(value):return '이번 미실행' if value is None else str(value)
@@ -50,6 +50,7 @@ def markdown(result):
             condition=re.sub(r'\]\((?!https?://|#)([^)]+)\)',r'](../../../../\1)',row['remainingCondition'])
             lines.append(f"| {row['id']} | {row['percent']}% | {row['remainingCheckpointPercent']}% | {condition} |")
     lines+=['','이번 미실행과 과거 통과를 합산하지 않습니다. 이전 고정 게시본 GUI 수용은 [보존한 진행표](../history/local-completion-progress-pre-sprint-01.json)에 있습니다.']
+    lines+=['','초기 e24aa93/890건의 진행표도 [fix-01 이전 이력](../history/local-completion-progress-pre-fix-01.json)에 보존합니다. 현재 자동화는 입력에 명시한 sourceHead/검증 시점에 결속됩니다.']
     return '\n'.join(lines)+'\n'
 
 

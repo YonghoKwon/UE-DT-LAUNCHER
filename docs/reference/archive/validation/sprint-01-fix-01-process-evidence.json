@@ -1,0 +1,95 @@
+{
+  "validationDate": "2026-11-13 KST",
+  "scope": "Windows local synthetic process proof before final documentation commit; not GUI, company, real SSH success or service installation",
+  "source": "2e4b8f9d917079808ad406988d5430dd359837ff",
+  "productSourceHash": "4192ce75e8923f4acc5e44b0deff55709b7e1adbb2ab692051cb24e73c803216",
+  "readiness": {
+    "schemaVersion": 1,
+    "source": "2e4b8f9d917079808ad406988d5430dd359837ff",
+    "platform": "Windows",
+    "success": true,
+    "checks": [
+      {
+        "name": "fixture-preparation",
+        "status": "passed"
+      },
+      {
+        "name": "offline-inventory",
+        "status": "passed"
+      },
+      {
+        "name": "recommendation",
+        "status": "passed"
+      },
+      {
+        "name": "exact",
+        "status": "passed"
+      },
+      {
+        "name": "missing-project",
+        "status": "passed"
+      },
+      {
+        "name": "installation-execution-repair",
+        "status": "passed"
+      },
+      {
+        "name": "managed-diagnostics",
+        "status": "passed"
+      },
+      {
+        "name": "revocation",
+        "status": "passed"
+      }
+    ],
+    "counts": {
+      "passed": 8,
+      "failed": 0,
+      "not-run": 0
+    },
+    "complete": true,
+    "binarySha256": {
+      "launcher": "161dcd151eecd254ce790daec9f290c819167d6abc5b6caa4871494c90ea0f9c",
+      "agent": "8f67b42033d407c63eb3cc59047ad2ad647731b99c4dcbe037c0bddf6e81cdc5",
+      "server": "ae1280aa11011ce9128ca601605f4d5ef7d34b38dd8e8a17a7eef6652104c352"
+    },
+    "sourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "headless": {
+    "schemaVersion": 2,
+    "source": "2e4b8f9d917079808ad406988d5430dd359837ff",
+    "sourceDirty": false,
+    "sourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "binarySha256": {
+      "launcher": "161dcd151eecd254ce790daec9f290c819167d6abc5b6caa4871494c90ea0f9c",
+      "agent": "8f67b42033d407c63eb3cc59047ad2ad647731b99c4dcbe037c0bddf6e81cdc5",
+      "server": "ae1280aa11011ce9128ca601605f4d5ef7d34b38dd8e8a17a7eef6652104c352"
+    },
+    "platform": "Windows",
+    "complete": true,
+    "success": true,
+    "checks": [
+      {
+        "name": "auth-operations-schedule",
+        "status": "passed",
+        "exitCode": 0
+      },
+      {
+        "name": "offline-maintenance",
+        "status": "passed",
+        "exitCode": 0
+      },
+      {
+        "name": "catalog-restart",
+        "status": "passed",
+        "exitCode": 0
+      }
+    ],
+    "counts": {
+      "passed": 3,
+      "failed": 0,
+      "not-run": 0,
+      "running": 0
+    }
+  }
+}

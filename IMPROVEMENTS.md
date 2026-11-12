@@ -70,7 +70,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 | 항목 | ① 구현/절차 | ② 로컬 검사 | ③ 요구 환경 실행/측정 | ④ 수용 기준 | 진행률 |
 |---|---|---|---|---|---:|
-| OPS-10 | upload 프로필/SSH 순서·실패 안전 + console의 기존 경로/확인/동작별 lease | 업로드15·콘솔10사례 포함 Windows890건 자동화 통과 | 게시 dry-run/리디렉션 거부·HTTP readiness8/headless3; 실제 SSH 미실행 | 실제 SSH 업로드 계정·운영자 터미널·회사 환경 수용 | 50% |
+| OPS-10 | 한국어 upload/진행·read-only check·소유 사본 정리, 번호/짧은 확인 콘솔·공통 정리 보호 | fix-01 Windows 전체966건·기존 보안/확인/무변경 회귀 | 제품 입력2e4b8f9의 게시 HTTP 회귀는 별도 고정 근거로 기록 | 실제 SSH 성공·운영 터미널·회사 환경 수용 전에는50% 유지 | 50% |
 | OPS-07 | disabled check-only·정확한 selected/preparation·명시 주기 | 양 OS 회귀·조회 불변 | default1/exact2 게시 점검·준비도 보류 구분 | 실제 OS 예약/서비스 계정 별도 | 50% |
 | OPS-04 | durable intent·directory identity·private quarantine·schema6 ledger | 재생성/부분 삭제·중단 회귀 | 양 OS 게시 정리/stale 거부·복원 연결 확인 | 열린 writer/모든 경합·실제 업로드 계정 인수 | 50% |
 | OPS-05 | exclusive stage/fence·latest graph·policy·독립 Manifest 서명 | 누락/추가/동일 손상 서명·보호 회귀 | 양 OS 게시 backup/restore→인증된 설치 | 장애 전수·과거 키/회사 RPO/RTO·완전 유실 별도 | 50% |
@@ -124,7 +124,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | OPS-07/P1 | 50% | 부분 진행 · 조회 전용 | opt-in scheduled-check·명시 주기·중복 skip·비활성 외부 template | 실제 OS 예약/서비스 계정 인수 별도. 자동 설치/전환 제외 |
 | OPS-08/P0 | 50% | 부분 · 실제 인증서 대기 | 공식 사전 gate·EXE 선서명·MSI 내장 payload 검증·실행별 WiX intermediate 구현. 계약 11개 및 개발 MSI 추출/hash 비교 통과 | 실제 회사 인증서와 설치된 EXE 서명 검증은 미완료. [기록](docs/reference/archive/validation/deployment-safety-validation.md) |
 | OPS-09/P0 | 75% | 부분 · GUI/현장 검증 대기 | 누락 기록 fail-closed, 서비스 snapshot/barrier·이전/대상 잠금, 위험 migration apply 차단. 기존 각 393개·저장 경계 종료·health/대상 분리·CLI E2E 통과. 이번 portable 자식 수명·실행 중 변경 버튼 차단 추가 | 이전 관리형 복구/rollback과 이번 portable 증거는 게시본별 이력. 새 후보 양 모드 전체 GUI 수용, 모든 진입점/상태 조합의 실제 전수 검증과 회사 UE/계정·원격 CI는 미완료. [기존 기록](docs/reference/archive/validation/managed-gui-safety-validation.md), [이번 기록](docs/reference/archive/validation/ui-acceptance-finalization.md) |
-| OPS-10/P1 | 50% | 부분 진행 · 자동화 확인 | upload 한 명령/프로필·허용 문자·두 전송 후 이름 변경·실패 단계, 서버 console의 snapshot/승인/승격 revision/정리 확인·동작별 lease. 업로드15·콘솔10사례 및 게시 CLI 확인. [근거](docs/reference/archive/validation/sprint-01-quality-admin-validation.md) | 실제 SSH 왕복·업로드 계정/known-host·운영자 터미널·회사 환경 수용. 웹 관리자/HTTP 쓰기 API 제외 |
+| OPS-10/P1 | 50% | 부분 진행 · 사용성 보완 자동화 확인 | 1차 리뷰7커밋 보존. fix-01: 기본 한국어 출력/JSON 옵션·키 전용 사전 점검·사본 공간/정리·번호/버전 확인·요약/추천 표시·내용 해시 없는 목록·같은 계획 재개. 전체966건 통과. [근거](docs/reference/archive/validation/sprint-01-quality-admin-validation.md) | 실제 SSH 성공/업로드 계정·known-host/서비스 읽기 ACL·운영 터미널·회사 수용은 별도. 웹 관리자/HTTP 쓰기 API 제외. 실제 인수 전 진척 상향 없음 |
 
 ## 성능·저장 공간
 
@@ -165,7 +165,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | SEC-03/P0 | 75% | 부분 · Windows 서비스 실행 대기 | `e22a908` 이후 생성 시 ACL/mode/owner 검증. Linux uedt 실제 읽기·nobody 거부 통과 | Windows LocalService 실제 설치 계정 읽기와 기존 credential 이전 현장 확인 남음. [기록](docs/reference/archive/validation/intranet-auth-validation.md) |
 | SEC-04/P0 | 75% | 부분 · 환경 제약 남음 | `babb88e`, `10d4063`: 요청 서명·challenge/nonce·Catalog 결속·Agent 이미지, Windows/Linux E2E·1/10/30 연결 실패 0 | WSL proxy의 간헐 handshake/startup timeout과 메모리 지표 미수집을 보존. 실제 RHEL 대용량·회사 HTTP 위험 수용 별도. [기록](docs/reference/archive/validation/intranet-auth-validation.md) |
 | EXT-01/P2 | 0% | 대기 · 추가 보완 | IAccessPolicyProvider 파일 구현만 존재 | 회사 API 합의 후 timeout/cache TTL/기본 거부. 장애·취소·오래된 응답에서 권한 확대 없음 |
-| DEV-01/P2 | 50% | 부분 진행 · 책임 분리 확인 | SPRINT-01 CLI handler/parser·오류 정제·HTTP 안내, MainWindow 책임별 이동(본문 재구성 일치·최대364줄), 신규/이동 파일 서식. Windows890건·게시 readiness8/headless3 통과. [근거](docs/reference/archive/validation/sprint-01-quality-admin-validation.md) | 새 게시본 실제 GUI 수용·동기 I/O 경계 후속. 이번 headless 통과만으로 진행률을 올리지 않음 |
+| DEV-01/P2 | 50% | 부분 진행 · 책임 분리 확인 | SPRINT-01 CLI handler/parser·오류 정제·HTTP 안내, MainWindow 책임별 이동(본문 재구성 일치·최대364줄), 신규/이동 파일 서식. 초기 Windows890건·e24aa93 게시 근거는 보존. fix-01 전체966건 및 CLI/콘솔 사용성 보완 확인. [근거](docs/reference/archive/validation/sprint-01-quality-admin-validation.md) | 새 게시본 실제 GUI 수용·동기 I/O 경계 후속. 이번 headless 통과만으로 진행률을 올리지 않음 |
 
 근거 소스: [서버 API](src/UeDtLauncher.DistributionServer/DistributionHttp.cs), [저장 관리](src/UeDtLauncher.DistributionServer/StorageMaintenance.cs), [권한](src/UeDtLauncher.DistributionServer/AccessPolicy.cs), [엔진](src/UeDtLauncher.Core/LauncherEngine.cs), [버전 경로](src/UeDtLauncher.Core/Distribution/VersionedReleasePaths.cs), [CI](.github/workflows/build.yml).
 

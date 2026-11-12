@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "authoritativeDocuments": {
-    "README.md": "cd65a31c40be789c3e83cfc5b553a5de9740804dcabf54c315ab99e6c4ad7fac",
-    "AGENTS.md": "504e09ea4980b5a8e5062ff7c5d44988aed069f07390ec4b6060857832f76b36",
-    "IMPROVEMENTS.md": "cc835e8eb97e181cb2fad8f35f7e9f062694a031735d5253a327fea3a465bf09",
-    "PROJECT_GOALS.md": "5e9a662a205a5a20e50ad7b609c032c114f9629194864fddfc2dad21fc2976e8"
+    "README.md": "7082958404b0a93cf3ad2278127e4dbfd0b1c1dc1889ecf929d9f5fb007f785b",
+    "AGENTS.md": "69060833ef96820fe8d2d5ba8428a74bfe578de98000c2bac283003a069541e4",
+    "IMPROVEMENTS.md": "8e3f05feff27430518f44b97f1469b43be5f5ddb10538fd9d1923713de6a38d4",
+    "PROJECT_GOALS.md": "cc1f0bbcf9617455b2c5bb5ac823dcb0675ac5e473a6414c050ab501b230e04c"
   },
   "before": {
     "complete": 6,
@@ -21,18 +21,18 @@
     "total": 29
   },
   "automation": {
-    "productSourceHash": "3bbb454beb025d3df9bc57869cbb7d4bd429eb43fb86e229c0e6c4f970f387af",
-    "sourceHead": "e24aa937073b4e67a88d392f26384681fd19fb2f",
-    "windowsTests": 890,
+    "productSourceHash": "4192ce75e8923f4acc5e44b0deff55709b7e1adbb2ab692051cb24e73c803216",
+    "sourceHead": "2e4b8f9d917079808ad406988d5430dd359837ff",
+    "windowsTests": 966,
     "linuxTests": null,
     "linuxSkipped": null,
     "windowsPublished": true,
     "linuxPublished": null,
     "httpE2e": true,
-    "httpsE2e": "not run in SPRINT-01; historical proofs preserved separately",
+    "httpsE2e": "not run in fix-01; historical proofs preserved separately",
     "companyValidated": false,
-    "validationDate": "2026-11-12",
-    "remoteCi": "baseline cef9f53 build38359989748 Windows/Ubuntu success; sprint commits not run"
+    "validationDate": "2026-11-13 KST",
+    "remoteCi": "prior cef9f53 build38359989748 success; fix-01 commits not run remotely"
   },
   "gui": {
     "complete": false,
@@ -107,8 +107,8 @@
       "id": "OPS-10",
       "percent": 50,
       "remainingCheckpointPercent": 50,
-      "state": "\ubd80\ubd84 \uc9c4\ud589 \u00b7 \uc790\ub3d9\ud654 \ud655\uc778",
-      "remainingCondition": "\uc2e4\uc81c SSH \uc655\ubcf5\u00b7\uc5c5\ub85c\ub4dc \uacc4\uc815/known-host\u00b7\uc6b4\uc601\uc790 \ud130\ubbf8\ub110\u00b7\ud68c\uc0ac \ud658\uacbd \uc218\uc6a9. \uc6f9 \uad00\ub9ac\uc790/HTTP \uc4f0\uae30 API \uc81c\uc678"
+      "state": "\ubd80\ubd84 \uc9c4\ud589 \u00b7 \uc0ac\uc6a9\uc131 \ubcf4\uc644 \uc790\ub3d9\ud654 \ud655\uc778",
+      "remainingCondition": "\uc2e4\uc81c SSH \uc131\uacf5/\uc5c5\ub85c\ub4dc \uacc4\uc815\u00b7known-host/\uc11c\ube44\uc2a4 \uc77d\uae30 ACL\u00b7\uc6b4\uc601 \ud130\ubbf8\ub110\u00b7\ud68c\uc0ac \uc218\uc6a9\uc740 \ubcc4\ub3c4. \uc6f9 \uad00\ub9ac\uc790/HTTP \uc4f0\uae30 API \uc81c\uc678. \uc2e4\uc81c \uc778\uc218 \uc804 \uc9c4\ucc99 \uc0c1\ud5a5 \uc5c6\uc74c"
     },
     {
       "id": "PERF-01",

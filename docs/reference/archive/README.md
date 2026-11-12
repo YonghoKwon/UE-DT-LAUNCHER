@@ -6,6 +6,7 @@
 
 | 기록 | 내용 |
 |---|---|
+| [fix-01 추가 검증](validation/sprint-01-quality-admin-validation.md) · [fix-01 정제 프로세스](validation/sprint-01-fix-01-process-evidence.json) · [자동화 입력](validation/sprint-01-fix-01-runtime.json) | 1차 리뷰35dde8a/926건 보존 후 2e4b8f9 제품 입력966건·readiness8/headless3. 사람용 출력·사전 점검·소유 사본 정리·번호 콘솔·내용 해시 없는 목록. 실제 SSH 성공/운영 인수 별도 |
 | [SPRINT-01 품질·관리 편의](validation/sprint-01-quality-admin-validation.md) · [정제 프로세스](validation/sprint-01-process-evidence.json) · [현재 자동화 입력](validation/sprint-01-runtime.json) · [현재 생성 진행표](validation/local-completion-progress.md) | 2026-11-12, e24aa93 Windows890·readiness8/headless3, 이전 후보의 인코딩 실패 보존. 실제 SSH/GUI/회사 인수 미실행 |
 | [로컬 보완 스프린트](validation/local-completion-validation.md) · [당시 진행표](history/local-completion-progress-pre-sprint-01.json) · [정제 검증](validation/local-completion-runtime.json) · [성능 비교](validation/local-completion-performance.json) | 1a7740f·Windows849/WSL848+1 제외·양 OS 게시/HTTP/운영 CLI·새 GUI8/51. 43개 전수/WSL broker/회사 인수 미완료 |
 | [클라이언트 수용 closure](validation/client-acceptance-closure-validation.md) · [정제 JSON](validation/client-acceptance-closure-results.json) | 75ea591·Windows789/WSL788+1Windows-only 제외·양 OS publish HTTP/HTTPS·새 cohort 네 GUI 초기 설정/재연결/v1 수명·관리형 일반v2 취소/Range·14/51사례. 전체 수용/회사 인수 미완료 |
@@ -38,6 +39,7 @@
 | [현황 이력](history/status-log.md) | 2026-10-12 문서 정리 1단계에서 README·PROJECT_GOALS·IMPROVEMENTS의 날짜·후보별 현황 문단을 원문 그대로 이동. 문장의 “현재/최신”은 당시 기준 |
 | [AGENTS 결정 이력·규칙 대응표](history/agents-decisions-log.md) | 2026-10-12 AGENTS 구조 정리에서 옮긴 날짜별 승인·시험 회차 기록(원문)과 원래 규칙 줄별 새 위치 |
 | [SPRINT-01 이전 고정 GUI 진행표](history/local-completion-progress-pre-sprint-01.json) | 이전 sourceHash의 GUI8/51·양 OS 자동화와 당시 4종 정본 hash를 그대로 보존. 새 제품 후보 수용과 합산하지 않음 |
+| [fix-01 이전 진행표](history/local-completion-progress-pre-fix-01.json) | e24aa93/전체890건·GUI미실행·당시 정본 hash/대장29항목을 보존. fix-01의966건과 혼합하지 않음 |
 
 ## 현재 문서에 통합한 입문 가이드
 

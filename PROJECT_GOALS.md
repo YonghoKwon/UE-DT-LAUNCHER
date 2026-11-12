@@ -73,6 +73,8 @@ G1~G6의 증거가 확보된 뒤 전사 확대를 승인합니다. 로컬 Window
 
 ### 날짜별 사용자 결정
 
+2026-11-12~13 fix-01: upload 기본은 한국어 안내이고 --format json은 도구용이다. upload check는 키 인증 전용 조회만 수행하며 원격 자료를 생성하지 않는다. 이번 실행의 소유 작업 사본은 성공 시 정리하고 실패/--keep-work는 보존한다. 콘솔은 번호 선택과 표시한 버전/짧은 ID 확인을 사용하되 재조회·revision·보호·동작별 lease를 유지한다. 실제 SSH 성공·운영 터미널·회사 인수는 별도이며 OPS-10은50%를 유지한다.
+
 2026-11-12 결정: 통신은 당분간 사내 HTTP 요청 서명 모드를 유지한다. 배포 관리 편의는 `upload` 한 명령과 서버 `console`로 구현하며 웹 관리자 화면·HTTP 쓰기 API는 제외한다(OPS-10). 승인과 검증 후 명시적 승격은 분리하고, 정리는 기존 보호·확인·offline 잠금을 유지한다. Windows 합성 자동화·게시 프로세스 결과는 [SPRINT-01 기록](docs/reference/archive/validation/sprint-01-quality-admin-validation.md)에 있으며 실제 SSH 서버·회사 RHEL/UE·운영 콘솔 현장 수용은 별도이다. 원격 build는 기준 커밋 cef9f53의 과거 성공을 확인했고 이번 스프린트 커밋의 원격 실행은 하지 않았다.
 
 2026-09-28 추가 합의: 사내 HTTP + PC별 요청 서명 모드를 구현한다(SEC-04). 기존 HTTPS/Bearer는 유지하되 HTTP Bearer로 후퇴하지 않는다. HTTP의 도청·실시간 중계 위험은 남으며 G2 운영 수용은 별도이다. 현재 구현/검증 단계는 [별도 기록](docs/reference/archive/validation/intranet-auth-validation.md)을 따른다.

@@ -68,8 +68,8 @@ flowchart LR
 | 버전마다 | B2 | 개발자 / Windows PowerShell·Linux 터미널 | 쉬운 방법 `upload --zip …`가 ZIP 검사·외부 JSON 생성. 직접 실행 `release-metadata` | 새 작업 폴더의 payload.zip + release.json |
 | 버전마다 | B3 | 개발자 / 같은 PC | 같은 `upload`가 새 incoming 폴더 생성 → 두 전송 → 두 이름 변경 → 확인. 직접 실행 SSH/SCP | 최종 ZIP + JSON, .uploading 없음 |
 | 자동 | B4 | 배포 서버 | 폴더 감지·크기/해시/경로/압축 검사 | `pending` 승인 대기 |
-| 버전마다 | B5 | 관리자 / Linux 터미널 | 쉬운 방법 `console` ①현황 → ②snapshot 상세 → ③승인·ID 재입력. 직접 실행 list/inspect/approve | `published`, 배포 폴더 자동 생성; 추천은 그대로 |
-| 검증 후 | B6 | 개발자·관리자 / PC·Linux | 개발자 exact 검증 → console ⑥현재 추천/revision·사유·버전 확인. 직접 실행 promotion inspect/promote | PC별 최신 추천 갱신; revision 변경은 재조회 |
+| 버전마다 | B5 | 관리자 / Linux 터미널 | 쉬운 방법 `console` 1현황 → 2snapshot 상세 → 3승인·버전 재입력. 직접 실행 list/inspect/approve | `published`, 배포 폴더 자동 생성; 추천은 그대로 |
+| 검증 후 | B6 | 개발자·관리자 / PC·Linux | 개발자 exact 검증 → console 6현재 추천/revision·사유·버전 확인. 직접 실행 promotion inspect/promote | PC별 최신 추천 갱신; revision 변경은 재조회 |
 | 사용할 때 | C1 | 사용자 / Windows 런처 | 프로젝트·필요한 버전 선택 | 설치 상태·가능한 작업 표시 |
 | 사용할 때 | C2 | 사용자 / 런처 버튼 | 설치 후 실행 / 업데이트 후 실행 / 실행 | 필요한 파일 준비 후 DT 실행 |
 | 문제 발생 시 | D | 사용자·관리자 | 재확인 → 검사 → 복구, 필요 시 백업 복원 | 상태 확인 또는 원인·다음 조치 확보 |
@@ -211,7 +211,10 @@ Agent 운영 설정은 보통 `C:\ProgramData\UE-DT Launcher\config\launcher.con
 
 ```mermaid
 flowchart TD
-    package["B1 개발자: ZIP 준비"] --> metadata["B2 upload: ZIP 검사·외부 JSON 생성"]
+    package["B1 개발자: ZIP 준비"] --> preflight["개발자: upload check 조회"]
+    preflight --> checked{"ssh/scp·키 인증·incoming 확인?"}
+    checked -->|"실패: 원인 해결 후 조회 재시도"| preflight
+    checked -->|"통과"| metadata["B2 upload: ZIP 검사·공간 확인·외부 JSON 생성"]
     metadata --> upload["B3 같은 upload: 두 전송 후 두 이름 변경"]
     upload --> paired{"최종 두 파일 확인?"}
     paired -->|"아니오"| waiting["서버: 파일 대기"]
@@ -220,11 +223,11 @@ flowchart TD
     validate --> valid{"검사 통과?"}
     valid -->|"아니오"| fix["원인 확인 후 수정·재접수"]
     valid -->|"예"| pending["B5 승인 대기"]
-    pending --> approved{"관리자 console ②상세·③승인·ID 확인?"}
+    pending --> approved{"관리자 console 2·3: 번호 선택·버전 확인?"}
     approved -->|"보류·거절"| private["다운로드 비공개 유지"]
     approved -->|"승인"| publish["서명·배포 폴더 생성·등록"]
     publish --> developer["권한 있는 개발자: exact 검증"]
-    developer --> promote["B6 console ⑥: 현재 추천·revision·사유·버전 확인"]
+    developer --> promote["B6 console 6: 트랙별 추천·번호 선택·revision·버전 확인"]
     promote --> revision{"표시 revision 유효?"}
     revision -->|"예"| visible["PC별 허용 승격판 추천"]
     revision -->|"아니오: 재조회·새 확인"| promote
@@ -247,10 +250,14 @@ ZIP을 열자마자 `Demo.exe`가 보인다면 다음 단계에서 `--payload-ro
 
 담당자는 개발자이며 Windows PowerShell에서 실행합니다. 최초1회 OpenSSH `ssh`/`scp`, 기존 known-host 등록, incoming 쓰기 권한과 서버 서비스 계정의 읽기 권한을 준비합니다. 프로필은 서버/계정·원격 incoming·포트·identity **경로**만 보관하며 비밀번호·키 내용은 저장하지 않습니다.
 
+키 인증 전용(BatchMode)이므로 비밀번호를 묻지 않습니다. 최초 호스트 키 등록은 터미널 `ssh 계정@호스트`로 직접 확인합니다. 아래 `upload check`는 접속·키 인증 및 `test -d`/`test -w` 조회만 하며 원격 파일·폴더를 만들지 않습니다. 호스트 키를 자동 등록하지 않으며 원격 출력은 버립니다.
+
 ```powershell
 $Launcher = (Resolve-Path .\publish\client-win-x64\UeDtLauncher.exe).Path
 & $Launcher upload init --output .\upload.profile.json | Out-Host
 # 생성한 프로필의 server=user@host, remoteIncoming=/절대/경로/incoming 등을 실제 회사값으로 편집
+& $Launcher upload check --profile .\upload.profile.json | Out-Host
+if ($LASTEXITCODE -ne 0) { throw '실패한 사전 점검 항목을 해결한 뒤 다시 확인하세요.' }
 & $Launcher upload --profile .\upload.profile.json --zip .\Windows.zip --project-id demo --display-name 'DT Simulator' --version 1.2.0 --platform windows-x64 --payload-root Windows --entry-point Demo.exe --dry-run | Out-Host
 # 계획을 확인한 다음 전송 (버전마다 반복)
 & $Launcher upload --profile .\upload.profile.json --zip .\Windows.zip --project-id demo --display-name 'DT Simulator' --version 1.2.0 --platform windows-x64 --payload-root Windows --entry-point Demo.exe | Out-Host
@@ -259,12 +266,17 @@ $Launcher = (Resolve-Path .\publish\client-win-x64\UeDtLauncher.exe).Path
 Linux 개발 PC의 터미널에서는 같은 옵션에 `./UeDtLauncher`를 사용하며 `Out-Host`는 붙이지 않습니다:
 
 ```bash
+./UeDtLauncher upload check --server uploader@updates.example.com --remote-incoming /srv/ue-dt-distribution/incoming
 ./UeDtLauncher upload --zip ./Linux.zip --project-id demo --version 1.2.0 --platform linux-x64 --payload-root Linux --entry-point Demo.sh --executable-paths Demo.sh,Demo/Binaries/Linux/Demo --server uploader@updates.example.com --remote-incoming /srv/ue-dt-distribution/incoming --dry-run
 ```
 
 위 Linux 예시는 계획만 확인합니다. 실제 전송은 검토 후 `--dry-run`을 제거합니다. 명령줄 값이 프로필보다 우선합니다. 선택 옵션은 `--environment`, `--channel`, `--notes`, `--hero-path`, `--thumbnail-path`, `--port`, `--identity-file`, `--upload-id`이며 메타데이터 옵션은 아래 직접 실행과 같습니다. 프로필은 `--force` 없이 덮어쓰지 않습니다.
 
 정상 결과는 새 로컬 `upload-work/<ID>-<고유값>/payload.zip`과 외부 `release.json`, 원격 `<incoming>/<ID>/`의 최종 두 파일 확인 및 운영자 승인 안내입니다. ID 기본값은 프로젝트-버전-플랫폼-UTC시각입니다. `mkdir` 실패 시 기존 폴더를 재사용하지 않습니다. 전송 실패 뒤에는 이름을 바꾸지 않으며 실패 단계·남을 수 있는 `.uploading`과 다음 조치를 출력합니다. `mv -n` 뒤 실제 원본 이름 소멸도 확인합니다. `--dry-run`은 네트워크·폴더·파일을 만들지 않습니다. 업로드 계정은 DB를 읽을 수 없으므로 검사 결과를 기다리거나 자동 승인하지 않습니다.
+
+기본 출력은 한국어 요약(업로드 ID·원격 폴더·단계별 완료/실패/미실행·남은 상태·다음 할 일)이고 stderr에는 `[3/6] ZIP 전송 중 (3 GB) — 큰 파일은 오래 걸릴 수 있습니다` 같은 안내가 나옵니다. 기존 JSON이 필요한 도구는 `--format json`을 붙입니다. 프로필 생성과 doctor 등 다른 명령의 JSON 계약은 바꾸지 않습니다. 숫자가 아닌 `--port`는 입력 오류로 종료2입니다.
+
+성공하면 이번 실행의 작업 사본만 지웁니다. `--keep-work`는 성공 사본도 보존하며, 실패 시에는 보존된 경로를 안내합니다. 원본 ZIP·다른 작업 폴더·예상 밖에 추가된 자료는 삭제하지 않습니다. 사본 생성 전 ZIP 크기+64 MB 예비 공간을 조회하지만 실제 공간 예약은 아닙니다. 원본/사본 hash를 비교하고 ZIP 검증을 유지합니다. 종료255는 주소·포트·키 인증·호스트 키 등록을 확인하고, mkdir 오류는 기존 ID/쓰기 권한, 전송 오류는 네트워크·디스크 부족을 확인한 뒤 새 ID로 재시도합니다. OpenSSH 미설치는 Windows 선택 기능의 OpenSSH 클라이언트를 준비합니다.
 
 #### 직접 실행: release-metadata로 JSON 생성
 
@@ -318,13 +330,24 @@ if ($LASTEXITCODE -ne 0) { throw 'JSON 이름 변경 실패. 서버 폴더 상�
 
 ### B4~B5. 검사 결과 보고 승인 — Linux 서버 운영자
 
-**쉬운 방법:** 서버 운영자는 터미널에서 다음 명령으로 번호 안내를 엽니다. ①접수 현황의 상태/진행 → ②작업 ID의 비공개 snapshot 프로젝트·버전·플랫폼·ZIP 크기·오류 확인 → ③승인에서 같은 작업 ID를 다시 입력합니다. 불일치/EOF이면 변경하지 않습니다. ④거절, ⑤실패 재시도도 대상 확인이 필요합니다.
+**쉬운 방법:** 서버 운영자는 터미널에서 다음 명령으로 번호 안내를 엽니다. 1접수 현황 → 2상세 또는 3승인 목록의 번호(전체 ID도 가능) → 비공개 snapshot 프로젝트·버전·플랫폼·ZIP 크기·오류 확인 순서입니다. 3승인은 화면의 버전, 4거절·5재시도는 작업 ID 앞8자를 재입력합니다. 목록 표시 후나 확인 후 대상이 바뀌면 적용하지 않습니다. 불일치/EOF는 무변경입니다.
 
 ```bash
 sudo -u uedt-distribution /opt/ue-dt-distribution/UeDtLauncher.DistributionServer console --config /etc/ue-dt-distribution/server.json
 ```
 
 정상 결과는 해당 ID의 `published`입니다. 승인만으로 추천은 바뀌지 않습니다. 리디렉션 입력은 거부하며 변경 없이 종료합니다. 각 동작만 유지보수 lease를 잡으므로 메뉴/확인 입력 대기 동안 세션 전체 잠금을 보유하지 않습니다.
+
+화면 형식 예시입니다. 표는 `OperationsConsoleTests`에서 고정 예제 데이터로 캡처한 실제 렌더러 출력이며 터미널 직접 수용 증거는 아닙니다. 번호는 방금 표시한 목록에만 유효합니다.
+
+```text
+승인 대기 1 · 검사 중 0 · 실패 0 · 게시됨 0 · 대기 0
+1 접수 현황 | 2 작업 상세 | 3 승인 | 4 거절 | 5 실패 재시도 | 6 승격 | 7 저장 공간·정리 | 8 자격 현황 | 0 종료
+번호 | 상태(한국어) | 프로젝트 | 버전 | 플랫폼 | 크기 | 진행 | 작업 ID 앞 8자
+   1 | 승인 대기     | demo            | 1.2.0        | windows-x64  |      1 KB | 100%           | 01234567
+```
+
+대상 번호를 고른 뒤 `확인하려면 1.2.0 을 입력하세요 (다르면 취소)`처럼 확인 값을 명시합니다. 작업 뒤에는 다음 할 일과 메뉴를 다시 보여주고, 잘못된 메뉴 번호는 종료하지 않고 다시 묻습니다. 메뉴0 또는 EOF로 종료합니다. 실패 작업 상세는 오류 원인과 새 업로드 ID/5번 재시도 안내를 제공합니다.
 
 **직접 실행:** 아래 개별 명령도 계속 지원합니다.
 
@@ -365,9 +388,9 @@ sudo -u uedt-distribution /opt/ue-dt-distribution/UeDtLauncher.DistributionServe
 
 개발자는 허용된 버전을 exact로 설치·실행해 확인합니다. 관리자는 배포 구분의 현재 revision을 읽고 검증된 버전만 추천으로 지정합니다. 첫 승격도 필요합니다.
 
-**쉬운 방법:** 위 서버 `console`의 ⑥에서 게시된 ReleaseId를 선택합니다. 현재 추천·track·revision을 확인하고 사유를 입력한 뒤 선택 버전을 정확히 다시 입력합니다. 표시한 revision을 expected revision으로 적용하며 다른 운영자가 변경했으면 재조회·새 확인을 요구합니다. 정상 결과는 그 track의 새 추천/감사 기록입니다.
+**쉬운 방법:** 서버 `console` 6에서 트랙별로 묶은 게시 버전의 번호(전체 ReleaseId도 가능)를 선택합니다. `* 추천` 표시, 현재 추천·track·revision을 확인하고 사유와 선택 버전을 입력합니다. 표시한 revision을 expected revision으로 적용하며 다른 운영자가 변경했으면 재조회·새 확인을 요구합니다. 정상 결과는 그 track의 새 추천/감사 기록이며 PC는 다음 조회 때 권한 안에서 추천받습니다. 자동 설치는 아닙니다.
 
-⑦은 사용량과 보호되지 않은 정리 후보 → 선택 → plan 표시 → plan ID 재입력 순서입니다. serve/watch가 실행 중이면 계획을 보존하고 정확한 `retention apply --config … --plan … --confirm` 명령을 안내합니다. 운영자가 정상 중지·원인 확인 후 직접 실행하며 콘솔이 프로세스를 종료하지 않습니다. ⑧은 토큰·PC 키의 관리 ID/클라이언트/만료/폐기 상태만 조회합니다.
+7은 사용량/읽기 전용 후보 → 번호 선택 → 전체 hash/inventory 계획 → 계획 ID 확인 순서입니다. 목록은 파일 내용 해시를 계산하지 않습니다. `console-retention-<id>.json`은 접수/backup/restore payload/journal 대상이 아니며 콘솔 적용 성공 후 지웁니다. 시작 전 잠금 실패는 삭제를 시작하지 않았다고 안내하고, 중간 I/O 오류는 일부 자료가 처리됐을 수 있으므로 같은 계획/journal로 재개하라고 안내합니다. 두 경우 모두 계획과 정확한 `retention apply --config … --plan … --confirm` 명령을 보존합니다. 공개·모든 승격·pending·active 보호는 그대로입니다. 운영자가 정상 중지·원인 확인 후 직접 실행하며 콘솔이 프로세스를 종료하지 않습니다. 8은 비밀 없는 자격 메타데이터만 조회합니다.
 
 **직접 실행:**
 

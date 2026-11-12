@@ -1,5 +1,61 @@
 # SPRINT-01 CLI 품질·배포 관리 편의 검증
 
+## fix-01 추가 검증 — 2026-11-12~13 KST
+
+아래는 최초890건/e24aa93 및 1차 리뷰926건/35dde8a와 구분한 후속이다. 기존 본문의 날짜·수치·실패 이력을 덮어쓰지 않았다. 시작 HEAD는35dde8a6b02e891bf627125ca093646b67330a27이며, 수정 제품 입력은 **2e4b8f9d917079808ad406988d5430dd359837ff**다. U6 문서는 제품 입력을 변경하지 않는다. Windows·SDK9.0.308·기본 TEMP/TMP·DOTNET_CLI_HOME 미설정에서 전체 **966통과/0실패/0skip**(리뷰926+신규40), 기본 build0오류/0경고, Python fast contracts9개를 확인했다. 실제 SSH 성공·GUI·회사 인수는 별도다.
+
+### 보존한 1차 리뷰7커밋
+
+| 커밋 | 보완 |
+|---|---|
+| eb9a3ca | 끝 개행 ID 거부, sidecar atomic no-replace 및 경합 단일 승자 |
+| 1531fe2 | 입력/예외 원문 출력 제거, 완전한 인증 헤더·escaped secret·PEM 정제 |
+| 5731026 | 값 위치의 짧은 -h를 누락 오류2로 거부 |
+| 2399869 | 확인 불일치/EOF·프롬프트 lease·제한된 인증 재시도 회귀 |
+| 526e061 | 관리형 CLI의 rate-limited/stale/Retry-After typed 안내 보존 |
+| 827633a | 전체 자동화/GUI 범위와 현행29항목 표기 정정 |
+| 35dde8a | 정제 후 한 줄 JSON 성능 메시지 형식 보존; 리뷰 중923/3 실패와 최종926/0 구분 |
+
+이번 기준선도 같은35dde8a에서926/0/0을 재확인했다. 리뷰 수정·기존 테스트의 안전 기준을 되돌리지 않았다.
+
+### U1~U6 변경과 검증
+
+| 항목 | 변경·근거 |
+|---|---|
+| U1 | 기본 한국어 요약/6단계 상태·stderr 시작 안내·읽기 쉬운 크기. --format json 기존 필드 유지. 잘못된 port는 정제된 인수2 |
+| U2 | 종료255·mkdir·전송·실행 파일 없음의 원인 후보/조치. check는 실행 파일 존재 후 true/test-d/test-w만 호출. strict host key·키 인증·BatchMode 유지, 호스트 키 자동 갱신/로컬 명령/forwarding/control socket 생성 차단 |
+| U3 | ZIP 크기+64 MB 여유 공간 검사, 원본/사본 digest 비교. 성공 사본은 확인된 작업 루트의 소유 두 파일과 빈 폴더만 제거; 실패/--keep-work/예상 밖 자료는 보존. 정리 실패를 원격 업로드 실패로 바꾸지 않음 |
+| U4 | 한국어 표·현재 목록 번호 또는 전체 ID·재조회·승인/승격 버전·거절/재시도 ID8 확인. 계속되는 메뉴·실시간 요약·다음 조치·트랙별 추천 표시. EOF/비터미널/lease/revision 경계 유지 |
+| U5 | 목록과 계획이 같은 SelectTargets 보호 판정을 사용. 목록은 본문 hash 없이 크기/신원 조회; 선택 후 한 번의 계획과 적용 시 전체 재검증 유지. 시작 전 잠금과 중간 I/O의 같은 계획 재개 안내 |
+| U6 | README/기능 지도/운영 가이드/도식·표/대장/생성 진행표 갱신. OPS-10과 DEV-01은50% 유지. 기존 증거는 별도 보존 |
+
+기존 출력 테스트에서 JSON 버전 키 검사를 사람이 읽는 버전 행으로, 승인 입력을 ID에서 요청된 버전으로, 계획 ID 추출을 새 문구로 바꿨다. 비공개 snapshot 사용·무변경·확인·비밀 미출력·lease/revision assertion은 유지했다. 성공 사본 검증 테스트는 --keep-work를 명시하여 동일한 payload/hash 검사를 유지했다. 새 U3 경로 검사 최초1실패(953/1)는 기존 프로필 경로 정제와의 기대값 차이였고, 파일 보존 assertion을 유지한 채 정제된 경로와 정확한 폴더명을 확인하도록 정정했다. 실패 로그를 보존했다.
+
+### U5 조사 결론
+
+| 질문 | 결론·코드 근거 |
+|---|---|
+| 기존 PlanAsync의 부작용 | DB read-only snapshot과 파일 hash를 읽어 plan ID/fingerprint를 메모리에서 만들며, 호출 자체는 DB/계획/journal 파일을 기록하지 않는다. RetentionMaintenance.cs:141~152, DistributionBackup.cs:138~142 |
+| 목록 비용 | 기존 후보별 PlanAsync는 모든 파일 본문의 SHA-256을 계산했다. 새 InspectCandidates(:112~138)는 크기와 디렉터리 신원만 읽고, 공유 SelectTargets(:79~109)가 공개/승격/pending/active·다른 작업 참조를 동일하게 거부한다. 본문을 배타적으로 연 파일도 목록에 나오고 DB audit/파일 목록/계획/journal이 불변인 시험으로 확인했다. 정량 성능 개선율은 주장하지 않는다 |
+| 계획 파일 위치 | root의 console-retention-ID.json을 유지한다. 백업은 지정4컨테이너와 DB만 수집(DistributionBackup.cs:99~115), restore는 manifest/해당 snapshot·release inventory만 대조(:132,:206,:228,:247), 중단 journal 검색은 retention-*.json(:92), intake scan은 incoming 자식만 순회(IntakeStore.cs:320,:328)한다. 접수/backup inventory/plan 참조 hash에 영향 없음은 시험으로도 확인했다 |
+| 적용 후 정리 | OperationsConsole.cs:221~235에서 배타적 계획 게시 후 기존 ApplyAsync 호출. 콘솔 적용 성공이면 자신의 계획 파일만 삭제하고, 보류/실패는 보존한다. 성공 journal/audit를 삭제하지 않는다. 보류 뒤 별도 CLI로 수동 적용한 입력 계획 파일은 CLI의 기존 보존 계약을 유지하므로 운영자가 이후 보관/정리를 결정한다 |
+| I/O 구분 | RetentionMaintenance.cs:155~172가 시작 전 두 잠금의 IOException에 내부 표시만 붙인다(타입/보호/동작 동일). 콘솔:224~232는 잠금 전 실패와 일부 처리 가능 I/O를 구분한다. 중간 장애 뒤 같은 plan/journal의 명시적 재개가 완료되는 회귀를 확인했다 |
+
+업로드 전체 hash는 원본2회·사본2회(GenerateAsync + ValidateArchiveAsync)의 기존 독립 검사를 유지했다. 공용 검증 API의 검사 생략이나 trust 플래그를 만들지 않았고, 원본과 사본 digest 비교를 추가했다. 중복을 줄이기 위한 API 재설계·대용량 정량 성능 수용은 이번 범위에서 하지 않았다.
+
+### 콘솔 표 출력 예시
+
+다음은 OperationsConsoleTests가 고정 예제 데이터로 캡처한 실제 표 렌더러 출력이다. 회사 운영 터미널/직접 GUI 수용으로 계산하지 않는다.
+
+```text
+번호 | 상태(한국어) | 프로젝트 | 버전 | 플랫폼 | 크기 | 진행 | 작업 ID 앞 8자
+   1 | 승인 대기     | demo            | 1.2.0        | windows-x64  |      1 KB | 100%           | 01234567
+```
+
+문서 정리 전 고정 게시본과 최종 문서 HEAD 게시본은 각각의 source/binary hash로 묶어 별도 기록한다. [fix-01 정제 프로세스](sprint-01-fix-01-process-evidence.json)와 [자동화 입력](sprint-01-fix-01-runtime.json)은 명시한 제품 입력의 근거다. 최종 HEAD의 G5 및 추가 게시 CLI smoke는 별도 로컬 SPRINT-01-fix-01-result.md에 기록하며, 과거/서로 다른 게시본의 성공을 합산하지 않는다. 회사 G1~G6·실제 SSH 성공·운영 계정·GUI/접근성·현재 HEAD 원격 CI는 수용 완료로 바꾸지 않는다.
+
+## 최초 스프린트 기록 — 아래 원문 보존
+
 2026-11-12 KST / Windows / SDK9.0.308 / 실행 계정 ho2708. 회사 RHEL·실제 UE·서비스 설치·운영 계정 인수가 아니다. 원시 fixture/로그/키/DB는 커밋하지 않고 [정제 프로세스 요약](sprint-01-process-evidence.json)과 [현재 자동화 입력](sprint-01-runtime.json)만 보존한다.
 
 ## 소스와 검증 범위
