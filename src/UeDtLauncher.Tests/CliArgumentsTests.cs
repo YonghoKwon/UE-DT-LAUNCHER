@@ -7,6 +7,7 @@ public class CliArgumentsTests
     [Theory]
     [InlineData("--config")]
     [InlineData("--config", "--repair")]
+    [InlineData("--config", "-h")]
     [InlineData("--config", "one", "--config", "two")]
     [InlineData("--repair", "--repair")]
     public async Task InvalidSuppliedOptionsFailBeforeIo(params string[] args)

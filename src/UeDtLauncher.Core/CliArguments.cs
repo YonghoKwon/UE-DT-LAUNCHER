@@ -15,7 +15,8 @@ public static class CliArguments
             if (!option.StartsWith("--", StringComparison.Ordinal)) continue;
             if (!seen.Add(option)) throw new CliArgumentException("Duplicate option; supply each option only once.");
             if (!values.Contains(option)) continue;
-            if (i + 1 >= args.Length || string.IsNullOrWhiteSpace(args[i + 1]) || args[i + 1].StartsWith("--", StringComparison.Ordinal))
+            if (i + 1 >= args.Length || string.IsNullOrWhiteSpace(args[i + 1]) ||
+                args[i + 1].StartsWith("--", StringComparison.Ordinal) || args[i + 1].Equals("-h", StringComparison.OrdinalIgnoreCase))
                 throw new CliArgumentException("Value required after " + values.First(v => v.Equals(option, StringComparison.OrdinalIgnoreCase)) + ".");
             i++;
         }
