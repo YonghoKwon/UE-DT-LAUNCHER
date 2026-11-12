@@ -10,6 +10,7 @@ public sealed record RetentionPlan(int SchemaVersion, string Root, IReadOnlyList
     string ReferenceHash, IReadOnlyList<RetentionCandidate> Candidates, string Fingerprint, string PlanId);
 public sealed record RetentionJournal(RetentionPlan Plan, int NextIndex, string Phase,List<RetentionItem>? Items=null);
 public sealed record RetentionItem(int Index,string Phase,string DirectoryIdentity,string Quarantine);
+public sealed record RetentionListingCandidate(string Key, string? JobId, string? Temporary, long Bytes);
 
 public static class RetentionMaintenance
 {
@@ -44,7 +45,8 @@ public static class RetentionMaintenance
             Directory.Delete(path,false);
         }
     }
-    private static (List<(string Id, string Source, string State, string? Snapshot)> Jobs, HashSet<string> Referenced, string Hash) References(string root)
+    private sealed record RetentionReferences(List<(string Id, string Source, string State, string? Snapshot)> Jobs, HashSet<string> Referenced, string Hash);
+    private static RetentionReferences References(string root)
     {
         using var db = DistributionBackup.Open(root, true); using var tx = db.BeginTransaction(deferred: true); using var q = db.CreateCommand(); q.Transaction = tx;
         var references = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
@@ -66,7 +68,7 @@ public static class RetentionMaintenance
                 foreach(var path in values)if(Path.IsPathRooted(path))references.Add(Path.GetFullPath(path));
             }
         }
-        tx.Commit(); return (jobs, references, Hash(proof));
+        tx.Commit(); return new(jobs, references, Hash(proof));
     }
     public static object Inspect(DistributionSettings settings)
     {
@@ -74,12 +76,12 @@ public static class RetentionMaintenance
         return new { Jobs = current.Jobs.Select(j => new { j.Id, j.State, Protection = j.State is "failed" or "rejected" ? "explicit selection required" : "published/pending/active history protected" }),
             PublicDeletionAllowed = false, PromotionHistoryProtected = true, ReferenceHash = current.Hash };
     }
-    public static async Task<RetentionPlan> PlanAsync(DistributionSettings settings, IReadOnlyList<string> selectedJobs, IReadOnlyList<string> temporary)
+    private static List<(string Path, string? JobId)> SelectTargets(string root, RetentionReferences current,
+        IReadOnlyList<string> selectedJobs, IReadOnlyList<string> temporary)
     {
-        var root = Path.GetFullPath(settings.Root); var current = References(root);
-        var candidates = new List<RetentionCandidate>();
+        var targets = new List<(string Path, string? JobId)>();
         var paths = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
-        async Task Add(string path, string? jobId)
+        void Add(string path, string? jobId)
         {
             path = Path.GetFullPath(path); var relative = Path.GetRelativePath(root, path);
             _ = SafePath.ResolveInsideChecked(root, relative);
@@ -89,24 +91,76 @@ public static class RetentionMaintenance
                 throw new InvalidDataException("Cleanup target is referenced or duplicated.");
             if (current.Jobs.Any(j => j.Id != jobId && (j.Source == path || j.Snapshot == path))) throw new InvalidDataException("Another job references this target.");
             if (!Directory.Exists(path)) return;
-            var files = new List<BackupFile>();
-            foreach (var file in DistributionBackup.Files(path)) files.Add(new(Path.GetRelativePath(path, file).Replace('\\','/'), new FileInfo(file).Length, await Hashing.Sha256FileAsync(file)));
-            candidates.Add(new(relative.Replace('\\','/'), jobId, files.Sum(f => f.Bytes), files,Directories(path)));
+            targets.Add((path, jobId));
         }
         foreach (var id in selectedJobs.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
         {
             var job = current.Jobs.SingleOrDefault(j => j.Id == id);
             if (job.Id is null || job.State is not ("failed" or "rejected")) throw new InvalidDataException("Selected job is missing or protected.");
-            if (job.Snapshot is not null) await Add(job.Snapshot, id);
-            await Add(job.Source, id);
+            if (job.Snapshot is not null) Add(job.Snapshot, id);
+            Add(job.Source, id);
         }
         foreach (var path in temporary.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
         {
             if (Path.GetDirectoryName(path.Replace('/',Path.DirectorySeparatorChar)) != "processing") throw new InvalidDataException("Select immediate processing child directories only.");
-            await Add(SafePath.ResolveInsideChecked(root,path), null);
+            Add(SafePath.ResolveInsideChecked(root,path), null);
+        }
+        return targets;
+    }
+
+    /// <summary>Read-only eligibility and size inventory. No file content hashes, plan IDs, journals or DB writes.</summary>
+    public static IReadOnlyList<RetentionListingCandidate> InspectCandidates(DistributionSettings settings)
+    {
+        var root = Path.GetFullPath(settings.Root);
+        var current = References(root);
+        var result = new List<RetentionListingCandidate>();
+        void Add(string key, string? jobId, string? temporary)
+        {
+            try
+            {
+                var targets = SelectTargets(root, current, jobId is null ? [] : [jobId], temporary is null ? [] : [temporary]);
+                long bytes = 0;
+                foreach (var target in targets)
+                {
+                    foreach (var file in DistributionBackup.Files(target.Path)) bytes = checked(bytes + new FileInfo(file).Length);
+                    _ = Directories(target.Path); // Preserve linked/depth/directory-identity rejection without reading payload bytes.
+                }
+                if (targets.Count > 0) result.Add(new(key, jobId, temporary, bytes));
+            }
+            catch (Exception error) when (error is InvalidDataException or IOException or UnauthorizedAccessException) { }
+        }
+        foreach (var job in current.Jobs.Where(j => j.State is "failed" or "rejected")) Add("job:" + job.Id, job.Id, null);
+        foreach (var directory in Directory.EnumerateDirectories(SafePath.ResolveInsideChecked(root, "processing")))
+        {
+            var relative = Path.GetRelativePath(root, directory).Replace('\\', '/');
+            Add("temp:" + relative, null, relative);
+        }
+        return result;
+    }
+
+    public static async Task<RetentionPlan> PlanAsync(DistributionSettings settings, IReadOnlyList<string> selectedJobs, IReadOnlyList<string> temporary)
+    {
+        var root = Path.GetFullPath(settings.Root); var current = References(root);
+        var candidates = new List<RetentionCandidate>();
+        foreach (var (path, jobId) in SelectTargets(root, current, selectedJobs, temporary))
+        {
+            var files = new List<BackupFile>();
+            foreach (var file in DistributionBackup.Files(path)) files.Add(new(Path.GetRelativePath(path, file).Replace('\\', '/'), new FileInfo(file).Length, await Hashing.Sha256FileAsync(file)));
+            candidates.Add(new(Path.GetRelativePath(root, path).Replace('\\', '/'), jobId, files.Sum(f => f.Bytes), files, Directories(path)));
         }
         var plan = new RetentionPlan(2, root, selectedJobs.Order(StringComparer.Ordinal).ToArray(), temporary.Order(StringComparer.Ordinal).ToArray(), current.Hash, candidates, "", Guid.NewGuid().ToString("N"));
         return plan with { Fingerprint = Hash(plan) };
+    }
+
+    private static DistributionMaintenanceLease ApplyMaintenanceLease(string root)
+    {
+        try { return DistributionMaintenanceLease.Acquire(root, true, create: false); }
+        catch (IOException error) { error.Data["RetentionBeforeMutation"] = true; throw; }
+    }
+    private static AuthenticationProcessLease ApplyAuthenticationLease(string root)
+    {
+        try { return new AuthenticationProcessLease(root); }
+        catch (IOException error) { error.Data["RetentionBeforeMutation"] = true; throw; }
     }
     public static async Task<object> ApplyAsync(DistributionSettings settings, RetentionPlan plan, bool confirm)
     {
@@ -114,8 +168,8 @@ public static class RetentionMaintenance
             throw new InvalidDataException("Cleanup requires a new schema 2 plan with approved directory identities; preserve old journals for review.");
         if (!confirm || !Guid.TryParseExact(plan.PlanId,"N",out _) || Path.GetFullPath(settings.Root) != plan.Root || Hash(plan with { Fingerprint = "" }) != plan.Fingerprint)
             throw new InvalidDataException("Valid plan and explicit --confirm are required.");
-        using var maintenance = DistributionMaintenanceLease.Acquire(settings.Root, true, create:false);
-        using var oldServer = new AuthenticationProcessLease(settings.Root);
+        using var maintenance = ApplyMaintenanceLease(settings.Root);
+        using var oldServer = ApplyAuthenticationLease(settings.Root);
         var journalPath = SafePath.ResolveInsideChecked(settings.Root,"retention-" + plan.Fingerprint + ".json");
         RetentionJournal journal;
         if (File.Exists(journalPath))

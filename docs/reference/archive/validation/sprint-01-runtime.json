@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "sourceHead": "e24aa937073b4e67a88d392f26384681fd19fb2f",
+  "productSourceHash": "3bbb454beb025d3df9bc57869cbb7d4bd429eb43fb86e229c0e6c4f970f387af",
+  "validationDate": "2026-11-12",
+  "windowsTests": 890,
+  "linuxTests": null,
+  "linuxSkipped": null,
+  "windowsPublished": true,
+  "linuxPublished": null,
+  "httpE2e": true,
+  "httpsE2e": "not run in SPRINT-01; historical proofs preserved separately",
+  "companyValidated": false,
+  "remoteCi": "baseline cef9f53 build38359989748 Windows/Ubuntu success; sprint commits not run",
+  "sourceInventoryKind": "SHA256 of sorted Git source-file hash dictionary; CRLF-normalized working-tree build; not a snapshot publication claim",
+  "guiCohortComplete": false
+}

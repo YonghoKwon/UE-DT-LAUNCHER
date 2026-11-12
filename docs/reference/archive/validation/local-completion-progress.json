@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "authoritativeDocuments": {
-    "README.md": "84824955a93d695fefd23a1c8fcdde8603ea9ff20d80666e1288f7cb3e2c4615",
-    "AGENTS.md": "d39059fe299691eb8d8743367703bda161c663427fa6f57922a25d0858dc0d60",
-    "IMPROVEMENTS.md": "93a00b31ba55832fe5ec4d1d0ce7a4125692a95bf6b8bb0a1aa3fb16e260a10b",
-    "PROJECT_GOALS.md": "4ae31ece27e31d05c4412f6862f53710f3ff35e2e7e292c121dea4c11c9f9df2"
+    "README.md": "eef5844534f95aead02749dc666bc19be0967b494fb82583895330c5e4bedf14",
+    "AGENTS.md": "41b3e9ff26ca3e7ad36fa1250a4745f027398ee6d985e41de2aaeb508aec890e",
+    "IMPROVEMENTS.md": "8e3f05feff27430518f44b97f1469b43be5f5ddb10538fd9d1923713de6a38d4",
+    "PROJECT_GOALS.md": "cc1f0bbcf9617455b2c5bb5ac823dcb0675ac5e473a6414c050ab501b230e04c"
   },
   "before": {
     "complete": 6,
@@ -15,585 +15,29 @@
   },
   "after": {
     "complete": 6,
-    "partial": 19,
+    "partial": 20,
     "waiting": 3,
-    "open": 22,
-    "total": 28
+    "open": 23,
+    "total": 29
   },
   "automation": {
-    "productSourceHash": "67f441e18d16e0843e4f1050680f2cdc97b7d15254641703ce2016a1a0e58532",
-    "sourceHead": "1a7740f5c755d286eb925fa21e725e0ed0cd594f",
-    "windowsTests": 849,
-    "linuxTests": 848,
-    "linuxSkipped": 1,
+    "productSourceHash": "4192ce75e8923f4acc5e44b0deff55709b7e1adbb2ab692051cb24e73c803216",
+    "sourceHead": "2e4b8f9d917079808ad406988d5430dd359837ff",
+    "windowsTests": 966,
+    "linuxTests": null,
+    "linuxSkipped": null,
     "windowsPublished": true,
-    "linuxPublished": true,
+    "linuxPublished": null,
     "httpE2e": true,
-    "httpsE2e": "Windows TLS bearer benchmark and runtime broker passed; Linux current broker timeout; prior Linux TLS proof is historical",
-    "companyValidated": false
+    "httpsE2e": "not run in fix-01; historical proofs preserved separately",
+    "companyValidated": false,
+    "validationDate": "2026-11-13 KST",
+    "remoteCi": "prior cef9f53 build38359989748 success; fix-01 commits not run remotely"
   },
   "gui": {
     "complete": false,
-    "productSourceHash": "67f441e18d16e0843e4f1050680f2cdc97b7d15254641703ce2016a1a0e58532",
-    "combinations": [
-      {
-        "schemaVersion": 1,
-        "mode": "managed",
-        "profile": "general",
-        "productSourceHash": "67f441e18d16e0843e4f1050680f2cdc97b7d15254641703ce2016a1a0e58532",
-        "binarySha256": {
-          "launcher": "494b9e90f7e576aacbf2c2b096dc25e768367b102578a06718a71e474dcdd849",
-          "developer": "699c00173750cf55cf23aa9a71666aab96b32f5e48b983bb4d7d5e6e167a5bb1",
-          "agent": "3968acfd8d1420a071f407500b4847c045a470cafabdefafc0d89b2ebca9d885",
-          "server": "6249b3984a0b2f67ccb73a64ce2888c44c395c830ead6f75d2face3eb5dfdff6"
-        },
-        "complete": false,
-        "counts": {
-          "passed": 5,
-          "failed": 0,
-          "not-run": 7,
-          "running": 0,
-          "blocked": 0
-        },
-        "cases": [
-          {
-            "profile": "general",
-            "name": "authentication-errors",
-            "status": "not-run"
-          },
-          {
-            "profile": "general",
-            "name": "connection-errors",
-            "status": "not-run"
-          },
-          {
-            "profile": "general",
-            "name": "diagnostics",
-            "status": "not-run"
-          },
-          {
-            "profile": "general",
-            "name": "empty-and-promotion",
-            "status": "not-run"
-          },
-          {
-            "profile": "general",
-            "name": "initial-configuration",
-            "status": "not-run"
-          },
-          {
-            "profile": "general",
-            "name": "normal-backup",
-            "status": "not-run"
-          },
-          {
-            "profile": "general",
-            "name": "repair-followup",
-            "status": "not-run"
-          },
-          {
-            "profile": "general",
-            "name": "restore-confirmation",
-            "status": "passed",
-            "screenshots": [
-              {
-                "name": "preview-rejected.jpg",
-                "sha256": "81165c0c8ae24e40da9a1e1dd01a7e6b75c198280e7648e4317ebebb081f667a"
-              },
-              {
-                "name": "restore-followup.jpg",
-                "sha256": "58990e274c00509d40edce96f8e5c00c4758778887c6892562f5abdb6e0e56e6"
-              }
-            ],
-            "checks": {
-              "cancel-unchanged": true,
-              "changed-preview-rejected": true,
-              "new-confirmation": true,
-              "normal-restored": true
-            },
-            "inputActor": "computer-use",
-            "screen": {
-              "pixels": [
-                1920,
-                1080
-              ],
-              "renderScaling": 1,
-              "textScale": 1,
-              "highContrast": false,
-              "runId": "d63ed73223c444f28a5ac838053f8b7a",
-              "sessionId": "1880094ff45341b3a1955d613ba1d9e2"
-            },
-            "snapshotScope": "protected"
-          },
-          {
-            "profile": "general",
-            "name": "restore-followup",
-            "status": "passed",
-            "screenshots": [
-              {
-                "name": "restore-followup.jpg",
-                "sha256": "58990e274c00509d40edce96f8e5c00c4758778887c6892562f5abdb6e0e56e6"
-              }
-            ],
-            "checks": {
-              "restore-file-witness": true,
-              "query-only-retry": true,
-              "no-second-restore": true
-            },
-            "inputActor": "computer-use",
-            "screen": {
-              "pixels": [
-                1920,
-                1080
-              ],
-              "renderScaling": 1,
-              "textScale": 1,
-              "highContrast": false,
-              "runId": "d63ed73223c444f28a5ac838053f8b7a",
-              "sessionId": "1880094ff45341b3a1955d613ba1d9e2"
-            },
-            "snapshotScope": "protected"
-          },
-          {
-            "profile": "general",
-            "name": "runtime-protection",
-            "status": "passed",
-            "screenshots": [
-              {
-                "name": "v2-protected.jpg",
-                "sha256": "4e4eab41bfe167e912755bbbd3ab21ddb03c4d34630b16151a031fc505acc2a8"
-              }
-            ],
-            "checks": {
-              "alive-before": true,
-              "alive-after": true,
-              "changes-blocked": true,
-              "protected-unchanged": true
-            },
-            "inputActor": "computer-use",
-            "screen": {
-              "pixels": [
-                1920,
-                1080
-              ],
-              "renderScaling": 1,
-              "textScale": 1,
-              "highContrast": false,
-              "runId": "d63ed73223c444f28a5ac838053f8b7a",
-              "sessionId": "1880094ff45341b3a1955d613ba1d9e2"
-            },
-            "snapshotScope": "protected"
-          },
-          {
-            "profile": "general",
-            "name": "v1-install-lifetime",
-            "status": "passed",
-            "screenshots": [
-              {
-                "name": "v1-running.jpg",
-                "sha256": "c7d03fc6be77ab4dd59d45cd3f5bf48a8cca8eeae6db4d568c6af5ff431426a7"
-              }
-            ],
-            "checks": {
-              "gui-install": true,
-              "all-file-hashes": true,
-              "child-survives-gui-close": true,
-              "requested-end": true
-            },
-            "inputActor": "computer-use",
-            "screen": {
-              "pixels": [
-                1920,
-                1080
-              ],
-              "renderScaling": 1,
-              "textScale": 1,
-              "highContrast": false,
-              "runId": "d63ed73223c444f28a5ac838053f8b7a",
-              "sessionId": "1880094ff45341b3a1955d613ba1d9e2"
-            },
-            "guiInstall": true,
-            "runtimeEndReason": "requested",
-            "runtimeAttemptId": "f1c431dd2e8e4519b6907919f850f02e"
-          },
-          {
-            "profile": "general",
-            "name": "v2-cancel-resume-launch",
-            "status": "passed",
-            "screenshots": [
-              {
-                "name": "v2-protected.jpg",
-                "sha256": "4e4eab41bfe167e912755bbbd3ab21ddb03c4d34630b16151a031fc505acc2a8"
-              }
-            ],
-            "checks": {
-              "received-bytes": true,
-              "safe-cancel": true,
-              "immediate-resume": true,
-              "range-request": true,
-              "all-file-hashes": true,
-              "v1-preserved": true,
-              "no-auto-launch": true,
-              "explicit-launch": true
-            },
-            "inputActor": "computer-use",
-            "screen": {
-              "pixels": [
-                1920,
-                1080
-              ],
-              "renderScaling": 1,
-              "textScale": 1,
-              "highContrast": false,
-              "runId": "d63ed73223c444f28a5ac838053f8b7a",
-              "sessionId": "1880094ff45341b3a1955d613ba1d9e2"
-            }
-          }
-        ]
-      },
-      {
-        "schemaVersion": 1,
-        "mode": "managed",
-        "profile": "developer",
-        "productSourceHash": "67f441e18d16e0843e4f1050680f2cdc97b7d15254641703ce2016a1a0e58532",
-        "binarySha256": {
-          "launcher": "494b9e90f7e576aacbf2c2b096dc25e768367b102578a06718a71e474dcdd849",
-          "developer": "699c00173750cf55cf23aa9a71666aab96b32f5e48b983bb4d7d5e6e167a5bb1",
-          "agent": "3968acfd8d1420a071f407500b4847c045a470cafabdefafc0d89b2ebca9d885",
-          "server": "6249b3984a0b2f67ccb73a64ce2888c44c395c830ead6f75d2face3eb5dfdff6"
-        },
-        "complete": false,
-        "counts": {
-          "passed": 1,
-          "failed": 0,
-          "not-run": 12,
-          "running": 0,
-          "blocked": 0
-        },
-        "cases": [
-          {
-            "profile": "developer",
-            "name": "authentication-errors",
-            "status": "not-run"
-          },
-          {
-            "profile": "developer",
-            "name": "connection-errors",
-            "status": "not-run"
-          },
-          {
-            "profile": "developer",
-            "name": "diagnostics",
-            "status": "not-run"
-          },
-          {
-            "profile": "developer",
-            "name": "empty-and-promotion",
-            "status": "not-run"
-          },
-          {
-            "profile": "developer",
-            "name": "exact-confirmation",
-            "status": "not-run"
-          },
-          {
-            "profile": "developer",
-            "name": "initial-configuration",
-            "status": "not-run"
-          },
-          {
-            "profile": "developer",
-            "name": "normal-backup",
-            "status": "not-run"
-          },
-          {
-            "profile": "developer",
-            "name": "repair-followup",
-            "status": "not-run"
-          },
-          {
-            "profile": "developer",
-            "name": "restore-confirmation",
-            "status": "not-run"
-          },
-          {
-            "profile": "developer",
-            "name": "restore-followup",
-            "status": "not-run"
-          },
-          {
-            "profile": "developer",
-            "name": "runtime-protection",
-            "status": "not-run"
-          },
-          {
-            "profile": "developer",
-            "name": "v1-install-lifetime",
-            "status": "passed",
-            "screenshots": [
-              {
-                "name": "v1-requested-running.jpg",
-                "sha256": "72e31f2a5e5038ecef98b12108a426796d44a402bd2e9d4698062972bd6e4e2f"
-              }
-            ],
-            "checks": {
-              "gui-install": true,
-              "all-file-hashes": true,
-              "child-survives-gui-close": true,
-              "requested-end": true
-            },
-            "inputActor": "computer-use",
-            "screen": {
-              "pixels": [
-                1920,
-                1080
-              ],
-              "renderScaling": 1,
-              "textScale": 1,
-              "highContrast": false,
-              "runId": "84ce00a774b94a53b798cb99365fe71f",
-              "sessionId": "9f14fe774fc64a3db94e463f036e5c35"
-            },
-            "guiInstall": true,
-            "runtimeEndReason": "requested",
-            "runtimeAttemptId": "5654ab98e3434bd5a707fa7e636e557a"
-          },
-          {
-            "profile": "developer",
-            "name": "v2-cancel-resume-launch",
-            "status": "not-run"
-          }
-        ]
-      },
-      {
-        "schemaVersion": 1,
-        "mode": "portable",
-        "profile": "general",
-        "productSourceHash": "67f441e18d16e0843e4f1050680f2cdc97b7d15254641703ce2016a1a0e58532",
-        "binarySha256": {
-          "launcher": "494b9e90f7e576aacbf2c2b096dc25e768367b102578a06718a71e474dcdd849",
-          "developer": "699c00173750cf55cf23aa9a71666aab96b32f5e48b983bb4d7d5e6e167a5bb1",
-          "agent": "3968acfd8d1420a071f407500b4847c045a470cafabdefafc0d89b2ebca9d885",
-          "server": "6249b3984a0b2f67ccb73a64ce2888c44c395c830ead6f75d2face3eb5dfdff6"
-        },
-        "complete": false,
-        "counts": {
-          "passed": 1,
-          "failed": 0,
-          "not-run": 11,
-          "running": 0,
-          "blocked": 0
-        },
-        "cases": [
-          {
-            "profile": "general",
-            "name": "authentication-errors",
-            "status": "not-run"
-          },
-          {
-            "profile": "general",
-            "name": "connection-errors",
-            "status": "not-run"
-          },
-          {
-            "profile": "general",
-            "name": "diagnostics",
-            "status": "not-run"
-          },
-          {
-            "profile": "general",
-            "name": "empty-and-promotion",
-            "status": "not-run"
-          },
-          {
-            "profile": "general",
-            "name": "initial-configuration",
-            "status": "not-run"
-          },
-          {
-            "profile": "general",
-            "name": "normal-backup",
-            "status": "not-run"
-          },
-          {
-            "profile": "general",
-            "name": "repair-followup",
-            "status": "not-run"
-          },
-          {
-            "profile": "general",
-            "name": "restore-confirmation",
-            "status": "not-run"
-          },
-          {
-            "profile": "general",
-            "name": "restore-followup",
-            "status": "not-run"
-          },
-          {
-            "profile": "general",
-            "name": "runtime-protection",
-            "status": "not-run"
-          },
-          {
-            "profile": "general",
-            "name": "v1-install-lifetime",
-            "status": "passed",
-            "screenshots": [
-              {
-                "name": "v1-requested-running.jpg",
-                "sha256": "8aabdd2d268559fd1bbe7f0422f1d7a9acd6ea1a441ecf5c622280684cf1cd54"
-              }
-            ],
-            "checks": {
-              "gui-install": true,
-              "all-file-hashes": true,
-              "child-survives-gui-close": true,
-              "requested-end": true
-            },
-            "inputActor": "computer-use",
-            "screen": {
-              "pixels": [
-                1920,
-                1080
-              ],
-              "renderScaling": 1,
-              "textScale": 1,
-              "highContrast": false,
-              "runId": "af2756b2747f432e939ec9e4a80e906a",
-              "sessionId": "749433e777af450996e7ee99cfb0f742"
-            },
-            "guiInstall": true,
-            "runtimeEndReason": "requested",
-            "runtimeAttemptId": "11868a6b2bf047b9894b919b0a6f74b0"
-          },
-          {
-            "profile": "general",
-            "name": "v2-cancel-resume-launch",
-            "status": "not-run"
-          }
-        ]
-      },
-      {
-        "schemaVersion": 1,
-        "mode": "portable",
-        "profile": "developer",
-        "productSourceHash": "67f441e18d16e0843e4f1050680f2cdc97b7d15254641703ce2016a1a0e58532",
-        "binarySha256": {
-          "launcher": "494b9e90f7e576aacbf2c2b096dc25e768367b102578a06718a71e474dcdd849",
-          "developer": "699c00173750cf55cf23aa9a71666aab96b32f5e48b983bb4d7d5e6e167a5bb1",
-          "agent": "3968acfd8d1420a071f407500b4847c045a470cafabdefafc0d89b2ebca9d885",
-          "server": "6249b3984a0b2f67ccb73a64ce2888c44c395c830ead6f75d2face3eb5dfdff6"
-        },
-        "complete": false,
-        "counts": {
-          "passed": 1,
-          "failed": 0,
-          "not-run": 13,
-          "running": 0,
-          "blocked": 0
-        },
-        "cases": [
-          {
-            "profile": "developer",
-            "name": "authentication-errors",
-            "status": "not-run"
-          },
-          {
-            "profile": "developer",
-            "name": "connection-errors",
-            "status": "not-run"
-          },
-          {
-            "profile": "developer",
-            "name": "diagnostics",
-            "status": "not-run"
-          },
-          {
-            "profile": "developer",
-            "name": "empty-and-promotion",
-            "status": "not-run"
-          },
-          {
-            "profile": "developer",
-            "name": "exact-confirmation",
-            "status": "not-run"
-          },
-          {
-            "profile": "developer",
-            "name": "initial-configuration",
-            "status": "not-run"
-          },
-          {
-            "profile": "developer",
-            "name": "maintenance-outcomes",
-            "status": "not-run"
-          },
-          {
-            "profile": "developer",
-            "name": "normal-backup",
-            "status": "not-run"
-          },
-          {
-            "profile": "developer",
-            "name": "repair-followup",
-            "status": "not-run"
-          },
-          {
-            "profile": "developer",
-            "name": "restore-confirmation",
-            "status": "not-run"
-          },
-          {
-            "profile": "developer",
-            "name": "restore-followup",
-            "status": "not-run"
-          },
-          {
-            "profile": "developer",
-            "name": "runtime-protection",
-            "status": "not-run"
-          },
-          {
-            "profile": "developer",
-            "name": "v1-install-lifetime",
-            "status": "passed",
-            "screenshots": [
-              {
-                "name": "v1-running.jpg",
-                "sha256": "1f2503b92b565bd195397015cfd3d7a801ff3d38fa46ebced7febc490e5d32c2"
-              }
-            ],
-            "checks": {
-              "gui-install": true,
-              "all-file-hashes": true,
-              "child-survives-gui-close": true,
-              "requested-end": true
-            },
-            "inputActor": "computer-use",
-            "screen": {
-              "pixels": [
-                1920,
-                1080
-              ],
-              "renderScaling": 1,
-              "textScale": 1,
-              "highContrast": false,
-              "runId": "e047b81552704e8b8cfd1e42b335dbdc",
-              "sessionId": "409c5229bab84c7398b05a3c888266ef"
-            },
-            "guiInstall": true,
-            "runtimeEndReason": "requested",
-            "runtimeAttemptId": "95b6aba9925741ebbf87b1188db543f0"
-          },
-          {
-            "profile": "developer",
-            "name": "v2-cancel-resume-launch",
-            "status": "not-run"
-          }
-        ]
-      }
-    ]
+    "combinations": [],
+    "reason": "no current acceptance evidence"
   },
   "items": [
     {
@@ -635,8 +79,8 @@
       "id": "OPS-06",
       "percent": 50,
       "remainingCheckpointPercent": 50,
-      "state": "\ubd80\ubd84 \u00b7 \uc6d0\uaca9 \uac80\uc99d \ub300\uae30",
-      "remainingCondition": "\uc2e4\uc81c \uc6d0\uaca9 CI \uc2e4\ud589\u00b7\uc6b4\uc601 \uc778\uc218 \uacb0\uacfc \ud655\uc778. \uacf5\uc720 runner \uc2dc\uac04\uc744 \uc131\ub2a5 gate\ub85c \uc0ac\uc6a9\ud558\uc9c0 \uc54a\uc74c"
+      "state": "\ubd80\ubd84 \u00b7 \ud604\uc7ac \ud6c4\ubcf4 \uc6d0\uaca9 \uac80\uc99d \ub300\uae30",
+      "remainingCondition": "\uc774\ubc88 \uc2a4\ud504\ub9b0\ud2b8 \ucee4\ubc0b\uc758 \uc6d0\uaca9 CI\ub294 push/\uc2e4\ud589\ud558\uc9c0 \uc54a\uc558\uc74c. \ud68c\uc0ac \uc778\uc218 \ubcc4\ub3c4; \uacf5\uc720 runner \uc2dc\uac04\uc744 \uc131\ub2a5 gate\ub85c \uc4f0\uc9c0 \uc54a\uc74c"
     },
     {
       "id": "OPS-07",
@@ -658,6 +102,13 @@
       "remainingCheckpointPercent": 25,
       "state": "\ubd80\ubd84 \u00b7 GUI/\ud604\uc7a5 \uac80\uc99d \ub300\uae30",
       "remainingCondition": "\uc774\uc804 \uad00\ub9ac\ud615 \ubcf5\uad6c/rollback\uacfc \uc774\ubc88 portable \uc99d\uac70\ub294 \uac8c\uc2dc\ubcf8\ubcc4 \uc774\ub825. \uc0c8 \ud6c4\ubcf4 \uc591 \ubaa8\ub4dc \uc804\uccb4 GUI \uc218\uc6a9, \ubaa8\ub4e0 \uc9c4\uc785\uc810/\uc0c1\ud0dc \uc870\ud569\uc758 \uc2e4\uc81c \uc804\uc218 \uac80\uc99d\uacfc \ud68c\uc0ac UE/\uacc4\uc815\u00b7\uc6d0\uaca9 CI\ub294 \ubbf8\uc644\ub8cc. [\uae30\uc874 \uae30\ub85d](docs/reference/archive/validation/managed-gui-safety-validation.md), [\uc774\ubc88 \uae30\ub85d](docs/reference/archive/validation/ui-acceptance-finalization.md)"
+    },
+    {
+      "id": "OPS-10",
+      "percent": 50,
+      "remainingCheckpointPercent": 50,
+      "state": "\ubd80\ubd84 \uc9c4\ud589 \u00b7 \uc0ac\uc6a9\uc131 \ubcf4\uc644 \uc790\ub3d9\ud654 \ud655\uc778",
+      "remainingCondition": "\uc2e4\uc81c SSH \uc131\uacf5/\uc5c5\ub85c\ub4dc \uacc4\uc815\u00b7known-host/\uc11c\ube44\uc2a4 \uc77d\uae30 ACL\u00b7\uc6b4\uc601 \ud130\ubbf8\ub110\u00b7\ud68c\uc0ac \uc218\uc6a9\uc740 \ubcc4\ub3c4. \uc6f9 \uad00\ub9ac\uc790/HTTP \uc4f0\uae30 API \uc81c\uc678. \uc2e4\uc81c \uc778\uc218 \uc804 \uc9c4\ucc99 \uc0c1\ud5a5 \uc5c6\uc74c"
     },
     {
       "id": "PERF-01",
@@ -789,8 +240,8 @@
       "id": "DEV-01",
       "percent": 50,
       "remainingCheckpointPercent": 50,
-      "state": "\ubd80\ubd84 \uc9c4\ud589",
-      "remainingCondition": "\uc2e4\uc81c GUI \uc218\uc6a9\u00b7View \ucc45\uc784 \ucd94\uac00 \uc815\ub9ac"
+      "state": "\ubd80\ubd84 \uc9c4\ud589 \u00b7 \ucc45\uc784 \ubd84\ub9ac \ud655\uc778",
+      "remainingCondition": "\uc0c8 \uac8c\uc2dc\ubcf8 \uc2e4\uc81c GUI \uc218\uc6a9\u00b7\ub3d9\uae30 I/O \uacbd\uacc4 \ud6c4\uc18d. \uc774\ubc88 headless \ud1b5\uacfc\ub9cc\uc73c\ub85c \uc9c4\ud589\ub960\uc744 \uc62c\ub9ac\uc9c0 \uc54a\uc74c"
     }
   ],
   "percentageMeaning": "evidence checkpoints, not effort or overall product completion"

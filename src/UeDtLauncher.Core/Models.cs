@@ -149,7 +149,7 @@ public sealed class SelfUpdateConfig
     public string? ManifestPublicKeyPath { get; set; }
     public string InstallDir { get; set; } = "launcher-update";
     public string EntryPoint { get; set; } = OperatingSystem.IsWindows() ? "UeDtLauncher.exe" : "UeDtLauncher";
-    // When true, the downloaded launcher is swapped in automatically on the next start.
+    /// <summary>Legacy JSON compatibility only. Production entry points never automatically apply launcher updates.</summary>
     public bool AutoApply { get; set; }
 }
 
@@ -200,12 +200,14 @@ public sealed class ServiceModeConfig
     public int StartupGraceSeconds { get; set; } = 5;
     public string? HealthCheckUrl { get; set; }
     public int HealthCheckTimeoutSeconds { get; set; } = 60;
+    /// <summary>Legacy compatibility field; service-run does not perform automatic health-failure rollback.</summary>
     public bool RollbackOnHealthCheckFailure { get; set; } = true;
-    // Fallback process name used to find a running app when the pid file is missing or stale.
+    /// <summary>Legacy compatibility field; no running process is identified or stopped by name.</summary>
     public string? ProcessName { get; set; }
 }
 
-/// <summary>Written next to the install state when the launcher starts the app, so service mode can manage it.</summary>
+/// <summary>Legacy PID document shape preserved for compatibility; current launches use supervised runtime records.
+/// Existing legacy PID files still block unsafe mutation; this model does not authorize process termination.</summary>
 public sealed class AppPidInfo
 {
     public int Pid { get; set; }

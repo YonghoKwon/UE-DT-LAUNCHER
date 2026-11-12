@@ -100,7 +100,7 @@ class DownloadProxy:
             previous=inside(self.root,'control/proxy-metrics.json')
             if previous.exists():
                 if previous.stat().st_size>65536:raise ValueError('Oversized prior proxy summary')
-                value=json.loads(previous.read_text());session=value.get('sessionId','legacy-'+uuid.uuid4().hex)
+                value=json.loads(previous.read_text(encoding='utf-8'));session=value.get('sessionId','legacy-'+uuid.uuid4().hex)
                 if not all(c.isascii() and (c.isalnum() or c=='-') for c in session) or len(session)>64:raise ValueError('Invalid prior proxy session')
                 history=inside(self.root,'control/proxy-sessions');history.mkdir(exist_ok=True)
                 target=inside(history,session+'.json')
@@ -113,16 +113,16 @@ class DownloadProxy:
             restore=inside(self.root,'control/proxy-fail-catalog-after-restore')
             if restore.exists():
                 from restore_file_witness import observe
-                fixture=json.loads(inside(self.root,'fixture.json').read_text())
+                fixture=json.loads(inside(self.root,'fixture.json').read_text(encoding='utf-8'))
                 value=observe(self.root,fixture)
                 if value is not None:
                     value['sessionId']=self.metrics['sessionId'];temporary=self.control/'proxy-restore-fired.tmp'
-                    temporary.write_text(json.dumps(value));temporary.replace(self.control/'proxy-restore-fired.json')
+                    temporary.write_text(json.dumps(value), encoding='utf-8');temporary.replace(self.control/'proxy-restore-fired.json')
                     self.metrics['catalogFaults']+=1;self.persist();return True
             arm=inside(self.root,'control/proxy-fail-catalog-after-commit')
             if not arm.exists():return False
             if arm.stat().st_size>65536:raise ValueError('Oversized Catalog fault binding')
-            binding=json.loads(arm.read_text())
+            binding=json.loads(arm.read_text(encoding='utf-8'))
             records=list(inside(self.root,binding.get('operationsRelative','client/state/operations')).glob('*.json'))
             if len(records)>256:raise ValueError('Too many operation records')
             matching=[]
@@ -130,18 +130,18 @@ class DownloadProxy:
                 path=inside(self.root,str(path.relative_to(self.root)))
                 if path.stem in binding['beforeIds']:continue
                 if path.stat().st_size>65536:raise ValueError('Oversized operation')
-                try:value=json.loads(path.read_text())
+                try:value=json.loads(path.read_text(encoding='utf-8'))
                 except (OSError,ValueError):continue # Atomic replace can coincide with this test observation.
                 expected={'projectId':'demo','environment':'prod','channel':'stable','platform':binding['platform'],'version':binding['version']}
                 if value.get('schemaVersion')==1 and value.get('id')==path.stem and value.get('command')==binding['command'] and all((value.get('selection') or {}).get(k)==v for k,v in expected.items()):matching.append(value)
             if binding.get('operationId') is None:
                 if len(matching)!=1:return False
                 binding['operationId']=matching[0]['id']
-                temporary=arm.with_suffix('.tmp');temporary.write_text(json.dumps(binding));temporary.replace(arm)
+                temporary=arm.with_suffix('.tmp');temporary.write_text(json.dumps(binding), encoding='utf-8');temporary.replace(arm)
             for value in matching:
                 if value['id']==binding['operationId'] and value.get('phase')=='Completed' and value.get('manifestSha256')==binding.get('manifestSha256'):
                     fired={'sessionId':self.metrics['sessionId'],'operationId':value['id'],'command':value['command'],'manifestSha256':value['manifestSha256'],'version':binding['version']}
-                    temporary=self.control/'proxy-catalog-fired.tmp';temporary.write_text(json.dumps(fired));temporary.replace(self.control/'proxy-catalog-fired.json')
+                    temporary=self.control/'proxy-catalog-fired.tmp';temporary.write_text(json.dumps(fired), encoding='utf-8');temporary.replace(self.control/'proxy-catalog-fired.json')
                     arm.unlink();self.metrics['catalogFaults']+=1;self.persist();return True
             return False
     def close(self):

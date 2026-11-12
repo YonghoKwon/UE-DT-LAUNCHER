@@ -35,7 +35,7 @@ def require_quiescent(root,fixture,version):
     if any(p not in ('Completed','Cancelled','Failed','Discarded','Interrupted') for p in inspect_operations(root,fixture)):
         raise ValueError('A fixture operation is active')
     metrics=inside(root,'control/proxy-metrics.json')
-    if metrics.exists() and json.loads(metrics.read_text()).get('activeFiles',0)!=0:raise ValueError('A fixture transfer is active')
+    if metrics.exists() and json.loads(metrics.read_text(encoding='utf-8')).get('activeFiles',0)!=0:raise ValueError('A fixture transfer is active')
 
 @contextlib.contextmanager
 def mutation_guard(root,fixture,version):
@@ -61,12 +61,12 @@ def preflight(root,fixture,version):
     control=inside(root,'control')
     faults=[name for name in ('proxy-unthrottle','proxy-fail-version','proxy-fail-catalog-after-commit','proxy-fail-catalog-after-restore','auth-key-revoked') if (control/name).exists()]
     original=control/'original-policy.json';policy=inside(root,'policy.json')
-    if original.exists() and json.loads(original.read_text())!=json.loads(policy.read_text()):faults.append('policy-changed')
+    if original.exists() and json.loads(original.read_text(encoding='utf-8'))!=json.loads(policy.read_text(encoding='utf-8')):faults.append('policy-changed')
     if (control/'original-public.pem').exists() and (control/'original-public.pem').read_bytes()!=inside(root,'public.pem').read_bytes():faults.append('trust-changed')
     config_states={}
     for profile in ('general','developer'):
         try:
-            config=json.loads(inside(root,'client/'+profile+'.json').read_text())
+            config=json.loads(inside(root,'client/'+profile+'.json').read_text(encoding='utf-8'))
             config_states[profile]={'validJson':True,'resumeCacheBytes':config.get('performance',{}).get('resumeCacheBytes',0)}
         except (OSError,ValueError):config_states[profile]={'validJson':False}
     result={'cohortHashes':'verified','mode':fixture_mode(fixture),'version':version,'faults':faults,'configStates':config_states,'authentication':'not-checked'}

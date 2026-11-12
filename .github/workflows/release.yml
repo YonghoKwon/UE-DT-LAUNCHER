@@ -108,8 +108,8 @@ jobs:
           grep -Ei 'signature.*: OK' "$GNUPGHOME/developer-verification.txt"
           python3 tools/verify-rpm-payload.py --rpm "$UE_DT_RPM_PATH" --payload "${UE_DT_RPM_PACKAGE_DIR%/artifacts}/ue-dt-launcher-$VERSION" --version "$VERSION" --output "$UE_DT_RPM_PACKAGE_DIR/package-result.json"
           python3 tools/verify-rpm-payload.py --rpm "$UE_DT_DEVELOPER_RPM_PATH" --payload "${UE_DT_RPM_PACKAGE_DIR%/artifacts}/ue-dt-launcher-$VERSION" --version "$VERSION" --developer --output "$UE_DT_RPM_PACKAGE_DIR/developer-package-result.json"
-          python3 -c 'import json,os,pathlib; p=pathlib.Path(os.environ["UE_DT_RPM_PACKAGE_DIR"])/"package-result.json"; d=json.loads(p.read_text()); d.update(classification="SIGNED-RELEASE",signerFingerprint=os.environ["RPM_GPG_KEY_ID"],functionalGateSource=os.environ["GITHUB_SHA"]); p.write_text(json.dumps(d,indent=2))'
-          python3 -c 'import json,os,pathlib; p=pathlib.Path(os.environ["UE_DT_RPM_PACKAGE_DIR"])/"developer-package-result.json"; d=json.loads(p.read_text()); d.update(classification="SIGNED-RELEASE",signerFingerprint=os.environ["RPM_GPG_KEY_ID"],functionalGateSource=os.environ["GITHUB_SHA"]); p.write_text(json.dumps(d,indent=2))'
+          python3 -c 'import json,os,pathlib; p=pathlib.Path(os.environ["UE_DT_RPM_PACKAGE_DIR"])/"package-result.json"; d=json.loads(p.read_text(encoding="utf-8")); d.update(classification="SIGNED-RELEASE",signerFingerprint=os.environ["RPM_GPG_KEY_ID"],functionalGateSource=os.environ["GITHUB_SHA"]); p.write_text(json.dumps(d,indent=2),encoding="utf-8")'
+          python3 -c 'import json,os,pathlib; p=pathlib.Path(os.environ["UE_DT_RPM_PACKAGE_DIR"])/"developer-package-result.json"; d=json.loads(p.read_text(encoding="utf-8")); d.update(classification="SIGNED-RELEASE",signerFingerprint=os.environ["RPM_GPG_KEY_ID"],functionalGateSource=os.environ["GITHUB_SHA"]); p.write_text(json.dumps(d,indent=2),encoding="utf-8")'
       - name: Generate SBOM
         run: |
           dotnet tool install --tool-path .tools Microsoft.Sbom.DotNetTool --version 4.1.5

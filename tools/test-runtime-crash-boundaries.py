@@ -1,4 +1,6 @@
 """Kill only an owned test harness at deterministic production-persistence boundaries."""
+from ci_text import configure_console
+configure_console()
 import argparse, json, queue, subprocess, tempfile, threading
 from pathlib import Path
 p=argparse.ArgumentParser(); p.add_argument('--harness',required=True); p.add_argument('--launcher',required=True); a=p.parse_args()
@@ -13,7 +15,7 @@ for operation in ('begin','attach','started','complete','recover','service-start
             line=lines.get(timeout=20); assert line,line+proc.stderr.read()
             event=json.loads(line); assert event['ready']
             proc.kill(); proc.wait(timeout=5)
-            record=json.loads(Path(event['path']).read_text())
+            record=json.loads(Path(event['path']).read_text(encoding='utf-8'))
             if operation.startswith('service-'):
                 if operation=='service-starting': expected=1 if boundary=='ack' else 0
                 elif operation=='service-healthy': expected=0 if boundary=='ack' else 1
@@ -33,5 +35,5 @@ for operation in ('begin','attach','started','complete','recover','service-start
             results.append(dict(operation=operation,boundary=boundary,passed=True))
         finally:
             if proc.poll() is None: proc.kill(); proc.wait(timeout=5)
-(root/'summary.json').write_text(json.dumps(results,indent=2))
+(root/'summary.json').write_text(json.dumps(results,indent=2), encoding='utf-8')
 print('PASS: 36 controlled process-termination boundaries (no hardware power-loss claim): '+str(root))

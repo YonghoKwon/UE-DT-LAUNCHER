@@ -5,7 +5,7 @@ from gui_fixture_evidence import agent_status,verify_files
 def prove_managed_rollback(run,launcher,client,config,endpoint):
     platform=config['targetPlatform'];selection={'projectId':'demo','environment':'prod','channel':'stable','platform':platform,'version':'2.0.0'}
     profile=client/'minimal-rollback-client.json'
-    profile.write_text(json.dumps(dict(schemaVersion=3,deploymentMode='managed-agent',manifestUrl='',projectId='demo',environment='prod',channel='stable',targetPlatform=platform,versionPolicy='exact',requestedVersion='2.0.0')))
+    profile.write_text(json.dumps(dict(schemaVersion=3,deploymentMode='managed-agent',manifestUrl='',projectId='demo',environment='prod',channel='stable',targetPlatform=platform,versionPolicy='exact',requestedVersion='2.0.0')), encoding='utf-8')
     run(launcher,'run','--config',profile,'--repair','--no-launch')
     state=client/'state/demo/prod/stable/2.0.0'/platform;app=client/'apps/demo/prod/stable/2.0.0'/platform
     files=verify_files(app,state/'installed-manifest.json')
@@ -16,7 +16,7 @@ def prove_managed_rollback(run,launcher,client,config,endpoint):
     preview=send('rollback-preview')['rollbackPreview']
     backup=state/'backups'/preview['backupId']
     if verify_files(backup,backup/'.uedt-meta/installed-manifest.json')!=files:raise RuntimeError('Backup is not a complete healthy payload')
-    (app/'version.txt').write_text('synthetic-damage')
+    (app/'version.txt').write_text('synthetic-damage', encoding='utf-8')
     restored=send('rollback',expectedBackupId=preview['backupId'],expectedBackupFingerprint=preview['metadataFingerprint'])
     if restored.get('installationCommitted') is not True or any(restored.get('selectedRelease',{}).get(k)!=v for k,v in selection.items()):raise RuntimeError('Restore completion/selection was not preserved')
     verify_files(app,state/'installed-manifest.json')

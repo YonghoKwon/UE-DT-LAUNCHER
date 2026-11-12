@@ -1,3 +1,5 @@
+from ci_text import configure_console
+configure_console()
 import tempfile
 import unittest
 from pathlib import Path
@@ -36,9 +38,9 @@ class RealPackagePreflightTests(unittest.TestCase):
 
     def test_preserves_existing_root(self):
         root=self.base/'fixture';root.mkdir()
-        marker=root/'existing';marker.write_text('keep')
+        marker=root/'existing';marker.write_text('keep', encoding='utf-8')
         with self.assertRaises(ValueError):validate_package(self.package,root)
-        self.assertEqual('keep',marker.read_text())
+        self.assertEqual('keep',marker.read_text(encoding='utf-8'))
 
     def test_rejects_link_before_resolution(self):
         with patch.object(Path,'is_symlink',return_value=True):

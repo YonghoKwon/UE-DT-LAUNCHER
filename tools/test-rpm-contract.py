@@ -1,3 +1,5 @@
+from ci_text import configure_console
+configure_console()
 import importlib.util
 from pathlib import Path
 import stat
@@ -31,8 +33,8 @@ class Archive(unittest.TestCase):
 
     def test_official_pipeline_has_no_stale_glob(self):
         root = Path(__file__).resolve().parents[1]
-        build = (root/'scripts/build-rpm.sh').read_text()
-        release = (root/'.github/workflows/release.yml').read_text()
+        build = (root/'scripts/build-rpm.sh').read_text(encoding='utf-8')
+        release = (root/'.github/workflows/release.yml').read_text(encoding='utf-8')
         self.assertIn('mktemp -d', build)
         self.assertIn('verify-rpm-payload.py', build)
         self.assertIn('Unverified prepublished payload reuse is not supported', build)

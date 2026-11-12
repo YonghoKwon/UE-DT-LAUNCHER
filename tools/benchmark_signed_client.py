@@ -16,7 +16,7 @@ class Device:
         path = root / 'device-public.json'
         path.write_text(json.dumps({'schemaVersion': 1, 'keyId': self.id,
             'publicKeyPem': self.key.public_key().public_bytes(serialization.Encoding.PEM,
-                serialization.PublicFormat.SubjectPublicKeyInfo).decode()}), encoding='utf-8')
+                serialization.PublicFormat.SubjectPublicKeyInfo).decode(encoding='utf-8')}), encoding='utf-8')
         register(path)
         self.server_key = serialization.load_pem_public_key((root / 'public.pem').read_bytes())
 
@@ -48,7 +48,7 @@ class Client:
         self.connection.close()
 
     def get(self, path, expected=None, full_size=None):
-        nonce = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip('=')
+        nonce = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode(encoding='utf-8').rstrip('=')
         target = self.origin + path
         ranged = expected is not None
         range_value = f'bytes=0-{len(expected)-1}' if ranged else None
@@ -59,7 +59,7 @@ class Client:
             message += f'"range": {range_value}\n'
         message += '"@signature-params": ' + parameters
         r, s = utils.decode_dss_signature(self.device.key.sign(message.encode(), ec.ECDSA(hashes.SHA256())))
-        signature = base64.b64encode(r.to_bytes(32, 'big') + s.to_bytes(32, 'big')).decode()
+        signature = base64.b64encode(r.to_bytes(32, 'big') + s.to_bytes(32, 'big')).decode(encoding='utf-8')
         headers = {'X-UE-DT-Challenge': self.challenge, 'Signature-Input': 'sig1=' + parameters,
             'Signature': 'sig1=:' + signature + ':'}
         if ranged:

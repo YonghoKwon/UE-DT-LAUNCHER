@@ -65,7 +65,7 @@ def arm(root,fixture,version):
             if expected.get(entry['path'])!=entry['sha256'].lower():raise ValueError('Backup contents are not normal')
         before=inventory(root,app)
         if before==expected:raise ValueError('Arm requires a real damaged pre-restore payload')
-        runtime=state/'runtime-state.json';record=json.loads(runtime.read_text())
+        runtime=state/'runtime-state.json';record=json.loads(runtime.read_text(encoding='utf-8'))
         metadata={name:sha256(meta/name) if (meta/name).is_file() else None for name in ('installed-manifest.json','install-state.json','backup-info.json')}
         witness={'schemaVersion':1,'kind':'restore-file-transition','attemptId':uuid.uuid4().hex,'fixtureId':fixture['id'],
             'productSourceHash':fixture['productPublication']['productSourceHash'],'selection':selection,'installationId':record['installationId'],
@@ -80,7 +80,7 @@ def observe(root,fixture):
     control=inside(root,'control');pending=control/'proxy-fail-catalog-after-restore'
     if not pending.is_file():return None
     if pending.stat().st_size>2*1024*1024:raise ValueError('Oversized restore witness')
-    value=json.loads(pending.read_text())
+    value=json.loads(pending.read_text(encoding='utf-8'))
     if value.get('schemaVersion')!=1 or value.get('kind')!='restore-file-transition' or value.get('fixtureId')!=fixture['id'] or value.get('productSourceHash')!=fixture.get('productPublication',{}).get('productSourceHash'):return None
     if not re.fullmatch('[a-f0-9]{32}',value.get('attemptId','')):return None
     fired=control/'restore-witnesses'/(value['attemptId']+'.json')
@@ -91,7 +91,7 @@ def observe(root,fixture):
     if backup.name!=value['backupId']:return None
     runtime=state/'runtime-state.json'
     if not runtime.is_file() or sha256(runtime)!=value['runtimeSha256']:return None
-    record=json.loads(runtime.read_text())
+    record=json.loads(runtime.read_text(encoding='utf-8'))
     if record.get('installationId')!=value['installationId'] or record.get('state')!=0:return None
     if {p.stem for p in inside(root,value['operationsRelative']).glob('*.json')}-set(value['beforeOperationIds']):return None
     with existing_lock(root,state/'update.lock') as available:

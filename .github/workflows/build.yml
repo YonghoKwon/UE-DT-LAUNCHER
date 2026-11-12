@@ -41,6 +41,7 @@ jobs:
           python tools/test-evidence-contract.py
           python tools/test-readiness-summary.py
           python tools/test-rpm-contract.py
+          python tools/test-ci-text.py
           python tools/check-headless-artifacts.py
           python tools/check-documentation.py
           python tools/check-improvement-ledger.py

@@ -18,7 +18,7 @@ def prove_operations(root, client, launcher, env, flags, run, platform):
         return {str(path.relative_to(client)): hashlib.sha256(path.read_bytes()).hexdigest() for path in files}
     before = inventory()
     identifier = uuid.uuid4().hex
-    with (root / 'cancellation-client.log').open('w') as log:
+    with (root / 'cancellation-client.log').open('w', encoding='utf-8') as log:
         owned = subprocess.Popen([launcher, 'run', '--repair', '--no-launch', '--operation-id', identifier,
                                   '--config', str(client / 'developer.json')], env=env, stdout=log, stderr=log, creationflags=flags)
         try:

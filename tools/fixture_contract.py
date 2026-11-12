@@ -46,7 +46,7 @@ def private_windows_acl(path):
 
 def owner():
     if os.name!='nt':return 'uid:'+str(os.getuid())
-    text=subprocess.check_output(['whoami','/user','/fo','csv','/nh'],text=True,creationflags=subprocess.CREATE_NO_WINDOW)
+    text=subprocess.check_output(['whoami','/user','/fo','csv','/nh'],text=True,creationflags=subprocess.CREATE_NO_WINDOW, encoding='utf-8', errors='replace')
     return next(csv.reader([text.strip()]))[-1]
 
 
@@ -90,7 +90,7 @@ def claim(root):
 
 def seal(root,binaries,config):
     root=unlinked(root)
-    record=json.loads((root/'.headless-owner.json').read_text())
+    record=json.loads((root/'.headless-owner.json').read_text(encoding='utf-8'))
     record['configSha256']=digest(inside(root,config))
     record['binaries']={kind:{'path':str(unlinked(path)),'sha256':digest(path)} for kind,path in binaries.items()}
     (root/'.headless-owner.json').write_text(json.dumps(record),encoding='utf-8')
@@ -99,7 +99,7 @@ def seal(root,binaries,config):
 def verify(root,config,server):
     root=unlinked(root);marker=inside(root,root/'.headless-owner.json')
     if marker.stat().st_size>65536:raise ValueError('Fixture marker exceeds limit')
-    record=json.loads(marker.read_text())
+    record=json.loads(marker.read_text(encoding='utf-8'))
     if record.get('schemaVersion')!=1 or record.get('owner')!=owner() or record.get('root')!=str(root):raise ValueError('Fixture ownership mismatch')
     if os.name!='nt' and (root.stat().st_uid!=os.getuid() or stat.S_IMODE(root.stat().st_mode)&0o077):raise ValueError('Unsafe fixture mode/owner')
     if os.name=='nt':

@@ -68,6 +68,18 @@ UeDtLauncher credential set --name company-distribution
 
 ## 3. 접수 및 승인
 
+쉬운 방법은 개발 PC의 `UeDtLauncher upload`와 서버 운영자의 `UeDtLauncher.DistributionServer console --config server.json`입니다. Windows PowerShell·Linux 터미널의 입력과 정상 결과는 [B2~B6 실행 안내](feature-workflow.md#b2-releasejson-만들기--개발-pc-powershell)에 있습니다. OpenSSH/known-host·incoming 권한은 최초 준비이며 이후 버전마다 새 업로드 ID를 사용합니다. 프로필은 접속 값과 identity 경로만 저장하고 명령줄 값이 우선합니다. dry-run은 생성 예정 파일과 단계만 보여주고 네트워크/파일 변경을 하지 않습니다.
+
+콘솔 1·2는 번호 또는 전체 ID로 선택한 비공개 snapshot을 한국어 표/상세로 표시합니다. 3승인은 버전, 4거절·5실패 재시도는 작업 ID 앞8자를 확인 값으로 입력합니다. 선택 후와 확인 후 대상을 다시 읽으며 바뀐 대상은 적용하지 않습니다. 6승격은 트랙별 현재 추천 표시 → 번호 선택 → revision·사유 → 버전 재입력 순서입니다. 승인과 승격은 합치지 않습니다. 각 작업 뒤 메뉴로 돌아가고 잘못된 메뉴는 다시 묻습니다. EOF와 메뉴0은 종료합니다.
+
+7정리의 목록은 파일 내용 해시 없이 상태·크기·디렉터리 신원만 읽습니다. 선택 후 한 번 만든 계획의 전체 hash/inventory·보호·잠금 검사는 유지합니다. 계획은 `console-retention-<id>.json`에 보존되고 콘솔 적용 성공 후 삭제합니다. 시작 전 잠금 실패는 serve/watch 정상 중지 후 같은 계획으로 적용하고, 중간 I/O 실패는 자료가 일부 처리됐을 수 있으므로 같은 계획/journal로 재개합니다. 새 계획으로 덮지 않습니다. 8자격 조회는 비밀을 출력하지 않습니다. 메뉴/확인 입력 대기 동안 세션 전체 lease는 잡지 않으며 비터미널은 변경 없이 종료합니다. HTTP 쓰기 API는 없습니다.
+
+Windows PowerShell에서 `upload check --profile upload.profile.json`으로 최초 준비를 확인합니다. Linux 터미널은 `./UeDtLauncher upload check --profile upload.profile.json`을 사용합니다. 키 인증 전용(BatchMode)이고 비밀번호를 묻지 않으며, 미등록 호스트 키는 최초1회 터미널 ssh로 직접 확인·등록합니다. check는 디렉터리/쓰기 권한 조회만 하므로 실제 전송·디스크 공간·서비스 읽기 ACL 인수를 대신하지 않습니다. 기본 출력은 한국어이며 기계 연동에는 `--format json`을 붙입니다. 성공 시 소유 작업 사본만 정리하고 `--keep-work` 또는 실패 시에는 보존합니다.
+
+upload는 셸 없이 ArgumentList로 ssh/scp를 호출합니다. 원격 경로·계정/호스트·ID를 허용 문자로 검사하며 두 전송 성공 전에는 이름을 바꾸지 않습니다. 실패 시 단계·잔여 가능 자료를 확인하고 새 ID로 다시 접수합니다. 업로드 계정의 DB 조회·검사 결과 대기·자동 승인 기능은 없습니다. 실제 SSH 왕복과 운영 계정 수용은 [SPRINT-01 검증](archive/validation/sprint-01-quality-admin-validation.md)의 미실행 조건으로 남습니다.
+
+**직접 실행 대안:**
+
 [ZIP 게시 가이드](feature-workflow.md)를 따라 `incoming/upload-id/Package.zip`, `release.json`을 올립니다. `.uploading` 이름으로 올리고 전송 완료 후 최종 이름으로 바꿉니다.
 
 - waiting: 파일 쌍 도착 대기

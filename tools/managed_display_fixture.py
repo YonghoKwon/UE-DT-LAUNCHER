@@ -5,7 +5,7 @@ def prove_managed_display(run,launcher,client,config):
     profile=client/'minimal-managed-client.json'
     run(launcher,'sample-config','--mode','managed-client','--project-id','demo','--platform',config['targetPlatform'],
         '--version-policy','exact','--version','1.0.0','--output',profile)
-    value=json.loads(profile.read_text())
+    value=json.loads(profile.read_text(encoding='utf-8'))
     if set(value)!={'schemaVersion','deploymentMode','manifestUrl','projectId','environment','channel','targetPlatform','versionPolicy','requestedVersion'}:
         raise RuntimeError('Generated display configuration included operational fields')
     report=json.loads(run(launcher,'doctor','--config',profile,'--online'))
@@ -18,5 +18,5 @@ def prove_managed_display(run,launcher,client,config):
         time.sleep(.1)
     else:raise RuntimeError('Minimal managed launch did not finish under supervision')
     marker=client/'apps/demo/prod/stable/1.0.0'/config['targetPlatform']/'runtime-marker.txt'
-    if not marker.exists() or 'UE_DT_FAKE_GAME_OK' not in marker.read_text():raise RuntimeError('Exact managed payload was not launched')
+    if not marker.exists() or 'UE_DT_FAKE_GAME_OK' not in marker.read_text(encoding='utf-8'):raise RuntimeError('Exact managed payload was not launched')
     return {'diagnostics':True,'exactLaunch':True,'supervisedCompletion':True,'operationalFieldsInClient':False}

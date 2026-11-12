@@ -219,6 +219,7 @@ public static class CrashReporter
                 operatingSystem = Environment.OSVersion.ToString(),
                 errorType = exception.GetType().FullName,
                 message = DiagnosticRedactor.Redact(exception.Message),
+                exception = DiagnosticRedactor.Redact(exception.ToString()),
                 stackTrace = DiagnosticRedactor.Redact(exception.StackTrace)
             };
             File.WriteAllText(path, JsonSerializer.Serialize(payload, JsonFiles.Options));

@@ -532,6 +532,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
             CrashReporter.Report(ex, "agent-command");
             var failure=Error(request, "failed", DiagnosticRedactor.Redact(ex.Message), identity);
             failure.ErrorCode=LauncherFailure.Code(ex);
+            failure.RetryAfterSeconds=HttpFailures.RetryAfter(ex);
             return failure;
         }
         finally

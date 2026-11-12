@@ -1,4 +1,6 @@
 """Functional CI runner. Private synthetic roots/logs never become artifacts."""
+from ci_text import configure_console
+configure_console()
 import argparse
 import json
 import os
@@ -30,7 +32,7 @@ def main():
             if result.returncode:raise RuntimeError('Functional proof failed')
         run('auth-operations-schedule',[sys.executable,str(tools/'test-intranet-auth.py'),'--root',str(fixture),
             *[part for name,path in binaries.items() for part in ('--'+name,path)],'--operation-proof','--credential-proof','--schedule-proof','--service-proof'])
-        evidence=json.loads((fixture/'summary.json').read_text())
+        evidence=json.loads((fixture/'summary.json').read_text(encoding='utf-8'))
         if not all(evidence.get(name) is True for name in ('owned_operation_cancellation','credential_lifecycle','read_only_scheduled_check','explicit_service_selection_proof','revoked_key_rejected')):
             raise RuntimeError('Incomplete evidence')
         run('offline-maintenance',[sys.executable,str(tools/'test-distribution-maintenance.py'),'--server',binaries['server'],

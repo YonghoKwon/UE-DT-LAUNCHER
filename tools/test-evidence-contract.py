@@ -1,3 +1,5 @@
+from ci_text import configure_console
+configure_console()
 import json
 from pathlib import Path
 import tempfile
@@ -21,7 +23,7 @@ class EvidenceTests(unittest.TestCase):
         from evidence_contract import atomic
         import os
         with tempfile.TemporaryDirectory() as root:
-            path=Path(root)/'proof.json';path.write_text('old');real=os.replace;calls=[]
+            path=Path(root)/'proof.json';path.write_text('old', encoding='utf-8');real=os.replace;calls=[]
             def transient(source,target):
                 calls.append(1)
                 if len(calls)<3:
@@ -30,7 +32,7 @@ class EvidenceTests(unittest.TestCase):
             # Emulate only the error classifier, not os.name (pathlib must retain host semantics).
             with patch('evidence_contract._retryable_replace_error',return_value=True),patch('evidence_contract.os.replace',side_effect=transient),patch('evidence_contract.time.sleep'):
                 atomic(path,{'new':True})
-            self.assertEqual(3,len(calls));self.assertTrue(json.loads(path.read_text())['new'])
+            self.assertEqual(3,len(calls));self.assertTrue(json.loads(path.read_text(encoding='utf-8'))['new'])
             before=path.read_bytes();error=PermissionError('persistent denial');error.winerror=5
             with patch('evidence_contract._retryable_replace_error',return_value=True),patch('evidence_contract.os.replace',side_effect=error) as replace,patch('evidence_contract.time.sleep'):
                 with self.assertRaises(PermissionError):atomic(path,{'mustNotAppear':True})
@@ -49,7 +51,7 @@ class EvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             path=Path(root)/'summary.json';evidence=Evidence(path,{},['first','second'])
             evidence.start('first');evidence.finish('first',False,kind='timeout');evidence.complete(False)
-            report=json.loads(path.read_text())
+            report=json.loads(path.read_text(encoding='utf-8'))
             self.assertFalse(report['success']);self.assertEqual(1,report['counts']['failed'])
             self.assertEqual(1,report['counts']['not-run']);self.assertEqual('timeout',report['checks'][0]['failureType'])
     def test_streaming_hash_matches_standard_without_file_digest_api(self):

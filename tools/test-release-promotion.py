@@ -1,4 +1,6 @@
 """Published-process promotion proof. Private fixture/keys are never release artifacts."""
+from ci_text import configure_console
+configure_console()
 import argparse
 import hashlib
 import json
@@ -13,6 +15,11 @@ import time
 import sqlite3
 
 
+def write_command_log(path, result, secret=False):
+    # Credential provisioning stdout is consumed in memory only, never retained in a command log.
+    path.write_text('secret output omitted\n' if secret else result.stdout + result.stderr, encoding='utf-8')
+
+
 def main():
     p=argparse.ArgumentParser(); p.add_argument('--root',required=True); p.add_argument('--server',required=True); p.add_argument('--launcher',required=True); p.add_argument('--catalog-proof',action='store_true')
     args=p.parse_args(); root=Path(args.root).resolve(); server=Path(args.server).resolve(); launcher=Path(args.launcher).resolve()
@@ -21,10 +28,10 @@ def main():
     def run(binary,*values,expected=0):
         nonlocal counter; counter+=1
         result=subprocess.run([str(binary),*map(str,values)],capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=60)
-        (root/f'command-{counter:02d}.log').write_text(result.stdout+result.stderr)
+        write_command_log(root/f'command-{counter:02d}.log', result, secret=values[:1] == ('token-issue',))
         if result.returncode!=expected and not(expected==1 and result.returncode!=0): raise RuntimeError(f'Unexpected command result {counter}')
         return result.stdout
-    def write(path,value): path.write_text(json.dumps(value))
+    def write(path,value): path.write_text(json.dumps(value), encoding='utf-8')
     run(launcher,'generate-signing-key','--private-key',root/'sign.pem','--public-key',root/'public.pem')
     with socket.socket() as reservation: reservation.bind(('127.0.0.1',0)); port=reservation.getsockname()[1]
     write(root/'server.json',{'root':str(root/'server'),'publicUrl':'https://localhost:19443','listenUrl':'http://127.0.0.1:'+str(port),
@@ -52,7 +59,7 @@ def main():
         write(root/'policy.json',{'clients':[{'id':'all','addresses':['127.0.0.1/32'],'grants':[{'projectId':'demo','environment':'prod','channel':'stable'}]},
             {'id':'old','addresses':['127.0.0.1/32'],'grants':[{'projectId':'demo','environment':'prod','channel':'stable','versions':['2.0.0']}]}]})
         all_token=run(server,'token-issue','all',*config).strip(); old_token=run(server,'token-issue','old',*config).strip()
-        with (root/'server.log').open('w') as log:
+        with (root/'server.log').open('w', encoding='utf-8') as log:
             process=subprocess.Popen([str(server),'serve',*map(str,config)],stdout=log,stderr=log)
             try:
                 def catalog(token,new=True):

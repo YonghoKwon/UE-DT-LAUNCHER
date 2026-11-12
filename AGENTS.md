@@ -27,7 +27,7 @@ publish/bin/obj, 테스트 logs·DB·인증서·토큰, 패키지·설치 데이
 - 최상위 목표는 사용자 확정 사항인 **회사에서 안정적으로 활용 가능한 Unreal Engine DT 배포 시스템**입니다. 세부 범위·회사 SLA·운영 정책은 PROJECT_GOALS의 미정 항목을 따릅니다. 제안이나 목표를 구현/운영 완료로 바꾸지 않습니다.
 - 문서를 이동하면 상대 링크와 스크립트 내 참조도 확인합니다.
 - IMPROVEMENTS는 완료 이력도 보존하는 진행 대장입니다. 항목별 진행률은 문서의 증거 기반 0/25/50/75/100% 단계로 표시하고, 상태·체크포인트·근거·남은 조건·집계를 함께 갱신합니다. 기존 기능이 있다는 이유로 추가 보완에 점수를 주거나 항목 평균을 제품 완성률로 사용하지 않습니다.
-- 전체 진행 보고서는4종 정본과 같은 제품 수용 요약에서 생성한다. 28개 항목의 체크포인트 평균을 제품 완성률로 계산하지 않는다.
+- 전체 진행 보고서는4종 정본과 같은 제품 수용 요약에서 생성한다. 29개 항목의 체크포인트 평균을 제품 완성률로 계산하지 않는다.
 
 ## 사용자 안내와 도식 관리
 
@@ -43,12 +43,17 @@ publish/bin/obj, 테스트 logs·DB·인증서·토큰, 패키지·설치 데이
 | 위치 | 책임 |
 |---|---|
 | src/UeDtLauncher/Program.cs | GUI/CLI 명령 |
+| src/UeDtLauncher/Cli/ | 책임별 CLI handler·인수/도움말·upload 명령 |
+| src/UeDtLauncher.Core/Distribution/ReleaseUploader.cs | 셸 없는 OpenSSH 전송·프로필·실패 단계·dry-run |
+| src/UeDtLauncher.Core/Distribution/UploadPreflight.cs·UploadWork.cs·UploadPresentation.cs | 변경 없는 접속 점검·소유 작업 사본 정리·사람용 출력 |
+| src/UeDtLauncher.DistributionServer/OperationsConsole.cs | 동작별 lease·확인 입력을 사용하는 서버 운영 콘솔 |
 | src/UeDtLauncher/Gui/ | programmatic Avalonia View·ViewModel·시각 토큰 |
 | src/UeDtLauncher.Core/ | 공용 assembly, Distribution 메타데이터·경로·이미지 |
 | src/UeDtLauncher.Core/*.cs | 엔진·보안·transaction·IPC 소스. GUI는 Core project reference만 사용 |
 | src/UeDtLauncher.Agent/ | Windows Service/Linux systemd Agent |
 | src/UeDtLauncher.DistributionServer/ | SQLite 접수·승인·서명 게시·인증 API |
 | src/UeDtLauncher.Tests/, tools/test-distribution-e2e.sh | 자동화·실제 프로세스 E2E |
+| tools/ConsoleStreamHarness/ | 테스트 전용 소유 콘솔/핸들 검증. 제품·공식 publish graph에는 포함하지 않음 |
 | installer/windows/, packaging/linux/, .github/workflows/ | 설치본·nginx·서비스·CI |
 
 ## 현재 유효한 사용자 승인과 범위
@@ -61,6 +66,7 @@ publish/bin/obj, 테스트 logs·DB·인증서·토큰, 패키지·설치 데이
 
 ### 서버 접수·게시·승격
 
+- 콘솔은 기존 명령과 같은 내부 경로·확인을 쓰고 HTTP 쓰기 API를 추가하지 않는다.
 - ZIP + 외부 release.json을 비공개 snapshot으로 검사하고 관리자 승인 후 게시합니다. 업로드 프로그램을 서버에서 실행하지 않습니다.
 - .uploading/한 파일만 도착한 상태를 게시하지 않습니다. 동일 릴리스 식별자 덮어쓰기를 허용하지 않습니다.
 - approve는 게시만 한다. 첫 버전도 명시적 promote가 필요하며 PC별 추천은 현재 허용된 승격 이력의 마지막 판이다. 프로젝트/환경/채널/플랫폼을 섞거나 미승격판으로 fallback하지 않는다.
@@ -107,6 +113,7 @@ publish/bin/obj, 테스트 logs·DB·인증서·토큰, 패키지·설치 데이
 
 ### 관리형·portable 클라이언트
 
+- `upload`는 셸 없이 SSH 실행 파일을 호출하고 실패한 전송 뒤 이름을 바꾸지 않는다.
 - 관리형 GUI/CLI는 ManagedClientContext의 selection-only 설정과 Agent IPC를 사용한다. 운영 URL 누락을 portable/legacy fallback으로 해석하지 않는다. 보호 설정·credential·Manifest·설치 상태 직접 읽기/열거로 Agent 응답 누락을 보충하지 않는다. 관리형 로그는 사용자 저장소다.
 - 관리형 직접 복원은 ManagedClientContext.Bind로 정확한 선택만 묶는다. VersionedReleasePaths.Bind는 portable에만 적용하며 managed client의 로컬 install root를 요구하지 않는다. 구형 Agent의 ClientPresentation 누락은 보조 기능 갱신 안내이며 권한 우회가 아니다.
 - 적용 완료/조회 필요/결과 불명을 구분한다. 완료 뒤 주/상태/재시도/F6는 조회만 하며 응답 유실을 자동 복원 재적용으로 처리하지 않는다. 설치 변경 성공은 오래된 재개 힌트를 해제한다.

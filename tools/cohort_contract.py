@@ -7,7 +7,7 @@ ROLES={'launcher':'General','developer':'Developer','agent':None,'server':None}
 def read_publication(path):
     path=Path(path).resolve()
     if path.is_symlink() or path.stat().st_size>1024*1024:raise ValueError('Invalid publication manifest')
-    value=json.loads(path.read_text())
+    value=json.loads(path.read_text(encoding='utf-8'))
     if value.get('schemaVersion')!=2 or value.get('success') is not True or value.get('rid') not in ('win-x64','linux-x64'):
         raise ValueError('A successful snapshot publication is required')
     for name,size in [('sourceHead',40),('productSourceHash',64)]:

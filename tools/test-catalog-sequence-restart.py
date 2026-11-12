@@ -1,4 +1,6 @@
 """Owned published server crash/restart; signed catalogs only, no GUI/install."""
+from ci_text import configure_console
+configure_console()
 import argparse
 import json
 import os
@@ -33,7 +35,7 @@ def main():
     atomic(root/'summary.json',report)
     previous, old_client=0,None
     for iteration in range(2):
-        with (root/f'server-private-{iteration}.log').open('w') as log:
+        with (root/f'server-private-{iteration}.log').open('w', encoding='utf-8') as log:
             owned=subprocess.Popen([*command,'serve'],stdout=log,stderr=log,creationflags=flags)
             client=None
             try:

@@ -2,12 +2,24 @@ namespace UeDtLauncher;
 
 public sealed record LauncherGuidance(string Message, string NextAction, string Owner)
 {
+    public static LauncherGuidance For(Exception error)
+    {
+        var guidance = For(LauncherFailure.Code(error));
+        return HttpFailures.RetryAfter(error) is { } seconds
+            ? guidance with { NextAction = $"{seconds}초 이후 다시 시도해 주세요. " + guidance.NextAction }
+            : guidance;
+    }
+
     public static LauncherGuidance For(string code) => code switch
     {
         "no-promoted-release" => new("관리자가 실행 버전을 지정하지 않았습니다.", "관리자에게 해당 프로젝트의 추천 버전 승격을 요청해 주세요.", "admin"),
         "no-authorized-release" => new("현재 PC와 선택 조건에서 받을 수 있는 배포가 없습니다.", "관리자에게 배포 승인 여부와 PC별 허용 목록을 확인해 달라고 요청해 주세요.", "admin"),
         "service-unavailable" => new("업데이트 서비스에 연결할 수 없습니다.", "관리자에게 업데이트 서비스 실행 상태를 확인해 달라고 요청한 뒤 다시 확인해 주세요.", "admin"),
         "server-unavailable" => new("배포 서버에 연결할 수 없습니다.", "네트워크를 확인하고 다시 시도해 주세요. 계속되면 관리자에게 문의해 주세요.", "user"),
+        "rate-limited" => new("배포 서버의 요청 한도에 도달했습니다.", "잠시 후 다시 시도하고, 반복되면 관리자에게 요청 한도 확인을 요청해 주세요.", "user"),
+        "stale-challenge" => new("PC 인증 요청을 갱신한 뒤에도 확인하지 못했습니다.", "관리자에게 PC 시계·서버 재시작·프록시 상태 확인을 요청해 주세요.", "admin"),
+        "storage-failed" => new("필요한 파일을 읽거나 저장할 수 없습니다.", "설정 파일의 존재 여부와 저장 공간을 확인하고, 반복되면 관리자에게 문의해 주세요.", "user"),
+        "file-access-denied" => new("필요한 파일에 접근할 권한이 없습니다.", "관리자에게 파일 소유자와 접근 권한을 확인해 달라고 요청해 주세요.", "admin"),
         "authentication-failed" or "credential" => new("PC 인증을 확인할 수 없습니다.", "관리자에게 인증키 등록·폐기·접근 권한을 확인해 달라고 요청해 주세요.", "admin"),
         "access-denied" => new("이 PC에 허용되지 않은 배포입니다.", "관리자에게 PC 주소와 선택 배포의 접근 권한을 확인해 달라고 요청해 주세요.", "admin"),
         "integrity-failed" or "signing-keys" => new("업데이트 보안 검증에 실패했습니다.", "검증을 끄지 말고 관리자에게 공개키와 배포 파일 확인을 요청해 주세요.", "admin"),

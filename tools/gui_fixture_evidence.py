@@ -43,7 +43,7 @@ def copy_server_support(source_executable, destination_executable):
     return copied
 
 def verify_cohort(root):
-    fixture = json.loads(inside(root, 'fixture.json').read_text())
+    fixture = json.loads(inside(root, 'fixture.json').read_text(encoding='utf-8'))
     from cohort_contract import verify_fixture_publication
     verify_fixture_publication(fixture)
     if fixture.get('schemaVersion') not in (1, 2): raise ValueError('Unsupported GUI fixture schema')
@@ -58,7 +58,7 @@ def verify_cohort(root):
     for value in fixture.get('supportFiles',{}).values():
         inside(root,Path(value['path']).relative_to(Path(root).resolve()))
         if sha256(value['path'])!=value['sha256']:raise ValueError('Fixture runtime support changed')
-    settings=json.loads(inside(root,'server.json').read_text())
+    settings=json.loads(inside(root,'server.json').read_text(encoding='utf-8'))
     validate_origin(settings['publicUrl']);validate_origin(settings['listenUrl'])
     for field in ('root','policyPath','signingKeyPath'):
         inside(root,Path(settings[field]).relative_to(Path(root).resolve()))
@@ -98,13 +98,13 @@ def fixture_mode(fixture):
 
 def operation_root(root,fixture):
     if fixture_mode(fixture)=='managed':
-        environment=json.loads(inside(root,'test-environment.json').read_text())
+        environment=json.loads(inside(root,'test-environment.json').read_text(encoding='utf-8'))
         data=inside(root,Path(environment['UE_DT_AGENT_DATA_ROOT']).relative_to(Path(root).resolve()))
         return inside(root,str((data/'state/operations').relative_to(root)))
     return inside(root,'client/state/operations')
 
 def fixture_environment(root, fixture):
-    values = json.loads(inside(root, 'test-environment.json').read_text())
+    values = json.loads(inside(root, 'test-environment.json').read_text(encoding='utf-8'))
     if set(values) != {'UE_DT_AGENT_DATA_ROOT', 'UE_DT_AGENT_ENDPOINT'}: raise ValueError('Unexpected fixture environment')
     inside(root, Path(values['UE_DT_AGENT_DATA_ROOT']).relative_to(Path(root).resolve()))
     return dict(os.environ, **values)
@@ -141,7 +141,7 @@ def hold_fixture(root, fixture, env, server_process, agent_process, server_log, 
     """Own only our Popen handles. Intentional server downtime does not end the harness."""
     control=inside(root,'control'); control.mkdir(exist_ok=True)
     flags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0
-    origin=json.loads(inside(root,'server.json').read_text())['publicUrl']
+    origin=json.loads(inside(root,'server.json').read_text(encoding='utf-8'))['publicUrl']
     processes={'server':server_process,'agent':agent_process}
     expected_stopped={'server':False,'agent':fixture_mode(fixture)=='portable'}
     try:
@@ -211,7 +211,7 @@ def snapshot_preferences(root):
     if path.is_symlink(): raise ValueError('Linked preferences are not supported')
     original=path.read_bytes() if path.exists() else None
     if original is not None and len(original)>4096: raise ValueError('Unexpected preferences size')
-    inside(root,'ui-preferences-original.json').write_text(json.dumps({'original':base64.b64encode(original).decode() if original is not None else None}))
+    inside(root,'ui-preferences-original.json').write_text(json.dumps({'original':base64.b64encode(original).decode(encoding='utf-8') if original is not None else None}), encoding='utf-8')
 
 def preference_hash():
     path=preference_path()
@@ -221,7 +221,7 @@ def restore_preferences(root, expected):
     if preference_hash()!=expected: raise ValueError('Preferences changed since the last owned write; refusing overwrite')
     path=preference_path()
     if path.is_symlink(): raise ValueError('Linked preferences are not supported')
-    data=json.loads(inside(root,'ui-preferences-original.json').read_text())['original']
+    data=json.loads(inside(root,'ui-preferences-original.json').read_text(encoding='utf-8'))['original']
     if data is None: path.unlink(missing_ok=True)
     else:
         path.parent.mkdir(parents=True,exist_ok=True)

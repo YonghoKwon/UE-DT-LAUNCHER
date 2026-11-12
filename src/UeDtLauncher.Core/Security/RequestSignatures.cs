@@ -137,7 +137,7 @@ internal sealed class DeviceSignatureHandler(LauncherConfig config, HttpMessageH
             if (cachedChallenge is not null && System.Diagnostics.Stopwatch.GetElapsedTime(acquired) < TimeSpan.FromSeconds(45)) return cachedChallenge;
             using var request = new HttpRequestMessage(HttpMethod.Get, config.DistributionServerUrl!.TrimEnd('/') + "/api/v1/auth/challenge?keyId=" + Uri.EscapeDataString(credential.KeyId));
             using var response = await base.SendAsync(request, token);
-            response.EnsureSuccessStatusCode();
+            HttpFailures.EnsureSuccess(response);
             var json = await SecureHttpClientFactory.ReadBoundedStringAsync(response, 4096, token);
             var value = JsonSerializer.Deserialize<AuthChallenge>(json, JsonFiles.Options) ?? throw new InvalidDataException("Invalid challenge response.");
             if (value.Challenge.Length is < 1 or > 2048 || value.ExpiresInSeconds != 60) throw new InvalidDataException("Unsupported authentication challenge.");

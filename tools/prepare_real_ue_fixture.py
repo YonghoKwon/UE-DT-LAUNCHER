@@ -5,6 +5,8 @@ and uses the production metadata/intake/approval commands on an isolated loopbac
 server. The GUI install/run button still requires action-time user confirmation.
 All generated credentials, binaries and logs must remain outside Git.
 """
+from ci_text import configure_console
+configure_console()
 import argparse
 import hashlib
 import http.server
@@ -57,7 +59,7 @@ def write(path, value):
 
 def load(root):
     root = Path(root).resolve()
-    f = json.loads(inside(root, 'real-fixture.json').read_text())
+    f = json.loads(inside(root, 'real-fixture.json').read_text(encoding='utf-8'))
     if f.get('schemaVersion') != 1 or f.get('kind') != 'real-ue-package':
         raise ValueError('Not a real UE test fixture')
     if f.get('projectId') != 'ma0t10-dt' or not re.fullmatch(r'[0-9A-Za-z][0-9A-Za-z._+-]{0,99}', f.get('version', '')):
@@ -170,7 +172,7 @@ def prepare(args):
         'projectId':'ma0t10-dt','version':args.version,'entryPoint':'ma0t10_dt.exe','packageFiles':len(files),
         'packageBytes':sum(p.stat().st_size for p in files),'zipBytes':archive.stat().st_size,'zipSha256':sha256(archive),
         'approvedJob':job['id'],'origin':origin,'runtimeNetwork':'configured DTCore overrides to owned loopback 503 sink; verify actual UE log after launch',
-        'runtimeUserData':str(root/'ue-user'),'launcherSourceHead':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()}
+        'runtimeUserData':str(root/'ue-user'),'launcherSourceHead':subprocess.check_output(['git','rev-parse','HEAD'],text=True, encoding='utf-8', errors='replace').strip()}
     write(root/'real-fixture.json',record)
     processes=[]; logs=[]
     try:
@@ -215,7 +217,7 @@ def main():
         response=agent_status(f['endpoint'])
         print(json.dumps({'agentReady':response.get('success'),'version':f['version']}))
         for p in (root/'client/state').rglob('runtime-state.json'):
-            value=json.loads(p.read_text());print(json.dumps({'runtime':value['state'],'attempt':value.get('attemptId')}))
+            value=json.loads(p.read_text(encoding='utf-8'));print(json.dumps({'runtime':value['state'],'attempt':value.get('attemptId')}))
     elif args.action=='verify':
         relative=f"ma0t10-dt/prod/stable/{f['version']}/windows-x64"
         print('PASS: manifest files='+str(verify_files(inside(root,'client/apps/'+relative),inside(root,'client/state/'+relative+'/installed-manifest.json'))))

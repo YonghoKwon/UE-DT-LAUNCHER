@@ -48,7 +48,7 @@ public static class CatalogResolver
 
         LauncherConfigValidator.ValidateUrl(config, new Uri(config.CatalogUrl, UriKind.Absolute), "catalog");
         using var response = await httpClient.GetAsync(CatalogRecommendation.RequestUrl(config), HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        HttpFailures.EnsureSuccess(response);
         var catalogJson = await SecureHttpClientFactory.ReadBoundedStringAsync(response, config.Security.MaxCatalogBytes, cancellationToken);
 
         bool signatureVerified;

@@ -7,7 +7,9 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 ## 현재 상태
 
 - **합성 앱 기반 배포·설치·실행·복구는 로컬에서 활용 가능한 단계이며, 회사 정식 운영 인수(G1~G6)는 미완료입니다.**
-- 실제 회사 인증서·서비스 계정·RHEL·실제 UE 업데이트/복구·MSI/RPM 설치 수명주기·원격 CI는 아직 검증하지 않았습니다.
+- 실제 회사 인증서·서비스 계정·RHEL·실제 UE 업데이트/복구·MSI/RPM 설치 수명주기는 아직 검증하지 않았습니다. 원격 CI는 기준 cef9f53의 과거 build 성공을 확인했으며 이번 스프린트 커밋은 원격 실행하지 않았습니다.
+- 2026-11-12 SPRINT-01: CLI 오류 정제·429/stale 안내·인수 검증, `upload`·서버 `console`, View 책임 분리를 추가했습니다. Windows 기본 환경 테스트890건과 고정 게시본 readiness8/headless3가 통과했습니다. 실제 GUI는 이번에 실행하지 않았고 과거 고정 게시본의 수용 이력은 별도로 보존합니다. [실행 범위·실패 이력](docs/reference/archive/validation/sprint-01-quality-admin-validation.md)
+- 2026-11-12~13 fix-01: 1차 리뷰7커밋을 보존한 뒤, 한국어 업로드 출력·`upload check`·작업 사본 정리·번호식 콘솔을 보완했습니다. 제품 입력 `2e4b8f9`의 기본 환경 전체 테스트966건이 통과했습니다. 초기890건/e24aa93과 1차 리뷰926건/35dde8a는 서로 다른 검증 이력으로 유지합니다. 실제 SSH 성공·회사 운영 인수는 별도입니다.
 - 항목별 진행률은 [개선 대장](IMPROVEMENTS.md), 최신 후보의 테스트·GUI 수용 수치는 [자동 생성 진행표](docs/reference/archive/validation/local-completion-progress.md), 남은 GUI 사례는 [단일 GUI 수용 체크리스트](docs/reference/guide-03-launcher-usage.md#현재-gui-수용-체크리스트)를 따릅니다. 진행률 평균을 제품 완성률로 해석하지 않습니다.
 - 날짜·후보별 이전 검증 기록은 [현황 이력](docs/reference/archive/history/status-log.md)에 있습니다.
 
@@ -85,18 +87,33 @@ dotnet publish src/UeDtLauncher.DistributionServer -c Release -r linux-x64 --sel
 | 순서 | 담당 | 작업 |
 |---:|---|---|
 | 1 | 개발자 | Windows/Linux ZIP을 각각 준비 |
-| 2 | 개발자 | release-metadata로 ZIP 옆 외부 JSON 생성 |
-| 3 | 개발자 | incoming/새업로드ID/에 두 파일을 .uploading 이름으로 전송 후 최종 이름으로 변경 |
+| 2 | 개발자 | 쉬운 방법: `upload`로 ZIP 검사·새 작업 폴더의 외부 JSON 생성 |
+| 3 | 개발자 | 같은 명령이 incoming/새업로드ID/에 두 파일 전송 후 최종 이름 확인. 직접 실행은 release-metadata + SSH/SCP |
 | 4 | 서버 | 파일 쌍·해시·ZIP 검사 후 승인 대기 |
-| 5 | 관리자 | list / inspect 확인 후 approve |
+| 5 | 관리자 | 서버 `console` 1·2에서 번호로 snapshot 확인 → 3승인·화면의 버전 재입력. 직접 실행은 list / inspect / approve |
 | 6 | 서버 | 서명·디렉터리 생성 후 배포 목록 공개 |
 | 7 | 개발자 | 허용된 exact 버전으로 검증 |
-| 8 | 관리자 | promotion inspect의 revision 확인 후 promote |
+| 8 | 관리자 | exact 검증 후 `console` 6에서 트랙별 현재 추천·revision·사유 확인 및 버전 재입력. 직접 실행은 promotion inspect / promote |
 | 9 | 사용자 | PC에 허용된 승격판으로 설치/업데이트 후 실행 |
 
 ```text
 UeDtLauncher release-metadata --zip Windows.zip --project-id demo --version 1.2.0 --platform windows-x64 --payload-root Windows --entry-point Demo.exe --output release.json
 ```
+
+Windows PowerShell의 쉬운 방법은 다음과 같습니다. OpenSSH와 기존 known-host 등록·업로드 계정 권한이 먼저 필요합니다. 프로필의 서버/경로는 실제 회사값으로 고치고 비밀번호·키 내용은 넣지 않습니다.
+
+```powershell
+.\UeDtLauncher.exe upload init --output .\upload.profile.json
+.\UeDtLauncher.exe upload check --profile .\upload.profile.json
+.\UeDtLauncher.exe upload --profile .\upload.profile.json --zip .\Windows.zip --project-id demo --version 1.2.0 --platform windows-x64 --payload-root Windows --entry-point Demo.exe --dry-run
+# 계획 확인 후 같은 입력에서 --dry-run을 빼면 전송
+```
+
+upload는 키 인증 전용(BatchMode)으로 비밀번호를 묻지 않습니다. 최초 호스트 키 등록은 터미널 `ssh 계정@호스트`로 직접 확인합니다. `upload check`는 ssh/scp 존재·접속·incoming 디렉터리/쓰기 권한만 조회하며 원격 파일·폴더를 만들지 않습니다. 기본 한국어 요약과 stderr 진행 안내를 사용하고, 도구 연동은 `--format json`을 명시합니다. 성공 후 이번 작업 폴더만 정리하며 `--keep-work` 또는 실패 시 보존합니다. 종료255는 주소·포트·키 인증·호스트 키 확인, 전송 실패는 네트워크·디스크 점검 후 새 ID로 재시도합니다.
+
+자동 업로드 ID는 릴리스 정보를 알아볼 수 있는 접두부를 길이에 맞춰 자르고 UTC 밀리초 시각·짧은 난수 접미부를 붙여 최대128자로 만듭니다. 프로젝트/버전 등 릴리스 메타데이터는 자르지 않습니다. 명시한 `--upload-id`는 그대로 검증하며 자동 수정하지 않습니다.
+
+서버 운영자는 Linux 터미널에서 `./UeDtLauncher.DistributionServer console --config /etc/ue-dt-distribution/server.json`을 실행합니다. 운영 콘솔은 터미널 입력만 허용하며 승인과 승격은 별도 확인입니다. [B2~B6 전체 명령·결과](docs/reference/feature-workflow.md)
 
 payloadRoot는 ZIP 내부 프로그램 루트, entryPoint는 그 기준 경로입니다. ZIP을 변경하면 JSON도 다시 생성합니다. [업로드·승인 상세](docs/reference/feature-workflow.md)
 
@@ -111,6 +128,10 @@ payloadRoot는 ZIP 내부 프로그램 루트, entryPoint는 그 기준 경로�
 | 사용자·GUI | 설정 → 연결·준비 상태 점검 → 온라인 연결 점검 | 원인·사용자/관리자 조치·지원 ID 확인. 진단은 설치 상태나 주 버튼을 정상으로 덮어쓰지 않음 |
 | 관리자 조치 후·GUI | 다시 확인 / 같은 조회 다시 시도 | 설정 재읽기·조회만 수행. 설치/실행은 주 버튼에서 별도 수행 |
 | 사용자·GUI | 문제 해결 | 이미 설치된 선택 버전의 손상만 복구. 정상 설치는 점검, 미설치는 설치 안내 |
+| CLI·doctor·GUI | `rate-limited` / 429 | 잠시 후 다시 확인. Retry-After가 있으면 제한된 숫자 안내를 참고하고, 반복되면 관리자에게 요청 한도 확인 요청 |
+| CLI·doctor·GUI | `stale-challenge` | 자동 재발급1회 뒤에도 실패한 상태. 관리자에게 PC 시계·서버 재시작·프록시 확인 요청 |
+| CLI | 값 누락·다음 옵션·중복 옵션 | 작업 전 종료2. 기본 오류는 코드·안전한 원인·다음 조치·지원 ID이며 `--error-details`는 정제된 타입 체인만 출력 |
+| Windows CLI | 직접 터미널 출력과 리디렉션 | 직접 실행은 부모 콘솔에 연결한 뒤 출력합니다. 실제 파일/파이프 출력은 UTF-8이며 무효 핸들에는 writer를 설치하지 않습니다. runtime-host 프로토콜과 GUI 시작은 별도 경로입니다 |
 
 - Linux 명령은 `./UeDtLauncher`를 사용합니다. 기본 JSON 출력과 기존 0/1 종료 코드는 유지합니다.
 - `healthy=true`와 종료0은 설치/실행 보장이 아닙니다. 준비도 `action-required`(조치 필요), `verification-pending`(추가 검증 필요), `checks-passed`(점검 완료)를 함께 확인하세요.

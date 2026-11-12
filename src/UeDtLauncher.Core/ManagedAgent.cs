@@ -79,7 +79,7 @@ public sealed class ManagedAgentResponse
         if (Success) return;
         if (Runtime is not null) { var blocked=new RuntimeBlockedException(Runtime);blocked.Data["CorrelationId"]=CorrelationId;throw blocked; }
         if (Status == "client-upgrade-required") throw new RuntimeBlockedException(new(RuntimeState.Unknown, Status, "런처와 업데이트 서비스를 함께 업데이트해 주세요."));
-        throw new AgentOperationException(ErrorCode ?? Status,CorrelationId,Message);
+        throw new AgentOperationException(ErrorCode ?? Status,CorrelationId,Message,RetryAfterSeconds);
     }
     public int ProtocolVersion { get; set; } = ManagedAgentProtocol.Version;
     public string CorrelationId { get; set; } = string.Empty;
@@ -89,6 +89,7 @@ public sealed class ManagedAgentResponse
     public string AgentVersion { get; set; } = string.Empty;
     public string? ClientIdentity { get; set; }
     public string? ErrorCode { get; set; }
+    public int? RetryAfterSeconds { get; set; }
     public RollbackPreview? RollbackPreview { get; set; }
     public bool IsFinal { get; set; } = true;
     public List<ManagedAgentProgress> Progress { get; set; } = new();
