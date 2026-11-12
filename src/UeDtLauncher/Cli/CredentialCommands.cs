@@ -27,8 +27,9 @@ public static partial class Program
         return response.Success ? 0 : 1;
     }
 
-    private static void PrintAgentResponse(ManagedAgentResponse response)
+    internal static void PrintAgentResponse(ManagedAgentResponse response)
     {
+        response.ThrowIfFailed();
         foreach (var progress in response.Progress)
             Console.WriteLine(progress.Percent.HasValue ? $"[{progress.Stage}] {progress.Message} ({progress.Percent:0}%)" : $"[{progress.Stage}] {progress.Message}");
         Console.WriteLine($"Agent {response.Status}: {response.Message}");

@@ -37,6 +37,22 @@ public class HttpFailureGuidanceTests
         Assert.Contains("37", output.ToString());
     }
 
+    [Theory]
+    [InlineData("rate-limited")]
+    [InlineData("stale-challenge")]
+    public void ManagedCliFailureReachesSharedSafeErrorPresentation(string code)
+    {
+        var response = new ManagedAgentResponse
+        { Success = false, Status = "failed", ErrorCode = code, Message = "private-agent-marker", RetryAfterSeconds = 37 };
+        var error = Assert.Throws<AgentOperationException>(() => Program.PrintAgentResponse(response));
+        Assert.Equal(code, LauncherFailure.Code(error));
+        using var output = new StringWriter();
+        CliErrors.Write(output, error);
+        Assert.Contains("[" + code + "]", output.ToString());
+        Assert.Contains("37", output.ToString());
+        Assert.DoesNotContain("private-agent-marker", output.ToString());
+    }
+
     [Fact]
     public async Task RepeatedStaleRenewsOnlyOnceAndHasIndependentGuidance()
     {
