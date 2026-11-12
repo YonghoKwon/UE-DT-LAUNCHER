@@ -22,15 +22,15 @@ public sealed class OperationsConsoleTests : IDisposable
         store = new(settings);
     }
 
-    private async Task<IntakeJob> UploadAsync(string version)
+    private async Task<IntakeJob> UploadAsync(string version, string environment = "prod")
     {
-        var source = Path.Combine(store.Root, "incoming", "v" + version);
+        var source = Path.Combine(store.Root, "incoming", "v" + version + "-" + environment);
         Directory.CreateDirectory(source);
         var zip = Path.Combine(source, "payload.zip");
         using (var archive = ZipFile.Open(zip, ZipArchiveMode.Create))
         using (var writer = new StreamWriter(archive.CreateEntry("app.exe").Open())) writer.Write("synthetic only");
         await SidecarPackageValidator.GenerateAsync(zip, Path.Combine(source, "release.json"), new()
-        { ProjectId = "demo", Version = version, Platform = "windows-x64", EntryPoint = "app.exe" });
+        { ProjectId = "demo", Version = version, Environment = environment, Platform = "windows-x64", EntryPoint = "app.exe" });
         return await store.IngestAsync(source);
     }
 
@@ -47,9 +47,9 @@ public sealed class OperationsConsoleTests : IDisposable
         var job = await UploadAsync("1.0");
         var sourceMetadata = Path.Combine(job.Source, "release.json");
         File.WriteAllText(sourceMetadata, File.ReadAllText(sourceMetadata).Replace("1.0", "9.9"));
-        var output = await RunAsync(new StringReader($"3\n{job.Id}\n{job.Id}\n0\n"));
+        var output = await RunAsync(new StringReader($"3\n{job.Id}\n1.0\n0\n"));
         Assert.Equal("published", store.Get(job.Id).State);
-        Assert.Contains("\"version\": \"1.0\"", output);
+        Assert.Contains("버전: 1.0", output);
         Assert.DoesNotContain("9.9", output);
         Assert.Null(new ReleasePromotions(store).Inspect(new("demo", "prod", "stable", "windows-x64", "1.0")).RecommendedRelease);
     }
@@ -106,7 +106,7 @@ public sealed class OperationsConsoleTests : IDisposable
     public async Task NonterminalCannotMutateAndEofExitsSafely()
     {
         var job = await UploadAsync("1.0");
-        await RunAsync(new StringReader($"3\n{job.Id}\n{job.Id}\n"), false);
+        await RunAsync(new StringReader($"3\n{job.Id}\n1.0\n"), false);
         Assert.Equal("pending", store.Get(job.Id).State);
         await RunAsync(new StringReader(""));
         using var offline = DistributionMaintenanceLease.Acquire(store.Root, true);
@@ -200,7 +200,7 @@ public sealed class OperationsConsoleTests : IDisposable
             {
                 0 => "7",
                 1 => "job:failed",
-                2 => System.Text.RegularExpressions.Regex.Match(output.ToString(), "\"planId\": \"([a-f0-9]+)\"").Groups[1].Value,
+                2 => System.Text.RegularExpressions.Regex.Match(output.ToString(), "계획 ID: ([a-f0-9]+)").Groups[1].Value,
                 _ => "0"
             };
             return ValueTask.FromResult<string?>(value);
@@ -215,6 +215,85 @@ public sealed class OperationsConsoleTests : IDisposable
             before(index);
             return ValueTask.FromResult(index < lines.Length ? lines[index++] : null);
         }
+    }
+
+    [Fact]
+    public void NumberedTableUsesKoreanStatesReadableSizesAndShortIds()
+    {
+        using var output = new StringWriter();
+        OperationsConsoleTables.Jobs(output, [new("0123456789abcdef", "pending", "awaiting-approval", 1024, 1024, "demo", "1.2.0", "windows-x64", 1024, "digest", null)]);
+        var text = output.ToString();
+        Assert.StartsWith("번호 | 상태(한국어) | 프로젝트 | 버전 | 플랫폼 | 크기 | 진행 | 작업 ID 앞 8자", text);
+        Assert.Contains("   1 | 승인 대기", text);
+        Assert.Contains("1 KB", text);
+        Assert.Contains("100%", text);
+        Assert.Contains("01234567", text);
+        Assert.DoesNotContain("89abcdef", text);
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "UeDtLauncher.sln"))) directory = directory.Parent;
+        var artifact = Path.Combine(directory!.FullName, "artifacts", "ai-progress", "fix01-console-table-sample.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(artifact)!);
+        File.WriteAllText(artifact, text, new System.Text.UTF8Encoding(false));
+    }
+
+    [Fact]
+    public async Task NumberSelectsTheDisplayedTargetAndSummaryReflectsApproval()
+    {
+        var one = await UploadAsync("1.0");
+        var two = await UploadAsync("2.0");
+        var ordered = store.List().OrderBy(j => j.Id).ToList();
+        var number = ordered.FindIndex(j => j.Id == two.Id) + 1;
+        var output = await RunAsync(new StringReader($"3\n{number}\n2.0\n0\n"));
+        Assert.Equal("published", store.Get(two.Id).State);
+        Assert.Equal("pending", store.Get(one.Id).State);
+        Assert.Contains("승인 대기 2", output);
+        Assert.Contains("게시됨 1", output);
+        Assert.Contains("exact 버전으로 검증한 뒤 6번", output);
+    }
+
+    [Fact]
+    public async Task SelectionChangedAfterTableWasShownIsRejected()
+    {
+        var job = await UploadAsync("1.0");
+        using var input = new ActionReader(["3", "1", "1.0", "0"], index => { if (index == 1) store.Reject(job.Id); });
+        var output = await RunAsync(input);
+        Assert.Contains("목록이 변경됐습니다", output);
+        Assert.Equal("rejected", store.Get(job.Id).State);
+        Assert.Empty(new ApprovedPublisher(store).List());
+    }
+
+    [Fact]
+    public async Task ApprovalRequiresTheDisplayedVersionRatherThanAnIdPrefix()
+    {
+        var job = await UploadAsync("1.0");
+        var output = await RunAsync(new StringReader($"3\n1\n{OperationsConsoleTables.ShortId(job.Id)}\n0\n"));
+        Assert.Contains("확인하려면 1.0 을 입력하세요", output);
+        Assert.Equal("pending", store.Get(job.Id).State);
+        Assert.Empty(new ApprovedPublisher(store).List());
+    }
+
+    [Fact]
+    public async Task InvalidMenuReturnsToTheMenuAndCanStillListJobs()
+    {
+        await UploadAsync("1.0");
+        var output = await RunAsync(new StringReader("99\n1\n0\n"));
+        Assert.Contains("다시 선택하세요", output);
+        Assert.Contains("번호 | 상태(한국어)", output);
+        Assert.Contains("1 접수 현황", output);
+        Assert.DoesNotContain("①", output);
+    }
+
+    [Fact]
+    public async Task PromotionTableGroupsTracksAndMarksTheCurrentRecommendation()
+    {
+        var release = await new ApprovedPublisher(store).ApproveAsync((await UploadAsync("1.0")).Id);
+        await new ApprovedPublisher(store).ApproveAsync((await UploadAsync("2.0", "dev")).Id);
+        new ReleasePromotions(store).Promote(new("demo", "prod", "stable", "windows-x64", "1.0"), 0, "validated");
+        var output = await RunAsync(new StringReader("6\n"));
+        Assert.Contains("트랙: demo/dev/stable/windows-x64", output);
+        Assert.Contains("트랙: demo/prod/stable/windows-x64", output);
+        Assert.Contains("* 추천", output);
+        Assert.Contains(release.ReleaseId, output);
     }
 
     public void Dispose() { SqliteConnection.ClearAllPools(); Directory.Delete(root, true); }
