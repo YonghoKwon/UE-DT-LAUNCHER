@@ -57,6 +57,9 @@ public sealed class UploadWorkTests : IDisposable
         Assert.Equal(0, runner.Calls);
         Assert.False(Directory.Exists(WorkRoot));
         Assert.Null(result.WorkDirectory);
+        Assert.Equal(6, result.Steps.Count);
+        using var output = new StringWriter(); UploadPresentation.Write(output, result);
+        foreach (var step in result.Steps) Assert.Contains(UploadPresentation.Stage(step.Name) + ": 미실행", output.ToString());
     }
 
     [Fact]

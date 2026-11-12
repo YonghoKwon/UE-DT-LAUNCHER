@@ -131,7 +131,8 @@ public sealed class ReleaseUploader
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException)
             {
-                return new(false, false, uploadId, profile.RemoteIncoming + "/" + uploadId, work, "prepare", [],
+                return new(false, false, uploadId, profile.RemoteIncoming + "/" + uploadId, work, "prepare",
+                    BuildSteps(profile, profile.RemoteIncoming + "/" + uploadId, localZip, localJson),
                     "전송 미실행; 생성된 로컬 작업 사본은 보존합니다.", "ZIP 크기와 작업 루트의 여유 공간(64 MB 예비 포함)·쓰기 권한·원본 변경 여부를 확인한 뒤 새 ID로 다시 시도하세요.",
                     FailureKind: error is InvalidDataException ? "integrity-failed" : "local-preparation-failed", WorkPreserved: work is not null && Directory.Exists(work));
             }

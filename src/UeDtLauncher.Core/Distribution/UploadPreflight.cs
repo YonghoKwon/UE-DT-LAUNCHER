@@ -11,7 +11,7 @@ public static class UploadFailureGuidance
     {
         if (kind == "executable-missing") return MissingExecutable;
         if (exitCode == 255)
-            return $"서버 주소·포트·키 인증 설정·호스트 키 등록을 확인하세요. 최초 1회 터미널에서 ssh -p {profile.Port ?? 22} {profile.Server} 로 접속해 호스트 키를 확인·등록하세요. 이 명령은 키 인증만 지원하며 비밀번호를 묻지 않습니다.";
+            return $"서버 주소·포트·키 인증 설정·호스트 키 등록을 확인하세요. 최초 1회 터미널에서 ssh -p {profile.Port ?? 22} {profile.Server} 로 접속해 호스트 키를 확인·등록하세요. upload/check는 키 인증만 지원하며 비밀번호를 묻지 않습니다.";
         return stage switch
         {
             "mkdir" => "같은 업로드 ID 폴더가 이미 있거나 incoming 쓰기 권한이 없을 수 있습니다. 폴더를 재사용하지 말고 권한 확인 후 새 ID로 다시 시도하세요.",
