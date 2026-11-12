@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Globalization;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -90,11 +92,26 @@ public sealed class ReleaseUploader
     internal ReleaseUploader(IUploadProcessRunner runner, Func<string, long>? availableBytes)
     { this.runner = runner; this.availableBytes = availableBytes; }
 
+    internal static string AutomaticUploadId(ReleaseSidecar metadata)
+    {
+        // Shortening the upload folder must never turn invalid release metadata into a valid release.
+        ReleaseSidecar.Segment(metadata.ProjectId);
+        ReleaseSidecar.Segment(metadata.Version);
+        KnownValues.ValidateReleaseTuple(metadata.Platform, metadata.Environment, metadata.Channel);
+        var suffix = "-" + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff", CultureInfo.InvariantCulture) + "-" +
+            Convert.ToHexString(RandomNumberGenerator.GetBytes(8)).ToLowerInvariant();
+        var readable = $"{metadata.ProjectId}-{metadata.Version}-{metadata.Platform}";
+        var prefix = readable[..Math.Min(readable.Length, 128 - suffix.Length)].TrimEnd('.', '_', '-');
+        var id = prefix + suffix;
+        ReleaseSidecar.Segment(id);
+        return id;
+    }
+
     public async Task<UploadResult> ExecuteAsync(string zip, ReleaseSidecar metadata, UploadProfile profile,
         string? uploadId, string workRoot, bool dryRun, CancellationToken token = default, Action<UploadProgress>? progress = null, bool keepWork = false)
     {
         profile.Validate();
-        uploadId ??= $"{metadata.ProjectId}-{metadata.Version}-{metadata.Platform}-{DateTime.UtcNow:yyyyMMddHHmmss}";
+        uploadId ??= AutomaticUploadId(metadata);
         ReleaseSidecar.Segment(uploadId);
         metadata = JsonSerializer.Deserialize<ReleaseSidecar>(JsonSerializer.Serialize(metadata, JsonFiles.Options), JsonFiles.Options)!;
         metadata.PackageFile = "payload.zip";
