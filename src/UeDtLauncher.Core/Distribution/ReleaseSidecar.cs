@@ -100,9 +100,17 @@ public static class SidecarPackageValidator
         await JsonFiles.WriteAsync(output, metadata, token);
     }
 
-    public static async Task<string> ValidateAndExtractAsync(string zipPath, ReleaseSidecar metadata,
-        string destination, ZipIntakeLimits? limits = null, CancellationToken token = default,
-        IProgress<PackageWorkProgress>? progress = null, Func<string, long>? availableBytes = null)
+    /// <summary>Read-only ZIP/hash/inventory validation for upload planning; extraction remains server-side.</summary>
+    public static async Task<long> ValidateArchiveAsync(string zipPath, ReleaseSidecar metadata, CancellationToken token = default)
+    {
+        var result = await InspectArchiveAsync(zipPath, metadata, null, token, null);
+        using var archive = result.Archive;
+        return result.Expanded;
+    }
+
+    private static async Task<(Dictionary<string, bool> Entries, long Expanded, ZipArchive Archive)> InspectArchiveAsync(
+        string zipPath, ReleaseSidecar metadata, ZipIntakeLimits? limits, CancellationToken token,
+        IProgress<PackageWorkProgress>? progress)
     {
         metadata.Validate();
         limits ??= new();
@@ -123,8 +131,9 @@ public static class SidecarPackageValidator
                 throw new InvalidDataException("ZIP SHA-256 mismatch.");
         }
         progress?.Report(new("archive-scan", 0, 0, 0));
-        if (Directory.Exists(destination)) throw new IOException("Extraction destination must be new.");
-        using var archive = ZipFile.OpenRead(zipPath);
+        var archive = ZipFile.OpenRead(zipPath);
+        try
+        {
         if (archive.Entries.Count > limits.MaxFiles) throw new InvalidDataException("ZIP entry limit exceeded.");
         var comparer = metadata.Platform == "windows-x64" ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
         var entries = new Dictionary<string, bool>(comparer);
@@ -153,6 +162,19 @@ public static class SidecarPackageValidator
             if (!entries.TryGetValue(prefix + ReleaseSidecar.Relative(required), out var directory) || directory)
                 throw new InvalidDataException("Required file is absent from ZIP: " + required);
 
+        return (entries, expanded, archive);
+        }
+        catch { archive.Dispose(); throw; }
+    }
+
+    public static async Task<string> ValidateAndExtractAsync(string zipPath, ReleaseSidecar metadata,
+        string destination, ZipIntakeLimits? limits = null, CancellationToken token = default,
+        IProgress<PackageWorkProgress>? progress = null, Func<string, long>? availableBytes = null)
+    {
+        limits ??= new();
+        var (entries, expanded, openedArchive) = await InspectArchiveAsync(zipPath, metadata, limits, token, progress);
+        using var archive = openedArchive;
+        if (Directory.Exists(destination)) throw new IOException("Extraction destination must be new.");
         var estimate = IntakeDiskSpace.Estimate(expanded);
         progress?.Report(new("extract", 0, expanded, estimate));
         IntakeDiskSpace.Require(destination, estimate, availableBytes);

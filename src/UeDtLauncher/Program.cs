@@ -10,7 +10,7 @@ public static partial class Program
 {
     private static readonly string[] KnownSubcommands =
     {
-        "run", "service", "rollback", "runtime", "generate-manifest", "update-catalog", "release-metadata", "import-install",
+        "run", "service", "rollback", "runtime", "upload", "generate-manifest", "update-catalog", "release-metadata", "import-install",
         "list-releases", "generate-nginx-acl", "sign-manifest", "generate-signing-key", "sample-config", "publish-release", "doctor", "diagnostics", "agent", "credential", "operation", "scheduled-check"
     };
 
@@ -147,6 +147,7 @@ public static partial class Program
             var command = args.FirstOrDefault()?.ToLowerInvariant() ?? "run";
             return command switch
             {
+                "upload" => await UploadAsync(args.Skip(1).ToArray()),
                 "release-metadata" => await GenerateSidecarAsync(args.Skip(1).ToArray()),
                 "import-install" => await ImportInstallAsync(args.Skip(1).ToArray()),
                 "run" => await RunLauncherAsync(args.Skip(1).ToArray()),
