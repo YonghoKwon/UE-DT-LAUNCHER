@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace UeDtLauncher;
 
 /// <summary>Public CLI errors use allowlisted causes; exception messages remain in redacted crash reports.</summary>
@@ -6,11 +8,40 @@ public static class CliErrors
     /// <summary>Use UTF-8 on redirected streams without changing the OS console code page.</summary>
     public static void ConfigureRedirectedConsole()
     {
-        if (Console.IsErrorRedirected)
-            Console.SetError(new StreamWriter(Console.OpenStandardError(), new System.Text.UTF8Encoding(false)) { AutoFlush = true });
-        if (Console.IsOutputRedirected)
-            Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), new System.Text.UTF8Encoding(false)) { AutoFlush = true });
+        ConfigureStream(error: true);
+        ConfigureStream(error: false);
     }
+
+    private static void ConfigureStream(bool error)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            // Do not initialize Console's cached redirection state while a WinExe has no console/standard handles yet.
+            if (RedirectedStandardHandle(error ? -12 : -11) == IntPtr.Zero) return;
+        }
+        else if (!(error ? Console.IsErrorRedirected : Console.IsOutputRedirected)) return;
+
+        try
+        {
+            var stream = error ? Console.OpenStandardError() : Console.OpenStandardOutput();
+            if (ReferenceEquals(stream, Stream.Null) || !stream.CanWrite) return;
+            var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false)) { AutoFlush = true };
+            if (error) Console.SetError(writer);
+            else Console.SetOut(writer);
+        }
+        catch (IOException) { /* Preserve Console's existing behavior for unavailable handles. */ }
+    }
+
+    internal static IntPtr RedirectedStandardHandle(int id)
+    {
+        var handle = GetStdHandle(id);
+        if (handle == IntPtr.Zero || handle == new IntPtr(-1)) return IntPtr.Zero;
+        // Console/NUL character devices keep their native Console behavior; only real files and pipes get UTF-8 writers.
+        return (GetFileType(handle) & 0x7fff) is 1 or 3 ? handle : IntPtr.Zero;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern IntPtr GetStdHandle(int id);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern uint GetFileType(IntPtr handle);
 
     public static string Write(TextWriter output, Exception error, bool details = false, bool server = false)
     {

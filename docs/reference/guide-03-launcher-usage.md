@@ -262,3 +262,5 @@ UE 인수는 앱의 독자적인 쓰기 위치를 강제 변경하지 않습니�
 무인 실행은 [서비스 모드](service-mode.md), 이전은 [통합 운영](distribution-workflow.md), 패키징은 [상용 배포 준비](commercial-deployment.md)를 참고하세요. [2026-09-12 검증](archive/validation/distribution-validation.md)은 Windows GUI/Agent·Linux CLI 테스트 패키지 결과이며 실제 회사 RHEL·실제 UE 검증 완료를 뜻하지 않습니다.
 
 fix-01 업로드 안내: upload는 기본 한국어 요약이며 --format json으로 기존 기계 출력을 유지합니다. upload check는 키 인증/접속/권한 조회만 수행합니다. 성공 사본은 정리하고 실패/--keep-work는 보존합니다. 번호 선택·확인 값과 실제 화면 예시는 [기능 지도 B2~B6](feature-workflow.md#b2-releasejson-만들기--개발-pc-powershell)를 따릅니다. 다른 CLI 명령의 JSON 기본값과 보안/진단 코드 계약은 유지합니다.
+
+Windows 직접 CLI는 `--help`, `--version`, 오류 출력을 부모 터미널에 연결한 뒤 표시합니다. 파일/파이프 핸들은 부착 전후 보존하며 UTF-8로 출력하고, null/무효 핸들이면 기존 Console 동작을 유지합니다. GUI 경로는 콘솔에 붙지 않고 runtime-host는 stdin/stdout 프로토콜을 유지합니다. Windows PowerShell5.1의 `>`/Out-File은 자체 재인코딩하므로 호스트의 UTF-8 디코딩과 `Out-File -Encoding utf8`을 명시해야 합니다. 런처가 OS 콘솔 코드 페이지를 바꾸지는 않습니다.

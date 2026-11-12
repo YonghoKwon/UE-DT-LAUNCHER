@@ -17,9 +17,21 @@ public static partial class Program
     [STAThread]
     public static int Main(string[] args)
     {
-        CliErrors.ConfigureRedirectedConsole();
-        if (args.SequenceEqual(new[] { "runtime-host", "--capability-probe" })) return RuntimeHost.RunProbe();
-        if (args.SequenceEqual(new[] { "runtime-host" })) return RuntimeHost.RunSessionAsync().GetAwaiter().GetResult();
+        // Runtime protocol pipes are never attached to a terminal or routed through GUI/CLI initialization.
+        if (args.SequenceEqual(new[] { "runtime-host", "--capability-probe" }))
+        { CliErrors.ConfigureRedirectedConsole(); return RuntimeHost.RunProbe(); }
+        if (args.SequenceEqual(new[] { "runtime-host" }))
+        { CliErrors.ConfigureRedirectedConsole(); return RuntimeHost.RunSessionAsync().GetAwaiter().GetResult(); }
+
+        var wantsGui = Has(args, "--gui");
+        var wantsCli = Has(args, "--cli");
+        var isGui = StartsGui(args);
+        // WinExe CLI calls attach before any Console stream initialization; GUI startup never attaches.
+        if (!isGui)
+        {
+            if (OperatingSystem.IsWindows()) AttachParentConsole();
+            CliErrors.ConfigureRedirectedConsole();
+        }
         CrashReporter.Install(Path.Combine(AppContext.BaseDirectory, "logs"));
         if (args.SequenceEqual(new[] { "--build-info" }))
         {
@@ -33,22 +45,11 @@ public static partial class Program
                 .FirstOrDefault()?.InformationalVersion ?? typeof(Program).Assembly.GetName().Version?.ToString());
             return 0;
         }
-        var wantsGui = Has(args, "--gui");
-        var wantsCli = Has(args, "--cli");
-
         if (wantsGui && wantsCli)
         {
             Console.Error.WriteLine("--gui and --cli cannot be used together.");
             return 2;
         }
-
-        // GUI when: --gui present, OR (no --cli AND (args empty OR args[0]=="gui")).
-        var isGui = wantsGui
-            || (!wantsCli && (args.Length == 0 || string.Equals(args[0], "gui", StringComparison.OrdinalIgnoreCase)));
-
-        // The app is a GUI-subsystem (WinExe) build so double-clicking the launcher shows no console
-        // window. For CLI subcommands launched from a terminal, attach to that terminal so output is visible.
-        if (!isGui && OperatingSystem.IsWindows()) AttachParentConsole();
 
         var diagnosticCommand = !isGui && CliArgs(args, wantsCli).FirstOrDefault() is "doctor" or "diagnostics" or "scheduled-check" or "operation";
         if (File.Exists(SelfUpdateManager.PendingFilePath)) Console.Error.WriteLine(LauncherBuildInfo.UpdateNotice);
@@ -90,6 +91,10 @@ public static partial class Program
     internal static bool GuiUnavailable(bool isLinux, string? display, string? wayland)
         => isLinux && string.IsNullOrWhiteSpace(display) && string.IsNullOrWhiteSpace(wayland);
 
+    internal static bool StartsGui(string[] args)
+        => !(Has(args, "--gui") && Has(args, "--cli")) &&
+           (Has(args, "--gui") || (!Has(args, "--cli") && (args.Length == 0 || args[0].Equals("gui", StringComparison.OrdinalIgnoreCase))));
+
     // Strip a leading "gui" token and any "--gui" token before handing args to Avalonia.
     internal static string[] GuiArgs(string[] args)
     {
@@ -120,13 +125,24 @@ public static partial class Program
     [SupportedOSPlatform("windows")]
     private static void AttachParentConsole()
     {
-        try { AttachConsole(ATTACH_PARENT_PROCESS); } catch { /* no parent console (e.g. double-clicked) — ignore */ }
+        // AttachConsole can initialize the standard-handle table. Preserve actual inherited file/pipe redirections.
+        var redirected = new[] { -10, -11, -12 }.Select(id => (Id: id, Handle: CliErrors.RedirectedStandardHandle(id))).ToArray();
+        try
+        {
+            AttachConsole(ATTACH_PARENT_PROCESS);
+            foreach (var item in redirected)
+                if (item.Handle != IntPtr.Zero) SetStdHandle(item.Id, item.Handle);
+        }
+        catch { /* no parent console (e.g. double-clicked) — ignore */ }
     }
 
     private const int ATTACH_PARENT_PROCESS = -1;
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool AttachConsole(int dwProcessId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)] private static extern bool SetStdHandle(int id, IntPtr handle);
 
     public static AppBuilder BuildAvaloniaApp()
     {

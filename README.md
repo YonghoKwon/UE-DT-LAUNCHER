@@ -129,6 +129,7 @@ payloadRoot는 ZIP 내부 프로그램 루트, entryPoint는 그 기준 경로�
 | CLI·doctor·GUI | `rate-limited` / 429 | 잠시 후 다시 확인. Retry-After가 있으면 제한된 숫자 안내를 참고하고, 반복되면 관리자에게 요청 한도 확인 요청 |
 | CLI·doctor·GUI | `stale-challenge` | 자동 재발급1회 뒤에도 실패한 상태. 관리자에게 PC 시계·서버 재시작·프록시 확인 요청 |
 | CLI | 값 누락·다음 옵션·중복 옵션 | 작업 전 종료2. 기본 오류는 코드·안전한 원인·다음 조치·지원 ID이며 `--error-details`는 정제된 타입 체인만 출력 |
+| Windows CLI | 직접 터미널 출력과 리디렉션 | 직접 실행은 부모 콘솔에 연결한 뒤 출력합니다. 실제 파일/파이프 출력은 UTF-8이며 무효 핸들에는 writer를 설치하지 않습니다. runtime-host 프로토콜과 GUI 시작은 별도 경로입니다 |
 
 - Linux 명령은 `./UeDtLauncher`를 사용합니다. 기본 JSON 출력과 기존 0/1 종료 코드는 유지합니다.
 - `healthy=true`와 종료0은 설치/실행 보장이 아닙니다. 준비도 `action-required`(조치 필요), `verification-pending`(추가 검증 필요), `checks-passed`(점검 완료)를 함께 확인하세요.

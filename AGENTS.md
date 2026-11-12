@@ -53,6 +53,7 @@ publish/bin/obj, 테스트 logs·DB·인증서·토큰, 패키지·설치 데이
 | src/UeDtLauncher.Agent/ | Windows Service/Linux systemd Agent |
 | src/UeDtLauncher.DistributionServer/ | SQLite 접수·승인·서명 게시·인증 API |
 | src/UeDtLauncher.Tests/, tools/test-distribution-e2e.sh | 자동화·실제 프로세스 E2E |
+| tools/ConsoleStreamHarness/ | 테스트 전용 소유 콘솔/핸들 검증. 제품·공식 publish graph에는 포함하지 않음 |
 | installer/windows/, packaging/linux/, .github/workflows/ | 설치본·nginx·서비스·CI |
 
 ## 현재 유효한 사용자 승인과 범위
