@@ -118,6 +118,8 @@ public sealed class FileLogger
 
 public static partial class DiagnosticRedactor
 {
+    private static readonly JsonSerializerOptions CompactJson = new(JsonFiles.Options) { WriteIndented = false };
+
     public static string Redact(string? value)
     {
         if (string.IsNullOrEmpty(value)) return value ?? string.Empty;
@@ -129,7 +131,7 @@ public static partial class DiagnosticRedactor
             {
                 var node = JsonNode.Parse(value);
                 RedactNode(node);
-                return node!.ToJsonString(JsonFiles.Options);
+                return node!.ToJsonString(value.Contains('\n') || value.Contains('\r') ? JsonFiles.Options : CompactJson);
             }
             catch (JsonException) { }
         }

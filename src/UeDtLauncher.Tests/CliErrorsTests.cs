@@ -73,6 +73,8 @@ public class CliErrorsTests
             challenge = "challenge-marker"
         });
         var redacted = DiagnosticRedactor.Redact(json);
+        Assert.DoesNotContain("\n", redacted);
+        Assert.DoesNotContain("\r", redacted);
         using var document = System.Text.Json.JsonDocument.Parse(redacted);
         Assert.Equal("failed", document.RootElement.GetProperty("status").GetString());
         Assert.Equal(429, document.RootElement.GetProperty("count").GetInt32());
