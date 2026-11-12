@@ -10,11 +10,11 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 | 완료 | 부분 진행 | 대기 | 전체 |
 |---:|---:|---:|---:|
-| 6개 | 19개 | 3개 | 28개 |
+| 6개 | 20개 | 3개 | 29개 |
 
-완료를 제외하면 열린 항목은 **22개**입니다. 각 분야 표에서 `진행률`과 `상태`를 먼저 보면 됩니다.
+완료를 제외하면 열린 항목은 **23개**입니다. 각 분야 표에서 `진행률`과 `상태`를 먼저 보면 됩니다.
 
-회사 UE/RHEL/서비스 계정·실제 인증서·내레이터 음성·원격 CI는 별도 미검증입니다. 대부분의 headless 기능은 구현돼 있지만 열린 항목이 전부 미구현이라는 뜻은 아닙니다.
+회사 UE/RHEL/서비스 계정·실제 인증서·내레이터 음성과 이번 스프린트 커밋의 원격 CI는 별도 미검증입니다. 기준 cef9f53의 과거 원격 build 성공은 이번에 조회했습니다. 대부분의 headless 기능은 구현돼 있지만 열린 항목이 전부 미구현이라는 뜻은 아닙니다.
 
 ### 현재 진행 상태 요약
 
@@ -25,14 +25,14 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | 인증·초기 설정 | USER-05 완료, SEC-03/04 각각 75% | Windows 서비스 계정·WSL proxy/계측 제약·회사 HTTP 위험 수용 |
 | 서명·실행 안전성 | OPS-08 50%, OPS-09 75%; 서명 순서·실행 중 변경 차단·장애 시험 구현 | 실제 인증서/설치본, 회사 계정·UE, 남은 GUI 직접 시험 |
 | 새 UI | 포스코DX/에디션 고정·재시도/정리 결과/설정 재읽기 보완 | UI-01은1920×1080 합의 범위 완료. 최신 후보 네 조합 전체 수용·다른 해상도/DPI·음성 별도 |
-| GUI 직접 확인 | 최신 후보 네 조합의 초기 설정·v1 설치/실행/수명, 관리형 일반의 v2 취소/Range 재개·실행 보호·복원 핵심 흐름 통과. 사례 수는 [자동 생성 진행표](docs/reference/archive/validation/local-completion-progress.md) | 최신 후보 GUI 사례 전수 미완료([체크리스트](docs/reference/guide-03-launcher-usage.md#현재-gui-수용-체크리스트)). 이전 후보 성공을 합산하지 않음 |
+| GUI 직접 확인 | 기존 고정 게시본 네 조합의 초기 설정·v1 설치/실행/수명, 관리형 일반의 v2 취소/Range 재개·실행 보호·복원 핵심 흐름 통과. 사례 수는 [보존한 진행표](docs/reference/archive/history/local-completion-progress-pre-sprint-01.json) | SPRINT-01 실제 GUI 미실행; 기존 게시본 GUI 사례 전수 미완료([체크리스트](docs/reference/guide-03-launcher-usage.md#현재-gui-수용-체크리스트)). 이전 후보 성공을 합산하지 않음 |
 | 운영 인수 | 현재는 제한된 테스트 활용 단계 | MSI/RPM 설치 수명주기·데이터 보존·백업 복원·운영 정책·G1~G6 |
 
 가까운 다음 작업은 **남은 로컬 GUI 확인 → 회사 자료/권한이 필요한 검증 준비 → 데이터/운영 정책 확정**입니다. 새 기능을 한꺼번에 추가하거나 인증서·회사 계정 미준비 항목을 완료로 올리지 않습니다. 검증 문서가 archive로 이동해도 위 근거와 진행률은 바뀌지 않습니다.
 
 ### 최근 스프린트 추가 체크포인트 — 2026-10-06 `1a7740f`
 
-현재 수용은 [자동 생성 전체 진행표](docs/reference/archive/validation/local-completion-progress.md)와 [현재 정제 근거](docs/reference/archive/validation/local-completion-runtime.json)에서 확인합니다. 새 GUI는8/51이며, 아래18/51은 직전 게시본 이력입니다. 숫자만 합산하지 않습니다.
+현재 자동화와 실제 GUI 미실행은 [자동 생성 전체 진행표](docs/reference/archive/validation/local-completion-progress.md)와 [SPRINT-01 정제 근거](docs/reference/archive/validation/sprint-01-runtime.json)에서 확인합니다. 기존 고정 게시본의 GUI8/51은 [보존한 진행표](docs/reference/archive/history/local-completion-progress-pre-sprint-01.json)에 남기며 아래18/51은 그 이전 게시본 이력입니다. 숫자만 합산하지 않습니다.
 
 | 항목 | 이번 추가 구현/검증 | 항목 진행률 | 남은 수용 |
 |---|---|---:|---|
@@ -43,7 +43,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | USER-04 | 게시 IP/exact 누락/만료 거부에서 설치/runtime 불변 | 50% | 단절/폐기 중 기존 실행 자식 유지 전수 |
 | PERF-03 | 현행 인증 별 준비1/측정3·1/10/30 비교 | 75% | 10연결 개선 미달,새 Linux 비교/실환경 |
 
-이 표는 추가 체크포인트이며 아래28개 항목의 완료 기준과 퍼센트는 낮추지 않습니다.
+이 표는 과거 추가 체크포인트이며 현재 아래29개 항목의 완료 기준과 퍼센트는 낮추지 않습니다.
 
 ### 퍼센트의 의미
 
@@ -70,12 +70,13 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 | 항목 | ① 구현/절차 | ② 로컬 검사 | ③ 요구 환경 실행/측정 | ④ 수용 기준 | 진행률 |
 |---|---|---|---|---|---:|
+| OPS-10 | upload 프로필/SSH 순서·실패 안전 + console의 기존 경로/확인/동작별 lease | 업로드15·콘솔10사례 포함 Windows890건 자동화 통과 | 게시 dry-run/리디렉션 거부·HTTP readiness8/headless3; 실제 SSH 미실행 | 실제 SSH 업로드 계정·운영자 터미널·회사 환경 수용 | 50% |
 | OPS-07 | disabled check-only·정확한 selected/preparation·명시 주기 | 양 OS 회귀·조회 불변 | default1/exact2 게시 점검·준비도 보류 구분 | 실제 OS 예약/서비스 계정 별도 | 50% |
 | OPS-04 | durable intent·directory identity·private quarantine·schema6 ledger | 재생성/부분 삭제·중단 회귀 | 양 OS 게시 정리/stale 거부·복원 연결 확인 | 열린 writer/모든 경합·실제 업로드 계정 인수 | 50% |
 | OPS-05 | exclusive stage/fence·latest graph·policy·독립 Manifest 서명 | 누락/추가/동일 손상 서명·보호 회귀 | 양 OS 게시 backup/restore→인증된 설치 | 장애 전수·과거 키/회사 RPO/RTO·완전 유실 별도 | 50% |
 | SEC-01 | 개별 만료/폐기·durable latch/audit | audit 실패·동시 만료·시계 역행 회귀 | 양 OS 게시 만료/폐기·HTTPS 토큰 | 실제 운영 교체·서명키 수명/회사 정책 수용 | 50% |
 | SEC-02 | canonical IP·opt-in 한도·bounded memory | actual HTTP429/슬롯 반환/시간 창 회귀 | 양 OS 게시 권한/위조 헤더 회귀 | 모든 HEAD/image/Range 경계·회사 proxy 인수 | 50% |
-| DEV-01 | Core 물리 이동·공통 Backend token/result 경계 | 양 OS 회귀·headless 상태/취소 | 게시 실행/문제 해결 조정 검증 | 실제 GUI 수용·View 책임 추가 정리 | 50% |
+| DEV-01 | 기존 Core/Backend 경계 + CLI handler/parser·오류 정제·View partial 분리 | SPRINT-01 Windows890건·기본 build·신규/이동 파일 서식 검사 | 같은 게시본 HTTP readiness8/headless3·CLI dry-run 확인 | 새 게시본 실제 GUI 수용·동기 I/O 경계 후속 | 50% |
 | USER-03 | 등록 ACK/commit 결과·owner cache 예약·discard archive | 양 OS753개와 취소·재개/저장 경계 회귀 | final-win2 네 조합 실제 수신 취소·즉시 재개·Range·해시·v1 보존·자동 실행0건 | 회사 계정·적용/부분 파일 전체 장애 인수 별도 | 75% |
 | USER-04 | 새 launch 온라인 권한 재확인·기존 앱 미종료 정책 | Windows 회귀/HTTP 게시 실행 | 합성 온라인 실행 통과 | 폐기/단절 실행 전수·회사 인수 대기 | 50% |
 | PERF-01 | 병렬 다운로드·해시·상태 검사 확인 | 상한·취소·재시도 회귀 확인 | publish 실행·반복 측정 확인 | 재현 범위 충족 | 100% |
@@ -85,7 +86,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | OPS-01 | 실제 UE 패키징/접수 준비 | 관련 Editor29건/도구6건·Manifest328파일 검증 | 로컬 Windows GUI 설치/실행·UE 수명/정상 종료 확인 | 회사망·Linux/RHEL·업데이트/복구 gate 미완료 | 50% |
 | OPS-03 | approve/promote·revision·감사·기준선 이전·권한별 Catalog/클라이언트 선택 | Windows/WSL 각568개, 동시/저장 실패/구형/명시적 추천 회귀 | 양 OS 게시 CLI/API·HTTP 서명·HTTPS/Bearer·pending/running 불변·실제 GUI 대기 안내 확인 | 합의한 로컬 승격 범위 충족. 회사 인수는 별도 | 100% |
 | USER-01 | schema3 opt-in·릴리스/설치/owner 결속·host 경로/권한/write 보강 | 후속 Windows/WSL 각552개·Root 누락/다른 릴리스/로그 접근 거부 회귀 | 게시 runtime-host 합성 v1/v2·HTTP/HTTPS 확인, 새 실제 UE fixture 사용자 조작 대기 | 실제 UE GUI 보존·앱 CustomLogs·명시적 이전·회사 계정은 미완료 | 50% |
-| OPS-06 | HTTPS 및 양 OS readiness CI·정제 요약7일 보관 연결 | 동일 readiness 명령 양 OS 각8개·실패 요약/허용필드 확인 | **현재 변경의 원격 CI 증거 미확인** | 원격 CI 실행·운영 인수 필요 | 50% |
+| OPS-06 | HTTPS 및 양 OS readiness CI·정제 요약7일 보관 연결 | 기존 양 OS 로컬 증거 보존 | cef9f53의 build run38359989748(2026-10-13 UTC), Windows/Ubuntu success 조회 | 이번 스프린트 커밋의 원격 CI 미실행·회사 인수 필요 | 50% |
 | USER-05 | schema 3 생성기·doctor·설치 예제 확인 | 관련 자동화 통과 | Windows/Linux 생성 설정 연결·실제 MSI/RPM 내용 확인 | 설정 예제 보완 범위 충족, 회사 설치 승인은 별도 | 100% |
 | USER-02 | 진단/조치·selection-only generator·양 에디션 설정 재읽기 | Windows789/WSL788+1 제외·최소 설정 publish proof | 최종 네 조합 초기 설정/재조회·서비스/서버 재연결 무변경 직접 확인 | 나머지 인증/승격/오류 조치 전수·회사 새 PC 인수 별도 | 75% |
 | SEC-03 | 생성 시 ACL/mode/owner·명시적 repair | Windows/WSL 권한 회귀 통과 | uedt 읽기 성공·nobody 거부 확인 | Windows LocalService 실제 실행 미확인 | 75% |
@@ -119,10 +120,11 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | OPS-03/P1 | 100% | 완료 · 로컬 승격 범위 | `cbb5ba7`·`9350e57`·`a8080ea`: 승인/승격 분리, revision/감사/legacy-baseline, 권한별 추천·구형 목록 제한·Core/GUI fallback 차단. 양 OS568개·게시 프로세스/서명/이전·티켓/Running 불변 통과. [증거](docs/reference/archive/validation/release-promotion-validation.md) | 회사 인수·예약 공개·삭제·자동 앱 전환은 별도. 기존 DB는 offline migration 후 운영 |
 | OPS-04/P1 | 50% | 부분 진행 · 확인형 비공개 정리 | durable intent·directory identity·quarantine·schema6 삭제 ledger·재생성 보존, 양 OS 게시 확인 | 열린 writer/모든 경합·실제 업로드 계정·회사 기간/공개판 삭제 정책 별도 |
 | OPS-05/P1 | 50% | 부분 진행 · 통제된 복원 | exclusive stage/live fence·latest DB/policy·전체 graph/hash·독립 Manifest 서명, 양 OS 인증된 복원 설치 | 장애 전수·과거 signing key·회사 RPO/RTO/복구훈련 및 완전 유실 별도 |
-| OPS-06/P1 | 50% | 부분 · 원격 검증 대기 | HTTPS E2E + Windows/Linux readiness CI·요약1파일7일 보관 구성. 같은 명령 로컬 양 OS 각8개와 요약 허용 필드 검증. [증거](docs/reference/archive/validation/quick-wins-validation.md) | 실제 원격 CI 실행·운영 인수 결과 확인. 공유 runner 시간을 성능 gate로 사용하지 않음 |
+| OPS-06/P1 | 50% | 부분 · 현재 후보 원격 검증 대기 | 기존 HTTPS/양 OS readiness CI와 로컬 증거 보존. 이번 조회: [build38359989748](https://github.com/YonghoKwon/UE-DT-LAUNCHER/actions/runs/38359989748), cef9f53c04bebf14f7aa633de6dbed1da733b9da, 2026-10-13 UTC, Windows/Ubuntu success | 이번 스프린트 커밋의 원격 CI는 push/실행하지 않았음. 회사 인수 별도; 공유 runner 시간을 성능 gate로 쓰지 않음 |
 | OPS-07/P1 | 50% | 부분 진행 · 조회 전용 | opt-in scheduled-check·명시 주기·중복 skip·비활성 외부 template | 실제 OS 예약/서비스 계정 인수 별도. 자동 설치/전환 제외 |
 | OPS-08/P0 | 50% | 부분 · 실제 인증서 대기 | 공식 사전 gate·EXE 선서명·MSI 내장 payload 검증·실행별 WiX intermediate 구현. 계약 11개 및 개발 MSI 추출/hash 비교 통과 | 실제 회사 인증서와 설치된 EXE 서명 검증은 미완료. [기록](docs/reference/archive/validation/deployment-safety-validation.md) |
 | OPS-09/P0 | 75% | 부분 · GUI/현장 검증 대기 | 누락 기록 fail-closed, 서비스 snapshot/barrier·이전/대상 잠금, 위험 migration apply 차단. 기존 각 393개·저장 경계 종료·health/대상 분리·CLI E2E 통과. 이번 portable 자식 수명·실행 중 변경 버튼 차단 추가 | 이전 관리형 복구/rollback과 이번 portable 증거는 게시본별 이력. 새 후보 양 모드 전체 GUI 수용, 모든 진입점/상태 조합의 실제 전수 검증과 회사 UE/계정·원격 CI는 미완료. [기존 기록](docs/reference/archive/validation/managed-gui-safety-validation.md), [이번 기록](docs/reference/archive/validation/ui-acceptance-finalization.md) |
+| OPS-10/P1 | 50% | 부분 진행 · 자동화 확인 | upload 한 명령/프로필·허용 문자·두 전송 후 이름 변경·실패 단계, 서버 console의 snapshot/승인/승격 revision/정리 확인·동작별 lease. 업로드15·콘솔10사례 및 게시 CLI 확인. [근거](docs/reference/archive/validation/sprint-01-quality-admin-validation.md) | 실제 SSH 왕복·업로드 계정/known-host·운영자 터미널·회사 환경 수용. 웹 관리자/HTTP 쓰기 API 제외 |
 
 ## 성능·저장 공간
 
@@ -163,7 +165,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | SEC-03/P0 | 75% | 부분 · Windows 서비스 실행 대기 | `e22a908` 이후 생성 시 ACL/mode/owner 검증. Linux uedt 실제 읽기·nobody 거부 통과 | Windows LocalService 실제 설치 계정 읽기와 기존 credential 이전 현장 확인 남음. [기록](docs/reference/archive/validation/intranet-auth-validation.md) |
 | SEC-04/P0 | 75% | 부분 · 환경 제약 남음 | `babb88e`, `10d4063`: 요청 서명·challenge/nonce·Catalog 결속·Agent 이미지, Windows/Linux E2E·1/10/30 연결 실패 0 | WSL proxy의 간헐 handshake/startup timeout과 메모리 지표 미수집을 보존. 실제 RHEL 대용량·회사 HTTP 위험 수용 별도. [기록](docs/reference/archive/validation/intranet-auth-validation.md) |
 | EXT-01/P2 | 0% | 대기 · 추가 보완 | IAccessPolicyProvider 파일 구현만 존재 | 회사 API 합의 후 timeout/cache TTL/기본 거부. 장애·취소·오래된 응답에서 권한 확대 없음 |
-| DEV-01/P2 | 50% | 부분 진행 | Core 물리 이동·Backend token/result 공통화, 양 OS 회귀/게시 검증 | 실제 GUI 수용·View 책임 추가 정리 |
+| DEV-01/P2 | 50% | 부분 진행 · 책임 분리 확인 | SPRINT-01 CLI handler/parser·오류 정제·HTTP 안내, MainWindow 책임별 이동(본문 재구성 일치·최대364줄), 신규/이동 파일 서식. Windows890건·게시 readiness8/headless3 통과. [근거](docs/reference/archive/validation/sprint-01-quality-admin-validation.md) | 새 게시본 실제 GUI 수용·동기 I/O 경계 후속. 이번 headless 통과만으로 진행률을 올리지 않음 |
 
 근거 소스: [서버 API](src/UeDtLauncher.DistributionServer/DistributionHttp.cs), [저장 관리](src/UeDtLauncher.DistributionServer/StorageMaintenance.cs), [권한](src/UeDtLauncher.DistributionServer/AccessPolicy.cs), [엔진](src/UeDtLauncher.Core/LauncherEngine.cs), [버전 경로](src/UeDtLauncher.Core/Distribution/VersionedReleasePaths.cs), [CI](.github/workflows/build.yml).
 
@@ -176,6 +178,6 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 3. PERF 기준선·OPS-06: 측정 후 개선, 자동 회귀 검증.
 4. USER/UI·API 범위는 [목표 문서](PROJECT_GOALS.md)에서 확정 후 진행.
 
-PERF-01/02/04·USER-05·UI-01·OPS-03은 100%(UI-01은1920×1080 한정, OPS-03은로컬 승격 범위), PERF-03·SEC-03·SEC-04·OPS-09·UI-02·UI-03·USER-02·USER-03은 75%, OPS-01·OPS-06·OPS-08·USER-01·USER-04·DEV-01·SEC-01·SEC-02·OPS-05·OPS-04·OPS-07는 50%(각 남은 조건 참조)입니다. 나머지 3개는 0%이며 기존 기능 부재를 의미하지 않습니다.
+PERF-01/02/04·USER-05·UI-01·OPS-03은 100%(UI-01은1920×1080 한정, OPS-03은로컬 승격 범위), PERF-03·SEC-03·SEC-04·OPS-09·UI-02·UI-03·USER-02·USER-03은 75%, OPS-01·OPS-06·OPS-08·USER-01·USER-04·DEV-01·SEC-01·SEC-02·OPS-05·OPS-04·OPS-07·OPS-10은 50%(각 남은 조건 참조)입니다. 나머지 3개는 0%이며 기존 기능 부재를 의미하지 않습니다.
 
 진행률을 변경할 때는 상태·체크포인트·커밋/검증 링크·남은 조건·상단 집계를 함께 갱신합니다. 100% 항목은 완료 이력으로 남기고, 새 미달 조건이나 범위 변경이 확인되면 이유를 기록해 다시 열 수 있습니다. 빌드 성공만으로 완료하지 않습니다.

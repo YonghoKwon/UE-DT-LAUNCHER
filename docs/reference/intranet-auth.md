@@ -57,6 +57,8 @@ ZIP + 외부 release.json 생성·접수·수동 승인 순서는 [기능 지도
 | credential 검사 실패 | 관리자 `credential status --name …`로 유형·접근 확인. 관리형 `doctor`는 Agent 계정에서 검사 |
 | 401 / 인증 실패 | 서버 `client-key list --config …`에서 key ID·폐기 여부 확인. 자동 Bearer fallback 없음 |
 | 403 / 접근 거부 | PC 실제 IP/CIDR와 grants 확인. GUI 프로필 변경으로 해결하지 않음 |
+| rate-limited / 429 | 잠시 후 조회 재시도. Retry-After가 있으면 숫자 안내 반영, 반복되면 관리자에게 요청 한도 점검 요청 |
+| stale-challenge | 자동 재발급1회 이후에도 실패. PC 시계·서버 재시작·프록시를 관리자가 확인. 인증키 미등록/폐기/만료 원인을 화면에 더 노출하지 않음 |
 | 연결 정상, 허용 배포 없음 | 승인된 OS별 배포와 해당 PC grants 확인 |
 | 서명/요청 결속 오류 | 배포 공개키·key ID·서버 주소 확인. 검증 옵션을 끄지 않음 |
 | nonce 수용 한도 초과 | 만료를 기다리고 요청 폭주 원인 확인. 살아 있는 nonce를 삭제하지 않음 |
@@ -72,6 +74,8 @@ UeDtLauncher.DistributionServer client-key revoke --key-id pc-001-v1 --config /e
 
 ## 호환·검증 한계
 
+- 2026-11-12: CLI/doctor/GUI는 같은 오류 코드를 사용하고 기본 CLI 오류는 지원 ID·안전한 원인·조치를 출력한다. `--error-details`는 타입 체인만 추가한다. 리디렉션은 UTF-8이며 서명·해시·nonce·sequence·요청 결속·재발급1회 계약은 유지한다.
+- 개발 PC `upload`의 SSH 전송은 HTTP 요청 서명 API와 별개이다. 서버 콘솔은 로컬 기존 승인/승격/retention 경로를 사용하며 HTTP 쓰기 API·업로드 계정의 DB 조회를 추가하지 않는다. [최초 준비/반복 배포 순서](feature-workflow.md#b2-releasejson-만들기--개발-pc-powershell)
 - release.json/Manifest/설치 경로/IPC v1 기존 필드는 유지한다. schema 3 설정은 구형 런처에 배포하지 않는다.
 - DB v3 이전 전 자동 백업. 되돌릴 때 DB만 몰래 교체하거나 구/신 버전을 동시에 돌리지 않는다. Catalog sequence 보존도 확인한다.
 - 실제 결과는 [검증 기록](archive/validation/intranet-auth-validation.md)에 구분한다. WSL/합성 테스트는 RHEL/Unreal/LocalService 운영 승인과 다르다.

@@ -68,6 +68,14 @@ UeDtLauncher credential set --name company-distribution
 
 ## 3. 접수 및 승인
 
+쉬운 방법은 개발 PC의 `UeDtLauncher upload`와 서버 운영자의 `UeDtLauncher.DistributionServer console --config server.json`입니다. Windows PowerShell·Linux 터미널의 입력과 정상 결과는 [B2~B6 실행 안내](feature-workflow.md#b2-releasejson-만들기--개발-pc-powershell)에 있습니다. OpenSSH/known-host·incoming 권한은 최초 준비이며 이후 버전마다 새 업로드 ID를 사용합니다. 프로필은 접속 값과 identity 경로만 저장하고 명령줄 값이 우선합니다. dry-run은 생성 예정 파일과 단계만 보여주고 네트워크/파일 변경을 하지 않습니다.
+
+콘솔 ①②는 승인에 실제 쓰이는 비공개 snapshot 요약을 읽고 ③승인/④거절/⑤실패 재시도는 대상 ID를 다시 입력받습니다. ⑥승격은 exact 검증 후 현재 추천·revision·사유를 확인하고 버전을 재입력합니다. 승인과 승격은 합치지 않습니다. ⑦정리는 기존 retention plan/confirm/보호/잠금을 사용하며 offline 적용 불가 시 계획과 정확한 적용 명령을 안내합니다. ⑧자격 조회는 비밀을 출력하지 않습니다. 메뉴 대기 중 세션 전체 lease는 잡지 않고 리디렉션 입력은 변경 없이 종료합니다. HTTP API에는 쓰기 경로를 추가하지 않았습니다.
+
+upload는 셸 없이 ArgumentList로 ssh/scp를 호출합니다. 원격 경로·계정/호스트·ID를 허용 문자로 검사하며 두 전송 성공 전에는 이름을 바꾸지 않습니다. 실패 시 단계·잔여 가능 자료를 확인하고 새 ID로 다시 접수합니다. 업로드 계정의 DB 조회·검사 결과 대기·자동 승인 기능은 없습니다. 실제 SSH 왕복과 운영 계정 수용은 [SPRINT-01 검증](archive/validation/sprint-01-quality-admin-validation.md)의 미실행 조건으로 남습니다.
+
+**직접 실행 대안:**
+
 [ZIP 게시 가이드](feature-workflow.md)를 따라 `incoming/upload-id/Package.zip`, `release.json`을 올립니다. `.uploading` 이름으로 올리고 전송 완료 후 최종 이름으로 바꿉니다.
 
 - waiting: 파일 쌍 도착 대기

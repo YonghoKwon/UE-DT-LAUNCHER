@@ -43,6 +43,9 @@ publish/bin/obj, 테스트 logs·DB·인증서·토큰, 패키지·설치 데이
 | 위치 | 책임 |
 |---|---|
 | src/UeDtLauncher/Program.cs | GUI/CLI 명령 |
+| src/UeDtLauncher/Cli/ | 책임별 CLI handler·인수/도움말·upload 명령 |
+| src/UeDtLauncher.Core/Distribution/ReleaseUploader.cs | 셸 없는 OpenSSH 전송·프로필·실패 단계·dry-run |
+| src/UeDtLauncher.DistributionServer/OperationsConsole.cs | 동작별 lease·확인 입력을 사용하는 서버 운영 콘솔 |
 | src/UeDtLauncher/Gui/ | programmatic Avalonia View·ViewModel·시각 토큰 |
 | src/UeDtLauncher.Core/ | 공용 assembly, Distribution 메타데이터·경로·이미지 |
 | src/UeDtLauncher.Core/*.cs | 엔진·보안·transaction·IPC 소스. GUI는 Core project reference만 사용 |
@@ -61,6 +64,7 @@ publish/bin/obj, 테스트 logs·DB·인증서·토큰, 패키지·설치 데이
 
 ### 서버 접수·게시·승격
 
+- 콘솔은 기존 명령과 같은 내부 경로·확인을 쓰고 HTTP 쓰기 API를 추가하지 않는다.
 - ZIP + 외부 release.json을 비공개 snapshot으로 검사하고 관리자 승인 후 게시합니다. 업로드 프로그램을 서버에서 실행하지 않습니다.
 - .uploading/한 파일만 도착한 상태를 게시하지 않습니다. 동일 릴리스 식별자 덮어쓰기를 허용하지 않습니다.
 - approve는 게시만 한다. 첫 버전도 명시적 promote가 필요하며 PC별 추천은 현재 허용된 승격 이력의 마지막 판이다. 프로젝트/환경/채널/플랫폼을 섞거나 미승격판으로 fallback하지 않는다.
@@ -107,6 +111,7 @@ publish/bin/obj, 테스트 logs·DB·인증서·토큰, 패키지·설치 데이
 
 ### 관리형·portable 클라이언트
 
+- `upload`는 셸 없이 SSH 실행 파일을 호출하고 실패한 전송 뒤 이름을 바꾸지 않는다.
 - 관리형 GUI/CLI는 ManagedClientContext의 selection-only 설정과 Agent IPC를 사용한다. 운영 URL 누락을 portable/legacy fallback으로 해석하지 않는다. 보호 설정·credential·Manifest·설치 상태 직접 읽기/열거로 Agent 응답 누락을 보충하지 않는다. 관리형 로그는 사용자 저장소다.
 - 관리형 직접 복원은 ManagedClientContext.Bind로 정확한 선택만 묶는다. VersionedReleasePaths.Bind는 portable에만 적용하며 managed client의 로컬 install root를 요구하지 않는다. 구형 Agent의 ClientPresentation 누락은 보조 기능 갱신 안내이며 권한 우회가 아니다.
 - 적용 완료/조회 필요/결과 불명을 구분한다. 완료 뒤 주/상태/재시도/F6는 조회만 하며 응답 유실을 자동 복원 재적용으로 처리하지 않는다. 설치 변경 성공은 오래된 재개 힌트를 해제한다.

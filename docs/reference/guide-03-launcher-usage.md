@@ -169,6 +169,8 @@ GUI 설정에서 **연결·준비 상태 점검**을 열면 오프라인 설정 
 | client-upgrade-required | 읽기 전용 상세 진단 미지원 | 런처/업데이트 서비스 동시 갱신. 구형 doctor 자동 호출 없음 |
 | authentication-failed / 401 | PC 인증 등록/폐기 등 확인 필요 | 관리자 PC 키 등록·폐기·읽기 권한 점검 |
 | access-denied / 403 | 현재 PC 주소/배포 권한 거부 | 관리자 IP와 선택 트랙 권한 점검 |
+| rate-limited / 429 | 요청 한도 도달 | Retry-After 숫자가 있으면 안내 시간 뒤 다시 확인. 반복되면 관리자에게 요청 한도 확인 요청 |
+| stale-challenge | 자동 재발급1회 뒤에도 인증 challenge 거부 | 관리자에게 PC 시계·서버 재시작·프록시 확인 요청. 자동 재시도 횟수는 증가하지 않음 |
 | no-authorized-release | 정상 연결됐으나 해당 PC·선택 조건의 배포 없음 | 관리자 승인 목록·grant 확인. 설치/실행 우회 없음 |
 | no-promoted-release | 허용 승인판은 있으나 일반 추천 미지정 | 관리자 명시적 promote. 개발자 exact는 현재 권한 안에서 선택 |
 | integrity-failed | 서명·요청 결속 등 보안 검증 실패 | 검사를 끄지 말고 관리자 키·배포 확인 |
@@ -184,7 +186,9 @@ GUI 설정에서 **연결·준비 상태 점검**을 열면 오프라인 설정 
 
 ### 현재 GUI 수용 체크리스트
 
-최신 후보의 사례별 판정은 [로컬 보완 스프린트 검증](archive/validation/local-completion-validation.md#현재-새-gui-수용과-미완료)과 [자동 생성 진행표](archive/validation/local-completion-progress.md)에 기록합니다. 아래 사례 하나의 전체 조건을 같은 고정 게시본에서 모두 충족한 경우만 통과로 계산하고, 부분 관측이나 이전 후보의 통과를 합산하지 않습니다.
+2026-11-12 SPRINT-01의 새 제품 게시본은 실제 GUI를 실행하지 않았습니다. 아래 고정 게시본의 8/51 이력은 [이전 생성 진행표](archive/history/local-completion-progress-pre-sprint-01.json)에 보존하며 새 게시본의 통과로 합산하지 않습니다. 이번 headless890건과 게시 CLI readiness8/headless3는 [별도 기록](archive/validation/sprint-01-quality-admin-validation.md)을 따릅니다. 이 체크리스트의 남은 직접 수용 조건은 그대로 유지합니다.
+
+기존 고정 게시본의 사례별 판정은 [로컬 보완 스프린트 검증](archive/validation/local-completion-validation.md#현재-새-gui-수용과-미완료)과 [보존한 진행표](archive/history/local-completion-progress-pre-sprint-01.json)를 따릅니다. 이번 게시본의 실제 GUI는 전체 미실행이며 [현재 생성 진행표](archive/validation/local-completion-progress.md)에 분리합니다. 아래 사례 하나의 전체 조건을 같은 고정 게시본에서 모두 충족한 경우만 통과로 계산하고, 부분 관측이나 이전 후보의 통과를 합산하지 않습니다.
 
 동일 제품 snapshot/cohort에서 accept-mg(관리형 일반), accept-md(관리형 개발자), accept-pg(portable 일반), accept-pd(portable 개발자)를 순차 준비했습니다. CLI 선설치가 없고 각 root/IPC가 독립적입니다. 제품을 다시 수정하면 영향받는 실제 GUI 수용을 새 게시본으로 수행합니다.
 
@@ -246,5 +250,13 @@ UE 인수는 앱의 독자적인 쓰기 위치를 강제 변경하지 않습니�
 명시적 승격 Catalog의 `selectionPolicy=explicit-promotion-v1`을 Core·Agent·GUI가 전달합니다. latest는 IsLatest 추천만 사용하고 없으면 지정 대기, exact는 허용된 승인 목록에서 선택합니다. 기존 정적 Catalog나 구 서버 응답에 정책 필드가 없으면 기존 선택 동작을 유지합니다. 새 서버의 구형 요청 목록은 미승격판을 제외하므로 구형 fallback으로 미승격판이 자동 선택되지 않습니다.
 
 `catalogUrl`/직접 `manifestUrl`, `generate-manifest`, `update-catalog`, `publish-release`는 기존 정적 배포 호환 기능입니다. 기본 `sample-config`는 DistributionServer/schema 3 요청 서명 설정을 생성합니다. 정적 예제는 `--mode legacy-catalog`를 명시한 경우에만 사용합니다. 공개 `/catalogs/general` 또는 `/projects` 구조는 현재 통합 서버의 보안 모델이 아닙니다.
+
+도움말은 현행 배포 서버 모드와 호환 정적 Manifest/Catalog 모드(`generate-manifest`, `update-catalog`, `list-releases`, `generate-nginx-acl`, `sign-manifest`, `publish-release`, `service`)를 나눕니다. 명령은 삭제하지 않았습니다. CLI에서 값이 필요한 옵션 뒤의 값 누락/다음 `--옵션`과 같은 옵션 중복은 I/O 전에 종료2이며, 알 수 없는 옵션은 이전의 무시 동작을 유지합니다. 정상 JSON과 기존 작업 종료0/1은 유지합니다.
+
+기본 CLI 오류는 코드·정제된 원인·다음 조치·지원 ID 한 줄입니다. 명시적 `--error-details`는 예외 타입 체인만 추가하며 stack/예외 원문은 출력하지 않습니다. crash 로그에는 개인키·토큰/인증 헤더·사용자 프로필을 정제한 상세를 남기고 지원 ID로 연결합니다. 리디렉션 출력은 UTF-8이며 OS 콘솔 코드 페이지를 변경하지 않습니다.
+
+`ServiceModeConfig.RollbackOnHealthCheckFailure`와 `ProcessName`, `SelfUpdateConfig.AutoApply`, `AppPidInfo`는 JSON/모델 호환을 위해 남긴 값입니다. 현재 운영 진입점은 자동 health-failure rollback·이름 기반 프로세스 제어·런처 자동 적용을 하지 않습니다. 기존 `AppPidPath`의 불명 실행 차단은 계속 사용합니다.
+
+개발자 업로드는 공통 CLI `upload`이며 일반/개발자 빌드 모두 사용할 수 있습니다. 서버 권한을 늘리는 옵션은 없습니다. 프로필 최초 준비와 버전마다 전송·서버 console 확인 순서는 [기능 지도 B2~B6](feature-workflow.md#b2-releasejson-만들기--개발-pc-powershell)를 따릅니다.
 
 무인 실행은 [서비스 모드](service-mode.md), 이전은 [통합 운영](distribution-workflow.md), 패키징은 [상용 배포 준비](commercial-deployment.md)를 참고하세요. [2026-09-12 검증](archive/validation/distribution-validation.md)은 Windows GUI/Agent·Linux CLI 테스트 패키지 결과이며 실제 회사 RHEL·실제 UE 검증 완료를 뜻하지 않습니다.
