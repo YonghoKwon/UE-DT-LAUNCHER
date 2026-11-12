@@ -139,6 +139,41 @@ public sealed class OperationsConsoleTests : IDisposable
         Assert.Equal("waiting", store.Get("failed").State);
     }
 
+    [Theory]
+    [InlineData("wrong\n0\n")]
+    [InlineData("")]
+    public async Task RetryPromotionAndCleanupRequireConfirmationEvenAtEof(string confirmation)
+    {
+        var source = Path.Combine(store.Root, "incoming", "failed");
+        Directory.CreateDirectory(source);
+        File.WriteAllText(Path.Combine(source, "payload"), "synthetic only");
+        store.Save(new("failed", source, "failed", null, null));
+        await RunAsync(new StringReader("5\nfailed\n" + confirmation));
+        Assert.Equal("failed", store.Get("failed").State);
+        var release = await new ApprovedPublisher(store).ApproveAsync((await UploadAsync("1.0")).Id);
+        await RunAsync(new StringReader($"6\n{release.ReleaseId}\nvalidated\n" + confirmation));
+        Assert.Empty(new ReleasePromotions(store).Inspect(new("demo", "prod", "stable", "windows-x64", "1.0")).History);
+        await RunAsync(new StringReader("7\njob:failed\n" + confirmation));
+        Assert.True(File.Exists(Path.Combine(source, "payload")));
+        Assert.Empty(Directory.GetFiles(store.Root, "console-retention-*.json"));
+    }
+
+    [Fact]
+    public async Task ConfirmationPromptDoesNotHoldMaintenanceLease()
+    {
+        var job = await UploadAsync("1.0");
+        var inspected = false;
+        using var input = new ActionReader(["3", job.Id, "wrong", "0"], index =>
+        {
+            if (index != 2) return;
+            using var exclusive = DistributionMaintenanceLease.Acquire(store.Root, true, create: false);
+            inspected = true;
+        });
+        await RunAsync(input);
+        Assert.True(inspected);
+        Assert.Equal("pending", store.Get(job.Id).State);
+    }
+
     [Fact]
     public async Task BusyCleanupPreservesPlanAndPrintsExactApplyCommand()
     {

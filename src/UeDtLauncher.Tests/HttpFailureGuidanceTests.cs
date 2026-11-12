@@ -53,7 +53,35 @@ public class HttpFailureGuidanceTests
         Assert.Equal("integrity-failed", LauncherFailure.Code(new CryptographicException()));
     }
 
-    private sealed class StaleTransport : HttpMessageHandler
+    [Fact]
+    public async Task RateLimitDoesNotAutomaticallyRetry()
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var config = LauncherConfigurationTemplates.Distribution(new(ServerUrl: "http://127.0.0.1:18500", DeploymentMode: "portable"));
+        var transport = new StaleTransport(HttpStatusCode.TooManyRequests);
+        using var http = new HttpClient(new DeviceSignatureHandler(config, transport, new(1, "pc", key.ExportPkcs8PrivateKeyPem())));
+        using var response = await http.GetAsync("http://127.0.0.1:18500/api/v1/catalog");
+        var error = Assert.Throws<HttpStatusFailureException>(() => HttpFailures.EnsureSuccess(response));
+        Assert.Equal("rate-limited", LauncherFailure.Code(error));
+        Assert.Equal(1, transport.Requests);
+        Assert.Equal(1, transport.Challenges);
+    }
+
+    [Theory]
+    [InlineData(401, "authentication-failed")]
+    [InlineData(403, "access-denied")]
+    public void AuthenticationDetailsRemainPrivate(int status, string code)
+    {
+        using var response = new HttpResponseMessage((HttpStatusCode)status);
+        response.Headers.Add("X-UE-DT-Auth-Error", "key-revoked-secret-marker");
+        var error = Assert.ThrowsAny<HttpRequestException>(() => HttpFailures.EnsureSuccess(response));
+        Assert.Equal(code, LauncherFailure.Code(error));
+        using var output = new StringWriter();
+        CliErrors.Write(output, error, details: true);
+        Assert.DoesNotContain("secret-marker", output.ToString());
+    }
+
+    private sealed class StaleTransport(HttpStatusCode status = HttpStatusCode.Unauthorized) : HttpMessageHandler
     {
         public int Requests;
         public int Challenges;
@@ -65,8 +93,8 @@ public class HttpFailureGuidanceTests
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new AuthChallenge("opaque")) });
             }
             Requests++;
-            var response = new HttpResponseMessage(HttpStatusCode.Unauthorized) { RequestMessage = request };
-            response.Headers.Add("X-UE-DT-Auth-Error", "stale-challenge");
+            var response = new HttpResponseMessage(status) { RequestMessage = request };
+            if (status == HttpStatusCode.Unauthorized) response.Headers.Add("X-UE-DT-Auth-Error", "stale-challenge");
             return Task.FromResult(response);
         }
     }
