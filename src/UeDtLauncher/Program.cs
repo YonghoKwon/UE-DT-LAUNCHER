@@ -17,6 +17,7 @@ public static partial class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        CliErrors.ConfigureRedirectedConsole();
         if (args.SequenceEqual(new[] { "runtime-host", "--capability-probe" })) return RuntimeHost.RunProbe();
         if (args.SequenceEqual(new[] { "runtime-host" })) return RuntimeHost.RunSessionAsync().GetAwaiter().GetResult();
         CrashReporter.Install(Path.Combine(AppContext.BaseDirectory, "logs"));

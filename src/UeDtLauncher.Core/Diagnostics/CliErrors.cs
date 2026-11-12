@@ -3,6 +3,15 @@ namespace UeDtLauncher;
 /// <summary>Public CLI errors use allowlisted causes; exception messages remain in redacted crash reports.</summary>
 public static class CliErrors
 {
+    /// <summary>Use UTF-8 on redirected streams without changing the OS console code page.</summary>
+    public static void ConfigureRedirectedConsole()
+    {
+        if (Console.IsErrorRedirected)
+            Console.SetError(new StreamWriter(Console.OpenStandardError(), new System.Text.UTF8Encoding(false)) { AutoFlush = true });
+        if (Console.IsOutputRedirected)
+            Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), new System.Text.UTF8Encoding(false)) { AutoFlush = true });
+    }
+
     public static string Write(TextWriter output, Exception error, bool details = false, bool server = false)
     {
         var code = LauncherFailure.Code(error);

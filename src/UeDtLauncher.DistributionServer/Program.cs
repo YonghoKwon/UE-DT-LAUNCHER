@@ -2,6 +2,7 @@ using System.Text.Json;
 using UeDtLauncher;
 using UeDtLauncher.Distribution;
 
+CliErrors.ConfigureRedirectedConsole();
 try
 {
 var arguments = args.ToList();
