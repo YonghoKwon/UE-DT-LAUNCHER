@@ -40,6 +40,46 @@ public class CliErrorsTests
         Assert.DoesNotContain("inner-marker", text);
     }
 
+    [Theory]
+    [InlineData("Authorization: Basic secret-marker")]
+    [InlineData("authorization=Digest username=secret-marker")]
+    [InlineData("password=\"prefix\\\"secret-marker\"")]
+    [InlineData("password='prefix\\'secret-marker'")]
+    [InlineData("-----BEGIN RSA PRIVATE KEY-----\nsecret-marker\n-----END RSA PRIVATE KEY-----")]
+    [InlineData("-----BEGIN ENCRYPTED PRIVATE KEY-----\nsecret-marker\n-----END ENCRYPTED PRIVATE KEY-----")]
+    public void CrashAndFileLogsRedactCompleteSecretValues(string message)
+    {
+        var error = new IOException("safe outer", new Exception(message));
+        Assert.DoesNotContain("secret-marker", DiagnosticRedactor.Redact(error.ToString()));
+        var root = Path.Combine(Path.GetTempPath(), "review-redaction-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var logger = new FileLogger(root);
+            logger.Log("failure", error.ToString());
+            Assert.DoesNotContain("secret-marker", File.ReadAllText(logger.CurrentLogPath));
+            Assert.DoesNotContain("secret-marker", File.ReadAllText(logger.CurrentJsonLogPath));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void StructuredRedactionPreservesJsonEnvelopeAndNestedStringBoundaries()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            status = "failed", count = 429,
+            message = "Authorization: Digest username=secret-marker, response=second-marker",
+            nested = new[] { "Signature: proof-marker", "safe message" },
+            challenge = "challenge-marker"
+        });
+        var redacted = DiagnosticRedactor.Redact(json);
+        using var document = System.Text.Json.JsonDocument.Parse(redacted);
+        Assert.Equal("failed", document.RootElement.GetProperty("status").GetString());
+        Assert.Equal(429, document.RootElement.GetProperty("count").GetInt32());
+        Assert.Equal("safe message", document.RootElement.GetProperty("nested")[1].GetString());
+        Assert.DoesNotContain("marker", redacted);
+    }
+
     [Fact]
     public void ServerCauseIsUsefulWithoutPublishingInput()
     {

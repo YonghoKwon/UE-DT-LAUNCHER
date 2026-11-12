@@ -72,7 +72,8 @@ public static partial class Program
             }
             catch (Exception ex) when (OperatingSystem.IsLinux())
             {
-                Console.Error.WriteLine("Failed to start the graphical interface: " + ex.Message);
+                var supportId = CliErrors.Write(Console.Error, ex, Has(args, "--error-details"));
+                CrashReporter.Report(ex, "gui-startup:" + supportId);
                 Console.Error.WriteLine("A display was detected but GUI initialization failed (likely no usable display server or missing fonts).");
                 Console.Error.WriteLine("Install CJK fonts (e.g. 'sudo dnf install -y google-noto-sans-cjk-fonts' or 'sudo apt install fonts-noto-cjk'), or run in CLI mode:");
                 Console.Error.WriteLine("  UeDtLauncher --cli --config launcher.config.json");

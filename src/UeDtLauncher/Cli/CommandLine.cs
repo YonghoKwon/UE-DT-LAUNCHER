@@ -63,7 +63,7 @@ public static partial class Program
 
     private static int UnknownCommand(string command)
     {
-        Console.Error.WriteLine($"Unknown command: {command}");
+        Console.Error.WriteLine("Unknown command. Use --help to list supported commands.");
         PrintHelp();
         return 1;
     }

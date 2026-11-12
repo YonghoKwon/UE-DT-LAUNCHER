@@ -228,8 +228,8 @@ public static partial class Program
         if (selected.BackupRoot is null)
         {
             Console.Error.WriteLine(string.IsNullOrWhiteSpace(requested)
-                ? "No backups found in: " + config.BackupDir
-                : $"Backup not found: {requested}. Use 'rollback --list' to see available backups.");
+                ? "No backups found. Use 'rollback --list' to inspect available backups."
+                : "Backup not found. Use 'rollback --list' to see available backups.");
             return 1;
         }
 

@@ -90,7 +90,7 @@ public static partial class Program
         KnownValues.ValidateChannel(channel);
         if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var baseUri) || (baseUri.Scheme != Uri.UriSchemeHttp && baseUri.Scheme != Uri.UriSchemeHttps))
         {
-            Console.Error.WriteLine($"WARNING: --base-url should be an absolute http(s) URL the client can reach (got '{baseUrl}'). Manifest file URLs are built from it.");
+            Console.Error.WriteLine("WARNING: --base-url should be an absolute http(s) URL the client can reach. Manifest file URLs are built from it.");
         }
 
         await ManifestGenerator.GenerateAsync(packageDir, output, baseUrl, entryPoint, version, channel, platform, appId);

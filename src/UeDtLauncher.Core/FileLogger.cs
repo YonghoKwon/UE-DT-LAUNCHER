@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
 namespace UeDtLauncher;
@@ -120,6 +121,38 @@ public static partial class DiagnosticRedactor
     public static string Redact(string? value)
     {
         if (string.IsNullOrEmpty(value)) return value ?? string.Empty;
+        // Redact string values before serializing complete JSON, so a header inside a
+        // message cannot consume closing quotes or adjacent envelope fields.
+        if (value.TrimStart().StartsWith('{') || value.TrimStart().StartsWith('['))
+        {
+            try
+            {
+                var node = JsonNode.Parse(value);
+                RedactNode(node);
+                return node!.ToJsonString(JsonFiles.Options);
+            }
+            catch (JsonException) { }
+        }
+        return RedactText(value);
+    }
+
+    private static void RedactNode(JsonNode? node)
+    {
+        if (node is JsonObject obj)
+            foreach (var pair in obj.ToArray())
+            {
+                if (pair.Value is JsonValue scalar && scalar.TryGetValue<string>(out var text))
+                    obj[pair.Key] = SensitiveNamePattern().IsMatch(pair.Key) ? "<redacted>" : Redact(text);
+                else RedactNode(pair.Value);
+            }
+        else if (node is JsonArray array)
+            for (var i = 0; i < array.Count; i++)
+                if (array[i] is JsonValue scalar && scalar.TryGetValue<string>(out var text)) array[i] = Redact(text);
+                else RedactNode(array[i]);
+    }
+
+    private static string RedactText(string value)
+    {
         var result = BearerPattern().Replace(value, "$1<redacted>");
         result = AuthHeaderPattern().Replace(result, "$1<redacted>");
         result = PrivatePemPattern().Replace(result, "<redacted-private-key>");
@@ -143,10 +176,12 @@ public static partial class DiagnosticRedactor
     private static partial Regex UrlUserInfoPattern();
     [GeneratedRegex("(?i)(\"(?:token|password|passcode|authorization|privateKeyPem|challenge|signature|signature-input)\"\\s*:\\s*)\"(?:\\\\.|[^\"\\\\])*\"")]
     private static partial Regex SensitiveJsonPattern();
-    [GeneratedRegex("(?im)((?:signature(?:-input)?|x-ue-dt-challenge)\\s*[:=]\\s*)[^\\r\\n]+")]
+    [GeneratedRegex("(?im)((?:authorization|signature(?:-input)?|x-ue-dt-challenge)\\s*[:=]\\s*)[^\\r\\n]+")]
     private static partial Regex AuthHeaderPattern();
-    [GeneratedRegex("-----BEGIN (?:EC )?PRIVATE KEY-----[\\s\\S]*?-----END (?:EC )?PRIVATE KEY-----")]
+    [GeneratedRegex("-----BEGIN (?<kind>(?:[A-Z0-9]+ )*PRIVATE KEY)-----[\\s\\S]*?-----END \\k<kind>-----")]
     private static partial Regex PrivatePemPattern();
-    [GeneratedRegex("(?i)(\\b(?:token|password|passcode|privateKeyPem|challenge|authorization)\\s*[:=]\\s*)(?:\"[^\"]*\"|'[^']*'|[^\\s,;]+)")]
+    [GeneratedRegex("(?i)(\\b(?:token|password|passcode|privateKeyPem|challenge|authorization)\\s*[:=]\\s*)(?:\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'|[^\\s,;]+)")]
     private static partial Regex SensitiveAssignmentPattern();
+    [GeneratedRegex(@"(?i)\A(?:token|password|passcode|authorization|privateKeyPem|challenge|signature|signature-input)\z")]
+    private static partial Regex SensitiveNamePattern();
 }
