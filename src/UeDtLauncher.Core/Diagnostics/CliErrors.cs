@@ -10,6 +10,7 @@ public static class CliErrors
         var supportId = Guid.NewGuid().ToString("N");
         var cause = guidance.Message;
         var next = guidance.NextAction;
+        if (error is CliArgumentException) cause = error.Message;
         if (server)
         {
             (cause, next) = error switch
