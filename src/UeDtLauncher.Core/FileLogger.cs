@@ -125,6 +125,7 @@ public static partial class DiagnosticRedactor
         result = PrivatePemPattern().Replace(result, "<redacted-private-key>");
         result = UrlUserInfoPattern().Replace(result, "$1<redacted>@");
         result = SensitiveJsonPattern().Replace(result, "$1\"<redacted>\"");
+        result = SensitiveAssignmentPattern().Replace(result, "$1<redacted>");
         var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         if (!string.IsNullOrWhiteSpace(profile))
         {
@@ -146,4 +147,6 @@ public static partial class DiagnosticRedactor
     private static partial Regex AuthHeaderPattern();
     [GeneratedRegex("-----BEGIN (?:EC )?PRIVATE KEY-----[\\s\\S]*?-----END (?:EC )?PRIVATE KEY-----")]
     private static partial Regex PrivatePemPattern();
+    [GeneratedRegex("(?i)(\\b(?:token|password|passcode|privateKeyPem|challenge|authorization)\\s*[:=]\\s*)(?:\"[^\"]*\"|'[^']*'|[^\\s,;]+)")]
+    private static partial Regex SensitiveAssignmentPattern();
 }

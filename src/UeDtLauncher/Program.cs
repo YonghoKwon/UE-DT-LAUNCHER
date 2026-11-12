@@ -171,9 +171,8 @@ public static class Program
         }
         catch (Exception ex)
         {
-            CrashReporter.Report(ex, "cli-command");
-            Console.Error.WriteLine("ERROR: " + ex.Message);
-            Console.Error.WriteLine(ex.ToString());
+            var supportId = CliErrors.Write(Console.Error, ex, Has(args, "--error-details"));
+            CrashReporter.Report(ex, "cli-command:" + supportId);
             return 1;
         }
     }
@@ -866,6 +865,7 @@ public static class Program
 
     private static void PrintHelp()
     {
+        Console.WriteLine("--error-details: show sanitized exception type chain without messages or stacks.");
         Console.WriteLine("UE-DT-LAUNCHER");
         Console.WriteLine();
         Console.WriteLine("Commands:");

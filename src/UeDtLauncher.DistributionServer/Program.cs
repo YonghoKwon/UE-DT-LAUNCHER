@@ -124,6 +124,7 @@ switch (action)
 }
 catch(Exception error)
 {
-    Console.Error.WriteLine("Distribution operation rejected: " + error.GetType().Name + ". Check configuration, ownership and offline maintenance conditions.");
+    var supportId = CliErrors.Write(Console.Error, error, args.Contains("--error-details", StringComparer.OrdinalIgnoreCase), server: true);
+    CrashReporter.Report(error, "distribution-command:" + supportId);
     Environment.ExitCode=1;
 }
