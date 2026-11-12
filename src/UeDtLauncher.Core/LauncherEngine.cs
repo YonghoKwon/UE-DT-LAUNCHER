@@ -492,7 +492,7 @@ public sealed class LauncherEngine : IDisposable
             existingLength = 0;
             await DeleteFileWithRetryAsync(tempPath, cancellationToken);
         }
-        response.EnsureSuccessStatusCode();
+        HttpFailures.EnsureSuccess(response);
         if (existingLength > 0)
         {
             var rangeError = ValidateResumeResponse(response, existingLength, expectedSize);

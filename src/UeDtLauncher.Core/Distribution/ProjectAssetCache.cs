@@ -20,7 +20,7 @@ public static class ProjectAssetCache
             {
                 using var client = SecureHttpClientFactory.Create(config);
                 using var response = await client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, token);
-                response.EnsureSuccessStatusCode();
+                HttpFailures.EnsureSuccess(response);
                 await using var input = await response.Content.ReadAsStreamAsync(token);
                 await using (var output = new FileStream(scratch, FileMode.CreateNew, FileAccess.Write))
                 {

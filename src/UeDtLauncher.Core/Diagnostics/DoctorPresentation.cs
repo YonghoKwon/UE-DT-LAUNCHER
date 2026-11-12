@@ -30,7 +30,7 @@ public static class DoctorPresentation
     {
         var code = LauncherFailure.Code(error);
         if (name == "agent" && code is "storage-failed" or "unknown") code = "service-unavailable";
-        var guidance = LauncherGuidance.For(code);
+        var guidance = code == LauncherFailure.Code(error) ? LauncherGuidance.For(error) : LauncherGuidance.For(code);
         return new(name, false, guidance.Message) { State = "failed", Code = code, Subject = subject,
             ActionOwner = guidance.Owner, NextAction = guidance.NextAction };
     }

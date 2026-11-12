@@ -12,6 +12,7 @@ public sealed record LauncherUiError(string Code,string Message,string SupportId
         }
         var message=code switch
         {
+            "rate-limited" or "stale-challenge" => LauncherGuidance.For(error).Message + " " + LauncherGuidance.For(error).NextAction,
             "no-promoted-release" or "no-authorized-release" or "service-unavailable" or "server-unavailable" or "authentication-failed" or "access-denied" or "integrity-failed" or "runtime-data-unavailable" or "client-upgrade-required" or "diagnostic-response-invalid"=>LauncherGuidance.For(code).Message + " " + LauncherGuidance.For(code).NextAction,
             "file-access-denied"=>"파일 접근 권한을 확인해 주세요. 실행 중인 프로그램은 먼저 종료해 주세요.",
             "storage-failed"=>"파일을 처리할 수 없습니다. 저장 공간과 파일 사용 여부를 확인해 주세요.",

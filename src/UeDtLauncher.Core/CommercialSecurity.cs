@@ -230,7 +230,7 @@ public static class SecureHttpClientFactory
         CancellationToken cancellationToken = default)
     {
         using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        HttpFailures.EnsureSuccess(response);
         return await ReadBoundedStringAsync(response, maxBytes, cancellationToken);
     }
 

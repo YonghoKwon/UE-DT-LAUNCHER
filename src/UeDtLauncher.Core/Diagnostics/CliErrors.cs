@@ -6,7 +6,7 @@ public static class CliErrors
     public static string Write(TextWriter output, Exception error, bool details = false, bool server = false)
     {
         var code = LauncherFailure.Code(error);
-        var guidance = LauncherGuidance.For(code);
+        var guidance = LauncherGuidance.For(error);
         var supportId = Guid.NewGuid().ToString("N");
         var cause = guidance.Message;
         var next = guidance.NextAction;
