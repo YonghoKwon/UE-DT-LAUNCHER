@@ -44,7 +44,7 @@ public sealed class ReleaseSidecar
 
     public static void Segment(string value)
     {
-        if (!Regex.IsMatch(value, "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"))
+        if (!Regex.IsMatch(value, @"\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\z"))
             throw new InvalidDataException("Invalid release identifier segment.");
     }
 
@@ -97,7 +97,7 @@ public static class SidecarPackageValidator
         metadata.PackageSha256 = await Hashing.Sha256FileAsync(zipPath, token);
         metadata.Validate();
         if (File.Exists(output)) throw new IOException("Sidecar already exists; choose a new output path.");
-        await JsonFiles.WriteAsync(output, metadata, token);
+        await JsonFiles.WriteAsync(output, metadata, overwrite: false, cancellationToken: token);
     }
 
     /// <summary>Read-only ZIP/hash/inventory validation for upload planning; extraction remains server-side.</summary>

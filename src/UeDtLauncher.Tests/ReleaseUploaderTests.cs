@@ -61,6 +61,19 @@ public class ReleaseUploaderTests
     [InlineData("upload@host", "/srv/../incoming", "valid")]
     [InlineData("upload@host", "/srv/incoming$(id)", "valid")]
     [InlineData("upload@host", "/srv/incoming", "bad;id")]
+    [InlineData("upload@host", "/srv/incoming", "valid\n")]
+    [InlineData("upload@host", "/srv/incoming", "-option")]
+    [InlineData("upload@host", "/srv/incoming", "bad`id")]
+    [InlineData("upload@host", "/srv/incoming", "bad$id")]
+    [InlineData("upload@host", "/srv/incoming", "bad id")]
+    [InlineData("upload@host", "/srv/incoming", "bad\"id")]
+    [InlineData("upload@host", "/srv/incoming", "bad'id")]
+    [InlineData("upload@-option", "/srv/incoming", "valid")]
+    [InlineData("upload user@host", "/srv/incoming", "valid")]
+    [InlineData("upload@host", "/srv/incoming;id", "valid")]
+    [InlineData("upload@host", "/srv/incoming`id", "valid")]
+    [InlineData("upload@host", "/srv/incoming'", "valid")]
+    [InlineData("upload@host", "/srv/incoming ", "valid")]
     public async Task InjectionIsRejectedBeforeNetworkOrLocalWork(string host, string remote, string id)
     {
         using var temp = new TempDirectory();
@@ -107,6 +120,49 @@ public class ReleaseUploaderTests
         Assert.Equal("other@host", merged.Server);
         Assert.Equal(2223, merged.Port);
         Assert.Equal("/srv/incoming", merged.RemoteIncoming);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(65536)]
+    public void InvalidPortsAreRejected(int port) => Assert.Throws<ArgumentException>(() => (Profile() with { Port = port }).Validate());
+
+    [Fact]
+    public async Task IdentityAndLocalPathsAreAbsoluteSingleArguments()
+    {
+        using var temp = new TempDirectory();
+        var identity = Path.Combine(temp.Path, "-identity with spaces;'$`.key");
+        await File.WriteAllTextAsync(identity, "synthetic identity path only");
+        var result = await new ReleaseUploader(new FakeRunner()).ExecuteAsync(Zip(temp.Path), Metadata(),
+            Profile() with { IdentityFile = identity }, "identity", Path.Combine(temp.Path, "work with spaces"), true);
+        foreach (var step in result.Steps)
+        {
+            var arguments = step.Arguments.ToList();
+            Assert.Equal(Path.GetFullPath(identity), arguments[arguments.IndexOf("-i") + 1]);
+            Assert.Contains("BatchMode=yes", arguments);
+            Assert.Contains("StrictHostKeyChecking=yes", arguments);
+        }
+    }
+
+    [Fact]
+    public async Task ConcurrentSidecarGenerationPublishesOnlyOneDocument()
+    {
+        using var temp = new TempDirectory();
+        var zip = Zip(temp.Path);
+        var output = Path.Combine(temp.Path, "release.json");
+        async Task<bool> Generate(string name)
+        {
+            var metadata = Metadata();
+            metadata.DisplayName = name;
+            try { await SidecarPackageValidator.GenerateAsync(zip, output, metadata); return true; }
+            catch (IOException) { return false; }
+        }
+        var results = await Task.WhenAll(Generate("first"), Generate("second"));
+        Assert.Single(results, success => success);
+        var before = await File.ReadAllBytesAsync(output);
+        await Assert.ThrowsAsync<IOException>(() => SidecarPackageValidator.GenerateAsync(zip, output, Metadata()));
+        Assert.Equal(before, await File.ReadAllBytesAsync(output));
     }
 
     private sealed class FakeRunner(int failure = -1) : IUploadProcessRunner
