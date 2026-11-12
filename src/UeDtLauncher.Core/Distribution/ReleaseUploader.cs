@@ -112,22 +112,22 @@ public sealed class ReleaseUploader
         {
             try
             {
-            IntakeDiskSpace.Require(workRoot, IntakeDiskSpace.Estimate(metadata.PackageSize), availableBytes);
-            progress?.Invoke(new(2, "로컬 작업 사본 준비 중", metadata.PackageSize));
-            work = Path.Combine(Path.GetFullPath(workRoot), uploadId + "-" + Guid.NewGuid().ToString("N"));
-            work = UploadWork.CheckedPath(workRoot, work);
-            if (Directory.Exists(work)) throw new IOException("Upload work folder already exists.");
-            Directory.CreateDirectory(work);
-            localZip = Path.Combine(work, "payload.zip");
-            localJson = Path.Combine(work, "release.json");
-            await using (var source = new FileStream(zip, FileMode.Open, FileAccess.Read, FileShare.Read))
-            await using (var target = new FileStream(localZip, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-                await source.CopyToAsync(target, token);
-            var originalDigest = metadata.PackageSha256;
-            await SidecarPackageValidator.GenerateAsync(localZip, localJson, metadata, token);
-            if (!string.Equals(originalDigest, metadata.PackageSha256, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("Source ZIP changed while preparing upload work.");
-            await SidecarPackageValidator.ValidateArchiveAsync(localZip, metadata, token);
+                IntakeDiskSpace.Require(workRoot, IntakeDiskSpace.Estimate(metadata.PackageSize), availableBytes);
+                progress?.Invoke(new(2, "로컬 작업 사본 준비 중", metadata.PackageSize));
+                work = Path.Combine(Path.GetFullPath(workRoot), uploadId + "-" + Guid.NewGuid().ToString("N"));
+                work = UploadWork.CheckedPath(workRoot, work);
+                if (Directory.Exists(work)) throw new IOException("Upload work folder already exists.");
+                Directory.CreateDirectory(work);
+                localZip = Path.Combine(work, "payload.zip");
+                localJson = Path.Combine(work, "release.json");
+                await using (var source = new FileStream(zip, FileMode.Open, FileAccess.Read, FileShare.Read))
+                await using (var target = new FileStream(localZip, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                    await source.CopyToAsync(target, token);
+                var originalDigest = metadata.PackageSha256;
+                await SidecarPackageValidator.GenerateAsync(localZip, localJson, metadata, token);
+                if (!string.Equals(originalDigest, metadata.PackageSha256, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("Source ZIP changed while preparing upload work.");
+                await SidecarPackageValidator.ValidateArchiveAsync(localZip, metadata, token);
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException)
             {

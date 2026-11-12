@@ -23,8 +23,12 @@ public static class UploadPresentation
 {
     public static string Stage(string name) => name switch
     {
-        "mkdir" => "원격 폴더 준비", "zip-transfer" => "ZIP 전송", "json-transfer" => "설명 파일 전송",
-        "zip-rename" => "ZIP 최종 이름 변경", "json-rename" => "설명 파일 최종 이름 변경", "verify" => "최종 파일 확인",
+        "mkdir" => "원격 폴더 준비",
+        "zip-transfer" => "ZIP 전송",
+        "json-transfer" => "설명 파일 전송",
+        "zip-rename" => "ZIP 최종 이름 변경",
+        "json-rename" => "설명 파일 최종 이름 변경",
+        "verify" => "최종 파일 확인",
         _ => "업로드 준비"
     };
 

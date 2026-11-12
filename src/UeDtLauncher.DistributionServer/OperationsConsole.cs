@@ -76,12 +76,12 @@ public sealed class OperationsConsole(DistributionSettings settings, string conf
         {
             try
             {
-            var processing = Path.Combine(store.Root, "processing");
-            var snapshot = SafePath.ResolveInsideChecked(processing, Path.GetRelativePath(processing, job.Snapshot));
-            var document = SafePath.ResolveInsideChecked(snapshot, "release.json");
-            var bytes = await SidecarPackageValidator.ReadDocumentAsync(document);
-            digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
-            metadata = SidecarPackageValidator.Parse(bytes);
+                var processing = Path.Combine(store.Root, "processing");
+                var snapshot = SafePath.ResolveInsideChecked(processing, Path.GetRelativePath(processing, job.Snapshot));
+                var document = SafePath.ResolveInsideChecked(snapshot, "release.json");
+                var bytes = await SidecarPackageValidator.ReadDocumentAsync(document);
+                digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+                metadata = SidecarPackageValidator.Parse(bytes);
             }
             catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException)
             { message = "비공개 snapshot 요약을 확인할 수 없습니다. " + (message ?? "2번 상세와 서버 저장 상태를 점검하세요."); }
@@ -110,7 +110,10 @@ public sealed class OperationsConsole(DistributionSettings settings, string conf
     {
         var rows = (await JobRowsAsync()).Where(row => action switch
         {
-            "3" => row.State is "pending" or "publishing", "4" => row.State == "pending", "5" => row.State == "failed", _ => true
+            "3" => row.State is "pending" or "publishing",
+            "4" => row.State == "pending",
+            "5" => row.State == "failed",
+            _ => true
         }).ToArray();
         OperationsConsoleTables.Jobs(output, rows);
         if (rows.Length == 0) return null;

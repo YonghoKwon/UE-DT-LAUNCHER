@@ -5,8 +5,14 @@ internal static class OperationsConsoleTables
     internal static string ShortId(string id) => id[..Math.Min(8, id.Length)];
     internal static string State(string state) => state switch
     {
-        "waiting" => "대기", "validating" => "검사 중", "pending" => "승인 대기", "publishing" => "게시 중",
-        "failed" => "실패", "rejected" => "거절", "published" => "게시됨", _ => "미확인"
+        "waiting" => "대기",
+        "validating" => "검사 중",
+        "pending" => "승인 대기",
+        "publishing" => "게시 중",
+        "failed" => "실패",
+        "rejected" => "거절",
+        "published" => "게시됨",
+        _ => "미확인"
     };
     internal static void Summary(TextWriter output, IReadOnlyList<IntakeJob> jobs)
         => output.WriteLine($"승인 대기 {jobs.Count(j => j.State == "pending")} · 검사 중 {jobs.Count(j => j.State == "validating")} · 실패 {jobs.Count(j => j.State == "failed")} · 게시됨 {jobs.Count(j => j.State == "published")} · 대기 {jobs.Count(j => j.State == "waiting")}");
