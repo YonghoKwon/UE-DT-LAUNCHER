@@ -186,7 +186,7 @@ GUI 설정에서 **연결·준비 상태 점검**을 열면 오프라인 설정 
 
 ### 현재 GUI 수용 체크리스트
 
-2026-11-12 SPRINT-01의 새 제품 게시본은 실제 GUI를 실행하지 않았습니다. 아래 고정 게시본의 8/51 이력은 [이전 생성 진행표](archive/history/local-completion-progress-pre-sprint-01.json)에 보존하며 새 게시본의 통과로 합산하지 않습니다. 이번 headless890건과 게시 CLI readiness8/headless3는 [별도 기록](archive/validation/sprint-01-quality-admin-validation.md)을 따릅니다. 이 체크리스트의 남은 직접 수용 조건은 그대로 유지합니다.
+2026-11-12 SPRINT-01의 새 제품 게시본은 실제 GUI를 실행하지 않았습니다. 아래 고정 게시본의 8/51 이력은 [이전 생성 진행표](archive/history/local-completion-progress-pre-sprint-01.json)에 보존하며 새 게시본의 통과로 합산하지 않습니다. 당시 Windows 전체 자동화890건(일부 headless UI 검사 포함)과 게시 CLI readiness8/headless3는 [별도 기록](archive/validation/sprint-01-quality-admin-validation.md)을 따릅니다. 이 체크리스트의 남은 직접 수용 조건은 그대로 유지합니다.
 
 기존 고정 게시본의 사례별 판정은 [로컬 보완 스프린트 검증](archive/validation/local-completion-validation.md#현재-새-gui-수용과-미완료)과 [보존한 진행표](archive/history/local-completion-progress-pre-sprint-01.json)를 따릅니다. 이번 게시본의 실제 GUI는 전체 미실행이며 [현재 생성 진행표](archive/validation/local-completion-progress.md)에 분리합니다. 아래 사례 하나의 전체 조건을 같은 고정 게시본에서 모두 충족한 경우만 통과로 계산하고, 부분 관측이나 이전 후보의 통과를 합산하지 않습니다.
 
@@ -251,7 +251,7 @@ UE 인수는 앱의 독자적인 쓰기 위치를 강제 변경하지 않습니�
 
 `catalogUrl`/직접 `manifestUrl`, `generate-manifest`, `update-catalog`, `publish-release`는 기존 정적 배포 호환 기능입니다. 기본 `sample-config`는 DistributionServer/schema 3 요청 서명 설정을 생성합니다. 정적 예제는 `--mode legacy-catalog`를 명시한 경우에만 사용합니다. 공개 `/catalogs/general` 또는 `/projects` 구조는 현재 통합 서버의 보안 모델이 아닙니다.
 
-도움말은 현행 배포 서버 모드와 호환 정적 Manifest/Catalog 모드(`generate-manifest`, `update-catalog`, `list-releases`, `generate-nginx-acl`, `sign-manifest`, `publish-release`, `service`)를 나눕니다. 명령은 삭제하지 않았습니다. CLI에서 값이 필요한 옵션 뒤의 값 누락/다음 `--옵션`과 같은 옵션 중복은 I/O 전에 종료2이며, 알 수 없는 옵션은 이전의 무시 동작을 유지합니다. 정상 JSON과 기존 작업 종료0/1은 유지합니다.
+도움말은 현행 배포 서버 모드와 호환 정적 Manifest/Catalog 모드(`generate-manifest`, `update-catalog`, `list-releases`, `generate-nginx-acl`, `sign-manifest`, `publish-release`, `service`)를 나눕니다. 명령은 삭제하지 않았습니다. CLI에서 값이 필요한 옵션 뒤의 값 누락/다음 `--옵션` 또는 `-h`와 같은 옵션 중복은 I/O 전에 종료2이며, 알 수 없는 옵션은 이전의 무시 동작을 유지합니다. 정상 JSON과 기존 작업 종료0/1은 유지합니다.
 
 기본 CLI 오류는 코드·정제된 원인·다음 조치·지원 ID 한 줄입니다. 명시적 `--error-details`는 예외 타입 체인만 추가하며 stack/예외 원문은 출력하지 않습니다. crash 로그에는 개인키·토큰/인증 헤더·사용자 프로필을 정제한 상세를 남기고 지원 ID로 연결합니다. 리디렉션 출력은 UTF-8이며 OS 콘솔 코드 페이지를 변경하지 않습니다.
 
