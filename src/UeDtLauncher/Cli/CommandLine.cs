@@ -88,6 +88,8 @@ public static partial class Program
         output.WriteLine();
         output.WriteLine("Current commands (distribution server mode):");
         output.WriteLine("  upload init --output upload.profile.json [--force]");
+        output.WriteLine("  upload check --profile upload.profile.json (또는 --server user@host --remote-incoming /absolute/incoming)");
+        output.WriteLine("    키 인증 전용(BatchMode): 비밀번호를 묻지 않습니다. 최초 호스트 키 등록은 터미널 ssh로 확인하세요.");
         output.WriteLine("  upload --zip package.zip --project-id id --version version --platform windows-x64|linux-x64 --entry-point app [--profile upload.profile.json] [--server user@host --remote-incoming /absolute/incoming] [--port 22] [--identity-file path] [--upload-id id] [--dry-run]");
         output.WriteLine("    optional metadata: --payload-root --display-name --environment --channel --executable-paths --notes --hero-path --thumbnail-path (same as release-metadata)");
         output.WriteLine("    기본 출력: 한국어 요약. --format json으로 기존 JSON 출력. 진행 안내는 stderr에 표시합니다.");

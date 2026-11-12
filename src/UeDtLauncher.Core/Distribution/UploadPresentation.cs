@@ -40,6 +40,8 @@ public static class UploadPresentation
         output.WriteLine(result.DryRun ? "업로드 계획 (전송·파일 변경 없음)" : result.Success ? "업로드 완료" : "업로드 중단");
         output.WriteLine("업로드 ID: " + HumanText.Safe(result.UploadId));
         output.WriteLine("원격 폴더: " + HumanText.Safe(result.RemoteDirectory));
+        if (result.FailureKind == "executable-missing") output.WriteLine("사전 점검: 실패 (OpenSSH 실행 파일 없음)");
+        if (result.ExitCode is { } code) output.WriteLine("실패 단계 종료 코드: " + code);
         var failed = result.FailedStage is null ? -1 : result.Steps.ToList().FindIndex(s => s.Name == result.FailedStage);
         for (var i = 0; i < result.Steps.Count; i++)
         {

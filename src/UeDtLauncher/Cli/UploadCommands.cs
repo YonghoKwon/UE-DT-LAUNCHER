@@ -20,11 +20,18 @@ public static partial class Program
         if (args.FirstOrDefault() == "init")
         {
             await UploadProfile.InitializeAsync(Required(args, "--output"), Has(args, "--force"));
-            output.WriteLine("업로드 프로필을 만들었습니다. 서버/계정·원격 경로·포트·identity 경로를 실제 값으로 편집하세요. 비밀번호·키 내용은 저장하지 않습니다.");
+            output.WriteLine("업로드 프로필을 만들었습니다. 서버/계정·원격 경로·포트·identity 경로를 실제 값으로 편집하세요. 비밀번호·키 내용은 저장하지 않습니다. 키 인증 전용(BatchMode)으로 비밀번호를 묻지 않습니다. upload check로 먼저 점검하세요.");
             return 0;
         }
         var profile = Get(args, "--profile") is { } path ? await JsonFiles.ReadAsync<UploadProfile>(path) : new();
         profile = profile.Override(new(Get(args, "--server"), Get(args, "--remote-incoming"), port, Get(args, "--identity-file")));
+        if (args.FirstOrDefault() == "check")
+        {
+            var check = await new UploadPreflight(runner ?? new OpenSshProcessRunner()).CheckAsync(profile);
+            if (format == "json") output.WriteLine(JsonSerializer.Serialize(check, JsonFiles.Options));
+            else UploadPreflight.Write(output, check);
+            return check.Success ? 0 : 1;
+        }
         var metadata = new ReleaseSidecar
         {
             ProjectId = Required(args, "--project-id"),

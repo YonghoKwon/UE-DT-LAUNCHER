@@ -167,6 +167,7 @@ public class ReleaseUploaderTests
 
     private sealed class FakeRunner(int failure = -1) : IUploadProcessRunner
     {
+        public bool IsAvailable(string executable) => true;
         public List<(string Executable, IReadOnlyList<string> Arguments)> Calls { get; } = [];
         public Task<int> RunAsync(string executable, IReadOnlyList<string> arguments, CancellationToken token)
         {

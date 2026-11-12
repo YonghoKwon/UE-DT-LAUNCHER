@@ -27,14 +27,32 @@ public sealed record UploadProfile(string? Server = null, string? RemoteIncoming
 
 public interface IUploadProcessRunner
 {
+    bool IsAvailable(string executable);
     Task<int> RunAsync(string executable, IReadOnlyList<string> arguments, CancellationToken token);
 }
 
 public sealed class OpenSshProcessRunner : IUploadProcessRunner
 {
+    private static string? FindExecutable(string executable)
+    {
+        var file = executable + (OperatingSystem.IsWindows() ? ".exe" : "");
+        foreach (var directory in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
+        {
+            if (string.IsNullOrWhiteSpace(directory)) continue;
+            try
+            {
+                var candidate = Path.GetFullPath(Path.Combine(directory.Trim('"'), file));
+                if (File.Exists(candidate)) return candidate;
+            }
+            catch (ArgumentException) { }
+        }
+        return null;
+    }
+    public bool IsAvailable(string executable) => FindExecutable(executable) is not null;
     public async Task<int> RunAsync(string executable, IReadOnlyList<string> arguments, CancellationToken token)
     {
-        var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+        var resolved = FindExecutable(executable) ?? throw new UploadExecutableMissingException();
+        var start = new ProcessStartInfo(resolved) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (var argument in arguments) start.ArgumentList.Add(argument);
         using var process = Process.Start(start) ?? throw new IOException("OpenSSH process could not start.");
         // Drain without retaining remote text, which may contain secrets or arbitrary terminal control sequences.
@@ -61,7 +79,8 @@ public sealed class OpenSshProcessRunner : IUploadProcessRunner
 
 public sealed record UploadStep(string Name, string Executable, IReadOnlyList<string> Arguments);
 public sealed record UploadResult(bool Success, bool DryRun, string UploadId, string RemoteDirectory,
-    string? WorkDirectory, string? FailedStage, IReadOnlyList<UploadStep> Steps, string Remaining, string NextAction);
+    string? WorkDirectory, string? FailedStage, IReadOnlyList<UploadStep> Steps, string Remaining, string NextAction,
+    int? ExitCode = null, string? FailureKind = null);
 
 public sealed class ReleaseUploader(IUploadProcessRunner runner)
 {
@@ -80,6 +99,9 @@ public sealed class ReleaseUploader(IUploadProcessRunner runner)
         string? work = null;
         var localZip = Path.Combine(Path.GetFullPath(workRoot), uploadId + "-NEW", "payload.zip");
         var localJson = Path.Combine(Path.GetFullPath(workRoot), uploadId + "-NEW", "release.json");
+        if (!dryRun && new[] { "ssh", "scp" }.Any(executable => !runner.IsAvailable(executable)))
+            return new(false, false, uploadId, profile.RemoteIncoming + "/" + uploadId, null, "preflight", BuildSteps(profile, profile.RemoteIncoming + "/" + uploadId, localZip, localJson),
+                "전송·작업 사본 생성 없음", UploadFailureGuidance.MissingExecutable, -1, "executable-missing");
         if (!dryRun)
         {
             progress?.Invoke(new(2, "로컬 작업 사본 준비 중", metadata.PackageSize));
@@ -101,11 +123,13 @@ public sealed class ReleaseUploader(IUploadProcessRunner runner)
             int[] numbers = [2, 3, 4, 5, 5, 6];
             progress?.Invoke(new(numbers[i], UploadPresentation.Stage(steps[i].Name) + " 중", i == 1 ? metadata.PackageSize : 0));
             int exit;
+            string? kind = null;
             try { exit = await runner.RunAsync(steps[i].Executable, steps[i].Arguments, token); }
+            catch (UploadExecutableMissingException) { exit = -1; kind = "executable-missing"; }
             catch (Exception error) when (error is IOException or System.ComponentModel.Win32Exception) { exit = -1; }
             if (exit != 0)
                 return new(false, false, uploadId, remote, work, steps[i].Name, steps,
-                    RemainingAt(i), "원격 폴더를 운영자에게 확인 요청하세요. 같은 업로드 폴더를 재사용하지 말고 새 ID로 다시 업로드하세요.");
+                    RemainingAt(i), UploadFailureGuidance.For(steps[i].Name, exit, profile, kind), exit, kind);
         }
         return new(true, dryRun, uploadId, remote, work, null, steps,
             dryRun ? "변경 없음: payload.zip, release.json 생성 예정" : "payload.zip과 release.json 최종 파일 확인 완료; .uploading 없음",
@@ -124,14 +148,8 @@ public sealed class ReleaseUploader(IUploadProcessRunner runner)
 
     private static List<UploadStep> BuildSteps(UploadProfile profile, string remote, string zip, string json)
     {
-        List<string> Options(bool scp)
-        {
-            var args = new List<string> { "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", scp ? "-P" : "-p", (profile.Port ?? 22).ToString(System.Globalization.CultureInfo.InvariantCulture) };
-            if (profile.IdentityFile is not null) { args.Add("-i"); args.Add(Path.GetFullPath(profile.IdentityFile)); }
-            return args;
-        }
-        UploadStep Ssh(string name, string command) => new(name, "ssh", [.. Options(false), "-T", profile.Server!, command]);
-        UploadStep Scp(string name, string local, string file) => new(name, "scp", [.. Options(true), Path.GetFullPath(local), profile.Server + ":" + remote + "/" + file]);
+        UploadStep Ssh(string name, string command) => UploadTransport.Ssh(profile, name, command);
+        UploadStep Scp(string name, string local, string file) => new(name, "scp", [.. UploadTransport.Options(profile, true), Path.GetFullPath(local), profile.Server + ":" + remote + "/" + file]);
         return [
             Ssh("mkdir", "mkdir -- " + remote),
             Scp("zip-transfer", zip, "payload.zip.uploading"),
