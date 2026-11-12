@@ -187,30 +187,13 @@ public sealed class OperationsConsole(DistributionSettings settings, string conf
         output.WriteLine("다음 할 일: PC는 다음 상태 확인 때 권한 안에서 이 버전을 추천받습니다. 자동 설치는 아닙니다.");
     }
 
-    public static async Task<IReadOnlyList<ConsoleCleanupChoice>> CleanupChoicesAsync(IntakeStore store)
-    {
-        var choices = new List<ConsoleCleanupChoice>();
-        async Task Add(string key, string? job, string? temporary)
-        {
-            try
-            {
-                var plan = await RetentionMaintenance.PlanAsync(store.Settings, job is null ? [] : [job], temporary is null ? [] : [temporary]);
-                if (plan.Candidates.Count > 0) choices.Add(new(key, job, temporary, plan.Candidates.Sum(c => c.Bytes)));
-            }
-            catch (Exception error) when (error is InvalidDataException or IOException or UnauthorizedAccessException) { }
-        }
-        foreach (var job in store.List().Where(j => j.State is "failed" or "rejected")) await Add("job:" + job.Id, job.Id, null);
-        var legacy = JsonSerializer.SerializeToElement(StorageMaintenance.Cleanup(store, false), JsonFiles.Options);
-        foreach (var directory in legacy.GetProperty("directories").EnumerateArray())
-        {
-            var relative = Path.GetRelativePath(store.Root, directory.GetString()!).Replace('\\', '/');
-            await Add("temp:" + relative, null, relative);
-        }
-        return choices;
-    }
+    public static Task<IReadOnlyList<ConsoleCleanupChoice>> CleanupChoicesAsync(IntakeStore store)
+        => Task.FromResult<IReadOnlyList<ConsoleCleanupChoice>>(RetentionMaintenance.InspectCandidates(store.Settings)
+            .Select(c => new ConsoleCleanupChoice(c.Key, c.JobId, c.Temporary, c.Bytes)).ToArray());
 
     private async Task CleanupAsync(CancellationToken token)
     {
+        output.WriteLine("정리 후보의 상태·크기를 조회합니다. 파일 내용의 전체 해시는 선택 후 계획 단계에서 계산합니다.");
         var choices = await SharedAsync(async store =>
         {
             var usage = JsonSerializer.SerializeToElement(StorageMaintenance.Usage(store), JsonFiles.Options);
@@ -227,18 +210,27 @@ public sealed class OperationsConsole(DistributionSettings settings, string conf
         var choice = Select(key, choices, c => c.Key) ?? throw new ArgumentException("Select an eligible cleanup candidate.");
         var plan = await SharedAsync(_ => RetentionMaintenance.PlanAsync(settings,
             choice.JobId is null ? [] : [choice.JobId], choice.Temporary is null ? [] : [choice.Temporary]));
+        if (plan.Candidates.Sum(c => c.Bytes) != choice.Bytes)
+        { output.WriteLine("정리 대상 크기가 목록 표시 뒤 변경됐습니다. 다시 조회하고 선택하세요. 변경 없음."); return; }
         output.WriteLine("계획 ID: " + plan.PlanId);
         output.WriteLine("계획 크기: " + HumanText.Size(plan.Candidates.Sum(c => c.Bytes)) + " · 대상 " + plan.Candidates.Count + "개");
         if (!await ConfirmAsync(plan.PlanId, token)) return;
-        var path = Path.Combine(settings.Root, "console-retention-" + plan.PlanId + ".json");
+        var path = SafePath.ResolveInsideChecked(settings.Root, "console-retention-" + plan.PlanId + ".json");
         await SharedAsync(async _ => { await JsonFiles.WriteAsync(path, plan, false, token); return true; });
         // No shared lease survives into ApplyAsync; its existing offline locks and reference/hash checks remain authoritative.
-        try { await RetentionMaintenance.ApplyAsync(settings, plan, true); output.WriteLine("정리 적용 완료. 선택한 계획의 자료만 처리했습니다."); }
-        catch (IOException)
+        try { await RetentionMaintenance.ApplyAsync(settings, plan, true); }
+        catch (IOException error)
         {
-            output.WriteLine("적용 보류: serve/watch 또는 다른 유지보수 작업이 실행 중이거나 저장 I/O를 확인할 수 없습니다. 프로세스를 종료하지 않습니다. 상태 확인 뒤 다음 명령을 직접 실행하세요:");
+            output.WriteLine(error.Data["RetentionBeforeMutation"] is true
+                ? "시작 전 잠금 대기: serve/watch 또는 다른 유지보수 작업을 정상 종료한 뒤 같은 계획으로 적용하세요. 이 시도는 삭제를 시작하지 않았습니다."
+                : "I/O 오류: 일부 자료가 이미 처리됐을 수 있습니다. 계획과 journal을 보존하고 같은 계획으로 retention apply를 다시 실행해 이어서 처리하세요. 새 계획으로 대체하지 마세요.");
             output.WriteLine("UeDtLauncher.DistributionServer retention apply --config " + Quote(configPath) + " --plan " + Quote(path) + " --confirm");
+            return;
         }
+        output.WriteLine("정리 적용 완료. 선택한 계획의 자료만 처리했습니다.");
+        try { File.Delete(path); output.WriteLine("이번 계획 파일 정리 완료."); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        { output.WriteLine("자료 정리는 완료됐지만 계획 파일이 남았습니다. 재적용하지 말고 계획 파일만 확인하세요: " + HumanText.Safe(path)); }
     }
 
     private static string Quote(string text) => "'" + text.Replace("'", OperatingSystem.IsWindows() ? "''" : "'\\''") + "'";

@@ -188,6 +188,8 @@ public sealed class OperationsConsoleTests : IDisposable
         Assert.Single(Directory.GetFiles(store.Root, "console-retention-*.json"));
         Assert.Contains("retention apply --config", output.ToString());
         Assert.Contains("--confirm", output.ToString());
+        Assert.Contains("시작 전 잠금 대기", output.ToString());
+        Assert.Empty(Directory.GetFiles(store.Root, "retention-*.json"));
         using var exclusive = DistributionMaintenanceLease.Acquire(store.Root, true);
     }
 
@@ -294,6 +296,116 @@ public sealed class OperationsConsoleTests : IDisposable
         Assert.Contains("트랙: demo/prod/stable/windows-x64", output);
         Assert.Contains("* 추천", output);
         Assert.Contains(release.ReleaseId, output);
+    }
+
+    [Fact]
+    public async Task CleanupListingReadsSizesWithoutPayloadStreamsOrPersistentPlans()
+    {
+        var source = Path.Combine(store.Root, "incoming", "failed"); Directory.CreateDirectory(source);
+        var payload = Path.Combine(source, "payload"); File.WriteAllText(payload, "synthetic only");
+        store.Save(new("failed", source, "failed", null, null));
+        var before = Directory.GetFileSystemEntries(store.Root).Order().ToArray();
+        long AuditCount()
+        {
+            using var db = store.Open(); using var command = db.CreateCommand(); command.CommandText = "SELECT COUNT(*) FROM audit";
+            return Convert.ToInt64(command.ExecuteScalar());
+        }
+        var audit = AuditCount();
+        using (var exclusivePayload = new FileStream(payload, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            var choices = await OperationsConsole.CleanupChoicesAsync(store);
+            var choice = Assert.Single(choices, c => c.JobId == "failed");
+            Assert.Equal(exclusivePayload.Length, choice.Bytes);
+        }
+        Assert.Equal(before, Directory.GetFileSystemEntries(store.Root).Order().ToArray());
+        Assert.Equal(audit, AuditCount());
+        Assert.Empty(Directory.GetFiles(store.Root, "console-retention-*.json"));
+        Assert.Empty(Directory.GetFiles(store.Root, "retention-*.json"));
+    }
+
+    [Fact]
+    public async Task ConsoleCleanupDeletesItsPlanOnlyAfterSuccessfulApply()
+    {
+        var source = Path.Combine(store.Root, "incoming", "failed"); Directory.CreateDirectory(source);
+        File.WriteAllText(Path.Combine(source, "payload"), "synthetic only");
+        store.Save(new("failed", source, "failed", null, null));
+        using var output = new StringWriter(); using var input = new PlanReader(output);
+        await new OperationsConsole(settings, Path.Combine(root, "server.json"), input, output, true).RunAsync();
+        Assert.False(Directory.Exists(source));
+        Assert.Empty(Directory.GetFiles(store.Root, "console-retention-*.json"));
+        var journal = Assert.Single(Directory.GetFiles(store.Root, "retention-*.json"));
+        Assert.Equal("Completed", (await JsonFiles.ReadAsync<RetentionJournal>(journal)).Phase);
+        Assert.Contains("이번 계획 파일 정리 완료", output.ToString());
+    }
+
+    [Fact]
+    public async Task SavedConsolePlanDoesNotEnterIntakeOrBackupInventory()
+    {
+        var source = Path.Combine(store.Root, "incoming", "failed"); Directory.CreateDirectory(source);
+        File.WriteAllText(Path.Combine(source, "payload"), "synthetic only");
+        store.Save(new("failed", source, "failed", null, null));
+        var plan = await RetentionMaintenance.PlanAsync(settings, ["failed"], []);
+        var path = Path.Combine(store.Root, "console-retention-" + plan.PlanId + ".json");
+        await JsonFiles.WriteAsync(path, plan, false);
+        await store.ScanAsync(CancellationToken.None);
+        Assert.Single(store.List());
+        var after = await RetentionMaintenance.PlanAsync(settings, ["failed"], []);
+        Assert.Equal(plan.ReferenceHash, after.ReferenceHash);
+        Assert.Equal(plan.Candidates.Select(c => c.Path), after.Candidates.Select(c => c.Path));
+        var backup = await DistributionBackup.CreateAsync(settings, Path.Combine(root, "backup"));
+        Assert.DoesNotContain(backup.Files, file => file.Path.Contains("console-retention-"));
+        Assert.True(File.Exists(path));
+    }
+
+    [Fact]
+    public async Task MidApplyIoFailurePreservesTheSamePlanAndOffersJournalResume()
+    {
+        var source = Path.Combine(store.Root, "incoming", "failed"); Directory.CreateDirectory(source);
+        File.WriteAllText(Path.Combine(source, "payload"), "synthetic only");
+        store.Save(new("failed", source, "failed", null, null));
+        using var output = new StringWriter(); using var input = new PlanReader(output);
+        RetentionMaintenance.Boundary.Value = phase => { if (phase == "quarantine") throw new IOException("synthetic failure"); };
+        try { await new OperationsConsole(settings, Path.Combine(root, "server.json"), input, output, true).RunAsync(); }
+        finally { RetentionMaintenance.Boundary.Value = null; }
+        Assert.Contains("일부 자료가 이미 처리됐을 수 있습니다", output.ToString());
+        Assert.Contains("같은 계획으로 retention apply", output.ToString());
+        Assert.DoesNotContain("이 시도는 삭제를 시작하지 않았습니다", output.ToString());
+        var path = Assert.Single(Directory.GetFiles(store.Root, "console-retention-*.json"));
+        var plan = await JsonFiles.ReadAsync<RetentionPlan>(path);
+        await RetentionMaintenance.ApplyAsync(settings, plan, true);
+        Assert.Equal("Completed", (await JsonFiles.ReadAsync<RetentionJournal>(Assert.Single(Directory.GetFiles(store.Root, "retention-*.json")))).Phase);
+    }
+
+    [Fact]
+    public async Task CleanupCandidatesMatchTheAuthoritativePlanSelection()
+    {
+        var source = Path.Combine(store.Root, "incoming", "failed"); Directory.CreateDirectory(source);
+        File.WriteAllText(Path.Combine(source, "payload"), "synthetic only");
+        store.Save(new("failed", source, "failed", null, null));
+        var temporary = Path.Combine(store.Root, "processing", "orphan"); Directory.CreateDirectory(temporary);
+        File.WriteAllText(Path.Combine(temporary, "payload"), "orphan");
+        var choices = await OperationsConsole.CleanupChoicesAsync(store);
+        Assert.Equal(2, choices.Count);
+        foreach (var choice in choices)
+        {
+            var plan = await RetentionMaintenance.PlanAsync(settings, choice.JobId is null ? [] : [choice.JobId], choice.Temporary is null ? [] : [choice.Temporary]);
+            Assert.NotEmpty(plan.Candidates);
+            Assert.Equal(choice.Bytes, plan.Candidates.Sum(c => c.Bytes));
+        }
+    }
+
+    [Fact]
+    public async Task ChangedCleanupSizeIsRejectedBeforePlanPublicationOrConfirmation()
+    {
+        var source = Path.Combine(store.Root, "incoming", "failed"); Directory.CreateDirectory(source);
+        var payload = Path.Combine(source, "payload"); File.WriteAllText(payload, "before");
+        store.Save(new("failed", source, "failed", null, null));
+        using var input = new ActionReader(["7", "job:failed", "0"], index => { if (index == 1) File.WriteAllText(payload, "changed synthetic bytes"); });
+        var output = await RunAsync(input);
+        Assert.Contains("다시 조회하고 선택하세요", output);
+        Assert.True(File.Exists(payload));
+        Assert.Empty(Directory.GetFiles(store.Root, "console-retention-*.json"));
+        Assert.Empty(Directory.GetFiles(store.Root, "retention-*.json"));
     }
 
     public void Dispose() { SqliteConnection.ClearAllPools(); Directory.Delete(root, true); }
