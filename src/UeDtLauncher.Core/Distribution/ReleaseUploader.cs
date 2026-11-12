@@ -80,12 +80,18 @@ public sealed class OpenSshProcessRunner : IUploadProcessRunner
 public sealed record UploadStep(string Name, string Executable, IReadOnlyList<string> Arguments);
 public sealed record UploadResult(bool Success, bool DryRun, string UploadId, string RemoteDirectory,
     string? WorkDirectory, string? FailedStage, IReadOnlyList<UploadStep> Steps, string Remaining, string NextAction,
-    int? ExitCode = null, string? FailureKind = null);
+    int? ExitCode = null, string? FailureKind = null, bool WorkPreserved = false, string? WorkCleanupWarning = null);
 
-public sealed class ReleaseUploader(IUploadProcessRunner runner)
+public sealed class ReleaseUploader
 {
+    private readonly IUploadProcessRunner runner;
+    private readonly Func<string, long>? availableBytes;
+    public ReleaseUploader(IUploadProcessRunner runner) : this(runner, null) { }
+    internal ReleaseUploader(IUploadProcessRunner runner, Func<string, long>? availableBytes)
+    { this.runner = runner; this.availableBytes = availableBytes; }
+
     public async Task<UploadResult> ExecuteAsync(string zip, ReleaseSidecar metadata, UploadProfile profile,
-        string? uploadId, string workRoot, bool dryRun, CancellationToken token = default, Action<UploadProgress>? progress = null)
+        string? uploadId, string workRoot, bool dryRun, CancellationToken token = default, Action<UploadProgress>? progress = null, bool keepWork = false)
     {
         profile.Validate();
         uploadId ??= $"{metadata.ProjectId}-{metadata.Version}-{metadata.Platform}-{DateTime.UtcNow:yyyyMMddHHmmss}";
@@ -104,8 +110,12 @@ public sealed class ReleaseUploader(IUploadProcessRunner runner)
                 "전송·작업 사본 생성 없음", UploadFailureGuidance.MissingExecutable, -1, "executable-missing");
         if (!dryRun)
         {
+            try
+            {
+            IntakeDiskSpace.Require(workRoot, IntakeDiskSpace.Estimate(metadata.PackageSize), availableBytes);
             progress?.Invoke(new(2, "로컬 작업 사본 준비 중", metadata.PackageSize));
             work = Path.Combine(Path.GetFullPath(workRoot), uploadId + "-" + Guid.NewGuid().ToString("N"));
+            work = UploadWork.CheckedPath(workRoot, work);
             if (Directory.Exists(work)) throw new IOException("Upload work folder already exists.");
             Directory.CreateDirectory(work);
             localZip = Path.Combine(work, "payload.zip");
@@ -113,8 +123,18 @@ public sealed class ReleaseUploader(IUploadProcessRunner runner)
             await using (var source = new FileStream(zip, FileMode.Open, FileAccess.Read, FileShare.Read))
             await using (var target = new FileStream(localZip, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                 await source.CopyToAsync(target, token);
+            var originalDigest = metadata.PackageSha256;
             await SidecarPackageValidator.GenerateAsync(localZip, localJson, metadata, token);
+            if (!string.Equals(originalDigest, metadata.PackageSha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Source ZIP changed while preparing upload work.");
             await SidecarPackageValidator.ValidateArchiveAsync(localZip, metadata, token);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException)
+            {
+                return new(false, false, uploadId, profile.RemoteIncoming + "/" + uploadId, work, "prepare", [],
+                    "전송 미실행; 생성된 로컬 작업 사본은 보존합니다.", "ZIP 크기와 작업 루트의 여유 공간(64 MB 예비 포함)·쓰기 권한·원본 변경 여부를 확인한 뒤 새 ID로 다시 시도하세요.",
+                    FailureKind: error is InvalidDataException ? "integrity-failed" : "local-preparation-failed", WorkPreserved: work is not null && Directory.Exists(work));
+            }
         }
         var remote = profile.RemoteIncoming + "/" + uploadId;
         var steps = BuildSteps(profile, remote, localZip, localJson);
@@ -129,11 +149,19 @@ public sealed class ReleaseUploader(IUploadProcessRunner runner)
             catch (Exception error) when (error is IOException or System.ComponentModel.Win32Exception) { exit = -1; }
             if (exit != 0)
                 return new(false, false, uploadId, remote, work, steps[i].Name, steps,
-                    RemainingAt(i), UploadFailureGuidance.For(steps[i].Name, exit, profile, kind), exit, kind);
+                    RemainingAt(i), UploadFailureGuidance.For(steps[i].Name, exit, profile, kind), exit, kind, WorkPreserved: work is not null);
+        }
+        string? cleanupWarning = null;
+        if (!dryRun && !keepWork)
+        {
+            try { UploadWork.DeleteOwned(workRoot, work!); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException)
+            { cleanupWarning = "원격 업로드는 완료됐지만 로컬 사본 정리가 완료되지 않았습니다. 작업 폴더를 확인하세요. 재전송은 필요하지 않습니다."; }
         }
         return new(true, dryRun, uploadId, remote, work, null, steps,
             dryRun ? "변경 없음: payload.zip, release.json 생성 예정" : "payload.zip과 release.json 최종 파일 확인 완료; .uploading 없음",
-            "운영자가 서버 콘솔에서 검사 결과를 확인하고 승인합니다. 승격은 검증 후 별도 수행합니다.");
+            "운영자가 서버 콘솔에서 검사 결과를 확인하고 승인합니다. 승격은 검증 후 별도 수행합니다.",
+            WorkPreserved: !dryRun && (keepWork || cleanupWarning is not null), WorkCleanupWarning: cleanupWarning);
     }
 
     private static string RemainingAt(int stage) => stage switch

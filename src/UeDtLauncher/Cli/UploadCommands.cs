@@ -49,7 +49,7 @@ public static partial class Program
         };
         var result = await new ReleaseUploader(runner ?? new OpenSshProcessRunner()).ExecuteAsync(Required(args, "--zip"), metadata,
             profile, Get(args, "--upload-id"), Path.Combine(Environment.CurrentDirectory, "upload-work"), Has(args, "--dry-run"),
-            progress: value => UploadPresentation.Progress(errors, value));
+            progress: value => UploadPresentation.Progress(errors, value), keepWork: Has(args, "--keep-work"));
         if (format == "json") output.WriteLine(JsonSerializer.Serialize(result, JsonFiles.Options));
         else UploadPresentation.Write(output, result);
         return result.Success ? 0 : 1;

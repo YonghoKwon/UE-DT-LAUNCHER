@@ -22,7 +22,7 @@ public class ReleaseUploaderTests
     {
         using var temp = new TempDirectory();
         var runner = new FakeRunner();
-        var result = await new ReleaseUploader(runner).ExecuteAsync(Zip(temp.Path), Metadata(), Profile(), "upload-1", Path.Combine(temp.Path, "work"), false);
+        var result = await new ReleaseUploader(runner).ExecuteAsync(Zip(temp.Path), Metadata(), Profile(), "upload-1", Path.Combine(temp.Path, "work"), false, keepWork: true);
         Assert.True(result.Success);
         Assert.Equal(new[] { "ssh", "scp", "scp", "ssh", "ssh", "ssh" }, runner.Calls.Select(c => c.Executable));
         Assert.Contains("mkdir -- /srv/incoming/upload-1", runner.Calls[0].Arguments);

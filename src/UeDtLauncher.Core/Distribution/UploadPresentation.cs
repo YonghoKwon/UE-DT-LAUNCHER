@@ -41,6 +41,7 @@ public static class UploadPresentation
         output.WriteLine("업로드 ID: " + HumanText.Safe(result.UploadId));
         output.WriteLine("원격 폴더: " + HumanText.Safe(result.RemoteDirectory));
         if (result.FailureKind == "executable-missing") output.WriteLine("사전 점검: 실패 (OpenSSH 실행 파일 없음)");
+        if (result.FailedStage == "prepare") output.WriteLine("로컬 작업 사본 준비: 실패 (원격 단계 미실행)");
         if (result.ExitCode is { } code) output.WriteLine("실패 단계 종료 코드: " + code);
         var failed = result.FailedStage is null ? -1 : result.Steps.ToList().FindIndex(s => s.Name == result.FailedStage);
         for (var i = 0; i < result.Steps.Count; i++)
@@ -49,7 +50,8 @@ public static class UploadPresentation
             output.WriteLine($"{i + 1}. {Stage(result.Steps[i].Name)}: {status}");
         }
         output.WriteLine("남은 상태: " + HumanText.Safe(result.Remaining));
-        if (result.WorkDirectory is not null) output.WriteLine("로컬 작업 사본: " + HumanText.Safe(result.WorkDirectory));
+        if (result.WorkDirectory is not null) output.WriteLine("로컬 작업 사본: " + (result.WorkPreserved ? HumanText.Safe(result.WorkDirectory) : "정리 완료"));
+        if (result.WorkCleanupWarning is not null) output.WriteLine(HumanText.Safe(result.WorkCleanupWarning));
         output.WriteLine("다음 할 일: " + HumanText.Safe(result.NextAction));
     }
 }

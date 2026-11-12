@@ -93,6 +93,7 @@ public static partial class Program
         output.WriteLine("  upload --zip package.zip --project-id id --version version --platform windows-x64|linux-x64 --entry-point app [--profile upload.profile.json] [--server user@host --remote-incoming /absolute/incoming] [--port 22] [--identity-file path] [--upload-id id] [--dry-run]");
         output.WriteLine("    optional metadata: --payload-root --display-name --environment --channel --executable-paths --notes --hero-path --thumbnail-path (same as release-metadata)");
         output.WriteLine("    기본 출력: 한국어 요약. --format json으로 기존 JSON 출력. 진행 안내는 stderr에 표시합니다.");
+        output.WriteLine("    성공 시 이번 실행의 작업 사본을 정리합니다. --keep-work로 보존할 수 있으며 실패 시에는 항상 보존합니다.");
         output.WriteLine("  runtime inspect --config <file> [--version <exact version>]");
         output.WriteLine("  runtime recover --config <file> --dry-run|--confirm-stopped [--version <exact version>] [--service-selection]");
         output.WriteLine("  release-metadata --zip <zip> --project-id <id> --version <version> --platform <platform> --entry-point <path> [--payload-root <path>] [--output <release.json>]");
