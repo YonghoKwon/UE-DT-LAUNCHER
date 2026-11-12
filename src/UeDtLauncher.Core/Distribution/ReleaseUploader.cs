@@ -66,7 +66,7 @@ public sealed record UploadResult(bool Success, bool DryRun, string UploadId, st
 public sealed class ReleaseUploader(IUploadProcessRunner runner)
 {
     public async Task<UploadResult> ExecuteAsync(string zip, ReleaseSidecar metadata, UploadProfile profile,
-        string? uploadId, string workRoot, bool dryRun, CancellationToken token = default)
+        string? uploadId, string workRoot, bool dryRun, CancellationToken token = default, Action<UploadProgress>? progress = null)
     {
         profile.Validate();
         uploadId ??= $"{metadata.ProjectId}-{metadata.Version}-{metadata.Platform}-{DateTime.UtcNow:yyyyMMddHHmmss}";
@@ -74,6 +74,7 @@ public sealed class ReleaseUploader(IUploadProcessRunner runner)
         metadata = JsonSerializer.Deserialize<ReleaseSidecar>(JsonSerializer.Serialize(metadata, JsonFiles.Options), JsonFiles.Options)!;
         metadata.PackageFile = "payload.zip";
         metadata.PackageSize = new FileInfo(zip).Length;
+        progress?.Invoke(new(1, "ZIP 검사 중", metadata.PackageSize));
         metadata.PackageSha256 = await Hashing.Sha256FileAsync(zip, token);
         await SidecarPackageValidator.ValidateArchiveAsync(zip, metadata, token);
         string? work = null;
@@ -81,6 +82,7 @@ public sealed class ReleaseUploader(IUploadProcessRunner runner)
         var localJson = Path.Combine(Path.GetFullPath(workRoot), uploadId + "-NEW", "release.json");
         if (!dryRun)
         {
+            progress?.Invoke(new(2, "로컬 작업 사본 준비 중", metadata.PackageSize));
             work = Path.Combine(Path.GetFullPath(workRoot), uploadId + "-" + Guid.NewGuid().ToString("N"));
             if (Directory.Exists(work)) throw new IOException("Upload work folder already exists.");
             Directory.CreateDirectory(work);
@@ -96,6 +98,8 @@ public sealed class ReleaseUploader(IUploadProcessRunner runner)
         var steps = BuildSteps(profile, remote, localZip, localJson);
         for (var i = 0; !dryRun && i < steps.Count; i++)
         {
+            int[] numbers = [2, 3, 4, 5, 5, 6];
+            progress?.Invoke(new(numbers[i], UploadPresentation.Stage(steps[i].Name) + " 중", i == 1 ? metadata.PackageSize : 0));
             int exit;
             try { exit = await runner.RunAsync(steps[i].Executable, steps[i].Arguments, token); }
             catch (Exception error) when (error is IOException or System.ComponentModel.Win32Exception) { exit = -1; }

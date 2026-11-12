@@ -90,6 +90,7 @@ public static partial class Program
         output.WriteLine("  upload init --output upload.profile.json [--force]");
         output.WriteLine("  upload --zip package.zip --project-id id --version version --platform windows-x64|linux-x64 --entry-point app [--profile upload.profile.json] [--server user@host --remote-incoming /absolute/incoming] [--port 22] [--identity-file path] [--upload-id id] [--dry-run]");
         output.WriteLine("    optional metadata: --payload-root --display-name --environment --channel --executable-paths --notes --hero-path --thumbnail-path (same as release-metadata)");
+        output.WriteLine("    기본 출력: 한국어 요약. --format json으로 기존 JSON 출력. 진행 안내는 stderr에 표시합니다.");
         output.WriteLine("  runtime inspect --config <file> [--version <exact version>]");
         output.WriteLine("  runtime recover --config <file> --dry-run|--confirm-stopped [--version <exact version>] [--service-selection]");
         output.WriteLine("  release-metadata --zip <zip> --project-id <id> --version <version> --platform <platform> --entry-point <path> [--payload-root <path>] [--output <release.json>]");
