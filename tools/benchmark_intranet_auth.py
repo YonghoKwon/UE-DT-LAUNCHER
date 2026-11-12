@@ -28,7 +28,7 @@ def run_load(origin, root, register, platform, server_pid, file_path=None, expec
     key_id = "load-" + secrets.token_hex(8)
     public_file = root / "load-public.json"
     public_file.write_text(json.dumps({"schemaVersion": 1, "keyId": key_id,
-        "publicKeyPem": key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()}))
+        "publicKeyPem": key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode(encoding='utf-8')}), encoding='utf-8')
     register(public_file)
     release_key = serialization.load_pem_public_key((root / "public.pem").read_bytes())
 
@@ -53,7 +53,7 @@ def run_load(origin, root, register, platform, server_pid, file_path=None, expec
             latencies, errors = [], []
             for index in range(count):
                 path = "/api/v1/catalog?selectionPolicy=explicit-promotion-v1" if index % 2 == 0 else (file_path or f"/releases/demo/prod/stable/2.0.0/{platform}/files/version.txt")
-                nonce = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("=")
+                nonce = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode(encoding='utf-8').rstrip("=")
                 target = origin + path
                 ranged = index % 2 != 0
                 components = '("@method" "@target-uri" "x-ue-dt-challenge"' + (' "range"' if ranged else '') + ')'
@@ -65,7 +65,7 @@ def run_load(origin, root, register, platform, server_pid, file_path=None, expec
                 start = time.perf_counter()
                 try:
                     r, s = utils.decode_dss_signature(key.sign(body.encode(), ec.ECDSA(hashes.SHA256())))
-                    signed = base64.b64encode(r.to_bytes(32, "big") + s.to_bytes(32, "big")).decode()
+                    signed = base64.b64encode(r.to_bytes(32, "big") + s.to_bytes(32, "big")).decode(encoding='utf-8')
                     headers = {"X-UE-DT-Challenge": self.challenge, "Signature-Input": "sig1=" + parameters, "Signature": "sig1=:" + signed + ":"}
                     if ranged:
                         headers["Range"] = "bytes=0-2"

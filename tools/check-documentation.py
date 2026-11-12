@@ -1,4 +1,6 @@
 """Check the maintained documentation boundary and local Markdown links (no app execution)."""
+from ci_text import configure_console
+configure_console()
 from pathlib import Path
 from urllib.parse import unquote
 import re

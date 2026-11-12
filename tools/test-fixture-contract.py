@@ -1,3 +1,5 @@
+from ci_text import configure_console
+configure_console()
 import json
 import os
 from pathlib import Path
@@ -19,15 +21,15 @@ class ContractTests(unittest.TestCase):
     def test_marker_not_name_authorizes_contained_config_and_binary(self):
         with tempfile.TemporaryDirectory() as temp:
             root=claim(Path(temp)/'fixture');binary=root/'server-exe';binary.write_bytes(b'binary')
-            config=root/'server.json';config.write_text(json.dumps({'root':str(root/'server'),'policyPath':str(root/'policy.json'),'signingKeyPath':str(root/'key.pem')}))
+            config=root/'server.json';config.write_text(json.dumps({'root':str(root/'server'),'policyPath':str(root/'policy.json'),'signingKeyPath':str(root/'key.pem')}), encoding='utf-8')
             seal(root,{'server':binary},config);verify(root,config,binary)
-            config.write_text(json.dumps({'root':temp,'policyPath':str(root/'policy.json'),'signingKeyPath':str(root/'key.pem')}));seal(root,{'server':binary},config)
+            config.write_text(json.dumps({'root':temp,'policyPath':str(root/'policy.json'),'signingKeyPath':str(root/'key.pem')}), encoding='utf-8');seal(root,{'server':binary},config)
             with self.assertRaises(ValueError):verify(root,config,binary)
             with self.assertRaises(ValueError):claim(root)
     def test_changed_binary_and_link_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
             root=claim(Path(temp)/'fixture');binary=root/'bin';binary.write_bytes(b'one');config=root/'server.json'
-            config.write_text(json.dumps({'root':str(root/'server'),'policyPath':str(root/'policy'),'signingKeyPath':str(root/'key')}));seal(root,{'server':binary},config)
+            config.write_text(json.dumps({'root':str(root/'server'),'policyPath':str(root/'policy'),'signingKeyPath':str(root/'key')}), encoding='utf-8');seal(root,{'server':binary},config)
             binary.write_bytes(b'two')
             with self.assertRaises(ValueError):verify(root,config,binary)
             if os.name!='nt':
@@ -37,8 +39,8 @@ class ContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             binary=Path(temp)/'bin';binary.write_bytes(b'one');path=Path(temp)/'report.json'
             result=Evidence(path,{'server':binary},['prepare','run']);result.start('prepare');result.finish('prepare',False,kind='timeout');result.complete(False)
-            data=json.loads(path.read_text());self.assertTrue(data['complete']);self.assertFalse(data['success']);self.assertEqual(1,data['counts']['failed']);self.assertEqual(1,data['counts']['not-run'])
-            self.assertNotIn(temp,path.read_text());self.assertNotIn('PRIVATE KEY',path.read_text())
+            data=json.loads(path.read_text(encoding='utf-8'));self.assertTrue(data['complete']);self.assertFalse(data['success']);self.assertEqual(1,data['counts']['failed']);self.assertEqual(1,data['counts']['not-run'])
+            self.assertNotIn(temp,path.read_text(encoding='utf-8'));self.assertNotIn('PRIVATE KEY',path.read_text(encoding='utf-8'))
 
 
 if __name__=='__main__':unittest.main()

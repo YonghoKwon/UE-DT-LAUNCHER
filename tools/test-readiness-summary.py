@@ -1,3 +1,5 @@
+from ci_text import configure_console
+configure_console()
 import importlib.util
 import json
 from pathlib import Path

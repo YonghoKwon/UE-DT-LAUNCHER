@@ -1,4 +1,6 @@
 """An Agent service request must use requested A, never default B. No service installation."""
+from ci_text import configure_console
+configure_console()
 import argparse, hashlib, http.server, json, os, socket, struct, subprocess, tempfile, threading, time, uuid
 from pathlib import Path
 p=argparse.ArgumentParser(); p.add_argument('--agent',required=True); a=p.parse_args()
@@ -9,12 +11,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def log_message(self,*a): pass
 server=http.server.ThreadingHTTPServer(('127.0.0.1',0),Handler); threading.Thread(target=server.serve_forever,daemon=True).start()
 url='http://127.0.0.1:'+str(server.server_port)
-(web/'manifest.json').write_text(json.dumps(dict(appId='requested-a',version='1',platform=platform,entryPoint='game',baseUrl=url+'/',files=[dict(path='game',url='game',size=7,sha256=hashlib.sha256(b'fixture').hexdigest())])))
+(web/'manifest.json').write_text(json.dumps(dict(appId='requested-a',version='1',platform=platform,entryPoint='game',baseUrl=url+'/',files=[dict(path='game',url='game',size=7,sha256=hashlib.sha256(b'fixture').hexdigest())])), encoding='utf-8')
 (root/'config').mkdir()
-(root/'config'/'launcher.config.json').write_text(json.dumps(dict(schemaVersion=1,deploymentMode='managed-agent',projectId='default-b',targetPlatform=platform,manifestUrl=url+'/manifest.json',installDir=str(root/'app-b'),stateRootDir=str(root/'state'),logDir=str(root/'logs'),projects=[dict(projectId='requested-a',displayName='A',installPath=str(root/'app-a'))],serviceMode=dict(autoRestartApp=False))))
+(root/'config'/'launcher.config.json').write_text(json.dumps(dict(schemaVersion=1,deploymentMode='managed-agent',projectId='default-b',targetPlatform=platform,manifestUrl=url+'/manifest.json',installDir=str(root/'app-b'),stateRootDir=str(root/'state'),logDir=str(root/'logs'),projects=[dict(projectId='requested-a',displayName='A',installPath=str(root/'app-a'))],serviceMode=dict(autoRestartApp=False))), encoding='utf-8')
 endpoint='uedt-target-'+uuid.uuid4().hex if os.name=='nt' else str(root/'agent.sock')
 env=dict(os.environ,UE_DT_AGENT_DATA_ROOT=str(root),UE_DT_AGENT_ENDPOINT=endpoint)
-with (root/'agent.log').open('w') as log:
+with (root/'agent.log').open('w', encoding='utf-8') as log:
     proc=subprocess.Popen([str(Path(a.agent).resolve())],env=env,stdout=log,stderr=log,creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
     try:
         deadline=time.monotonic()+15

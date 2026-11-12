@@ -1,4 +1,6 @@
 """Non-interactive published E2E; only an allowlisted summary can leave the private root."""
+from ci_text import configure_console
+configure_console()
 import argparse
 import json
 import os
@@ -45,7 +47,7 @@ def main():
     args = parser.parse_args()
     source = args.source_sha or os.environ.get('GITHUB_SHA', '')
     if not source:
-        result = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True)
+        result = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, encoding='utf-8', errors='replace')
         source = result.stdout.strip() if result.returncode == 0 else 'unavailable'
     private = Path(tempfile.mkdtemp(prefix='uedt-readiness-'))
     claim(private)
@@ -66,7 +68,7 @@ def main():
         success = process.returncode == 0
         if success: evidence = json.loads((root / 'summary.json').read_text(encoding='utf-8'))
         report = sanitized_summary(source, 'Windows' if os.name == 'nt' else 'Linux', success, evidence,
-            json.loads((root / 'readiness-progress.json').read_text()).get('phase', '') if (root / 'readiness-progress.json').exists() else '')
+            json.loads((root / 'readiness-progress.json').read_text(encoding='utf-8')).get('phase', '') if (root / 'readiness-progress.json').exists() else '')
     except (OSError, ValueError, TypeError, KeyError, subprocess.TimeoutExpired):
         success = False
         report = sanitized_summary(source, 'Windows' if os.name == 'nt' else 'Linux', False)

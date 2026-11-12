@@ -5,6 +5,8 @@ Outputs contain test keys: keep the root outside source control. Only summary.js
 is suitable for redacted evidence. Windows payload is a local copy of cmd.exe;
 Linux payload is a harmless marker script, not an Unreal package.
 """
+from ci_text import configure_console
+configure_console()
 import argparse
 import json
 import os
@@ -283,7 +285,7 @@ http {{
 }}
 ''', encoding="utf-8")
             run(str(Path(args.nginx).resolve()), "-t", "-p", nginx_root, "-c", nginx_config)
-            nginx_log = (root / "nginx.log").open("w")
+            nginx_log = (root / "nginx.log").open("w", encoding='utf-8')
             nginx_process = subprocess.Popen([str(Path(args.nginx).resolve()), "-p", str(nginx_root), "-c", str(nginx_config), "-g", "daemon off;"], stdout=nginx_log, stderr=nginx_log, env=env)
         for _ in range(100):
             if process.poll() is not None:
@@ -313,18 +315,18 @@ http {{
                 runtime = client / "state" / "demo" / "prod" / "stable" / version / platform / "runtime-state.json"
                 deadline = time.monotonic() + 15
                 while time.monotonic() < deadline:
-                    if runtime.exists() and json.loads(runtime.read_text())["state"] == 0:
+                    if runtime.exists() and json.loads(runtime.read_text(encoding='utf-8'))["state"] == 0:
                         break
                     time.sleep(0.05)
                 else:
                     raise RuntimeError("Supervised payload did not complete")
                 marker = client / "apps" / "demo" / "prod" / "stable" / version / platform / "runtime-marker.txt"
-                if not marker.exists() or "UE_DT_FAKE_GAME_OK" not in marker.read_text():
+                if not marker.exists() or "UE_DT_FAKE_GAME_OK" not in marker.read_text(encoding='utf-8'):
                     raise RuntimeError("Synthetic game execution marker was missing")
             target = client / "apps" / "demo" / "prod" / "stable" / "2.0.0" / platform / "version.txt"
             target.write_text("damaged", encoding="utf-8")
             run(launcher, "run", "--config", client / "config.json", "--repair")
-            if target.read_text() != "2.0.0":
+            if target.read_text(encoding='utf-8') != "2.0.0":
                 raise RuntimeError("Repair did not restore the expected contents")
         summary = {"platform": platform, "transport": "HTTP request-signature-v1", "published_processes": True,
                    "versions_installed_and_launched": 2, "repair": True, "nginx": bool(args.nginx), "company_or_unreal_validation": False}
@@ -334,7 +336,7 @@ http {{
                 path = client / "state" / "demo" / "prod" / "stable" / version / platform / "runtime-state.json"
                 deadline = time.monotonic() + 25
                 while time.monotonic() < deadline:
-                    if json.loads(path.read_text())["state"] == 0: return
+                    if json.loads(path.read_text(encoding='utf-8'))["state"] == 0: return
                     time.sleep(.05)
                 raise RuntimeError("Service fixture did not finish naturally")
             def service_cycle():
@@ -349,7 +351,7 @@ http {{
             run(launcher, "runtime", "recover", "--config", client / "config.json", "--version", "1.0.0", "--confirm-stopped", "--service-selection")
             service_cycle()
             old_runtime = client / "state" / "demo" / "prod" / "stable" / "1.0.0" / platform / "runtime-state.json"
-            assert json.loads(old_runtime.read_text())["state"] == 2
+            assert json.loads(old_runtime.read_text(encoding='utf-8'))["state"] == 2
             service_state = client / "state" / "service" / "demo" / "prod" / "stable" / platform / "service-state.json"
             before = service_state.read_bytes()
             config["requestedVersion"] = "2.0.0"; write(client / "config.json", config)
@@ -359,7 +361,7 @@ http {{
             wait_runtime("1.0.0")
             run(launcher, "runtime", "recover", "--config", client / "config.json", "--version", "2.0.0", "--confirm-stopped", "--service-selection")
             service_cycle(); wait_runtime("2.0.0")
-            assert json.loads(service_state.read_text())["version"] == "2.0.0"
+            assert json.loads(service_state.read_text(encoding='utf-8'))["version"] == "2.0.0"
             config["launchArguments"] = original_args; config.pop("serviceMode"); write(client / "config.json", config)
             summary["explicit_service_selection_proof"] = True
         if args.prepare_gui:
@@ -432,14 +434,14 @@ http {{
                 before=state.read_bytes()
                 promote(lambda *a:run(server,*a),root/'server.json','demo','1.0.0',platform,'promotion during pending launch')
                 assert before==state.read_bytes()
-                with subprocess.Popen([launcher,'runtime-host'],env=env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,creationflags=flags) as host:
+                with subprocess.Popen([launcher,'runtime-host'],env=env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,creationflags=flags, encoding='utf-8') as host:
                     host.stdin.write(json.dumps({'config':config,'ticket':response['runtimeTicket'],'agentEndpoint':env['UE_DT_AGENT_ENDPOINT'],'selection':selection})+'\n');host.stdin.close()
                     started=json.loads(host.stdout.readline());assert started['state']=='started'
-                    live=json.loads(state.read_text());assert live['state']==2 and live['entryPoint'].endswith('game.exe' if os.name=='nt' else 'game.sh')
+                    live=json.loads(state.read_text(encoding='utf-8'));assert live['state']==2 and live['entryPoint'].endswith('game.exe' if os.name=='nt' else 'game.sh')
                     before=state.read_bytes()
                     promote(lambda *a:run(server,*a),root/'server.json','demo','2.0.0',platform,'promotion during active launch')
                     assert before==state.read_bytes()
-                    host.wait(timeout=25);assert host.returncode==0 and json.loads(state.read_text())['state']==0
+                    host.wait(timeout=25);assert host.returncode==0 and json.loads(state.read_text(encoding='utf-8'))['state']==0
                 summary['promotion_preserves_pending_and_running_launch']=True
             if args.hold_runtime:
                 config["launchArguments"] = ["/c", "ping -n 61 127.0.0.1 > nul"] if os.name == "nt" else ["60"]
@@ -459,11 +461,11 @@ http {{
             shutil.copy2(root/'public.pem',control/'original-public.pem')
             source_root=Path(__file__).resolve().parent.parent
             source_diff=subprocess.check_output(['git','diff','HEAD','--','src','tools'],cwd=source_root)
-            untracked=subprocess.check_output(['git','ls-files','--others','--exclude-standard','--','src','tools'],cwd=source_root,text=True).splitlines()
+            untracked=subprocess.check_output(['git','ls-files','--others','--exclude-standard','--','src','tools'],cwd=source_root,text=True, encoding='utf-8', errors='replace').splitlines()
             source_evidence=source_diff+b''.join(name.encode()+b'\0'+(source_root/name).read_bytes() for name in sorted(untracked) if (source_root/name).is_file())
             write(root/'fixture.json',{'schemaVersion':2,'id':root.name,'deploymentMode':args.gui_mode,'platform':platform,'guiLongLabels':args.gui_long_labels,
                   'productPublication':__import__('cohort_contract').fixture_provenance(publication),
-                  'sourceHead':subprocess.check_output(['git','rev-parse','HEAD'],cwd=source_root,text=True).strip(),
+                  'sourceHead':subprocess.check_output(['git','rev-parse','HEAD'],cwd=source_root,text=True, encoding='utf-8', errors='replace').strip(),
                   'sourceDiffSha256':hashlib.sha256(source_evidence).hexdigest(),'sourceDirty':bool(source_evidence),
                   'binaries':{kind:{'path':value,'sha256':sha256(value)} for kind,value in gui_binaries.items()},
                   'supportFiles':gui_support_files,'pendingJobs':pending_jobs,

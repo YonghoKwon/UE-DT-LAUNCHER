@@ -1,4 +1,6 @@
 """Run capability proof with a published launcher, never with company applications."""
+from ci_text import configure_console
+configure_console()
 import argparse
 import json
 import os
@@ -27,7 +29,7 @@ def main():
                    "arguments": [fixture, "root-exits" if mode == "host-crash" else mode, str(directory)]}
         started = time.monotonic()
         child = subprocess.Popen([launcher, "runtime-host", "--capability-probe"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                 text=True, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                                 text=True, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0, encoding='utf-8')
         try:
             child.stdin.write(json.dumps(request) + "\n"); child.stdin.close(); child.stdin = None
             deadline = time.monotonic() + 15
@@ -58,7 +60,7 @@ def main():
         finally:
             if child.poll() is None:
                 child.kill(); child.wait(timeout=5)
-    (root / "summary.json").write_text(json.dumps(results, indent=2))
+    (root / "summary.json").write_text(json.dumps(results, indent=2), encoding='utf-8')
     print("PASS: " + str(root))
 
 

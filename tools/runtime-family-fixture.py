@@ -23,6 +23,6 @@ if args.mode == "double-fork":
     os.setsid()
     if os.fork():
         os._exit(0)
-(root / "child-started").write_text(str(os.getpid()))
+(root / "child-started").write_text(str(os.getpid()), encoding='utf-8')
 time.sleep(2)
-(root / "child-completed").write_text("completed")
+(root / "child-completed").write_text("completed", encoding='utf-8')

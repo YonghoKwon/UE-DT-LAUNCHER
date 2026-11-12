@@ -11,10 +11,10 @@ from stream_hash import sha256_stream
 
 
 def provenance(binaries):
-    result=subprocess.run(['git','rev-parse','HEAD'],capture_output=True,text=True)
+    result=subprocess.run(['git','rev-parse','HEAD'],capture_output=True,text=True, encoding='utf-8', errors='replace')
     source=result.stdout.strip() if result.returncode==0 else 'unavailable'
     diff=subprocess.run(['git','diff','HEAD','--','src','tools','scripts','installer','packaging','Directory.Build.props'],capture_output=True).stdout
-    untracked=subprocess.run(['git','ls-files','--others','--exclude-standard','--','src','tools','scripts','installer','packaging'],capture_output=True,text=True).stdout.splitlines()
+    untracked=subprocess.run(['git','ls-files','--others','--exclude-standard','--','src','tools','scripts','installer','packaging'],capture_output=True,text=True, encoding='utf-8', errors='replace').stdout.splitlines()
     for name in sorted(untracked):
         path=Path(name)
         if path.is_file():diff+=name.encode()+b'\0'+path.read_bytes()

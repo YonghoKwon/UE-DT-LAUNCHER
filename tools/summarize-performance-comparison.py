@@ -1,4 +1,6 @@
 """Allowlisted synthetic comparison, not a company SLA or automatic release approval."""
+from ci_text import configure_console
+configure_console()
 import argparse
 import json
 import statistics
@@ -44,7 +46,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('baseline','preoptimization','candidate','output'):parser.add_argument('--'+name,type=Path,required=True)
     args=parser.parse_args()
-    baseline, before, candidate = [summarize(json.loads(path.read_text())) for path in (args.baseline,args.preoptimization,args.candidate)]
+    baseline, before, candidate = [summarize(json.loads(path.read_text(encoding='utf-8'))) for path in (args.baseline,args.preoptimization,args.candidate)]
     original, optimization = compare(baseline,candidate),compare(before,candidate)
     record={'schemaVersion':1,'scope':'Windows-synthetic-HTTP-signature-private-proxy-5ms',
         'warmupRuns':1,'measuredRuns':3,'cache':'fresh install/state; warm OS cache; order/ambient-load uncontrolled',

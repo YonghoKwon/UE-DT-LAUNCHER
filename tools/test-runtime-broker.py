@@ -1,4 +1,6 @@
 """Published console-Agent registration proof. No services/accounts or company apps."""
+from ci_text import configure_console
+configure_console()
 import argparse
 import hashlib
 import json
@@ -30,19 +32,19 @@ def main():
         shutil.copy2(Path(os.environ["SystemRoot"]) / "System32" / "cmd.exe", app / entry)
         arguments = ["/c", "ping -n 6 127.0.0.1 > nul"]
     else:
-        (app / entry).write_text("#!/bin/sh\nsleep 5\n"); (app / entry).chmod(0o755); arguments = []
+        (app / entry).write_text("#!/bin/sh\nsleep 5\n", encoding='utf-8'); (app / entry).chmod(0o755); arguments = []
     config = {"schemaVersion": 1, "deploymentMode": "managed-agent", "projectId": "demo", "targetPlatform": platform,
               "installDir": str(app), "stateRootDir": str(root / "state"), "logDir": str(root / "logs"), "launchArguments": arguments}
     (root / "config").mkdir()
     state = root / "state" / "demo" / platform; state.mkdir(parents=True)
     manifest = {"appId": "demo", "version": "1.0.0", "platform": platform, "entryPoint": entry,
                 "files": [{"path": entry, "size": (app / entry).stat().st_size, "sha256": hashlib.sha256((app / entry).read_bytes()).hexdigest()}]}
-    (state / "installed-manifest.json").write_text(json.dumps(manifest))
+    (state / "installed-manifest.json").write_text(json.dumps(manifest), encoding='utf-8')
     backup = state / 'backups' / '20260928000000'; backup.mkdir(parents=True)
     shutil.copy2(app / entry, backup / entry)
     meta = backup / '.uedt-meta'; meta.mkdir()
-    (meta / 'backup-info.json').write_text(json.dumps(dict(previousVersion='1.0.0',newVersion='1.0.0',createdAtUtc='2026-09-28T00:00:00Z',addedPaths=[])))
-    (meta / 'installed-manifest.json').write_text(json.dumps(manifest))
+    (meta / 'backup-info.json').write_text(json.dumps(dict(previousVersion='1.0.0',newVersion='1.0.0',createdAtUtc='2026-09-28T00:00:00Z',addedPaths=[])), encoding='utf-8')
+    (meta / 'installed-manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
     endpoint = "uedt-proof-" + uuid.uuid4().hex if os.name == "nt" else str(root / "agent.sock")
     env = dict(os.environ, UE_DT_AGENT_DATA_ROOT=str(root), UE_DT_AGENT_ENDPOINT=endpoint)
     from signed_legacy_fixture import configure
@@ -50,13 +52,13 @@ def main():
     tls_server,manifest=configure(root,launcher,web,manifest,env,config,'broker')
     # This owned fixture has not started any payload. Let the product create its exact
     # installation identity and valid stopped record; Python must not guess .NET path rules.
-    seed=root/'seed-runtime.json';seed.write_text(json.dumps(dict(config,deploymentMode='portable')))
+    seed=root/'seed-runtime.json';seed.write_text(json.dumps(dict(config,deploymentMode='portable')), encoding='utf-8')
     initialized=subprocess.run([str(launcher),'runtime','recover','--config',str(seed),'--confirm-stopped'],env=env,capture_output=True,timeout=30,
                                creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
     if initialized.returncode:raise RuntimeError('Owned stopped fixture initialization failed')
-    (root/'config'/'launcher.config.json').write_text(json.dumps(config))
+    (root/'config'/'launcher.config.json').write_text(json.dumps(config), encoding='utf-8')
     flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-    log = (root / "agent.log").open("w")
+    log = (root / "agent.log").open("w", encoding='utf-8')
     service = subprocess.Popen([str(agent)], env=env, stdout=log, stderr=log, creationflags=flags)
     host = None
 
@@ -112,7 +114,7 @@ def main():
         ticket = begun["runtimeTicket"]
         # A real, same-user Python peer cannot pretend to be the expected runtime executable.
         assert not rpc("launch-attach", runtimeTicket=ticket)["success"]
-        host = subprocess.Popen([str(launcher), "runtime-host"], env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, creationflags=flags)
+        host = subprocess.Popen([str(launcher), "runtime-host"], env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, creationflags=flags, encoding='utf-8')
         host.stdin.write(json.dumps({"config": config, "ticket": ticket, "agentEndpoint": endpoint}) + "\n"); host.stdin.close(); host.stdin=None
         event = json.loads(host.stdout.readline())
         assert event["state"] == "started", event
@@ -135,7 +137,7 @@ def main():
         assert host.returncode == 0, error
         assert rpc("runtime-inspect")["runtime"]["state"] == 0
         again = rpc("launch-begin"); assert again["success"]
-        host = subprocess.Popen([str(launcher), "runtime-host"], env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, creationflags=flags)
+        host = subprocess.Popen([str(launcher), "runtime-host"], env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, creationflags=flags, encoding='utf-8')
         host.stdin.write(json.dumps({"config": config, "ticket": again["runtimeTicket"], "agentEndpoint": endpoint}) + "\n"); host.stdin.close(); host.stdin=None
         assert json.loads(host.stdout.readline())["state"] == "started"
         host.kill(); host.wait(timeout=5)
@@ -146,7 +148,7 @@ def main():
         summary = {"platform": platform, "same_user_console_agent": True, "wrong_peer_rejected": True,
                    "duplicate_launch_blocked": True, "normal_completion": True, "agent_restart": True,
                    "host_crash_stays_unknown": True, "managed_service_account_verified": False}
-        (root / "summary.json").write_text(json.dumps(summary, indent=2))
+        (root / "summary.json").write_text(json.dumps(summary, indent=2), encoding='utf-8')
         print("PASS: " + str(root))
     finally:
         if host and host.poll() is None:

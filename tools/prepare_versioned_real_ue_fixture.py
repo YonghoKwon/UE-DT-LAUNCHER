@@ -4,6 +4,8 @@ Both releases use the SAME real UE executable/cooked files. Only non-executable
 FixtureAcceptance text members differ. This is NOT two independently built UE versions.
 Generated keys, packages, installations and raw evidence stay outside Git.
 """
+from ci_text import configure_console
+configure_console()
 import argparse
 import hashlib
 from stream_hash import sha256_stream
@@ -50,7 +52,7 @@ def validate_versions(versions):
 
 
 def validate_cohort(path, inputs):
-    value = json.loads(Path(path).read_text())
+    value = json.loads(Path(path).read_text(encoding='utf-8'))
     if value.get('schemaVersion') != 1 or value.get('rid') != 'win-x64' or value.get('productSourceDirty') is not False:
         raise ValueError('Frozen clean-source Windows cohort required')
     if not re.fullmatch(r'[0-9a-f]{40}', value.get('sourceHead', '')) or not re.fullmatch(r'[0-9a-f]{64}', value.get('productSourceHash', '')):
@@ -97,7 +99,7 @@ def load(root):
     for p in (root, *root.parents):
         if p.is_symlink() or (hasattr(p, 'is_junction') and p.is_junction()): raise ValueError('Linked fixture root')
     root = root.resolve()
-    f = json.loads(inside(root, 'versioned-real-fixture.json').read_text())
+    f = json.loads(inside(root, 'versioned-real-fixture.json').read_text(encoding='utf-8'))
     if f.get('schemaVersion') != 2 or f.get('kind') != 'same-ue-payload-file-delta' or f.get('projectId') != 'ma0t10-dt':
         raise ValueError('Not a versioned real UE fixture')
     if f.get('mode') not in ('managed', 'portable'): raise ValueError('Unsupported fixture mode')
@@ -110,18 +112,18 @@ def load(root):
         path = inside(root, value['relativePath'])
         if name in COHORT_FILES and path.name != COHORT_FILES[name]: raise ValueError('Wrong cohort executable')
         if sha256(path) != value['sha256']: raise ValueError('Published cohort changed')
-    config = json.loads(inside(root, 'server.json').read_text())
+    config = json.loads(inside(root, 'server.json').read_text(encoding='utf-8'))
     if config['publicUrl'] != f['origin'] or config['listenUrl'] != f['origin']: raise ValueError('Server origin changed')
     for field in ('root', 'signingKeyPath', 'policyPath'):
         inside(root, Path(config[field]).relative_to(root))
     for profile in ('general', 'developer'):
-        c = json.loads(inside(root, 'client/'+profile+'.json').read_text())
+        c = json.loads(inside(root, 'client/'+profile+'.json').read_text(encoding='utf-8'))
         if c['projectId'] != f['projectId'] or c['distributionServerUrl'] != f['origin']: raise ValueError('Client identity changed')
         for field in ('installDir', 'stateRootDir', 'logDir'):
             inside(root, Path(c[field]).relative_to(root))
     if f.get('runtimeDataEnabled'):
         for profile in ('general', 'developer'):
-            c = json.loads(inside(root, 'client/'+profile+'.json').read_text())
+            c = json.loads(inside(root, 'client/'+profile+'.json').read_text(encoding='utf-8'))
             if c.get('runtimeData') != {'enabled': True, 'adapter': 'unreal-engine', 'policy': 'per-user-per-release', 'rootDirectory': str(root/'client/runtime-data')}:
                 raise ValueError('Runtime data policy changed')
     for name, digest in f.get('configHashes', {}).items():
@@ -137,7 +139,7 @@ def release_paths(root, version):
 
 def require_stopped(root, version):
     app, state = release_paths(root, version)
-    record = json.loads(inside(state, 'runtime-state.json').read_text())
+    record = json.loads(inside(state, 'runtime-state.json').read_text(encoding='utf-8'))
     expected_id = hashlib.sha256(str(app).rstrip('\\/').upper().encode()).hexdigest()
     if record.get('schemaVersion') != 1 or record.get('installationId') != expected_id or record.get('state') != 0 or record.get('origin') not in ('supervisor-completed', 'new-install'):
         raise ValueError('Valid supervised Quiescent record required; no guessed stopped state')
@@ -168,7 +170,7 @@ def mutation_lock(root, version):
 
 def snapshot(root, version, scope='all'):
     app, state = release_paths(root, version)
-    manifest = json.loads(inside(state, 'installed-manifest.json').read_text())
+    manifest = json.loads(inside(state, 'installed-manifest.json').read_text(encoding='utf-8'))
     managed = {e['path']: sha256(inside(app, e['path'])) for e in manifest['files']}
     all_app = inventory(app)
     value = {'version': version, 'managed': managed,
@@ -198,7 +200,7 @@ def observe(root, f, env, version):
         'dataFiles': inventory(inside(root, 'client/runtime-data')) if inside(root, 'client/runtime-data').exists() else {},
         'managed': {}, 'unmanaged': {}}
     if installed:
-        manifest = json.loads(inside(state, 'installed-manifest.json').read_text())
+        manifest = json.loads(inside(state, 'installed-manifest.json').read_text(encoding='utf-8'))
         known = {e['path'] for e in manifest['files']}
         files = inventory(app)
         value['managed'] = {p: v for p, v in files.items() if p in known}
@@ -255,7 +257,7 @@ def prepare(args):
          'versions': args.versions, 'mode': args.mode, 'endpoint': fixture_endpoint(root), 'binaries': {},
          'sourceInventoryHash': fingerprint(source), 'sourcePackage': str(package),
          'ueBuildMeaning': 'same previously built UE payload; only non-executable acceptance text differs',
-         'toolHead': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+         'toolHead': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True, encoding='utf-8', errors='replace').strip(),
          'toolDiffHash': hashlib.sha256(subprocess.check_output(['git', 'diff', 'HEAD'])).hexdigest(),
          'publishSourceHead': args.publish_source_head}
     if cohort is not None:
@@ -354,7 +356,7 @@ def main():
         for version in f['versions']:
             _, state = release_paths(root, version)
             p = inside(state, 'runtime-state.json')
-            print(json.dumps({'version': version, 'runtime': json.loads(p.read_text())['state'] if p.exists() else 'not-installed'}))
+            print(json.dumps({'version': version, 'runtime': json.loads(p.read_text(encoding='utf-8'))['state'] if p.exists() else 'not-installed'}))
         return
     if args.action == 'stop-services':
         p = inside(root, 'control/stop-all'); p.parent.mkdir(exist_ok=True); p.touch(); return
@@ -369,16 +371,16 @@ def main():
         print(json.dumps({'scope': args.scope, 'snapshotHash': fingerprint(value), 'evidence': path.relative_to(root).as_posix()}))
     if args.action == 'compare':
         if not re.fullmatch(r'[a-zA-Z0-9-]{1,64}', args.name): raise ValueError('Invalid evidence label')
-        previous = json.loads(inside(root, 'evidence/'+args.name+'.json').read_text())
+        previous = json.loads(inside(root, 'evidence/'+args.name+'.json').read_text(encoding='utf-8'))
         current = snapshot(root, args.version, args.scope)
         if previous != current: raise ValueError('Snapshot changed; inspect protected and unmanaged inventories separately')
         print('PASS: unchanged protected/state/data snapshot')
     if args.action == 'damage':
         with mutation_lock(root, args.version):
-            manifest = json.loads(inside(state, 'installed-manifest.json').read_text())
+            manifest = json.loads(inside(state, 'installed-manifest.json').read_text(encoding='utf-8'))
             name = 'FixtureAcceptance/changed.txt'
             if name not in {e['path'] for e in manifest['files']}: raise ValueError('Only known installed acceptance text may be damaged')
-            inside(app, name).write_text('intentional isolated acceptance damage\n')
+            inside(app, name).write_text('intentional isolated acceptance damage\n', encoding='utf-8')
     if args.action == 'invalidate-preview':
         with mutation_lock(root, args.version):
             backups = sorted(inside(state, 'backups').glob('[0-9]*'), reverse=True)
@@ -390,7 +392,7 @@ def main():
         backups = sorted(inside(state, 'backups').glob('[0-9]*'), reverse=True)
         if not backups: raise ValueError('No backup')
         backup = backups[0]
-        info = json.loads(inside(backup, '.uedt-meta/backup-info.json').read_text())
+        info = json.loads(inside(backup, '.uedt-meta/backup-info.json').read_text(encoding='utf-8'))
         if info['previousVersion'] != args.version or info['newVersion'] != args.version or info['addedPaths']:
             raise ValueError('Not a same-version normal-file backup')
         manifest_path = inside(backup, '.uedt-meta/installed-manifest.json')

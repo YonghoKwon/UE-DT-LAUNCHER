@@ -1,4 +1,6 @@
 """Verify the four-document progress ledger instead of hand-maintaining contradictory totals."""
+from ci_text import configure_console
+configure_console()
 from pathlib import Path
 import re
 root=Path(__file__).resolve().parents[1]

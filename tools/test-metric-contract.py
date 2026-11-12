@@ -1,3 +1,5 @@
+from ci_text import configure_console
+configure_console()
 import unittest
 from metric_contract import sanitize
 class Metrics(unittest.TestCase):

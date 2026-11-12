@@ -1,4 +1,6 @@
 """Read-only package/template contracts. Never registers tasks or installs packages."""
+from ci_text import configure_console
+configure_console()
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
@@ -9,10 +11,10 @@ assert task.find('t:Settings/t:Enabled',ns).text=='false'
 assert task.find('t:Settings/t:StartWhenAvailable',ns).text=='false'
 assert task.find('t:Settings/t:MultipleInstancesPolicy',ns).text=='IgnoreNew'
 assert 'scheduled-check' in task.find('t:Actions/t:Exec/t:Arguments',ns).text
-timer=(root/'packaging/linux/ue-dt-check.timer.template').read_text()
+timer=(root/'packaging/linux/ue-dt-check.timer.template').read_text(encoding='utf-8')
 assert '@ADMIN_INTERVAL_SECONDS@' in timer and 'Persistent=false' in timer and not any(line.strip()=='[Install]' for line in timer.splitlines())
-service=(root/'packaging/linux/ue-dt-check.service').read_text()
+service=(root/'packaging/linux/ue-dt-check.service').read_text(encoding='utf-8')
 assert ' scheduled-check ' in service and 'service-run' not in service
-spec=(root/'packaging/linux/ue-dt-launcher.spec').read_text()
+spec=(root/'packaging/linux/ue-dt-launcher.spec').read_text(encoding='utf-8')
 assert '%config(noreplace)' in spec and '0750,root,uedt' in spec
 print('PASS: disabled scheduler, no catch-up/install command, RPM config/credential ownership contracts')

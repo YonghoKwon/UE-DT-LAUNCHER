@@ -11,7 +11,7 @@ mkdir -p "$root/server/incoming" "$root/client" "$root/nginx" "$root/game"
 wait_runtime() {
     for attempt in {1..50}; do
         "$launcher" runtime inspect --config "$root/client/config.json" > "$root/runtime-inspect.json"
-        if python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1]))["state"] == 0 else 1)' "$root/runtime-inspect.json"; then
+        if python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1],encoding="utf-8"))["state"] == 0 else 1)' "$root/runtime-inspect.json"; then
             return 0
         fi
         sleep 0.1
@@ -44,7 +44,7 @@ for version in 1.0.0 2.0.0; do
     "$server" approve "$job" --config "$root/server.json" >> "$root/intake.log"
     if "$server" --help | grep -q 'promotion inspect'; then
         "$server" promotion inspect --project-id demo --environment prod --channel stable --platform linux-x64 --config "$root/server.json" > "$root/promotion.json"
-        revision=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["revision"])' "$root/promotion.json")
+        revision=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1],encoding="utf-8"))["revision"])' "$root/promotion.json")
         "$server" promote --project-id demo --environment prod --channel stable --platform linux-x64 --version "$version" --expected-revision "$revision" --reason 'isolated HTTPS acceptance' --config "$root/server.json" >> "$root/intake.log"
     fi
 done

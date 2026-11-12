@@ -1,12 +1,14 @@
 """Published migration refusal and stopped import proof; no shared ownership is adopted."""
+from ci_text import configure_console
+configure_console()
 import argparse, hashlib, json, os, subprocess, tempfile
 from pathlib import Path
 p=argparse.ArgumentParser(); p.add_argument('--launcher',required=True); p.add_argument('--agent',required=True); a=p.parse_args()
 root=Path(tempfile.mkdtemp(prefix='uedt-migration-proof-')); platform='windows-x64' if os.name=='nt' else 'linux-x64'
 app=root/'app'; app.mkdir(); (app/'game').write_bytes(b'fixture')
 state=root/'state'/'demo'/platform; state.mkdir(parents=True)
-config=root/'config.json'; config.write_text(json.dumps(dict(schemaVersion=1,projectId='demo',targetPlatform=platform,installDir=str(app),stateRootDir=str(root/'state'))))
-(state/'installed-manifest.json').write_text(json.dumps(dict(appId='demo',version='1',platform=platform,entryPoint='game',files=[dict(path='game',size=7,sha256=hashlib.sha256(b'fixture').hexdigest())])))
+config=root/'config.json'; config.write_text(json.dumps(dict(schemaVersion=1,projectId='demo',targetPlatform=platform,installDir=str(app),stateRootDir=str(root/'state'))), encoding='utf-8')
+(state/'installed-manifest.json').write_text(json.dumps(dict(appId='demo',version='1',platform=platform,entryPoint='game',files=[dict(path='game',size=7,sha256=hashlib.sha256(b'fixture').hexdigest())])), encoding='utf-8')
 def run(exe,*args): return subprocess.run([str(Path(exe).resolve()),*map(str,args)],env=dict(os.environ,UE_DT_AGENT_DATA_ROOT=str(root/'managed')),capture_output=True,encoding='utf-8',timeout=20)
 dry=run(a.agent,'migrate','--config',config,'--dry-run'); assert dry.returncode==0,dry.stderr
 assert json.loads(dry.stdout)['CanApply'] is False

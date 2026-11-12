@@ -1,4 +1,6 @@
 """Offline backup/controlled restore of an OWNED synthetic fixture, never company data."""
+from ci_text import configure_console
+configure_console()
 import argparse
 import json
 import os
@@ -42,7 +44,7 @@ def main():
         if file.is_file() and file.stat().st_size==len(private_key) and file.read_bytes()==private_key:raise RuntimeError('Private signing key entered backup')
     run('token-issue','pc-test')
     metadata=json.loads(run('token-list'))[-1];run('token-revoke-id','--id',metadata['id'])
-    with (args.output/'server-private.log').open('w') as log:
+    with (args.output/'server-private.log').open('w', encoding='utf-8') as log:
         owned=subprocess.Popen([executable,'serve','--config',str(config)],stdout=log,stderr=log,creationflags=flags)
         try:
             import socket
@@ -73,7 +75,7 @@ def main():
         client_config=args.output/'restored-client.json'
         config_value={'schemaVersion':3,'deploymentMode':'portable','distributionServerUrl':settings['publicUrl'],'projectId':'demo','clientProfile':'developer','environment':'prod','channel':'stable','versionPolicy':'exact','requestedVersion':'2.0.0','targetPlatform':'windows-x64' if os.name=='nt' else 'linux-x64','installDir':str(args.output/'probe-apps'),'stateRootDir':str(args.output/'probe-state'),'logDir':str(args.output/'probe-logs'),'requireSignedManifests':True,'launchAfterUpdate':False,'security':{'authenticationMode':'request-signature-v1','requireHttps':False,'credentialName':'restore-probe','allowedDownloadHosts':['127.0.0.1'],'trustedSigningKeys':[{'keyId':settings.get('signingKeyId','release-1'),'publicKeyPath':str(config.parent/'public.pem')}]}}
         client_config.write_text(json.dumps(config_value),encoding='utf-8')
-        with (args.output/'restored-server-private.log').open('w') as log:
+        with (args.output/'restored-server-private.log').open('w', encoding='utf-8') as log:
             restored=subprocess.Popen([executable,'serve','--config',str(target_config)],stdout=log,stderr=log,creationflags=flags)
             try:
                 deadline=time.monotonic()+15

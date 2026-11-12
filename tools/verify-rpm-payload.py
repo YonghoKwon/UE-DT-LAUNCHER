@@ -1,4 +1,6 @@
 """Non-installing RPM contract check. No scriptlets or extracted programs run."""
+from ci_text import configure_console
+configure_console()
 import argparse
 import hashlib
 from pathlib import Path, PurePosixPath
@@ -45,7 +47,7 @@ def entries(data):
 
 def verify(rpm, payload, version, developer=False):
     def query(format):
-        return subprocess.check_output(['rpm', '-qp', '--qf', format, str(rpm)], stderr=subprocess.DEVNULL, text=True)
+        return subprocess.check_output(['rpm', '-qp', '--qf', format, str(rpm)], stderr=subprocess.DEVNULL, text=True, encoding='utf-8')
     name='ue-dt-launcher-developer' if developer else 'ue-dt-launcher'
     if query('%{NAME}|%{VERSION}|%{RELEASE}|%{ARCH}') != f'{name}|{version}|1|x86_64':
         raise ValueError('Unexpected RPM identity')
@@ -102,7 +104,7 @@ def main():
     parser.add_argument('--developer',action='store_true')
     args = parser.parse_args()
     hashes = verify(args.rpm, args.payload, args.version,args.developer)
-    head = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True)
+    head = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, encoding='utf-8', errors='replace')
     with args.rpm.open('rb') as stream:
         digest = sha256_stream(stream)
     atomic(args.output, {'schemaVersion': 1, 'version': args.version, 'edition':'Developer' if args.developer else 'General', 'classification': 'UNSIGNED-DEV',
