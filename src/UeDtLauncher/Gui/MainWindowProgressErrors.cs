@@ -58,14 +58,14 @@ public sealed partial class MainWindow : Window
         {
             var id = AutomationProperties.GetAutomationId(button);
             var mutation = id is "primary-action" or "update" or "repair" or "rollback" or "resume-operation" or "cache-clear" or "backup-cleanup";
-            button.IsEnabled = !busy && (!mutation || (HasProject && _viewModel.GeneralState != GeneralLauncherState.RuntimeBlocked && (!_readOnlyRecoveryFollowUp || id=="primary-action"))) &&
+            button.IsEnabled = !busy && (!mutation || (HasProject && _viewModel.GeneralState != GeneralLauncherState.RuntimeBlocked && (!_readOnlyRecoveryFollowUp || id == "primary-action"))) &&
                 (!Equals(button.Tag, "general-primary-action") || (HasProject && (IsDeveloper || _viewModel.PrimaryAction != PrimaryActionKind.Disabled)));
             if (_config.IsManagedDeployment && id is "cache-clear" or "backup-cleanup")
             {
                 button.IsEnabled = false;
                 ToolTip.SetTip(button, "관리형 캐시/백업 정리는 업데이트 서비스의 별도 관리 기능이 필요합니다.");
             }
-            if(_configurationError is not null && id is "update" or "repair" or "rollback" or "resume-operation" or "cache-clear" or "backup-cleanup" or "open-folder")button.IsEnabled=false;
+            if (_configurationError is not null && id is "update" or "repair" or "rollback" or "resume-operation" or "cache-clear" or "backup-cleanup" or "open-folder") button.IsEnabled = false;
         }
         foreach (var control in _selectionControls) control.IsEnabled = !busy;
         RefreshPresentation();
@@ -98,8 +98,8 @@ public sealed partial class MainWindow : Window
     {
         var uiError = LauncherUiError.From(ex);
         if (uiError.Code == "no-promoted-release") { AwaitPromotion(); return; }
-        _presentation.Title=status;
-        _presentation.ErrorCode=uiError.Code; _presentation.SupportId=uiError.SupportId;
+        _presentation.Title = status;
+        _presentation.ErrorCode = uiError.Code; _presentation.SupportId = uiError.SupportId;
         var runtimeBlocked = ex.GetBaseException() as RuntimeBlockedException;
         _installState = runtimeBlocked is null ? "오류" : runtimeBlocked.Observation.State == RuntimeState.Running ? "실행 중" : "실행 상태 확인 필요";
         _installDetail = FriendlyError(ex);
@@ -109,12 +109,12 @@ public sealed partial class MainWindow : Window
         if (_statusText is not null) SetStatus(status);
         AppendLog($"[{uiError.SupportId}] {uiError.Code}: {FriendlyError(ex)}", true);
         if (IsDeveloper) AppendLog(ex.ToString(), true);
-        else if (showDialog && runtimeBlocked is null) ErrorDialog(status, FriendlyError(ex)+"\n지원 ID: "+uiError.SupportId);
+        else if (showDialog && runtimeBlocked is null) ErrorDialog(status, FriendlyError(ex) + "\n지원 ID: " + uiError.SupportId);
     }
     private string FriendlyError(Exception ex) => _viewModel.FriendlyError(ex);
     private void UpdateInstallTile() { if (_installStateText is not null) { _installStateText.Text = _installState; _installStateText.Foreground = StatusBrush(_installState); } if (_installDetailText is not null) _installDetailText.Text = _installDetail; }
 
-    private void ErrorDialog(string title,string message) => ShowEnterpriseError(title,message);
+    private void ErrorDialog(string title, string message) => ShowEnterpriseError(title, message);
     private void GeneralSettings() => SettingsDialog(false);
     private void DeveloperSettings() => SettingsDialog(true);
     private void SettingsDialog(bool dev) => ShowEnterpriseSettings(dev);

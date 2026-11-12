@@ -78,11 +78,11 @@ public sealed partial class MainWindow : Window
         AutomationProperties.SetName(button, text == "↻" ? "카탈로그 새로고침" : text.TrimStart('▶', ' '));
         button.GotFocus += (_, e) =>
         {
-            if(e.NavigationMethod==NavigationMethod.Pointer)return;
-            button.BorderBrush=HighContrast?Brushes.Yellow:LauncherVisualTokens.Brush(IsDeveloper?LauncherVisualTokens.PoscoLightBlue:LauncherVisualTokens.Accent);
-            button.BorderThickness=new Thickness(3);
+            if (e.NavigationMethod == NavigationMethod.Pointer) return;
+            button.BorderBrush = HighContrast ? Brushes.Yellow : LauncherVisualTokens.Brush(IsDeveloper ? LauncherVisualTokens.PoscoLightBlue : LauncherVisualTokens.Accent);
+            button.BorderThickness = new Thickness(3);
         };
-        button.LostFocus += (_,_)=>{button.BorderBrush=HighContrast?Brushes.White:LauncherVisualTokens.Border(IsDeveloper);button.BorderThickness=new Thickness(1);};
+        button.LostFocus += (_, _) => { button.BorderBrush = HighContrast ? Brushes.White : LauncherVisualTokens.Border(IsDeveloper); button.BorderThickness = new Thickness(1); };
         button.Click += handler;
         return button;
     }
@@ -95,15 +95,15 @@ public sealed partial class MainWindow : Window
 
     private void AppendLog(string msg, bool force = false)
     {
-        var safe=DiagnosticRedactor.Redact(msg);
+        var safe = DiagnosticRedactor.Redact(msg);
         _fileLogger?.Log("UI", safe);
         _presentation.Append($"{DateTime.Now:HH:mm:ss} {safe}");
         if (_logBox is null) return;
-        var caret=_logBox.CaretIndex; var start=_logBox.SelectionStart;var stop=_logBox.SelectionEnd;
-        var reading=_logBox.IsKeyboardFocusWithin || start!=stop;
-        _logBox.Text=_presentation.LogText;
-        if(reading){_logBox.CaretIndex=Math.Min(caret,_logBox.Text.Length);_logBox.SelectionStart=Math.Min(start,_logBox.Text.Length);_logBox.SelectionEnd=Math.Min(stop,_logBox.Text.Length);}
-        else _logBox.CaretIndex=_logBox.Text.Length;
+        var caret = _logBox.CaretIndex; var start = _logBox.SelectionStart; var stop = _logBox.SelectionEnd;
+        var reading = _logBox.IsKeyboardFocusWithin || start != stop;
+        _logBox.Text = _presentation.LogText;
+        if (reading) { _logBox.CaretIndex = Math.Min(caret, _logBox.Text.Length); _logBox.SelectionStart = Math.Min(start, _logBox.Text.Length); _logBox.SelectionEnd = Math.Min(stop, _logBox.Text.Length); }
+        else _logBox.CaretIndex = _logBox.Text.Length;
 
     }
 }

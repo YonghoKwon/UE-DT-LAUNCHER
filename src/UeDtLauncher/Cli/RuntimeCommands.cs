@@ -10,14 +10,14 @@ public static partial class Program
         if (action is not ("inspect" or "recover")) throw new ArgumentException("runtime supports inspect or recover.");
         var configPath = Required(args, "--config");
         var display = await JsonFiles.ReadAsync<LauncherConfig>(configPath);
-        var config=display.IsManagedDeployment?ManagedClientContext.Create(display):display;
-        if(!config.IsManagedDeployment){LauncherPaths.ResolveInPlace(config,configPath);LauncherConfigValidator.Validate(config);}
+        var config = display.IsManagedDeployment ? ManagedClientContext.Create(display) : display;
+        if (!config.IsManagedDeployment) { LauncherPaths.ResolveInPlace(config, configPath); LauncherConfigValidator.Validate(config); }
         if (config.IsManagedDeployment || !string.IsNullOrWhiteSpace(config.DistributionServerUrl))
         {
             var version = Get(args, "--version") ?? (config.VersionPolicy == "exact" ? config.RequestedVersion : null)
                 ?? throw new ArgumentException("Runtime inspection/recovery requires an exact --version.");
-            var selection=new ReleaseSelection(config.ProjectId!, config.Environment, config.Channel, config.TargetPlatform, version);
-            if(config.IsManagedDeployment)ManagedClientContext.Bind(config,selection);else VersionedReleasePaths.Bind(config,selection);
+            var selection = new ReleaseSelection(config.ProjectId!, config.Environment, config.Channel, config.TargetPlatform, version);
+            if (config.IsManagedDeployment) ManagedClientContext.Bind(config, selection); else VersionedReleasePaths.Bind(config, selection);
         }
         var confirm = Has(args, "--confirm-stopped");
         var serviceVersion = Has(args, "--service-selection") ? Get(args, "--version") ?? config.SelectedRelease?.Version ?? config.RequestedVersion
@@ -54,8 +54,8 @@ public static partial class Program
         var noLaunch = Has(args, "--no-launch");
         using var cancel = new ConsoleCancellation();
 
-        var display = await JsonFiles.ReadAsync<LauncherConfig>(configPath,cancel.Token);
-        var config = display.IsManagedDeployment?ManagedClientContext.Create(display):await LauncherPaths.LoadResolvedAsync(configPath, cancellationToken: cancel.Token);
+        var display = await JsonFiles.ReadAsync<LauncherConfig>(configPath, cancel.Token);
+        var config = display.IsManagedDeployment ? ManagedClientContext.Create(display) : await LauncherPaths.LoadResolvedAsync(configPath, cancellationToken: cancel.Token);
         var portableOperations = new OperationRegistry(Path.Combine(config.StateRootDir, "operations"));
         if (Get(args, "--resume-id") is { } resumeId)
         {
@@ -73,22 +73,22 @@ public static partial class Program
         if (config.IsManagedDeployment)
         {
             ReleaseSelection? selection = null;
-            if (string.IsNullOrWhiteSpace(display.ManifestUrl) || !string.IsNullOrWhiteSpace(display.DistributionServerUrl) || !string.IsNullOrWhiteSpace(display.CatalogUrl) || display.VersionPolicy=="exact")
+            if (string.IsNullOrWhiteSpace(display.ManifestUrl) || !string.IsNullOrWhiteSpace(display.DistributionServerUrl) || !string.IsNullOrWhiteSpace(display.CatalogUrl) || display.VersionPolicy == "exact")
             {
                 var catalogResponse = await new ManagedAgentClient().SendStreamingAsync("catalog", config.ProjectId, _ => { });
                 if (!catalogResponse.Success || catalogResponse.Catalog is null) throw new InvalidOperationException("업데이트 서비스에서 배포 목록을 가져오지 못했습니다.");
                 var release = CatalogResolver.SelectRelease(catalogResponse.Catalog, config);
                 selection = new ReleaseSelection(config.ProjectId!, release.Environment, release.Channel, release.Platform, release.Version);
-                ManagedClientContext.Bind(config,selection);
+                ManagedClientContext.Bind(config, selection);
             }
             var operationId = Get(args, "--operation-id") ?? Guid.NewGuid().ToString("N");
             Console.WriteLine("Operation ID: " + operationId);
             var managedResponse = await new ManagedAgentClient().SendCancellableAsync(repair ? "repair" : "update", config.ProjectId,
-                progress => Console.WriteLine($"[{progress.Stage}] {progress.Message}"), selection: selection,token:cancel.Token,operationId: operationId);
+                progress => Console.WriteLine($"[{progress.Stage}] {progress.Message}"), selection: selection, token: cancel.Token, operationId: operationId);
             PrintAgentResponse(managedResponse);
             if (!managedResponse.Success) return 1;
             if (selection is not null && managedResponse.SelectedRelease != selection) throw new InvalidDataException("Agent release mismatch.");
-            if (!noLaunch && !cancel.Token.IsCancellationRequested) _ = await ManagedAppLauncher.LaunchAsync(config,cancel.Token);
+            if (!noLaunch && !cancel.Token.IsCancellationRequested) _ = await ManagedAppLauncher.LaunchAsync(config, cancel.Token);
             return 0;
         }
 
@@ -128,15 +128,20 @@ public static partial class Program
         var id = Required(args, "--id");
         if (Get(args, "--config") is { } path)
         {
-            var display=await JsonFiles.ReadAsync<LauncherConfig>(path);
-            var config=display.IsManagedDeployment?ManagedClientContext.Create(display):await LauncherPaths.LoadResolvedAsync(path,readOnly:true);
+            var display = await JsonFiles.ReadAsync<LauncherConfig>(path);
+            var config = display.IsManagedDeployment ? ManagedClientContext.Create(display) : await LauncherPaths.LoadResolvedAsync(path, readOnly: true);
             if (!config.IsManagedDeployment)
             {
                 var registry = new OperationRegistry(Path.Combine(config.StateRootDir, "operations"));
                 var peer = RuntimeIdentities.Current();
                 if (action == "resume") return await RunLauncherAsync(["--config", path, "--resume-id", id, "--no-launch"]);
-                var status = action switch { "status" => registry.Inspect(id, peer), "cancel" => registry.Cancel(id, peer),
-                    "discard" => registry.Discard(id, peer), _ => throw new ArgumentException("Unknown operation action.") };
+                var status = action switch
+                {
+                    "status" => registry.Inspect(id, peer),
+                    "cancel" => registry.Cancel(id, peer),
+                    "discard" => registry.Discard(id, peer),
+                    _ => throw new ArgumentException("Unknown operation action.")
+                };
                 Console.WriteLine(JsonSerializer.Serialize(status, JsonFiles.Options)); return 0;
             }
         }
@@ -145,9 +150,9 @@ public static partial class Program
     }
     private static async Task<int> RunScheduledCheckAsync(string[] args)
     {
-        using var cancellation=new ConsoleCancellation();
-        var result=await ScheduledChecks.RunOnceAsync(Required(args,"--config"),cancellation.Token);
-        Console.WriteLine(JsonSerializer.Serialize(result,JsonFiles.Options));return result.Status=="failed"?1:0;
+        using var cancellation = new ConsoleCancellation();
+        var result = await ScheduledChecks.RunOnceAsync(Required(args, "--config"), cancellation.Token);
+        Console.WriteLine(JsonSerializer.Serialize(result, JsonFiles.Options)); return result.Status == "failed" ? 1 : 0;
     }
 
     private static async Task<int> RunServiceAsync(string[] args)

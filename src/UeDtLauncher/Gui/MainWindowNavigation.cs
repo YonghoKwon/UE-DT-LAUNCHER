@@ -54,7 +54,7 @@ public sealed partial class MainWindow : Window
 
     private async Task<bool> RefreshAgentStatusAsync()
     {
-        if(!_config.IsManagedDeployment){_agentState="로컬 모드";if(_serviceLabel is not null)_serviceLabel.Text=_agentState;return true;}
+        if (!_config.IsManagedDeployment) { _agentState = "로컬 모드"; if (_serviceLabel is not null) _serviceLabel.Text = _agentState; return true; }
         // The v1 agent handles one operation at a time; a separate probe must not label active work disconnected.
         if (_running) return _agentState.StartsWith("연결", StringComparison.Ordinal) || _agentState.EndsWith("정상", StringComparison.Ordinal);
         if (_agentStatusRefreshing) return _agentState.StartsWith("연결", StringComparison.Ordinal) || _agentState.EndsWith("정상", StringComparison.Ordinal);

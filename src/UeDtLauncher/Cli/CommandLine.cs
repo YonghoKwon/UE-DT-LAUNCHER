@@ -118,4 +118,5 @@ public static partial class Program
         output.WriteLine("  sign-manifest --manifest <manifest.json> --private-key <private.pem> [--key-id <id>] --output <manifest.json.sig>");
         output.WriteLine("  service --config launcher.config.json [--interval <seconds>] [--once]");
         output.WriteLine("  publish-release --package-dir <dir> --server-root <dir> --base-url-root <url> --project-id <id> --version <version> --platform <platform> --entry-point <path> --private-key <pem> --key-id <id> [--dry-run] [--replace] [--set-latest]");
-    }}
+    }
+}

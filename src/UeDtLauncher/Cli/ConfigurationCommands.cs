@@ -9,19 +9,19 @@ public static partial class Program
         var output = Get(args, "--output") ?? "launcher.config.json";
         if (File.Exists(output) && !Has(args, "--force")) throw new IOException("Config already exists; use a new output or explicit --force.");
         var mode = Get(args, "--mode") ?? "distribution";
-        if(mode=="managed-client")
+        if (mode == "managed-client")
         {
-            var allowed=new HashSet<string>(StringComparer.OrdinalIgnoreCase){"--mode","--project-id","--platform","--environment","--channel","--version-policy","--version","--output","--force"};
-            var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            for(var i=0;i<args.Length;i++)
+            var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "--mode", "--project-id", "--platform", "--environment", "--channel", "--version-policy", "--version", "--output", "--force" };
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (var i = 0; i < args.Length; i++)
             {
-                if(!allowed.Contains(args[i]) || !seen.Add(args[i]))throw new ArgumentException("Unsupported or duplicate managed-client option. Operational settings belong in the Agent configuration.");
-                if(!args[i].Equals("--force",StringComparison.OrdinalIgnoreCase))
-                {if(i+1>=args.Length || args[i+1].StartsWith("--",StringComparison.Ordinal))throw new ArgumentException("Missing managed-client option value.");i++;}
+                if (!allowed.Contains(args[i]) || !seen.Add(args[i])) throw new ArgumentException("Unsupported or duplicate managed-client option. Operational settings belong in the Agent configuration.");
+                if (!args[i].Equals("--force", StringComparison.OrdinalIgnoreCase))
+                { if (i + 1 >= args.Length || args[i + 1].StartsWith("--", StringComparison.Ordinal)) throw new ArgumentException("Missing managed-client option value."); i++; }
             }
-            var client=LauncherConfigurationTemplates.ManagedClient(Required(args,"--project-id"),Get(args,"--platform"),
-                Get(args,"--environment")??"prod",Get(args,"--channel")??"stable",Get(args,"--version-policy")??"latest",Get(args,"--version"));
-            await JsonFiles.WriteAsync(output,client,overwrite:Has(args,"--force"));
+            var client = LauncherConfigurationTemplates.ManagedClient(Required(args, "--project-id"), Get(args, "--platform"),
+                Get(args, "--environment") ?? "prod", Get(args, "--channel") ?? "stable", Get(args, "--version-policy") ?? "latest", Get(args, "--version"));
+            await JsonFiles.WriteAsync(output, client, overwrite: Has(args, "--force"));
             Console.WriteLine("Managed client display configuration written. Provision the Agent operational configuration separately; the client edition is fixed by its build.");
             return 0;
         }

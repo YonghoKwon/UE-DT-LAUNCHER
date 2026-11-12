@@ -32,11 +32,11 @@ public sealed partial class MainWindow : Window
     private bool _startupInitialized;
     private Exception? _configurationError;
     private readonly ILauncherUiBackend _uiBackend;
-    private readonly Func<string,Task<LauncherConfig>> _runtimeConfigLoader;
-    private readonly Func<LauncherConfig,RollbackPreview,Task<LauncherRestoreResult>> _restorePreview;
-    private readonly Func<LauncherConfig,Task<RollbackPreview?>> _managedRollbackPreview;
-    private readonly Func<LauncherConfig,string,CancellationToken,Task<CatalogSnapshot>> _catalogLoader;
-    private readonly Func<string,bool,DoctorTarget?,CancellationToken,Task<DoctorReport>> _doctor;
+    private readonly Func<string, Task<LauncherConfig>> _runtimeConfigLoader;
+    private readonly Func<LauncherConfig, RollbackPreview, Task<LauncherRestoreResult>> _restorePreview;
+    private readonly Func<LauncherConfig, Task<RollbackPreview?>> _managedRollbackPreview;
+    private readonly Func<LauncherConfig, string, CancellationToken, Task<CatalogSnapshot>> _catalogLoader;
+    private readonly Func<string, bool, DoctorTarget?, CancellationToken, Task<DoctorReport>> _doctor;
     private bool _windowMetricsInitialized;
     private readonly bool _allowAutomaticChecks;
     private EventHandler<Avalonia.Platform.PlatformColorValues>? _colorValuesChanged;
@@ -79,32 +79,32 @@ public sealed partial class MainWindow : Window
 
     public MainWindow(LauncherStartupOptions startupOptions) : this(startupOptions, null, null, true) { }
 
-    internal MainWindow(LauncherStartupOptions startupOptions, LauncherDashboardViewModel? model, LauncherUiPreferences? preferences, bool startServices, ILauncherUiBackend? backend=null,
-        Func<LauncherConfig,string,CancellationToken,Task<CatalogSnapshot>>? catalogLoader=null,
-        Func<string,bool,DoctorTarget?,CancellationToken,Task<DoctorReport>>? doctor=null,
-        Func<string,Task<LauncherConfig>>? runtimeConfigLoader=null,
-        Func<LauncherConfig,RollbackPreview,Task<LauncherRestoreResult>>? restorePreview=null,
-        Func<LauncherConfig,Task<RollbackPreview?>>? managedRollbackPreview=null)
+    internal MainWindow(LauncherStartupOptions startupOptions, LauncherDashboardViewModel? model, LauncherUiPreferences? preferences, bool startServices, ILauncherUiBackend? backend = null,
+        Func<LauncherConfig, string, CancellationToken, Task<CatalogSnapshot>>? catalogLoader = null,
+        Func<string, bool, DoctorTarget?, CancellationToken, Task<DoctorReport>>? doctor = null,
+        Func<string, Task<LauncherConfig>>? runtimeConfigLoader = null,
+        Func<LauncherConfig, RollbackPreview, Task<LauncherRestoreResult>>? restorePreview = null,
+        Func<LauncherConfig, Task<RollbackPreview?>>? managedRollbackPreview = null)
     {
-        _uiBackend=backend??new LauncherUiBackend();
-        _runtimeConfigLoader=runtimeConfigLoader??(path=>LauncherPaths.LoadResolvedAsync(path));
-        _managedRollbackPreview=managedRollbackPreview??PreviewManagedRollbackAsync;
-        _restorePreview=restorePreview??((config,preview)=>config.IsManagedDeployment
-            ? RestoreManagedPreviewAsync(config,preview)
-            : Task.Run(async()=>{await RollbackPreviewService.RestoreExpectedAsync(config,preview.BackupId,preview.MetadataFingerprint);return new LauncherRestoreResult(LauncherRestoreDisposition.Applied);}));
-        _catalogLoader=catalogLoader??CatalogSnapshotService.LoadAsync;
-        _doctor=doctor??((path,online,target,token)=>LauncherDoctor.RunAsync(path,online,token,target:target));
+        _uiBackend = backend ?? new LauncherUiBackend();
+        _runtimeConfigLoader = runtimeConfigLoader ?? (path => LauncherPaths.LoadResolvedAsync(path));
+        _managedRollbackPreview = managedRollbackPreview ?? PreviewManagedRollbackAsync;
+        _restorePreview = restorePreview ?? ((config, preview) => config.IsManagedDeployment
+            ? RestoreManagedPreviewAsync(config, preview)
+            : Task.Run(async () => { await RollbackPreviewService.RestoreExpectedAsync(config, preview.BackupId, preview.MetadataFingerprint); return new LauncherRestoreResult(LauncherRestoreDisposition.Applied); }));
+        _catalogLoader = catalogLoader ?? CatalogSnapshotService.LoadAsync;
+        _doctor = doctor ?? ((path, online, target, token) => LauncherDoctor.RunAsync(path, online, token, target: target));
         _startupOptions = startupOptions;
         _allowAutomaticChecks = startServices;
         if (model is not null) _viewModel = model;
         _preferences = preferences ?? (startServices ? LauncherUiPreferences.Load() : new());
         InitializeComponent();
         if (model is null) LoadConfig(); else SelectProject();
-        if (startServices) { try { _fileLogger = new FileLogger(_config.IsManagedDeployment?ManagedClientContext.UserLogRoot(ConfigPath):LauncherPaths.ResolveConfigRelative(ConfigPath, _config.LogDir)); } catch { _fileLogger = null; } }
+        if (startServices) { try { _fileLogger = new FileLogger(_config.IsManagedDeployment ? ManagedClientContext.UserLogRoot(ConfigPath) : LauncherPaths.ResolveConfigRelative(ConfigPath, _config.LogDir)); } catch { _fileLogger = null; } }
         Build();
         if (startServices && PlatformSettings is not null)
         {
-            _colorValuesChanged = (_, _) => Dispatcher.UIThread.Post(()=>{Build();RefreshOpenDialogs();RecordDisplayDiagnostic();});
+            _colorValuesChanged = (_, _) => Dispatcher.UIThread.Post(() => { Build(); RefreshOpenDialogs(); RecordDisplayDiagnostic(); });
             PlatformSettings.ColorValuesChanged += _colorValuesChanged;
         }
         _agentStatusTimer.Tick += async (_, _) => await RefreshAgentStatusAsync();
@@ -117,7 +117,7 @@ public sealed partial class MainWindow : Window
             _projectVisualCache.Clear();
             _brandLogo?.Dispose();
         };
-        if (startServices) Opened += async (_, _) => {RecordDisplayDiagnostic();await InitializeStartupAsync();};
+        if (startServices) Opened += async (_, _) => { RecordDisplayDiagnostic(); await InitializeStartupAsync(); };
         SizeChanged += (_, args) =>
         {
             UpdateActionDetailsLimit(); RecordDisplayDiagnostic();
@@ -153,37 +153,37 @@ public sealed partial class MainWindow : Window
             Build();
             return;
         }
-        if(await RefreshCatalog(false,suppressDialog:true) && HasProject)await RefreshInstallStatusAsync(suppressDialog:true);
+        if (await RefreshCatalog(false, suppressDialog: true) && HasProject) await RefreshInstallStatusAsync(suppressDialog: true);
     }
 
     private void LoadConfig()
     {
-        _configurationError=null;
+        _configurationError = null;
         _config = new LauncherConfig();
         if (File.Exists(ConfigPath))
         {
             try
             {
-                var parsed=JsonSerializer.Deserialize<LauncherConfig>(File.ReadAllText(ConfigPath),JsonFiles.Options)
+                var parsed = JsonSerializer.Deserialize<LauncherConfig>(File.ReadAllText(ConfigPath), JsonFiles.Options)
                     ?? throw new ArgumentException("Launcher configuration is empty.");
-                if(parsed.Projects is null || parsed.Security is null || parsed.Performance is null ||
-                    parsed.Projects.Any(p=>p is null || string.IsNullOrWhiteSpace(p.ProjectId) || p.VisibleToProfiles is null || p.VisibleToProfiles.Any(v=>v is null)))
+                if (parsed.Projects is null || parsed.Security is null || parsed.Performance is null ||
+                    parsed.Projects.Any(p => p is null || string.IsNullOrWhiteSpace(p.ProjectId) || p.VisibleToProfiles is null || p.VisibleToProfiles.Any(v => v is null)))
                     throw new ArgumentException("Launcher display configuration is incomplete.");
-                foreach(var project in parsed.Projects)if(string.IsNullOrWhiteSpace(project.DisplayName))project.DisplayName=project.ProjectId;
-                _config=parsed;
+                foreach (var project in parsed.Projects) if (string.IsNullOrWhiteSpace(project.DisplayName)) project.DisplayName = project.ProjectId;
+                _config = parsed;
             }
             catch (Exception ex)
             {
-                _configurationError=ex;var error=LauncherUiError.From(new ArgumentException("Invalid launcher configuration.",ex));
-                _installState="설정 확인 필요";_installDetail=error.Message;
-                _viewModel.GeneralState=GeneralLauncherState.ConfigurationRequired;
-                _presentation.Title="런처 설정을 확인해 주세요.";_presentation.ErrorCode="configuration-invalid";_presentation.SupportId=error.SupportId;
+                _configurationError = ex; var error = LauncherUiError.From(new ArgumentException("Invalid launcher configuration.", ex));
+                _installState = "설정 확인 필요"; _installDetail = error.Message;
+                _viewModel.GeneralState = GeneralLauncherState.ConfigurationRequired;
+                _presentation.Title = "런처 설정을 확인해 주세요."; _presentation.ErrorCode = "configuration-invalid"; _presentation.SupportId = error.SupportId;
             }
         }
         else
         {
-            _configurationError=new FileNotFoundException("Launcher display configuration is missing.");
-            _presentation.Title="런처 설정을 확인해 주세요.";_presentation.ErrorCode="configuration-invalid";_presentation.SupportId=Guid.NewGuid().ToString("N");
+            _configurationError = new FileNotFoundException("Launcher display configuration is missing.");
+            _presentation.Title = "런처 설정을 확인해 주세요."; _presentation.ErrorCode = "configuration-invalid"; _presentation.SupportId = Guid.NewGuid().ToString("N");
             _installState = "설정 확인 필요";
             _installDetail = IsDeveloper
                 ? $"설정 파일이 없습니다: {ConfigPath}"

@@ -17,11 +17,18 @@ public static partial class Program
         profile = profile.Override(new(Get(args, "--server"), Get(args, "--remote-incoming"), port, Get(args, "--identity-file")));
         var metadata = new ReleaseSidecar
         {
-            ProjectId = Required(args, "--project-id"), DisplayName = Get(args, "--display-name") ?? Required(args, "--project-id"),
-            Version = Required(args, "--version"), Platform = Required(args, "--platform"), EntryPoint = Required(args, "--entry-point"),
-            PayloadRoot = Get(args, "--payload-root") ?? ".", Environment = Get(args, "--environment") ?? "prod", Channel = Get(args, "--channel") ?? "stable",
+            ProjectId = Required(args, "--project-id"),
+            DisplayName = Get(args, "--display-name") ?? Required(args, "--project-id"),
+            Version = Required(args, "--version"),
+            Platform = Required(args, "--platform"),
+            EntryPoint = Required(args, "--entry-point"),
+            PayloadRoot = Get(args, "--payload-root") ?? ".",
+            Environment = Get(args, "--environment") ?? "prod",
+            Channel = Get(args, "--channel") ?? "stable",
             ExecutablePaths = (Get(args, "--executable-paths") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).ToList(),
-            Notes = Get(args, "--notes"), HeroPath = Get(args, "--hero-path"), ThumbnailPath = Get(args, "--thumbnail-path")
+            Notes = Get(args, "--notes"),
+            HeroPath = Get(args, "--hero-path"),
+            ThumbnailPath = Get(args, "--thumbnail-path")
         };
         var result = await new ReleaseUploader(new OpenSshProcessRunner()).ExecuteAsync(Required(args, "--zip"), metadata,
             profile, Get(args, "--upload-id"), Path.Combine(Environment.CurrentDirectory, "upload-work"), Has(args, "--dry-run"));
