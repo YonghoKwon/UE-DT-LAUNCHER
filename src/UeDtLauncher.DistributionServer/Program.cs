@@ -13,6 +13,7 @@ if (arguments.Contains("--help"))
     Console.WriteLine("token-issue client [--expires-at UTC/offset-ISO] | token-list | token-revoke-id --id management-id; client-key add also accepts --expires-at. No expiry is invented for existing credentials.");
     Console.WriteLine("backup plan/create --output new-dir/verify --backup dir; restore plan/stage --backup dir --target empty-dir/activate --target dir --confirm");
     Console.WriteLine("retention inspect/plan --jobs failed-id or --temporary processing/dir --output plan.json/apply --plan plan.json --confirm; stop serve/watch before apply.");
+    Console.WriteLine("console --config server.json: terminal-only Korean guided operations; approvals and promotions remain separate. --error-details shows exception types only.");
     return;
 }
 var configIndex = arguments.IndexOf("--config");
@@ -20,6 +21,11 @@ var configPath = configIndex >= 0 ? arguments[configIndex + 1] : "/etc/ue-dt-dis
 if (configIndex >= 0) arguments.RemoveRange(configIndex, 2);
 var settings = await JsonFiles.ReadAsync<DistributionSettings>(configPath);
 var action = arguments.FirstOrDefault() ?? "list";
+if (action == "console")
+{
+    await new OperationsConsole(settings, configPath, Console.In, Console.Out, !Console.IsInputRedirected).RunAsync();
+    return;
+}
 string RequiredOption(string name)
 {
     var index = arguments.IndexOf(name);
