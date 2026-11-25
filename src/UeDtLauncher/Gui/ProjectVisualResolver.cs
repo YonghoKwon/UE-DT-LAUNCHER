@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace UeDtLauncher.Gui;
 
 public enum ProjectVisualKind
@@ -26,11 +28,10 @@ public static class ProjectVisualResolver
         string configPath,
         ProjectVisualKind kind)
     {
-        var initials = Initials(project.DisplayName, project.ProjectId);
-        var variant = StableVariant(project.ProjectId);
+        var fallback = Fallback(project);
         var configured = kind == ProjectVisualKind.Hero ? project.HeroPath : project.ThumbnailPath;
         if (string.IsNullOrWhiteSpace(configured))
-            return new ProjectVisualAsset(null, initials, variant, "not-configured");
+            return fallback with { FailureReason = "not-configured" };
 
         try
         {
@@ -39,28 +40,31 @@ public static class ProjectVisualResolver
                 ? Path.GetFullPath(configured)
                 : Path.GetFullPath(configured, configDirectory);
             if (!SupportedExtensions.Contains(Path.GetExtension(resolved)))
-                return new ProjectVisualAsset(null, initials, variant, "unsupported-format");
+                return fallback with { FailureReason = "unsupported-format" };
             if (!File.Exists(resolved))
-                return new ProjectVisualAsset(null, initials, variant, "missing");
+                return fallback with { FailureReason = "missing" };
             if (new FileInfo(resolved).Length > MaxAssetBytes)
-                return new ProjectVisualAsset(null, initials, variant, "too-large");
+                return fallback with { FailureReason = "too-large" };
 
             if (!HasSupportedSignature(resolved, Path.GetExtension(resolved)))
-                return new ProjectVisualAsset(null, initials, variant, "invalid-image");
-            return new ProjectVisualAsset(resolved, initials, variant);
+                return fallback with { FailureReason = "invalid-image" };
+            return fallback with { ResolvedPath = resolved };
         }
         catch
         {
-            return new ProjectVisualAsset(null, initials, variant, "invalid-image");
+            return fallback with { FailureReason = "invalid-image" };
         }
     }
+
+    internal static ProjectVisualAsset Fallback(ProjectUiConfig project) =>
+        new(null, Initials(project.DisplayName, project.ProjectId), StableVariant(project.ProjectId));
 
     internal static string Initials(string? displayName, string? projectId)
     {
         var source = string.IsNullOrWhiteSpace(displayName) ? projectId : displayName;
         var parts = (source ?? "UE")
             .Split([' ', '-', '_'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var initials = string.Concat(parts.Take(2).Select(part => char.ToUpperInvariant(part[0])));
+        var initials = string.Concat(parts.Take(2).Select(part => StringInfo.GetNextTextElement(part).ToUpperInvariant()));
         return string.IsNullOrWhiteSpace(initials) ? "UE" : initials;
     }
 

@@ -19,9 +19,18 @@ public sealed partial class MainWindow : Window
     private TextBlock Txt(string text, double size, bool bold) => Label(text, size, Fg(), bold);
     private TextBlock Muted(string text, double size) => Label(text, size, MutedBrush());
     private TextBlock Label(string text, double size, IBrush color, bool bold = false) => new() { Text = text ?? string.Empty, FontSize = size * _preferences.TextScale, Foreground = HighContrast ? Brushes.White : color, FontWeight = bold ? FontWeight.SemiBold : FontWeight.Normal, TextWrapping = TextWrapping.Wrap };
-    private IBrush Fg() => HighContrast ? Brushes.White : LauncherVisualTokens.Text(IsDeveloper);
-    private IBrush MutedBrush() => HighContrast ? Brushes.White : LauncherVisualTokens.MutedText(IsDeveloper);
-    private IBrush StatusBrush(string? s) { var v = s ?? string.Empty; if (v.Contains("오류")) return LauncherVisualTokens.Brush(LauncherVisualTokens.Danger); if (v.Contains("업데이트")) return LauncherVisualTokens.Brush(LauncherVisualTokens.Warning); if (v.Contains("설치 필요")) return LauncherVisualTokens.Brush(LauncherVisualTokens.Accent); if (v.Contains("최신") || v.Contains("설치")) return LauncherVisualTokens.Brush(LauncherVisualTokens.Success); return LauncherVisualTokens.Brush(LauncherVisualTokens.Accent); }
+    private IBrush Fg() => HighContrast ? Brushes.White : LauncherVisualTokens.Brush(LauncherVisualTokens.TextColor(IsDeveloper, false));
+    private IBrush MutedBrush() => HighContrast ? Brushes.White : LauncherVisualTokens.Brush(LauncherVisualTokens.MutedTextColor(IsDeveloper, false));
+    private IBrush StatusBrush(LauncherStatusTone tone) => LauncherVisualTokens.Brush(LauncherVisualTokens.StatusColor(tone, IsDeveloper, HighContrast));
+    private IBrush StatusBrush(string? text)
+    {
+        var value = text ?? string.Empty;
+        if (value.Contains("오류")) return StatusBrush(LauncherStatusTone.Error);
+        if (value.Contains("업데이트")) return StatusBrush(LauncherStatusTone.Caution);
+        if (value.Contains("설치 필요")) return StatusBrush(LauncherStatusTone.Progress);
+        if (value.Contains("최신") || value.Contains("설치")) return StatusBrush(LauncherStatusTone.Normal);
+        return StatusBrush(LauncherStatusTone.Progress);
+    }
     private string ModeStatus() => IsDeveloper ? "개발자 빌드" : "안정 버전";
     private Border Card(Control child, double padding) => new() { Padding = new Thickness(padding), CornerRadius = new CornerRadius(LauncherVisualTokens.RadiusCard), Background = LauncherVisualTokens.Surface(IsDeveloper), BorderBrush = LauncherVisualTokens.Border(IsDeveloper), BorderThickness = new Thickness(1), Child = child };
     private Button PrimaryButton(string text, EventHandler<RoutedEventArgs> handler, double height)
@@ -29,7 +38,7 @@ public sealed partial class MainWindow : Window
         var button = BaseButton(text, handler, height, Brushes.White);
         button.Classes.Add("posco-primary");
         button.Background = HighContrast ? Brushes.Black : LauncherVisualTokens.Brush(LauncherVisualTokens.Accent);
-        button.BorderBrush = HighContrast ? Brushes.White : LauncherVisualTokens.Brush(LauncherVisualTokens.Accent);
+        button.BorderBrush = LauncherVisualTokens.Brush(LauncherVisualTokens.PrimaryBorderColor(IsDeveloper, HighContrast));
         button.BorderThickness = new Thickness(1);
         return button;
     }
@@ -39,7 +48,7 @@ public sealed partial class MainWindow : Window
         var button = BaseButton(text, handler, height, Fg());
         button.Classes.Add("posco-secondary");
         button.Background = SurfaceBrush;
-        button.BorderBrush = HighContrast ? Brushes.White : LauncherVisualTokens.Border(IsDeveloper);
+        button.BorderBrush = LauncherVisualTokens.Brush(LauncherVisualTokens.BorderColor(IsDeveloper, HighContrast));
         button.BorderThickness = new Thickness(1);
         return button;
     }
@@ -61,7 +70,7 @@ public sealed partial class MainWindow : Window
             },
             MinHeight = height,
             MinWidth = 100,
-            Padding = new Thickness(14, 0),
+            Padding = new Thickness(LauncherVisualTokens.SpaceMd, 0),
             CornerRadius = new CornerRadius(LauncherVisualTokens.RadiusControl),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Stretch,
@@ -79,10 +88,17 @@ public sealed partial class MainWindow : Window
         button.GotFocus += (_, e) =>
         {
             if (e.NavigationMethod == NavigationMethod.Pointer) return;
-            button.BorderBrush = HighContrast ? Brushes.Yellow : LauncherVisualTokens.Brush(IsDeveloper ? LauncherVisualTokens.PoscoLightBlue : LauncherVisualTokens.Accent);
+            button.BorderBrush = LauncherVisualTokens.Brush(LauncherVisualTokens.FocusColor(IsDeveloper, HighContrast));
             button.BorderThickness = new Thickness(3);
         };
-        button.LostFocus += (_, _) => { button.BorderBrush = HighContrast ? Brushes.White : LauncherVisualTokens.Border(IsDeveloper); button.BorderThickness = new Thickness(1); };
+        button.LostFocus += (_, _) =>
+        {
+            var color = button.Classes.Contains("posco-primary")
+                ? LauncherVisualTokens.PrimaryBorderColor(IsDeveloper, HighContrast)
+                : LauncherVisualTokens.BorderColor(IsDeveloper, HighContrast);
+            button.BorderBrush = LauncherVisualTokens.Brush(color);
+            button.BorderThickness = new Thickness(1);
+        };
         button.Click += handler;
         return button;
     }

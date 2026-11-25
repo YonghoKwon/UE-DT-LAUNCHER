@@ -1,3 +1,4 @@
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -17,14 +18,18 @@ public enum LauncherIconKind
     Package,
     Wrench,
     Log,
-    Shield
+    Shield,
+    Error,
+    Search,
+    Clear,
+    Stop
 }
 
 public static class LauncherIconFactory
 {
     public static Control Create(LauncherIconKind kind, double size, IBrush color)
     {
-        return new IconPath
+        var icon = new IconPath
         {
             Width = size,
             Height = size,
@@ -38,6 +43,8 @@ public static class LauncherIconFactory
             StrokeLineCap = PenLineCap.Round,
             StrokeJoin = PenLineJoin.Round
         };
+        AutomationProperties.SetAccessibilityView(icon, AccessibilityView.Raw);
+        return icon;
     }
 
     internal static string PathData(LauncherIconKind kind) => kind switch
@@ -53,6 +60,10 @@ public static class LauncherIconFactory
         LauncherIconKind.Wrench => "M14,6 A5,5 0 0 0 7,12 L2,17 L7,22 L12,17 A5,5 0 0 0 18,10 L14,14 L10,10 Z",
         LauncherIconKind.Log => "M5,3 L19,3 L19,21 L5,21 Z M8,8 L16,8 M8,12 L16,12 M8,16 L13,16",
         LauncherIconKind.Shield => "M12,2 L20,5 L20,11 C20,17 16,21 12,23 C8,21 4,17 4,11 L4,5 Z M8,12 L11,15 L16,9",
+        LauncherIconKind.Error => "M12,2 A10,10 0 1 0 12,22 A10,10 0 1 0 12,2 M8,8 L16,16 M16,8 L8,16",
+        LauncherIconKind.Search => "M10,3 A7,7 0 1 0 10,17 A7,7 0 1 0 10,3 M15,15 L21,21",
+        LauncherIconKind.Clear => "M5,5 L19,19 M19,5 L5,19",
+        LauncherIconKind.Stop => "M5,5 L19,5 L19,19 L5,19 Z",
         _ => "M4,12 L20,12"
     };
 }
