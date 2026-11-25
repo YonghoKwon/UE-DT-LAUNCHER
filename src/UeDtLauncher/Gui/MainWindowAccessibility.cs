@@ -105,7 +105,7 @@ public sealed partial class MainWindow
     }
     private static int SemanticTabIndex(string id) => id switch
     {
-        "project-search"=>10,"project-list" or "compact-project"=>20,"catalog-refresh"=>21,
+        "project-search"=>10,"clear-project-search"=>11,"project-list" or "compact-project"=>20,"catalog-refresh"=>21,
         "filter-환경"=>30,"filter-채널"=>31,"filter-버전 정책"=>32,"filter-exact-version" or "filter-요청 버전"=>33,
         "primary-action"=>40,"update"=>41,"status-check"=>42,"maintenance"=>50,"repair"=>51,"rollback"=>52,
         "cache-clear"=>53,"backup-cleanup"=>54,"open-folder"=>55,"export-logs"=>56,"details-tabs"=>60,
