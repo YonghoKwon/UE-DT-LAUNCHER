@@ -50,6 +50,32 @@ config.write_text(json.dumps(options), encoding='utf-8')
 os.environ['UE_DT_AGENT_DATA_ROOT']=environment['UE_DT_AGENT_DATA_ROOT']
 snapshot=root/'state'/'service'/'demo'/'prod'/'stable'/platform/'service-state.json'
 runtime=root/'state'/'demo'/platform/'runtime-state.json'
+
+if os.name == 'nt':
+    import ctypes
+    from ctypes import wintypes
+    import msvcrt
+
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
+                                   wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    kernel.CreateFileW.restype = wintypes.HANDLE
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    invalid_handle = ctypes.c_void_p(-1).value
+
+    def open_runtime_snapshot(path, flags):
+        # Match RuntimeStatePersistence's read access and read/delete sharing.
+        handle = kernel.CreateFileW(path, 0x80000000, 0x00000005, None, 3, 0, None)
+        if handle == invalid_handle:
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            return msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
+        except OSError:
+            kernel.CloseHandle(handle)
+            raise
+else:
+    open_runtime_snapshot = None
+
 def run(*a):
     log=root/('command-'+str(time.time_ns())+'.log')
     with log.open('w', encoding='utf-8') as output:
@@ -58,7 +84,9 @@ def run(*a):
 def wait_stopped():
     deadline=time.monotonic()+15
     while time.monotonic()<deadline:
-        if runtime.exists() and json.loads(runtime.read_text(encoding='utf-8'))['state']==0: return
+        if runtime.exists():
+            with open(runtime, encoding='utf-8', opener=open_runtime_snapshot) as record:
+                if json.load(record)['state']==0: return
         time.sleep(.05)
     raise AssertionError('No supervised completion')
 child=None

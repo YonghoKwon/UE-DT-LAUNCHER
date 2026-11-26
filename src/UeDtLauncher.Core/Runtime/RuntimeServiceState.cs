@@ -21,12 +21,10 @@ public static class RuntimeServiceState
     private static bool LegacyExists(LauncherConfig config) => File.Exists(Path.Combine(Root(config),"active.json")) || File.Exists(Path.Combine(Root(config),"failure.json"));
     internal static ServiceRuntimeSnapshot? Read(LauncherConfig config)
     {
-        var path=SnapshotPath(config);
-        if (!File.Exists(path)) return null;
         try
         {
-            if(new FileInfo(path).Length>64*1024) throw new InvalidDataException();
-            using var json=JsonDocument.Parse(File.ReadAllText(path));
+            using var json = RuntimeStatePersistence.ReadSnapshot(SnapshotPath(config));
+            if (json is null) return null;
             RuntimeStore.RequireFields(json.RootElement,"schemaVersion","installationId","version","phase","generation");
             var value=json.RootElement.Deserialize<ServiceRuntimeSnapshot>(JsonFiles.Options)!;
             if(value.SchemaVersion!=2 || !Enum.IsDefined(value.Phase) || !Guid.TryParseExact(value.Generation,"N",out _) ||
@@ -38,7 +36,7 @@ public static class RuntimeServiceState
         catch(Exception ex) when(ex is IOException or JsonException or InvalidDataException or ArgumentException)
         { throw Blocked("service-state-invalid"); }
     }
-    private static void Write(LauncherConfig config, ServiceRuntimeSnapshot value) => RuntimeStatePersistence.Write(SnapshotPath(config), value);
+    private static void Write(LauncherConfig config, ServiceRuntimeSnapshot value) => RuntimeStatePersistence.WriteSnapshot(SnapshotPath(config), value);
     private static ServiceRuntimeSnapshot New(LauncherConfig config,string version,ServiceRuntimePhase phase) =>
         new(2,RuntimeStore.InstallationId(config),version,config.SelectedRelease,phase,Guid.NewGuid().ToString("N"));
     internal static void RequireLaunch(LauncherConfig config, bool serviceStart)
