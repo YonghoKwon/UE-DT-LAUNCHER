@@ -104,6 +104,15 @@ class Matrix(Fixture):
         (self.root / "nginx-m0.conf").write_text(
             nginx.replace("        location /", static + "        location /"), encoding="utf-8")
 
+    def require_fresh_sim_image(self):
+        existing = run("docker", "image", "ls", "--quiet", "--no-trunc",
+                       "--filter", f"reference={self.sim_image}")
+        if not existing:
+            return
+        labels = json.loads(run("docker", "image", "inspect", "--format", "{{json .Config.Labels}}", self.sim_image))
+        ownership = "this run" if self.matches_owner(labels) else "another owner or no owner"
+        raise RuntimeError(f"Simulator image tag already exists ({ownership}): {self.sim_image}")
+
     def prepare(self):
         self.bench_config()
         self.stage(load(self.root / "linux" / "cohort.json"), None)
@@ -118,6 +127,7 @@ class Matrix(Fixture):
         shutil.copy2(BENCH / "static_client.py", sim_context / "static_client.py")
         with (sim_context / "Dockerfile").open("a", encoding="utf-8") as dockerfile:
             dockerfile.write("\nCOPY static_client.py /static_client.py\n")
+        self.require_fresh_sim_image()
         run("docker", "build", "--platform", "linux/amd64", "--build-arg", f"RUN_ID={self.run_id}",
             "--build-arg", f"OWNER_TOKEN={self.ownership['owner']}", "-t", self.sim_image, sim_context, timeout=900)
         self.disk_guard(20_000_000_000)

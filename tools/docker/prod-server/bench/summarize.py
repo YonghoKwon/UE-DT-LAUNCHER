@@ -175,6 +175,12 @@ def measured_records(rows, prefix):
     return [rows[f"{prefix}-{index}"] for index in range(1, 4)]
 
 
+def concurrency_verdict(records):
+    if not eligible(records):
+        return "UNDETERMINED"
+    return "PASS" if all(row["metrics"]["finalFailures"] == 0 for row in records) else "FAIL"
+
+
 def comparison(rows, signed, baseline):
     signed_rows, baseline_rows = measured_records(rows, signed), measured_records(rows, baseline)
     if any((row.get("environment") or {}).get("limited") for row in signed_rows + baseline_rows):
@@ -203,18 +209,21 @@ def verdicts(rows):
                               and row["metrics"]["finalFailures"] == 0))
     m4 = measured_records(rows, "M4-positive") + [rows["M4-negative-1"]]
     m2 = {n: measured_records(rows, f"M2-1gb-n{n}") for n in (1, 5, 10)}
-    verified = [n for n, records in m2.items() if eligible(records)
-                and all(row["metrics"]["finalFailures"] == 0 for row in records)]
+    concurrency = {n: concurrency_verdict(records) for n, records in m2.items()}
+    verified = [n for n, status in concurrency.items() if status == "PASS"]
     ten = m2[10]
     ten_errors = [item for row in ten if row.get("metrics") for item in row["metrics"]["errors"]]
     backend_failures = [item for row in ten if row.get("metrics") for item in row["metrics"]["backendFailures"]]
-    t1 = "ENVIRONMENT_LIMITED" if any((row.get("environment") or {}).get("limited") for row in ten) else "UNDETERMINED"
-    if eligible(ten) and not ten_errors:
-        t1 = "NOT_TRIGGERED"
-    elif eligible(ten) and not any(item["error"] in ("5xx", "timeout") for item in ten_errors):
-        t1 = "NOT_TRIGGERED"
-    elif eligible(ten) and backend_failures:
-        t1 = "TRIGGERED"
+    missing_reports = sum((row.get("metrics") or {}).get("missingReports", 10) for row in ten)
+    t1 = "UNDETERMINED"
+    if not missing_reports:
+        if any((row.get("environment") or {}).get("limited") for row in ten):
+            t1 = "ENVIRONMENT_LIMITED"
+        elif eligible(ten):
+            if backend_failures:
+                t1 = "TRIGGERED"
+            elif not any(item["error"] in ("5xx", "timeout") for item in ten_errors):
+                t1 = "NOT_TRIGGERED"
     # A driver 5xx/timeout alone does not attribute the failure to the backend.
     samples = [row["environment"]["backendRssPeakBytes"] for row in rows.values() if eligible([row])]
     rss = max(samples, default=None)
@@ -225,9 +234,10 @@ def verdicts(rows):
                "exactRangeAndSha256": l3_proofs},
         "L4": {"verdict": "PASS" if all(map(resume_pass, m4)) else "FAIL" if eligible(m4) else "UNDETERMINED",
                "roundProofs": list(map(resume_pass, m4))},
-        "L5": {"verdict": "PASS" if any(n >= 5 for n in verified) else "FAIL" if eligible(m2[5]) else "UNDETERMINED",
+        "L5": {"verdict": concurrency[5], "minimum5": concurrency[5], "target10": concurrency[10],
                "verifiedConcurrency": verified, "maxVerified": max(verified, default=None)},
-        "T13-1": {"status": t1, "errors": ten_errors, "backendFailures": backend_failures},
+        "T13-1": {"status": t1, "missingReports": missing_reports,
+                  "errors": ten_errors, "backendFailures": backend_failures},
         "T13-2": comparison(rows, "M2-1gb-n10", "M0-1gb-n10"),
         "T13-3": {"status": t3, "peakRssBytes": rss},
         "T13-4": comparison(rows, "M1-20gb-n1", "M0-20gb-n1"),
