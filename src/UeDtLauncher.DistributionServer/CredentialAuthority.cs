@@ -89,7 +89,8 @@ internal sealed class CredentialAuthority(AuthorityStore store)
         return [Event("device-key-added", key.KeyId)];
     });
 
-    internal void AddDeviceKeys(IEnumerable<(string Client, DevicePublicKey Key, DateTimeOffset? Expiry)> registrations)
+    internal void AddDeviceKeys(IEnumerable<(string Client, DevicePublicKey Key, DateTimeOffset? Expiry)> registrations,
+        AuthorityStore.WriterLease? writer = null)
     {
         ArgumentNullException.ThrowIfNull(registrations);
         var candidates = new List<DeviceEntry>();
@@ -119,7 +120,7 @@ internal sealed class CredentialAuthority(AuthorityStore store)
                 events.Add(Event("device-key-added", candidate.KeyId));
             }
             return events;
-        });
+        }, writer);
     }
 
     internal void RevokeDeviceKey(string keyId) => Change(document =>
@@ -149,17 +150,23 @@ internal sealed class CredentialAuthority(AuthorityStore store)
 
     private static AuthorityEvent Event(string action, string id) => new(DateTimeOffset.UtcNow, action, id);
 
-    private void Change(Func<AuthDocument, IReadOnlyList<AuthorityEvent>> update) => store.Commit(snapshot =>
+    private void Change(Func<AuthDocument, IReadOnlyList<AuthorityEvent>> update, AuthorityStore.WriterLease? writer = null)
     {
-        var document = Read(snapshot);
-        var events = update(document);
-        return events.Count == 0 ? CommitPlan.Audit() : new(
-            new Dictionary<AuthorityArea, JsonElement>
-            {
-                [AuthorityArea.Auth] = JsonSerializer.SerializeToElement(document, AuthorityDocuments.Json)
-            },
-            events);
-    });
+        CommitPlan Plan(AuthoritySnapshot snapshot)
+        {
+            var document = Read(snapshot);
+            var events = update(document);
+            return events.Count == 0 ? CommitPlan.Audit() : new(
+                new Dictionary<AuthorityArea, JsonElement>
+                {
+                    [AuthorityArea.Auth] = JsonSerializer.SerializeToElement(document, AuthorityDocuments.Json)
+                },
+                events);
+        }
+
+        if (writer is null) store.Commit(Plan);
+        else store.CommitUnderHeldLock(writer, Plan);
+    }
 
     private AuthDocument Read() => Read(store.ReadSnapshot());
 

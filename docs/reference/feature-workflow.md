@@ -30,7 +30,9 @@
 ```mermaid
 flowchart LR
     buildPc["개발자 PC"] -->|"ZIP와 외부 JSON"| distribution["Linux 배포 서버"]
+    pcAdmin["PC 관리자"] -->|"공개키 등록 묶음"| operator
     operator["서버 관리자"] -->|"승인과 PC 권한"| distribution
+    pcAdmin -->|"관리형 운영 설정 배치"| updater
     distribution -->|"허용 목록과 파일"| updater["PC 업데이트 서비스"]
     launcher["일반 또는 개발자 런처"] -->|"설치와 복구 요청"| updater
     updater -->|"검증 후 설치"| installed["버전별 DT 설치본"]
@@ -62,15 +64,15 @@ flowchart LR
 |---|---:|---|---|---|
 | 처음 한 번 | A1 | 개발 담당 / 소스 저장소 | 런처·Agent·배포 서버 `dotnet publish` | OS별 실행 폴더 준비 |
 | 처음 한 번 | A2 | 관리자 / Linux 서버 | 서버 설정·통신/인증 모드·배포 서명키·서비스 구성 | 인증 없는 목록 요청은 401, 서비스 실행 중 |
-| PC 추가 시 | A3 | 관리자 / 서버와 PC | PC IP·grant 등록, 공개키 등록(기존 HTTPS는 토큰) | 그 PC의 접근 범위 확정 |
-| PC 추가 시 | A4 | 관리자 / 클라이언트 PC | Agent 운영 설정 + GUI 표시 설정 | status 성공, 게시·허용 릴리스가 있으면 check 성공 |
+| PC 추가 시 | A3 | 관리자 / 서버와 PC | 사내 HTTP `enroll prepare` → 서버 `client-enroll`; 기존 HTTPS는 토큰 | 공개키, PC IP와 허용 트랙 등록 |
+| PC 추가 시 | A4 | 관리자 / 클라이언트 PC | `enroll finish`로 운영 설정, 관리형은 별도 GUI 표시 설정과 서비스 반영 | Portable 온라인 진단, 관리형은 반영 후 진단 |
 | 버전마다 | B1 | 개발자 / Unreal·작업 PC | Windows/Linux 각각 패키징·ZIP | 완성된 ZIP |
 | 버전마다 | B2 | 개발자 / Windows PowerShell·Linux 터미널 | 쉬운 방법 `upload --zip …`가 ZIP 검사·외부 JSON 생성. 직접 실행 `release-metadata` | 새 작업 폴더의 payload.zip + release.json |
 | 버전마다 | B3 | 개발자 / 같은 PC | 같은 `upload`가 새 incoming 폴더 생성 → 두 전송 → 두 이름 변경 → 확인. 전송 뒤 `upload status --upload-id <ID> --wait` | 최종 ZIP + JSON, 상태 조회에 승인 대기 또는 이후 상태 |
 | 자동 | B4 | 배포 서버 | 폴더 감지·크기/해시/경로/압축 검사 | `pending` 승인 대기 |
 | 버전마다 | B5 | 관리자 / Linux 터미널 | 쉬운 방법 `console` 1현황 → 2snapshot 상세 → 3승인·버전 재입력. 직접 실행 list/inspect/approve | `published`, 배포 폴더 자동 생성; 추천은 그대로 |
 | 검증 후 | B6 | 개발자·관리자 / PC·Linux | 개발자 exact 검증 → console 6현재 추천/revision·사유·버전 확인. 직접 실행 promotion inspect/promote | PC별 최신 추천 갱신; revision 변경은 재조회 |
-| 사용할 때 | C1 | 사용자 / Windows 런처 | 프로젝트·필요한 버전 선택 | 설치 상태·가능한 작업 표시 |
+| 사용할 때 | C1 | 사용자 / Windows 런처 | 일반 화면 **내 프로그램**에서 카드 선택. 허용 프로젝트가 하나면 상세 화면으로 바로 이동. 개발자는 프로젝트·필요한 버전 선택 | 설치 상태·가능한 작업 표시 |
 | 사용할 때 | C2 | 사용자 / 런처 버튼 | 설치 후 실행 / 업데이트 후 실행 / 실행 | 필요한 파일 준비 후 DT 실행 |
 | 문제 발생 시 | D | 사용자·관리자 | 재확인 → 검사 → 복구, 필요 시 백업 복원 | 상태 확인 또는 원인·다음 조치 확보 |
 
@@ -136,6 +138,14 @@ curl --silent --output /dev/null --write-out '%{http_code}\n' https://updates.ex
 
 ### A3. PC 권한·토큰 등록 — 관리자
 
+| 담당 / 위치 | 입력과 명령 | 정상 결과 |
+|---|---|---|
+| PC 관리자 / Windows PowerShell·Linux 터미널 | `enroll prepare --name <이름> --key-id <ID> --client <PC ID> --output <폴더>` | PC에 기존 보호 키 유지 또는 새 키 저장, 공개키 묶음 전달 |
+| 배포 관리자 / Linux 터미널 | `client-enroll --from /dt/keys/enroll/ --grant <프로젝트:환경:채널> --config /dt/config/server.json --dry-run` 검토 후 `--dry-run`을 빼고 적용 | 새 키와 새 PC 권한 등록, 기존 PC 정책 유지 |
+| PC 관리자 / Windows PowerShell·Linux 터미널 | A4의 `enroll finish`로 공개키 사본과 운영 설정 준비 | `<output>.doctor.json` 저장 |
+
+명령 전체와 직접 지정하는 IP/CIDR 형식은 [사내 HTTP 일괄 등록](intranet-auth.md#pc-여러-대-일괄-등록)을 참고합니다. 기존 HTTPS/Bearer는 아래 토큰 방법을 사용합니다.
+
 서버 정책에 PC 식별자·실제 IP/CIDR·프로젝트/환경/채널·필요 시 버전을 기록합니다. 다음은 **예시 정책의 일부**입니다.
 
 ```json
@@ -173,6 +183,8 @@ sudo -u uedt-distribution /dt/publish/server-linux-x64/UeDtLauncher.Distribution
 분실/교체 시 서버의 `token-revoke office-pc-01`은 그 PC의 기존 토큰을 모두 폐기합니다. 이후 새로 `token-issue`하고 PC 저장소를 갱신합니다. 새 토큰 발급만으로 이전 토큰이 자동 폐기되지는 않습니다.
 
 ### A4. 런처와 Agent 설정 — PC 관리자
+
+일괄 등록 PC는 `enroll finish --server-url <origin> --project-id <ID> --platform <RID> --credential-name <이름> --signing-key-id <ID> --public-key <PEM> --output <설정 경로>`를 사용합니다. 관리형은 관리자가 시스템 Agent 설정 폴더에 보호된 `release-public.pem`을 먼저 배치하고 그 절대 경로를 지정합니다. 보호 설정을 서비스에 반영한 뒤 선택 전용 설정으로 `doctor --online`을 실행합니다. Portable은 `--storage portable`로 설정을 생성하고 같은 명령에서 온라인 진단을 저장합니다.
 
 | 파일/설정 | 정할 것 | 누가 관리 |
 |---|---|---|
@@ -449,8 +461,16 @@ N은 inspect 결과로 치환합니다. 승격은 자동 설치나 실행 전환
 
 ```mermaid
 flowchart TD
-    openLauncher["런처 실행"] --> automatic["자동: 배포·설치 확인 / 관리형은 서비스 확인"]
-    automatic --> click["사용자: 상태별 메인 버튼 클릭"]
+    openLauncher["일반 런처 실행"] --> automatic["자동: 허용 배포 확인 / 관리형은 서비스 확인"]
+    automatic --> allowed{"현재 OS의 허용 프로그램 수"}
+    allowed -->|"0개"| empty["받을 수 있는 프로그램이 없습니다"]
+    empty -->|"사용자: 배포 다시 확인"| automatic
+    allowed -->|"1개"| detail["프로그램 화면과 설치 상태 확인"]
+    allowed -->|"2개 이상"| cards["내 프로그램 / 카드별 설치 상태 확인"]
+    cards -->|"사용자: 카드 선택"| detail
+    detail -->|"사용자: 뒤로 (카드 목록에서 온 경우)"| cards
+    cards -->|"사용자: 카드에서 상태별 작업 선택"| click["사용자: 상태별 작업 버튼 클릭"]
+    detail --> click
     click --> verify["배포·권한·서명 재확인"]
     verify --> ready{"파일 준비 필요?"}
     ready -->|"예"| prepare["검증 복사와 필요한 다운로드"]
@@ -466,6 +486,8 @@ flowchart TD
 
 | 일반 화면에서 보이는 상태 | 눌러야 할 것 | 실제 처리 |
 |---|---|---|
+| 내 프로그램 | 카드 / 카드의 작업 버튼 | 상세 열기 / 같은 프로젝트의 상태를 다시 확인한 뒤 선택한 작업 |
+| 허용 프로그램 없음 | 배포 다시 확인 | 허용 목록 조회 |
 | 확인 중 | 기다리기 | 상태 확인만 하며 자동 설치하지 않음 |
 | 미설치 | 설치 후 실행 | 필요한 파일 설치 후 실행 |
 | 변경·업데이트 필요 | 업데이트 후 실행 | 필요한 파일 갱신 후 실행 |

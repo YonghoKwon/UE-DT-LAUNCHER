@@ -35,7 +35,16 @@ public sealed partial class MainWindow
         {
             if(!await RefreshCatalog(rebuild,suppressDialog:true) || !HasProject)return;
         }
-        await RefreshInstallStatusAsync();
+        await RefreshAuthorizedSelectionAsync();
+    }
+    private async Task RefreshAuthorizedSelectionAsync(bool suppressDialog = false)
+    {
+        if (ShowsProjectCards)
+        {
+            await RefreshProjectCardsAsync();
+            return;
+        }
+        await RefreshInstallStatusAsync(suppressDialog);
     }
     private async Task<RollbackPreview?> PreviewManagedRollbackAsync(LauncherConfig config)
     {

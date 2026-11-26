@@ -25,6 +25,7 @@ public sealed partial class MainWindow : Window
             _agentStatusTimer.Stop(); _selectedRuntimeConfig = null; _viewModel.ProjectStatus = null; _catalog = new();
             _presentation.ErrorCode = null; _presentation.SupportId = null; _presentation.Retry = null;
             LoadConfig(); Build();
+            await RebindUserLoggerAsync();
             if (_configurationError is not null) return;
             if (_allowAutomaticChecks && _config.IsManagedDeployment) _agentStatusTimer.Start();
             _startupInitialized = false; await InitializeStartupAsync(); return;
@@ -48,7 +49,8 @@ public sealed partial class MainWindow : Window
                 break;
             case PrimaryActionKind.RetryCheck:
                 await RefreshAgentStatusAsync();
-                if (await RefreshCatalog(false, suppressDialog: true) && HasProject) await RefreshInstallStatusAsync();
+                if (await RefreshCatalog(false, suppressDialog: true) && HasProject)
+                    await RefreshAuthorizedSelectionAsync();
                 break;
         }
     }
@@ -79,11 +81,18 @@ public sealed partial class MainWindow : Window
             MarkError(ex, "카탈로그 확인 실패", showDialog: !suppressDialog);
             return false;
         }
-        finally { if (ownsBusy) { _running = false; SetBusy(false); } if (rebuild || !HasProject) Build(); }
+        finally
+        {
+            if (ownsBusy) { _running = false; SetBusy(false); }
+            if (rebuild || !HasProject || ShowsProjectCards != (_projectCardsView is not null)) Build();
+        }
     }
 
     private void MergeCatalogProjects()
     {
+        var previous = _viewModel.ProjectsForProfile().Select(project => project.ProjectId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var previousSelection = _selectedProject.ProjectId;
         if (UsesDistributionServer)
             _config.Projects.RemoveAll(p => !_catalog.Projects.Any(c => c.ProjectId.Equals(p.ProjectId, StringComparison.OrdinalIgnoreCase)));
         foreach (var cp in _catalog.Projects)
@@ -109,9 +118,13 @@ public sealed partial class MainWindow : Window
             if (IsDeveloper) _presentation.Complete("이 PC에 허용된 배포가 없습니다. 관리자에게 문의해 주세요.", showCompletion: false);
             else SetErrorDetails(LauncherUiError.From(new AgentOperationException("no-authorized-release", Guid.NewGuid().ToString("N"), _installDetail)));
         }
+        if (!IsDeveloper && UsesDistributionServer)
+            UpdateProjectCardCatalog(previous, previousSelection);
     }
 
-    private IEnumerable<CatalogReleaseOption> MatchingReleases() => _catalog.Releases.Where(r => r.ProjectId.Equals(_selectedProject.ProjectId, StringComparison.OrdinalIgnoreCase) && r.Platform.Equals(CurrentPlatform, StringComparison.OrdinalIgnoreCase) && r.Environment.Equals(_config.Environment, StringComparison.OrdinalIgnoreCase) && r.Channel.Equals(_config.Channel, StringComparison.OrdinalIgnoreCase));
+    private IEnumerable<CatalogReleaseOption> MatchingReleases() => MatchingReleases(_selectedProject.ProjectId);
+
+    private IEnumerable<CatalogReleaseOption> MatchingReleases(string projectId) => _catalog.Releases.Where(r => r.ProjectId.Equals(projectId, StringComparison.OrdinalIgnoreCase) && r.Platform.Equals(CurrentPlatform, StringComparison.OrdinalIgnoreCase) && r.Environment.Equals(_config.Environment, StringComparison.OrdinalIgnoreCase) && r.Channel.Equals(_config.Channel, StringComparison.OrdinalIgnoreCase));
 
     private void UpdateReleaseNotes()
     {
@@ -119,14 +132,19 @@ public sealed partial class MainWindow : Window
         _releaseNotes = string.IsNullOrWhiteSpace(release?.Notes) ? _selectedProject.Description ?? "릴리스 노트가 없습니다." : release.Notes!;
     }
 
-    private async Task<LauncherConfig> RunConfig(bool repair, bool launch)
+    private Task<LauncherConfig> RunConfig(bool repair, bool launch) =>
+        RunProjectConfig(_selectedProject, DisplaySelectionContext(), repair, launch);
+
+    private async Task<LauncherConfig> RunProjectConfig(ProjectUiConfig project, LauncherUiOperationContext context,
+        bool repair = false, bool launch = false)
     {
         var runtimePath = ConfigPath;
+        var installPath = UsesDistributionServer ? null : project.InstallPath;
         var c = _config.IsManagedDeployment ? ManagedClientContext.Create(_config) : await _runtimeConfigLoader(runtimePath);
-        c.ProjectId = _selectedProject.ProjectId; c.Environment = _config.Environment; c.Channel = _config.Channel; c.TargetPlatform = CurrentPlatform; c.VersionPolicy = _config.VersionPolicy; c.RequestedVersion = _config.RequestedVersion; c.RepairMode = repair; c.LaunchAfterUpdate = launch;
+        c.ProjectId = context.ProjectId; c.Environment = context.Environment; c.Channel = context.Channel; c.TargetPlatform = context.Platform; c.VersionPolicy = context.VersionPolicy; c.RequestedVersion = context.RequestedVersion; c.RepairMode = repair; c.LaunchAfterUpdate = launch;
         c.ClientProfile = _viewModel.EffectiveProfile;
         c.SelfUpdate = null;
-        if (!c.IsManagedDeployment) LauncherPaths.ResolveInPlace(c, runtimePath, UsesDistributionServer ? null : _selectedProject.InstallPath);
+        if (!c.IsManagedDeployment) LauncherPaths.ResolveInPlace(c, runtimePath, installPath);
         return c;
     }
 
@@ -139,9 +157,11 @@ public sealed partial class MainWindow : Window
         return new(release.ProjectId, release.Environment, release.Channel, release.Platform, release.Version);
     }
 
-    private CatalogReleaseOption? SelectedCatalogRelease() => _config.VersionPolicy == "exact"
-        ? MatchingReleases().FirstOrDefault(r => r.Version.Equals(_config.RequestedVersion, StringComparison.OrdinalIgnoreCase))
-        : CatalogRecommendation.Find(_catalog.SelectionPolicy, MatchingReleases(), r => r.IsLatest);
+    private CatalogReleaseOption? SelectedCatalogRelease() => SelectedCatalogRelease(_selectedProject.ProjectId);
+
+    private CatalogReleaseOption? SelectedCatalogRelease(string projectId) => _config.VersionPolicy == "exact"
+        ? MatchingReleases(projectId).FirstOrDefault(r => r.Version.Equals(_config.RequestedVersion, StringComparison.OrdinalIgnoreCase))
+        : CatalogRecommendation.Find(_catalog.SelectionPolicy, MatchingReleases(projectId), r => r.IsLatest);
 
     private void AwaitPromotion()
     {

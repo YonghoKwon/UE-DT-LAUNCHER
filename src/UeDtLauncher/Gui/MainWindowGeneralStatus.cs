@@ -15,14 +15,20 @@ public sealed partial class MainWindow
 
     private sealed record GeneralSupportDiagnostic(string Code, string Stage, string? SupportId, DateTimeOffset OccurredAt, string ComputerName);
 
-    private bool SelectedInstallationDamaged => _viewModel.ProjectStatus is
+    private bool SelectedInstallationDamaged => IsInstallationDamaged(_viewModel.ProjectStatus);
+
+    private static bool IsInstallationDamaged(ManagedProjectStatus? projectStatus) => projectStatus is
         { IsInstalled: true, UpdateRequired: true } status &&
         string.Equals(status.InstalledVersion, status.AvailableVersion, StringComparison.OrdinalIgnoreCase);
 
     private (ReleaseSelection Recommended, ReleaseSelection Previous)? LowerRecommendation()
+        => LowerRecommendation(_config.VersionPolicy, SelectedCatalogRelease(), _viewModel.ProjectStatus);
+
+    private static (ReleaseSelection Recommended, ReleaseSelection Previous)? LowerRecommendation(
+        string policy, CatalogReleaseOption? selected, ManagedProjectStatus? status)
     {
-        if (_config.VersionPolicy != "latest" || SelectedCatalogRelease() is not { IsLatest: true } release ||
-            _viewModel.ProjectStatus is not { IsInstalled: false, PreviousInstallation: { } previous, AvailableVersion: { } available } ||
+        if (policy != "latest" || selected is not { IsLatest: true } release ||
+            status is not { IsInstalled: false, PreviousInstallation: { } previous, AvailableVersion: { } available } ||
             !string.Equals(available, release.Version, StringComparison.OrdinalIgnoreCase) ||
             !Version.TryParse(available.TrimStart('v', 'V'), out var recommended) ||
             !Version.TryParse(previous.Release.Version.TrimStart('v', 'V'), out var installed) || recommended >= installed)
@@ -68,7 +74,7 @@ public sealed partial class MainWindow
     }
 
     internal static string SupportInfo(string? supportId, DateTimeOffset time) =>
-        $"PC 이름: {Environment.MachineName}\n지원 ID: {supportId ?? "없음"}\n시각: {time:yyyy-MM-dd HH:mm:ss zzz}";
+        $"런처 버전: {LauncherDisplayVersion}\nPC 이름: {Environment.MachineName}\n지원 ID: {(LauncherUiError.IsSupportTag(supportId) ? supportId : "없음")}\n시각: {time:yyyy-MM-dd HH:mm:ss zzz}";
 
     private GeneralSupportDiagnostic CurrentSupportDiagnostic()
     {

@@ -12,10 +12,16 @@ if (arguments.Contains("--help"))
     Console.WriteLine("UeDtLauncher.DistributionServer <serve|watch|ingest directory|list|inspect id|approve id|promote|promotion inspect|promotion migrate --dry-run|--apply|reject id|retry id|token-issue client|token-revoke client|usage|cleanup [--apply]> --config server.json");
     Console.WriteLine("promote --project-id id --environment prod --channel stable --platform windows-x64 --version version --expected-revision N --reason text; promotion inspect uses the same track flags without version/revision/reason.");
     Console.WriteLine("client-key add --client id --public-key device-public.json | client-key list | client-key revoke --key-id id; append --config server.json");
+    Console.WriteLine("client-enroll --from folder --grant project:environment:channel [--grant project:environment:channel] [--address-source observed|file:<csv>] [--dry-run] --config server.json");
     Console.WriteLine("token-issue client [--expires-at UTC/offset-ISO] | token-list | token-revoke-id --id management-id; client-key add also accepts --expires-at. No expiry is invented for existing credentials.");
     Console.WriteLine("backup plan/create --output new-dir/verify --backup dir; restore plan/stage --backup dir --target empty-dir/activate --target dir --confirm");
     Console.WriteLine("retention inspect/plan --jobs failed-id or --temporary processing/dir --output plan.json/apply --plan plan.json --confirm; stop serve/watch before apply.");
     Console.WriteLine("console --config server.json: terminal-only Korean guided operations; approvals and promotions remain separate. --error-details shows exception types only.");
+    return;
+}
+if (arguments.FirstOrDefault() == "client-enroll")
+{
+    Environment.ExitCode = await ClientEnrollment.RunAsync(arguments.Skip(1).ToArray(), Console.Out, Console.Error);
     return;
 }
 var configIndex = arguments.IndexOf("--config");

@@ -16,16 +16,31 @@ namespace UeDtLauncher.Gui;
 
 public sealed partial class MainWindow : Window
 {
-    private void OpenInstallFolder()
+    private string? SelectedInstallDirectory()
+    {
+        if (_configurationError is not null || !HasProject) return null;
+        if (UsesDistributionServer && SelectedCatalogRelease() is null) return null;
+        var selection = CurrentReleaseSelection();
+        if (selection is not null && _selectedRuntimeConfig?.SelectedRelease != selection) return null;
+        if (_config.IsManagedDeployment) return _selectedRuntimeConfig?.ManagedPresentation?.InstallDirectory;
+        if (_selectedRuntimeConfig is { } runtime) return runtime.InstallDir;
+        if (UsesDistributionServer || string.IsNullOrWhiteSpace(_selectedProject.InstallPath ?? _config.InstallDir)) return null;
+        try { return LauncherPaths.ResolveConfigRelative(ConfigPath, _selectedProject.InstallPath ?? _config.InstallDir); }
+        catch (ArgumentException) { return null; }
+    }
+
+    private async void OpenInstallFolder()
     {
         try
         {
-            var selection = CurrentReleaseSelection();
-            if (selection is not null && _selectedRuntimeConfig?.SelectedRelease != selection) throw new InvalidOperationException("선택한 배포의 상태를 먼저 확인해 주세요.");
-            var path = _config.IsManagedDeployment
-                ? _selectedRuntimeConfig?.ManagedPresentation?.InstallDirectory ?? throw new InvalidOperationException("설치 폴더 정보를 확인하려면 업데이트 서비스를 갱신하고 상태를 확인해 주세요.")
-                : _selectedRuntimeConfig?.InstallDir ?? LauncherPaths.ResolveConfigRelative(ConfigPath, _selectedProject.InstallPath ?? _config.InstallDir);
-            Process.Start(new ProcessStartInfo { FileName = PortableMaintenance.ExistingFolder(path), UseShellExecute = true });
+            var path = SelectedInstallDirectory() ?? throw new InvalidOperationException("선택한 배포의 상태를 먼저 확인해 주세요.");
+            await Task.Run(() =>
+            {
+                using var folder = Process.Start(new ProcessStartInfo
+                {
+                    FileName = PortableMaintenance.ExistingFolder(path), UseShellExecute = true
+                });
+            });
         }
         catch (Exception ex) { AppendLog("폴더를 열 수 없습니다: " + FriendlyError(ex), true); SetStatus("설치 폴더를 확인할 수 없습니다. 상태를 먼저 확인해 주세요."); }
     }
@@ -68,25 +83,59 @@ public sealed partial class MainWindow : Window
     private async void ClearCache() => await RunMaintenanceAsync(false);
     private async void CleanupBackups() => await RunMaintenanceAsync(true);
     private void ClearLog() { _presentation.Logs.Clear(); if (_logBox is not null) _logBox.Text = string.Empty; }
-    private string SaveLogFile() { var dir = Path.Combine(Path.GetDirectoryName(LauncherUiPreferences.DefaultPath)!, "support", "logs"); Directory.CreateDirectory(dir); var path = Path.Combine(dir, $"launcher-{DateTime.Now:yyyyMMdd-HHmmss}.log"); File.WriteAllText(path, DiagnosticRedactor.Redact(_presentation.LogText)); return path; }
-    private void ExportLogsZip()
+    private string UserLogDirectory() => _config.IsManagedDeployment
+        ? ManagedClientContext.UserLogRoot(ConfigPath)
+        : LauncherPaths.ResolveConfigRelative(ConfigPath, _config.LogDir);
+
+    private async Task RebindUserLoggerAsync()
+    {
+        _fileLogger = null;
+        if (!_allowAutomaticChecks || _configurationError is not null) return;
+        var config = _config;
+        try
+        {
+            var path = UserLogDirectory();
+            var logger = await Task.Run(() => new FileLogger(path));
+            if (ReferenceEquals(_config, config))
+            {
+                _fileLogger = logger;
+                _lastDisplayDiagnostic = null;
+                RecordDisplayDiagnostic();
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { }
+    }
+
+    private async void ExportLogsZip() => await ExportLogsZipAsync();
+
+    private async Task<bool> ExportLogsZipAsync()
     {
         try
         {
-            SaveLogFile();
             var support = Path.Combine(Path.GetDirectoryName(LauncherUiPreferences.DefaultPath)!, "support");
-            var zip = Path.Combine(support, "launcher-logs-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N")[..8] + ".zip");
-            ZipFile.CreateFromDirectory(Path.Combine(support, "logs"), zip);
-            if (_lastDoctorReport is not null)
+            var log = _presentation.LogText;
+            var doctor = _lastDoctorReport;
+            var zip = await Task.Run(() =>
             {
-                using var archive = ZipFile.Open(zip, ZipArchiveMode.Update);
-                using var writer = new StreamWriter(archive.CreateEntry("doctor.json").Open());
-                writer.Write(DiagnosticRedactor.Redact(JsonSerializer.Serialize(_lastDoctorReport, JsonFiles.Options)));
-            }
+                var logDirectory = Path.Combine(support, "logs");
+                Directory.CreateDirectory(logDirectory);
+                var name = $"launcher-{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}";
+                File.WriteAllText(Path.Combine(logDirectory, name + ".log"), DiagnosticRedactor.Redact(log));
+                var zipPath = Path.Combine(support, name + ".zip");
+                ZipFile.CreateFromDirectory(logDirectory, zipPath);
+                if (doctor is not null)
+                {
+                    using var archive = ZipFile.Open(zipPath, ZipArchiveMode.Update);
+                    using var writer = new StreamWriter(archive.CreateEntry("doctor.json").Open());
+                    writer.Write(DiagnosticRedactor.Redact(JsonSerializer.Serialize(doctor, JsonFiles.Options)));
+                }
+                return zipPath;
+            });
             SetStatus("지원 로그 ZIP을 사용자 지원 폴더에 저장했습니다.");
             AppendLog(IsDeveloper ? "지원 로그 저장: " + zip : "지원 로그 ZIP 저장 완료", true);
+            return true;
         }
-        catch (Exception ex) { MarkError(ex, "지원 로그 저장 실패"); }
+        catch (Exception ex) { MarkError(ex, "지원 로그 저장 실패", showDialog: IsDeveloper); return false; }
     }
 
     private string StorageSummary() => _config.IsManagedDeployment ? "업데이트 서비스에서 관리" : $"임시 파일 {FormatBytes(DirSize(SelectedStatePaths.StagingDir))} / 백업 {FormatBytes(DirSize(SelectedStatePaths.BackupDir))}";

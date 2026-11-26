@@ -109,7 +109,7 @@ public static class CatalogSnapshotService
         { return null; } // Never fall back to reading the machine credential in the GUI.
     }
 
-    private readonly record struct VersionSortKey(int Major, int Minor, int Patch, string Raw) : IComparable<VersionSortKey>
+    internal readonly record struct VersionSortKey(int Major, int Minor, int Patch, string Raw) : IComparable<VersionSortKey>
     {
         public static VersionSortKey Parse(string raw)
         {

@@ -92,6 +92,7 @@ public sealed partial class MainWindow : Window
             if (_configurationError is not null && id is "update" or "repair" or "rollback" or "resume-operation" or "cache-clear" or "backup-cleanup" or "open-folder") button.IsEnabled = false;
         }
         foreach (var control in _selectionControls) control.IsEnabled = !busy;
+        UpdateProjectCardsAvailability();
         RefreshPresentation();
     }
 

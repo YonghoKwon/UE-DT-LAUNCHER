@@ -35,6 +35,24 @@ public sealed partial class IntakeStore
     internal IDisposable DatabaseRead() => DistributionDatabaseCoordinator.Read(DatabaseGate);
     internal IDisposable DatabaseWrite() => DistributionDatabaseCoordinator.Write(DatabaseGate);
     public string Root { get; }
+    internal static IntakeStore OpenForEnrollmentValidation(DistributionSettings settings)
+    {
+        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(settings.Root));
+        if (File.Exists(SafePath.ResolveInsideChecked(root, "restore-staged.json")))
+            throw new InvalidDataException("Staged restored root rejects enrollment.");
+        return new(settings, AuthorityStore.ReadAlongsideSqlite(root).Store);
+    }
+
+    private IntakeStore(DistributionSettings settings, AuthorityStore authority)
+    {
+        if (settings.IntakeWorkers is < 1 or > 2) throw new InvalidDataException("IntakeWorkers must be 1 or 2.");
+        Settings = settings;
+        Root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(settings.Root));
+        Authority = authority;
+        DatabaseGate = DistributionDatabaseCoordinator.ForRoot(Root);
+        CredentialAuthority.Bind(this, Authority);
+    }
+
     public IntakeStore(DistributionSettings settings, Func<string, long>? availableBytes = null)
     {
         this.availableBytes = availableBytes;

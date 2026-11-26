@@ -59,13 +59,17 @@ public sealed partial class MainWindow : Window
         if (_running) return _agentState.StartsWith("연결", StringComparison.Ordinal) || _agentState.EndsWith("정상", StringComparison.Ordinal);
         if (_agentStatusRefreshing) return _agentState.StartsWith("연결", StringComparison.Ordinal) || _agentState.EndsWith("정상", StringComparison.Ordinal);
         _agentStatusRefreshing = true;
+        var checkedConfig = _config;
         var nextState = LauncherDashboardViewModel.ConnectionLabel(IsDeveloper, ServiceConnectionState.Disconnected);
         var connected = false;
+        string? serviceVersion = null;
         try
         {
             var response = await new ManagedAgentClient().SendAsync("status", timeout: TimeSpan.FromSeconds(2));
-            var displayVersion = response.AgentVersion.Split('+')[0];
+            var displayVersion = response.AgentVersion?.Split('+', 2)[0];
             connected = response.Success;
+            if (connected && LauncherUiError.IsSupportTag(displayVersion?.Replace('.', '-')))
+                serviceVersion = displayVersion;
             nextState = response.Success
                 ? LauncherDashboardViewModel.ConnectionLabel(IsDeveloper, ServiceConnectionState.Connected, displayVersion)
                 : LauncherDashboardViewModel.ConnectionLabel(IsDeveloper, ServiceConnectionState.Error);
@@ -77,9 +81,13 @@ public sealed partial class MainWindow : Window
         {
             _agentStatusRefreshing = false;
         }
-        if (string.Equals(_agentState, nextState, StringComparison.Ordinal)) return connected;
+        if (!ReferenceEquals(checkedConfig, _config)) return false;
+        _serviceVersion = serviceVersion;
+        _lastServiceCheck = DateTimeOffset.Now;
+        var stateChanged = !string.Equals(_agentState, nextState, StringComparison.Ordinal);
         _agentState = nextState;
-        await Dispatcher.UIThread.InvokeAsync(() => { if (_serviceLabel is not null) _serviceLabel.Text = nextState; });
+        _settingsConnectionChanged?.Invoke();
+        if (stateChanged) await Dispatcher.UIThread.InvokeAsync(() => { if (_serviceLabel is not null) _serviceLabel.Text = nextState; });
         return connected;
     }
 
