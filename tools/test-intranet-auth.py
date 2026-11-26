@@ -167,6 +167,11 @@ def main():
     def write(path, value):
         path.write_text(json.dumps(value, indent=2), encoding="utf-8")
 
+    def headless_phase(phase):
+        if args.operation_proof:
+            (root / 'headless-phase').write_text(phase, encoding='ascii')
+
+    headless_phase('provisioning')
     run(launcher, "generate-signing-key", "--private-key", root / "release.pem", "--public-key", root / "public.pem")
     with socket.socket() as reservation:
         reservation.bind(("127.0.0.1", 0))
@@ -244,13 +249,14 @@ def main():
     config = json.loads(generated.read_text(encoding="utf-8"))
     config.update(versionPolicy="exact", requestedVersion="1.0.0", installDir=str(client / "apps"), stateRootDir=str(client / "state"),
                   launchArguments=["/c", "echo UE_DT_FAKE_GAME_OK>runtime-marker.txt"] if os.name == "nt" else [])
-    if args.operation_proof or args.gui_download_proof: config['performance']={'resumeCacheBytes':256*1024*1024}
+    if args.gui_download_proof: config['performance']={'resumeCacheBytes':256*1024*1024}
     harness_lock=FixtureHarnessLock(root) if args.prepare_gui else None
     if harness_lock is not None:harness_lock.__enter__()
     log = (root / "server.log").open("w", encoding="utf-8")
     process = subprocess.Popen([server, "serve", "--config", str(root / "server.json")], stdout=log, stderr=log, env=env, creationflags=flags)
     agent_process = None
     agent_log = None
+    operation_proxy = None
     nginx_process = None
     nginx_log = None
     try:
@@ -300,6 +306,7 @@ http {{
             time.sleep(0.1)
         else:
             raise RuntimeError("Server did not become ready")
+        headless_phase('installation-and-repair')
         if not (args.prepare_gui and args.gui_mode=='portable'):
             run(launcher, "doctor", "--config", generated, "--online")
         readiness_proofs=[]
@@ -332,6 +339,7 @@ http {{
                    "versions_installed_and_launched": 2, "repair": True, "nginx": bool(args.nginx), "company_or_unreal_validation": False}
         if args.readiness_proof: summary['readiness_proofs']=readiness_proofs
         if args.service_proof:
+            headless_phase('service-selection')
             def wait_runtime(version):
                 path = client / "state" / "demo" / "prod" / "stable" / version / platform / "runtime-state.json"
                 deadline = time.monotonic() + 25
@@ -370,6 +378,7 @@ http {{
             summary["versions_installed_and_launched"] = 0; summary["repair"] = False
             summary["gui_prepared_empty"] = True
         if args.agent:
+            headless_phase('agent-setup')
             if args.readiness_proof: write(root / 'readiness-progress.json', {'phase': 'managed-diagnostics'})
             # Match real MSI/RPM layout: the trusted host is beside the Agent, not an arbitrary GUI path.
             composed = client / "agent"
@@ -381,13 +390,23 @@ http {{
             if Path(args.agent).resolve()!=composed_agent.resolve(): shutil.copy2(Path(args.agent).resolve(), composed_agent)
             launcher = str(composed_launcher)
             config["deploymentMode"] = "managed-agent"
+            if args.operation_proof:
+                # The preceding portable install must leave the cancellation payload uncached.
+                config['performance']={'resumeCacheBytes':256*1024*1024}
             agent_config = client / "agent" / "config" / "launcher.config.json"
             agent_config.parent.mkdir(parents=True)
             write(agent_config, config)
             if "UE_DT_AGENT_ENDPOINT" not in env or not args.prepare_gui:
                 env["UE_DT_AGENT_ENDPOINT"] = "uedt-test-"+root.name+'-'+uuid.uuid4().hex[:12] if os.name == "nt" else str(root / "agent.sock")
             agent_log = (root / "agent.log").open("w", encoding="utf-8")
-            agent_process = subprocess.Popen([str(composed_agent)], env=env, stdout=agent_log, stderr=agent_log, creationflags=flags)
+            agent_env = env
+            if args.operation_proof:
+                from gui_download_proxy import DownloadProxy
+                operation_proxy = DownloadProxy(root, 0, port, bytes_per_second=None, forward_proxy=True)
+                operation_proxy.start()
+                proxy_url = f'http://127.0.0.1:{operation_proxy.server.server_port}'
+                agent_env = {**env, 'HTTP_PROXY': proxy_url, 'http_proxy': proxy_url, 'NO_PROXY': '', 'no_proxy': ''}
+            agent_process = subprocess.Popen([str(composed_agent)], env=agent_env, stdout=agent_log, stderr=agent_log, creationflags=flags)
             if args.prepare_gui: wait_agent_ready(agent_process,env['UE_DT_AGENT_ENDPOINT'])
             else:
                 from gui_fixture_evidence import agent_status
@@ -420,7 +439,8 @@ http {{
                 summary['managed_rollback_outcome']=prove_managed_rollback(run,launcher,client,config,env['UE_DT_AGENT_ENDPOINT'])
             if args.operation_proof:
                 from operation_fixture_support import prove_operations
-                summary['owned_operation_cancellation'] = prove_operations(root, client, launcher, env, flags, run, platform)
+                headless_phase('operation-cancellation')
+                summary['owned_operation_cancellation'] = prove_operations(root, client, launcher, env, flags, run, platform, operation_proxy)
             if args.promotion_proof:
                 from gui_fixture_evidence import agent_status
                 config['requestedVersion']='2.0.0'
@@ -480,6 +500,7 @@ http {{
             load = run_load(origin, root, lambda path: run(server, "client-key", "add", "--client", "pc-test", "--public-key", path, "--config", root / "server.json"), platform, process.pid)
             summary["load_failed_requests"] = sum(row["failed_requests"] for row in load["results"])
         if args.credential_proof:
+            headless_phase('credential-lifecycle')
             run(launcher, 'credential', 'keygen', '--name', 'expired-device', '--key-id', 'expired-key', '--public-out', root/'expired-public.json')
             run(server, 'client-key', 'add', '--client', 'pc-test', '--public-key', root/'expired-public.json', '--expires-at', '2000-01-01T00:00:00Z', '--config', root/'server.json')
             expired=dict(config,deploymentMode='portable',security=dict(config['security'],credentialName='expired-device'))
@@ -495,6 +516,7 @@ http {{
             summary['credential_lifecycle']=True
         if args.schedule_proof:
             from scheduled_fixture_support import prove_schedule
+            headless_phase('scheduled-check')
             summary['read_only_scheduled_check']=prove_schedule(run,launcher,client,config)
         if args.online_launch_proof:
             from online_launch_fixture_support import prove_online_launch
@@ -507,6 +529,7 @@ http {{
             else:
                 process.wait()
         else:
+            headless_phase('revocation')
             if args.readiness_proof: write(root / 'readiness-progress.json', {'phase': 'revocation'})
             run(server, "client-key", "revoke", "--key-id", "pc-test-key", "--config", root / "server.json")
             if args.readiness_proof:
@@ -520,6 +543,7 @@ http {{
             summary["local_key_deleted"] = True
             write(root / "summary.json", summary)
             print(f"PASS: {root}", flush=True)
+        headless_phase('fixture-shutdown')
     finally:
         if download_proxy is not None:download_proxy.close()
         if nginx_process is not None and nginx_process.poll() is None:
@@ -528,6 +552,8 @@ http {{
             nginx_log.close()
         if agent_process is not None and agent_process.poll() is None:
             agent_process.terminate(); agent_process.wait(timeout=10)
+        if operation_proxy is not None:
+            operation_proxy.close()
         if agent_log is not None:
             agent_log.close()
         if process.poll() is None:

@@ -2,6 +2,7 @@
 import http.client
 import http.server
 import json
+from contextlib import contextmanager
 from pathlib import Path
 import threading
 import time
@@ -11,12 +12,13 @@ from gui_fixture_evidence import inside
 
 
 class DownloadProxy:
-    def __init__(self, root, public_port, upstream_port, bytes_per_second=512*1024):
+    def __init__(self, root, public_port, upstream_port, bytes_per_second=512*1024, *, forward_proxy=False):
         self.root=Path(root).resolve()
         self.control=self.root/'control';self.control.mkdir(exist_ok=True)
         self.upstream=upstream_port;self.rate=bytes_per_second
         self.lock=threading.Lock();self.slots=threading.BoundedSemaphore(16)
         self.stop=threading.Event()
+        self.held_file=None
         self.last_persist=0.0
         self.metrics=dict(sessionId=uuid.uuid4().hex,startedAtUtc=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),fileRequests=0,rangeRequests=0,rangeStarts=[],fileBytes=0,throttledBytes=0,activeFiles=0,configuredBytesPerSecond=bytes_per_second,catalogFaults=0)
         owner=self
@@ -31,14 +33,20 @@ class DownloadProxy:
                     self.send_response(429);self.send_header('Content-Length','0');self.end_headers();return
                 connection=None;file_request=False;registered=False
                 try:
-                    path=urllib.parse.urlsplit(self.path).path
+                    target=urllib.parse.urlsplit(self.path)
+                    path=target.path
+                    upstream_target=self.path
+                    if forward_proxy:
+                        if target.scheme!='http' or target.netloc!=f'127.0.0.1:{owner.upstream}':
+                            self.send_error(403);return
+                        upstream_target=path+('?' + target.query if target.query else '')
                     if self.command not in ('GET','HEAD') or not (path in ('/api/v1/catalog','/api/v1/auth/challenge') or path.startswith('/releases/')):
                         self.send_error(404);return
                     file_request='/files/' in path
                     headers={k:v for k,v in self.headers.items() if k.lower() not in ('host','connection','x-forwarded-for','x-distribution-client-ip')}
                     headers['X-Distribution-Client-IP']=self.client_address[0]
                     connection=http.client.HTTPConnection('127.0.0.1',owner.upstream,timeout=30)
-                    connection.request(self.command,self.path,headers=headers)
+                    connection.request(self.command,upstream_target,headers=headers)
                     response=connection.getresponse()
                     if path=='/api/v1/catalog' and response.status==200 and owner.fail_catalog_after_commit():
                         self.send_response(503);self.send_header('Content-Length','0');self.end_headers();self.close_connection=True;return
@@ -58,8 +66,14 @@ class DownloadProxy:
                     self.close_connection=response.getheader('Content-Length') is None
                     if self.close_connection:self.send_header('Connection','close')
                     self.end_headers()
+                    if self.command=='GET' and response.status in (200,206):
+                        with owner.lock:
+                            hold=owner.held_file
+                        if hold is not None and path==hold[0]:
+                            hold[1].set()
+                            hold[2].wait()
                     sent=0;started=time.monotonic()
-                    throttled=path.endswith('/files/cancellation.bin')
+                    throttled=owner.rate is not None and path.endswith('/files/cancellation.bin')
                     if self.command!='HEAD':
                         while not owner.stop.is_set():
                             chunk=response.read(32768)
@@ -84,6 +98,19 @@ class DownloadProxy:
         self.server=http.server.ThreadingHTTPServer(('127.0.0.1',public_port),Handler)
         self.server.daemon_threads=True
         self.thread=threading.Thread(target=self.server.serve_forever,daemon=True)
+    @contextmanager
+    def hold_file(self, path):
+        """Hold the successful file response body until the fixture has cancelled."""
+        entered, release=threading.Event(),threading.Event()
+        with self.lock:
+            if self.held_file is not None:raise RuntimeError('A file response is already held')
+            self.held_file=(path,entered,release)
+        try:
+            yield entered
+        finally:
+            with self.lock:
+                self.held_file=None
+                release.set()
     def persist(self,force=True):
         now=time.monotonic()
         if not force and now-self.last_persist<.2:return
