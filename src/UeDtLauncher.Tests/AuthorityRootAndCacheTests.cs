@@ -49,6 +49,7 @@ public sealed class AuthorityRootAndCacheTests(ITestOutputHelper output)
     [InlineData("standalone-lock", "UnrecognizedLayout")]
     [InlineData("unrelated-init-files", "UnrecognizedLayout")]
     [InlineData("invalid-init-document", "UnrecognizedLayout")]
+    [InlineData("unowned-init-temp", "UnrecognizedLayout")]
     public async Task G8_RejectedRootExitsNonzeroBeforeAnyChange(string scenario, string expectedKind)
     {
         using var fixture = new AuthorityStoreFixture();
@@ -113,8 +114,15 @@ public sealed class AuthorityRootAndCacheTests(ITestOutputHelper output)
                 break;
             case "unrelated-init-files":
             case "invalid-init-document":
+            case "unowned-init-temp":
                 var staging = Directory.CreateDirectory(Path.Combine(root, ".authority-init.v1"));
-                File.WriteAllText(Path.Combine(staging.FullName, scenario == "invalid-init-document" ? "HEAD" : "foreign.txt"), "unrelated data");
+                var name = scenario switch
+                {
+                    "invalid-init-document" => "HEAD",
+                    "unowned-init-temp" => "HEAD.tmp-" + Guid.NewGuid().ToString("N"),
+                    _ => "foreign.txt"
+                };
+                File.WriteAllText(Path.Combine(staging.FullName, name), "unrelated data");
                 break;
         }
         if (scenario is "dt-parent" or "dt-static")

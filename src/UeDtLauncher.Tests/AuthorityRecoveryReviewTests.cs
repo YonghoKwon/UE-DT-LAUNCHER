@@ -104,6 +104,41 @@ public sealed class AuthorityRecoveryReviewTests(ITestOutputHelper output)
         output.WriteLine($"{boundary}: restart initialized or reopened generation zero from the precreated root.");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InterruptedHeadAcceptsOnlyAnOwnedCanonicalPrefix(bool corrupt)
+    {
+        using var fixture = new AuthorityStoreFixture();
+        using (var child = Start(fixture.Root, "crash-init", nameof(AuthorityBoundary.BeforeHeadRename))) await ForceStop(child);
+        var stage = Path.Combine(fixture.Root, ".authority-init.v1");
+        var temp = Assert.Single(Directory.EnumerateFiles(stage, "HEAD.*.tmp-*"));
+        Assert.Single(Directory.EnumerateFiles(stage, ".bootstrap-owner.tmp-*"));
+        var input = File.ReadAllBytes(temp);
+        Assert.True(input.Length > 2);
+        var prefix = input[..(input.Length / 2)];
+        if (corrupt) prefix[0] ^= 1;
+        File.WriteAllBytes(temp, prefix);
+
+        if (corrupt)
+        {
+            File.Delete(Path.Combine(fixture.Root, ".maintenance.lock"));
+            File.Delete(Path.Combine(fixture.Root, ".writer.lock"));
+            var before = Inventory(fixture.Root);
+            Assert.Equal(AuthorityRootKind.UnrecognizedLayout, Assert.Throws<AuthorityRootException>(fixture.Open).Kind);
+            Assert.Equal(before, Inventory(fixture.Root));
+            Assert.True(Directory.Exists(stage));
+            Assert.False(Directory.Exists(Path.Combine(fixture.Root, "authority")));
+            return;
+        }
+
+        var store = fixture.Open();
+        Assert.Null(store.OpenMaintenanceError);
+        Assert.Equal(0, store.ReadSnapshot().Generation);
+        Assert.False(Directory.Exists(stage));
+        Assert.Empty(Directory.EnumerateFiles(store.DirectoryPath, "*.tmp-*", SearchOption.AllDirectories));
+    }
+
     [Fact]
     public async Task ConcurrentInitializersPublishOnlyOneGenerationZero()
     {

@@ -208,12 +208,16 @@ class Run:
                         self.log(log, str(error))
                     result["restart"].append({"seam": boundary, "status": status})
             try:
-                self.inside(fs, log, HARNESS, "probe", f"{root}/filesystem-probe")
+                probe = f"{root}/filesystem-probe"
+                self.inside(fs, log, "mkdir", "--", probe)
+                self.inside(fs, log, HARNESS, "probe", probe)
                 self.inside(fs, log, "findmnt", "-n", "-o", "FSTYPE,OPTIONS", "--mountpoint", "/unsupported")
-                refused = self.inside(fs, log, HARNESS, "probe", "/unsupported/probe", expected=3)
+                refused = self.inside(fs, log, HARNESS, "probe", "/unsupported", expected=3)
                 if "UnsupportedFileSystem:" not in refused or "0x01021994" not in refused:
                     raise RuntimeError(f"Expected a statfs tmpfs refusal; got {refused.strip()}.")
-                self.inside(fs, log, "test", "!", "-e", "/unsupported/probe")
+                remaining = self.inside(fs, log, "find", "/unsupported", "-mindepth", "1", "-print", "-quit")
+                if remaining.strip():
+                    raise RuntimeError("The unsupported tmpfs changed after refusal.")
                 result["filesystem"] = "PASS"
             except (RuntimeError, subprocess.TimeoutExpired) as error:
                 result["filesystem"] = "FAIL"

@@ -54,6 +54,7 @@ internal sealed partial class AuthorityStore
         if (Attributes(store.Root) is null)
             throw new AuthorityRootException(AuthorityRootKind.MissingRoot,
                 "The configured store root is missing. Create the empty root and grant the service account write access before starting the server.");
+        store.CheckInitializationMounts();
         if (!store.CheckRoot(validateHistory: true, out var previous)) store.Initialize();
         else validate?.Invoke(previous!);
         using var writer = store.AcquireWriter(exclusiveMaintenance: false);
@@ -70,6 +71,7 @@ internal sealed partial class AuthorityStore
         var store = new AuthorityStore(root, layout ?? AuthorityLayout.Default, exclusiveLease);
         return exclusiveLease.UseExclusive(store.Root, () =>
         {
+            store.CheckInitializationMounts();
             if (!store.CheckRoot(validateHistory: true))
                 throw new AuthorityRootException(AuthorityRootKind.Damaged, "Authority HEAD is missing.");
             return store;
@@ -80,6 +82,7 @@ internal sealed partial class AuthorityStore
     internal static AuthoritySnapshot InspectExisting(string root, bool validateHistory = true)
     {
         var store = new AuthorityStore(root, AuthorityLayout.Default);
+        store.CheckInitializationMounts();
         return store.CheckRoot(validateHistory, out var snapshot)
             ? snapshot!
             : throw new AuthorityRootException(AuthorityRootKind.Damaged, "Authority HEAD is missing.");

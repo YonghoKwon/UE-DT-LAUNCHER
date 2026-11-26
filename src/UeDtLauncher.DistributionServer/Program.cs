@@ -147,6 +147,11 @@ catch (AuthorityRootException error) when (error.Kind == AuthorityRootKind.Missi
     Console.Error.WriteLine("ERROR [missing-store-root] 설정의 저장소 root가 없습니다. 서버 시작 전에 빈 root를 만들고 서비스 계정에 쓰기 권한을 부여하세요.");
     Environment.ExitCode = 1;
 }
+catch (AuthorityRootException error) when (error.Kind == AuthorityRootKind.MountMismatch)
+{
+    Console.Error.WriteLine("ERROR [authority-mount-mismatch] The authority store, initialization staging, and authority directories must share one mount.");
+    Environment.ExitCode = 1;
+}
 catch(Exception error)
 {
     var supportId = CliErrors.Write(Console.Error, error, args.Contains("--error-details", StringComparer.OrdinalIgnoreCase), server: true);
