@@ -9,11 +9,12 @@ namespace UeDtLauncher;
 
 public sealed record UploadProfile(string? Server = null, string? RemoteIncoming = null, int? Port = null,
     string? IdentityFile = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RemoteStatus = null)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RemoteStatus = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? KnownHostsFile = null)
 {
     public UploadProfile Override(UploadProfile command) => new(command.Server ?? Server,
         command.RemoteIncoming ?? RemoteIncoming, command.Port ?? Port, command.IdentityFile ?? IdentityFile,
-        command.RemoteStatus ?? RemoteStatus);
+        command.RemoteStatus ?? RemoteStatus, command.KnownHostsFile ?? KnownHostsFile);
 
     public void Validate()
     {
@@ -40,8 +41,15 @@ public sealed record UploadProfile(string? Server = null, string? RemoteIncoming
     private void ValidateLocalOptions()
     {
         if (Port is < 1 or > 65535) throw new ArgumentException("--port must be 1..65535.");
+        // Windows UNC and device paths start with a separator, unlike drive-qualified paths.
+        if (OperatingSystem.IsWindows() && KnownHostsFile is { Length: > 0 } path && (path[0] is '\\' or '/'))
+            throw new ArgumentException("knownHostsFile must use a drive-qualified path on Windows.");
         if (IdentityFile is not null && (!File.Exists(IdentityFile) || IdentityFile.Any(char.IsControl)))
             throw new ArgumentException("--identity-file must name an existing local file.");
+        if (KnownHostsFile is not null && (!Path.IsPathFullyQualified(KnownHostsFile) ||
+            KnownHostsFile.Any(char.IsControl) || KnownHostsFile.Contains("${", StringComparison.Ordinal) ||
+            !File.Exists(KnownHostsFile)))
+            throw new ArgumentException("knownHostsFile must name an existing absolute local file without OpenSSH environment references.");
     }
 
     private static string ValidateRemotePath(string? path, string option)

@@ -11,7 +11,12 @@ public static class UploadFailureGuidance
     {
         if (kind == "executable-missing") return MissingExecutable;
         if (exitCode == 255)
-            return $"서버 주소·포트·키 인증 설정·호스트 키 등록을 확인하세요. 최초 1회 터미널에서 ssh -p {profile.Port ?? 22} {profile.Server} 로 접속해 호스트 키를 확인·등록하세요. upload/check는 키 인증만 지원하며 비밀번호를 묻지 않습니다.";
+        {
+            var hostKeyAction = profile.KnownHostsFile is null
+                ? $"최초 1회 터미널에서 ssh -p {profile.Port ?? 22} {profile.Server} 로 접속해 호스트 키를 확인·등록하세요."
+                : "서버 관리자가 제공한 호스트 키 지문과 대조한 뒤 프로필의 knownHostsFile에 지정한 파일을 갱신하세요.";
+            return $"서버 주소·포트·키 인증 설정·호스트 키 등록을 확인하세요. {hostKeyAction} upload/check는 키 인증만 지원하며 비밀번호를 묻지 않습니다.";
+        }
         return stage switch
         {
             "mkdir" => "같은 업로드 ID 폴더가 이미 있거나 incoming 쓰기 권한이 없을 수 있습니다. 폴더를 재사용하지 말고 권한 확인 후 새 ID로 다시 시도하세요.",
@@ -26,6 +31,8 @@ public static class UploadFailureGuidance
 
 internal static class UploadTransport
 {
+    internal const string KnownHostsOption = "UserKnownHostsFile=";
+
     internal static List<string> Options(UploadProfile profile, bool scp)
     {
         var args = new List<string> { "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "UpdateHostKeys=no",
@@ -33,6 +40,13 @@ internal static class UploadTransport
             "-o", "PermitLocalCommand=no", "-o", "ClearAllForwardings=yes", "-o", "ControlMaster=no", "-o", "ControlPath=none",
             "-o", "ConnectTimeout=10", "-o", "ConnectionAttempts=1", scp ? "-P" : "-p", (profile.Port ?? 22).ToString(System.Globalization.CultureInfo.InvariantCulture) };
         if (profile.IdentityFile is not null) { args.Add("-i"); args.Add(Path.GetFullPath(profile.IdentityFile)); }
+        if (profile.KnownHostsFile is { } knownHostsFile)
+        {
+            if (OperatingSystem.IsWindows()) knownHostsFile = knownHostsFile.Replace('\\', '/');
+            // OpenSSH parses -o as a config line and expands percent tokens in known-host filenames.
+            var value = knownHostsFile.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("%", "%%");
+            args.AddRange(["-o", KnownHostsOption + "\"" + value + "\""]);
+        }
         return args;
     }
     internal static UploadStep Ssh(UploadProfile profile, string name, string command, bool closeInput = false)

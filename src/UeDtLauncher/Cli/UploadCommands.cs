@@ -78,6 +78,9 @@ public static partial class Program
         {
             throw new CliArgumentException("--zip의 형식과 프로젝트 프로필에 지정한 ZIP 내부 경로를 확인하세요.");
         }
+        var statusCommand = result.Success && !result.DryRun
+            ? "upload status --upload-id " + HumanText.Safe(result.UploadId) + " --wait"
+            : null;
         if (format == "json")
         {
             var metadata = input.Metadata;
@@ -88,6 +91,7 @@ public static partial class Program
             }, JsonFiles.Options);
             json["sources"] = JsonSerializer.SerializeToNode(input.Sources, JsonFiles.Options);
             if (result.SidecarSha256 is not null) json["sidecarSha256"] = result.SidecarSha256;
+            if (statusCommand is not null) json["statusCommand"] = statusCommand;
             if (planWithoutDestination) json["placeholderDestination"] = true;
             output.WriteLine(json.ToJsonString(JsonFiles.Options));
         }
@@ -95,9 +99,8 @@ public static partial class Program
         {
             UploadPresentation.Write(output, result);
             input.WriteSummary(output);
-            if (result.Success && !result.DryRun)
-                output.WriteLine("상태 조회: upload status --upload-id " + HumanText.Safe(result.UploadId) +
-                    " --wait (같은 SSH 프로필 또는 서버 옵션 사용)");
+            if (statusCommand is not null)
+                output.WriteLine("상태 조회: " + statusCommand + " (같은 SSH 프로필 또는 서버 옵션 사용)");
             if (planWithoutDestination)
                 output.WriteLine("계획에 예시 목적지를 사용했습니다. 전송에는 실제 업로드 접속 프로필이나 서버 옵션이 필요합니다.");
         }

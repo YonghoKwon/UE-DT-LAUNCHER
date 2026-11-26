@@ -65,6 +65,18 @@ public class UploadPreflightTests
         => Assert.Contains(expected, UploadFailureGuidance.For(stage, code, Profile));
 
     [Fact]
+    public void ConnectionFailureWithDedicatedKnownHostsDirectsUserToTheConfiguredFile()
+    {
+        var profile = Profile with { KnownHostsFile = "private-known-hosts-path" };
+        var action = UploadFailureGuidance.For("connection", 255, profile);
+
+        Assert.Contains("호스트 키 지문과 대조한 뒤", action);
+        Assert.Contains("knownHostsFile에 지정한 파일을 갱신", action);
+        Assert.DoesNotContain(profile.KnownHostsFile, action);
+        Assert.DoesNotContain("ssh -p", action);
+    }
+
+    [Fact]
     public async Task CheckDoesNotCreateLocalFiles()
     {
         var root = Path.Combine(Path.GetTempPath(), "preflight-readonly-" + Guid.NewGuid().ToString("N"));
