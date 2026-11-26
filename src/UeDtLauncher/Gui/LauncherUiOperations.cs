@@ -57,11 +57,15 @@ internal interface ILauncherUiBackend
 {
     Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext context,LauncherConfig config,Action<LauncherProgress> progress,CancellationToken token=default);
     Task<LauncherUiOperationResult> ExecuteAsync(LauncherUiOperationContext context,LauncherConfig config,bool repair,bool launch,Action<LauncherProgress> progress,FileLogger? logger,CancellationToken token=default);
+    Task<RuntimeObservation?> ReadAuthorizedRuntimeAsync(LauncherUiOperationContext context, LauncherConfig config, CancellationToken token = default) =>
+        Task.FromResult<RuntimeObservation?>(null);
 }
 internal sealed class LauncherUiBackend : ILauncherUiBackend
 {
     public Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext context,LauncherConfig config,Action<LauncherProgress> progress,CancellationToken token=default)=>LauncherUiOperations.CheckAsync(context,config,progress,token);
     public Task<LauncherUiOperationResult> ExecuteAsync(LauncherUiOperationContext context,LauncherConfig config,bool repair,bool launch,Action<LauncherProgress> progress,FileLogger? logger,CancellationToken token=default)=>LauncherUiOperations.ExecuteAsync(context,config,repair,launch,progress,logger,token);
+    public Task<RuntimeObservation?> ReadAuthorizedRuntimeAsync(LauncherUiOperationContext context, LauncherConfig config, CancellationToken token = default) =>
+        LauncherUiOperations.ReadAuthorizedRuntimeAsync(context, config, token);
 }
 
 internal static class LauncherUiOperations
@@ -103,6 +107,36 @@ internal static class LauncherUiOperations
             var result=new LauncherUiOperationResult(config,config.SelectedRelease,status,RuntimeStore.Observe(config));
             context.Validate(result);return result;
         },token);
+    }
+
+    internal static async Task<RuntimeObservation?> ReadAuthorizedRuntimeAsync(LauncherUiOperationContext context,
+        LauncherConfig config, CancellationToken token, ManagedAgentClient? agent = null)
+    {
+        var selection = context.Selection ?? throw new InvalidDataException("Runtime inspection requires an exact release.");
+        context.Pin(config);
+        if (context.Managed)
+        {
+            var client = agent ?? new ManagedAgentClient();
+            var authorization = await client.SendAsync("catalog", cancellationToken: token);
+            authorization.ThrowIfFailed();
+            var catalog = authorization.Catalog ?? throw new InvalidDataException("The Agent did not return an authorized catalog.");
+            var release = CatalogResolver.SelectRelease(catalog, config);
+            if (new ReleaseSelection(context.ProjectId, release.Environment, release.Channel, release.Platform, release.Version) != selection)
+                throw new InvalidDataException("The authorized runtime release changed.");
+            ManagedClientContext.Bind(config, selection);
+            var response = await client.SendRuntimeAsync("runtime-inspect", config, cancellationToken: token);
+            response.ThrowIfFailed();
+            return response.Runtime;
+        }
+
+        return await Task.Run(async () =>
+        {
+            using var http = SecureHttpClientFactory.Create(config);
+            await CatalogResolver.ResolveAsync(config, http, cancellationToken: token);
+            if (!config.CatalogAuthenticated || config.SelectedRelease != selection)
+                throw new InvalidDataException("The runtime release is not authorized by the signed catalog.");
+            return RuntimeStore.Observe(config);
+        }, token);
     }
 
     internal static async Task<LauncherUiOperationResult> ExecuteAsync(LauncherUiOperationContext context,

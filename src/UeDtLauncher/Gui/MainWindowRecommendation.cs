@@ -75,14 +75,45 @@ public sealed partial class MainWindow
         try
         {
             var config = await RunProjectConfig(project, read);
-            var result = await _uiBackend.CheckAsync(read, config, _ => { }, token);
-            read.Validate(result);
-            return result.Runtime;
+            return await _uiBackend.ReadAuthorizedRuntimeAsync(read, config, token);
         }
         catch (Exception error) when (!token.IsCancellationRequested)
         {
             return error.GetBaseException() is RuntimeBlockedException blocked ? blocked.Observation : null;
         }
+    }
+
+    private RecommendationChange? CheckedRecommendationFor(LauncherUiOperationContext context) =>
+        context.VersionPolicy == "latest" && _checkedRecommendation?.Recommended == context.Selection
+            ? _checkedRecommendation
+            : null;
+
+    private async Task<bool> CanMutateRecommendationAsync(LauncherUiOperationContext context, RecommendationChange? interrupted,
+        CancellationToken token)
+    {
+        var current = CheckedRecommendationFor(context);
+        foreach (var change in new[] { current, interrupted }.OfType<RecommendationChange>().Distinct())
+        {
+            var priorRuntime = await ObservePreviousRecommendationRuntimeAsync(_selectedProject, context, change, token);
+            if (context != CaptureUiOperation())
+                throw new InvalidDataException("선택한 배포가 변경되었습니다. 다시 확인해 주세요.");
+            if (ApplyPreviousRuntimeBlock(priorRuntime)) return false;
+        }
+        return true;
+    }
+
+    private bool ApplyPreviousRuntimeBlock(RuntimeObservation? observation)
+    {
+        var state = LauncherDashboardViewModel.RequireRuntimeObservation(observation).State;
+        if (state == RuntimeState.Quiescent) return false;
+        _viewModel.GeneralState = GeneralLauncherState.RuntimeBlocked;
+        _installState = LauncherDashboardViewModel.RuntimeLabel(state);
+        _installDetail = state == RuntimeState.Running
+            ? "이전 설치 버전이 실행 중입니다. 종료한 뒤 다시 확인해 주세요."
+            : "이전 설치 버전의 실행 상태를 확인한 뒤 다시 시도해 주세요.";
+        _presentation.Retry = null;
+        _presentation.Complete(_installDetail, showCompletion: false);
+        return true;
     }
 
     private void OfferRecommendationChange()
@@ -112,9 +143,8 @@ public sealed partial class MainWindow
             Children =
             {
                 Txt($"{_selectedProject.DisplayName}의 권장 버전이 {change.Recommended.Version}으로 바뀌었습니다.", LauncherVisualTokens.FontBody, true),
-                Txt($"이 PC에서 마지막으로 쓴 버전은 {change.Previous.Version}입니다(표시용 기록).", LauncherVisualTokens.FontBody, false),
-                Txt(guidance, LauncherVisualTokens.FontBody, false),
-                Muted("사용자 데이터는 버전별로 따로 보관되며 자동으로 옮겨지지 않습니다.", LauncherVisualTokens.FontBody)
+                Txt($"이 PC에 이전에 설치한 버전은 {change.Previous.Version}입니다.", LauncherVisualTokens.FontBody, false),
+                Txt(guidance, LauncherVisualTokens.FontBody, false)
             }
         };
         Window? dialog = null;

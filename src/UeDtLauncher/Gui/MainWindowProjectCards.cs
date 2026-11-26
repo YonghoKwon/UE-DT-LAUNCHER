@@ -139,13 +139,20 @@ public sealed partial class MainWindow
             var result = await _uiBackend.CheckAsync(context, config, _ => { }, token);
             context.Validate(result);
             var change = RecommendationChange.Find(context.VersionPolicy, SelectedCatalogRelease(project.ProjectId), result.Status);
-            var observation = change is not null && result.Runtime?.State == RuntimeState.Quiescent
-                ? await ObservePreviousRecommendationRuntimeAsync(project, context, change, token)
-                : result.Runtime;
-            var runtime = LauncherDashboardViewModel.RequireRuntimeObservation(observation);
+            var runtime = LauncherDashboardViewModel.RequireRuntimeObservation(result.Runtime);
             if (runtime.State != RuntimeState.Quiescent)
                 return new(context, GeneralLauncherState.RuntimeBlocked,
                     LauncherDashboardViewModel.RuntimeLabel(runtime.State), "다시 확인", RecommendationChanged: change is not null);
+            if (change is not null)
+            {
+                var previous = LauncherDashboardViewModel.RequireRuntimeObservation(
+                    await ObservePreviousRecommendationRuntimeAsync(project, context, change, token));
+                if (previous.State != RuntimeState.Quiescent)
+                    return new(context, GeneralLauncherState.RuntimeBlocked,
+                        LauncherDashboardViewModel.RuntimeLabel(previous.State), "다시 확인",
+                        previous.State == RuntimeState.Running ? "이전 설치 버전이 실행 중입니다." : "이전 설치 버전의 실행 상태를 확인해 주세요.",
+                        RecommendationChanged: true);
+            }
 
             var state = LauncherDashboardViewModel.InstallationState(result.Status, developer: false);
             return new(context, state, LauncherDashboardViewModel.InstallationLabel(state),
@@ -334,6 +341,7 @@ public sealed partial class MainWindow
         var active = _cardOperation && _running && _selectedProject.ProjectId == project.ProjectId;
         var label = active ? "작업 중" : status?.Label ?? "상태 확인 중";
         var name = $"{project.DisplayName} — {label}";
+        if (status?.RecommendationChanged == true) name += $" · {RecommendationBadgeText}";
         var bitmap = HighContrast ? null : _projectCardImages.GetValueOrDefault(project.ProjectId).Bitmap;
         var selected = _selectedProject.ProjectId == project.ProjectId;
         if (card.Status == status && card.Title.Text == project.DisplayName && card.Label.Text == label &&
