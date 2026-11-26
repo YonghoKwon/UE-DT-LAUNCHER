@@ -40,6 +40,11 @@ public sealed partial class MainWindow
             : retainedPartial == false && !IsDeveloper
                 ? "작업을 취소했습니다. 다시 시도하면 받던 파일을 처음부터 받습니다."
                 : "작업 취소 완료 · 다시 확인해 주세요.", showCompletion: false);
+        if (HasProjectCards)
+        {
+            _installState = "작업 취소 완료";
+            _installDetail = _presentation.Title;
+        }
     }
     private bool CanResumeSelected()
     {try{return !_readOnlyRecoveryFollowUp && _viewModel.GeneralState!=GeneralLauncherState.RuntimeBlocked && LauncherUiOperations.CanResume(_resumeOperation,CurrentReleaseSelection());}catch{return false;}}

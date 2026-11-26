@@ -13,16 +13,31 @@ public sealed partial class MainWindow
     private sealed record ProjectCardStatus(LauncherUiOperationContext Context, GeneralLauncherState State,
         string Label, string Action, string? Guidance = null);
 
+    private sealed record ProjectCardsView(WrapPanel Cards, TextBlock Empty, TextBlock Notice, TextBlock Error, TextBlock Busy)
+    {
+        internal Dictionary<string, ProjectCardView> Items { get; } = new(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private sealed record ProjectCardView(Border Card, Button Open, Button Action, StackPanel Face,
+        TextBlock Title, TextBlock Label, TextBlock Guidance, Border Skeleton, TextBlock ActionText)
+    {
+        internal Bitmap? Bitmap { get; set; }
+        internal ProjectCardStatus? Status { get; set; }
+        internal bool Selected { get; set; }
+    }
+
     private readonly Dictionary<string, ProjectCardStatus> _projectCardStatuses = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, Bitmap?> _projectCardImages = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, (string? Path, Bitmap? Bitmap)> _projectCardImages = new(StringComparer.OrdinalIgnoreCase);
     private readonly CancellationTokenSource _projectCardLifetime = new();
+    private ProjectCardsView? _projectCardsView;
     private bool _hasAuthorizedCatalog;
     private bool _showProjectDetails;
     private bool _cardOperation;
     private string? _projectListNotice;
     private string? _workspaceFocus;
 
-    private bool HasProjectCards => !IsDeveloper && _hasAuthorizedCatalog && VisibleProjectCount() > 1;
+    private bool HasProjectCards => !IsDeveloper && _hasAuthorizedCatalog &&
+        _viewModel.ProjectsForProfile().Select(project => project.ProjectId).Distinct(StringComparer.OrdinalIgnoreCase).Take(2).Count() > 1;
     private bool ShowsProjectCards => HasProjectCards && !_showProjectDetails;
 
     private void ResetProjectCards()
@@ -35,39 +50,58 @@ public sealed partial class MainWindow
 
     private void UpdateProjectCardCatalog(HashSet<string> previous, string previousSelection)
     {
-        var allowed = _viewModel.ProjectsForProfile().Select(project => project.ProjectId)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        _projectListNotice = _hasAuthorizedCatalog && previous.Except(allowed, StringComparer.OrdinalIgnoreCase).Any()
-            ? "받을 권한이 변경된 프로그램을 목록에서 제외했습니다."
+        var allowed = _viewModel.ProjectsForProfile().DistinctBy(project => project.ProjectId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(project => project.ProjectId, StringComparer.OrdinalIgnoreCase);
+        _projectListNotice = _hasAuthorizedCatalog && previous.Except(allowed.Keys, StringComparer.OrdinalIgnoreCase).Any()
+            ? "받을 수 있는 프로그램 목록이 변경되었습니다."
             : null;
-        if (!allowed.Contains(previousSelection)) _showProjectDetails = false;
+        if (!allowed.ContainsKey(previousSelection)) _showProjectDetails = false;
         _hasAuthorizedCatalog = true;
-        _projectCardStatuses.Clear();
-        _projectCardImages.Clear();
+        foreach (var (id, status) in _projectCardStatuses)
+            if (!allowed.TryGetValue(id, out var project) || status.Context != DisplaySelectionContext(project))
+                _projectCardStatuses.Remove(id);
+        foreach (var (id, image) in _projectCardImages)
+            if (!allowed.TryGetValue(id, out var project) || image.Path != project.ThumbnailPath)
+                _projectCardImages.Remove(id);
     }
 
-    private async Task RefreshProjectCardsAsync()
+    private async Task RefreshProjectCardsAsync(bool pendingOnly = false)
     {
+        var projects = _viewModel.ProjectsForProfile()
+            .DistinctBy(project => project.ProjectId, StringComparer.OrdinalIgnoreCase)
+            .Where(project => !pendingOnly || !_projectCardStatuses.ContainsKey(project.ProjectId) ||
+                !_projectCardImages.ContainsKey(project.ProjectId))
+            .ToList();
+        if (projects.Count == 0) return;
         _running = true;
-        Build();
+        if (_projectCardsView is null) Build();
+        else SyncProjectCards(_projectCardsView);
+        SetBusy(true);
         try
         {
-            foreach (var project in _viewModel.ProjectsForProfile().ToList())
+            foreach (var project in projects)
             {
+                var id = project.ProjectId;
                 var token = _projectCardLifetime.Token;
                 var context = DisplaySelectionContext(project);
-                _projectCardImages[project.ProjectId] = await LoadProjectCardImageAsync(project);
+                var bitmap = _projectCardImages.TryGetValue(id, out var image) && image.Bitmap is not null
+                    ? image.Bitmap : await LoadProjectCardImageAsync(project);
                 if (token.IsCancellationRequested) break;
-                _projectCardStatuses[project.ProjectId] = await ReadProjectCardStatusAsync(project, context, token);
+                var status = await ReadProjectCardStatusAsync(project, context, token);
                 if (token.IsCancellationRequested) break;
-                Build();
+                var changed = !_projectCardStatuses.TryGetValue(id, out var previous) || previous != status ||
+                    _projectCardImages.GetValueOrDefault(id).Bitmap != bitmap;
+                _projectCardImages[id] = (project.ThumbnailPath, bitmap);
+                _projectCardStatuses[id] = status;
+                if (changed && _projectCardsView?.Items.TryGetValue(id, out var card) == true)
+                    UpdateProjectCard(project, card);
             }
         }
         catch (OperationCanceledException) when (_projectCardLifetime.IsCancellationRequested) { }
         finally
         {
             _running = false;
-            if (!_projectCardLifetime.IsCancellationRequested) Build();
+            if (!_projectCardLifetime.IsCancellationRequested) SetBusy(false);
         }
     }
 
@@ -212,102 +246,184 @@ public sealed partial class MainWindow
         heading.Children.Add(At(refresh, 2));
 
         var panel = new StackPanel { Spacing = LauncherVisualTokens.SpaceMd, Children = { heading } };
-        if (_projectListNotice is { } notice)
-            panel.Children.Add(ProjectCardNotice(notice));
-        if (_catalogState == "카탈로그 오류")
-            panel.Children.Add(ProjectCardNotice("프로그램 목록을 확인할 수 없습니다. 다시 확인해 주세요.", "card-catalog-error"));
-        if (_running)
-            panel.Children.Add(ProjectCardNotice(_cardOperation
-                ? $"{_selectedProject.DisplayName} 작업이 끝나면 다른 프로그램을 사용할 수 있습니다."
-                : "프로그램 상태를 확인하고 있습니다.", "card-busy-guidance"));
-
         var columns = CurrentLayoutWidth() < 800 || _preferences.TextScale > 1.5 ? 2 : 3;
-        var cards = Identify(new WrapPanel(), "project-cards", "프로그램 카드 목록");
-        var empty = Identify(Muted("검색 결과가 없습니다.", LauncherVisualTokens.FontBody), "card-search-empty", "검색 결과가 없습니다.");
-        var openButtons = new List<Button>();
-        void Render()
+        var cardWidth = Math.Max(216, Math.Floor((CurrentLayoutWidth() - 90) / columns));
+        var view = new ProjectCardsView(
+            Identify(new WrapPanel { ItemWidth = cardWidth + LauncherVisualTokens.SpaceMd }, "project-cards", "프로그램 카드 목록"),
+            Identify(Muted("검색 결과가 없습니다.", LauncherVisualTokens.FontBody), "card-search-empty", "검색 결과가 없습니다."),
+            ProjectCardNotice(_projectListNotice ?? string.Empty),
+            ProjectCardNotice("프로그램 목록을 확인할 수 없습니다. 다시 확인해 주세요.", "card-catalog-error"),
+            ProjectCardNotice(string.Empty, "card-busy-guidance"));
+        _projectCardsView = view;
+        panel.Children.AddRange([view.Notice, view.Error, view.Busy, view.Cards, view.Empty]);
+        SyncProjectCards(view);
+        search.TextChanged += (_, _) =>
         {
-            cards.Children.Clear();
-            openButtons.Clear();
-            foreach (var project in VisibleProjects())
-                cards.Children.Add(ProjectWorkspaceCard(project, columns, openButtons));
-            empty.IsVisible = openButtons.Count == 0;
-        }
-        Render();
-        search.TextChanged += (_, _) => { _search = search.Text ?? string.Empty; Render(); };
-        panel.Children.Add(cards);
-        panel.Children.Add(empty);
+            _search = search.Text ?? string.Empty;
+            SyncProjectCards(view);
+        };
         return panel;
     }
 
-    private Control ProjectCardNotice(string notice, string id = "card-permission-notice")
+    private TextBlock ProjectCardNotice(string notice, string id = "card-permission-notice")
     {
         var guidance = Identify(Muted(notice, LauncherVisualTokens.FontBody), id, notice);
         AutomationProperties.SetLiveSetting(guidance, AutomationLiveSetting.Polite);
         return guidance;
     }
 
-    private Control ProjectWorkspaceCard(ProjectUiConfig project, int columns, List<Button> openButtons)
+    private void SyncProjectCards(ProjectCardsView view)
     {
-        _projectCardStatuses.TryGetValue(project.ProjectId, out var status);
+        var allowed = _viewModel.ProjectsForProfile().Select(project => project.ProjectId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var id in view.Items.Keys)
+            if (!allowed.Contains(id)) view.Items.Remove(id);
+        var cards = new List<Control>();
+        foreach (var project in VisibleProjects().DistinctBy(project => project.ProjectId, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!view.Items.TryGetValue(project.ProjectId, out var card))
+                view.Items.Add(project.ProjectId, card = CreateProjectCard(project, view.Cards));
+            UpdateProjectCard(project, card);
+            cards.Add(card.Card);
+        }
+        if (!view.Cards.Children.SequenceEqual(cards))
+        {
+            view.Cards.Children.Clear();
+            view.Cards.Children.AddRange(cards);
+        }
+        view.Empty.IsVisible = cards.Count == 0;
+        view.Notice.IsVisible = _projectListNotice is not null;
+        view.Notice.Text = _projectListNotice;
+        AutomationProperties.SetName(view.Notice, _projectListNotice);
+        view.Error.IsVisible = _catalogState == "카탈로그 오류";
+    }
+
+    private void UpdateProjectCardsAvailability()
+    {
+        if (_projectCardsView is not { } view) return;
+        view.Busy.IsVisible = _running;
+        view.Busy.Text = _cardOperation
+            ? $"{_selectedProject.DisplayName} 작업이 끝나면 다른 프로그램을 사용할 수 있습니다."
+            : "프로그램 상태를 확인하고 있습니다.";
+        AutomationProperties.SetName(view.Busy, view.Busy.Text);
+        foreach (var (id, card) in view.Items)
+            SetProjectCardAvailability(card, _projectCardStatuses.GetValueOrDefault(id));
+    }
+
+    private ProjectCardStatus? DisplayedCardStatus(ProjectUiConfig project)
+    {
         if (_catalogState == "카탈로그 오류")
-            status = new(DisplaySelectionContext(project), GeneralLauncherState.RecoverableError, "확인 필요", "다시 확인");
+            return new(DisplaySelectionContext(project), GeneralLauncherState.RecoverableError, "확인 필요", "다시 확인");
+        return _projectCardStatuses.GetValueOrDefault(project.ProjectId);
+    }
+
+    private void SetProjectCardAvailability(ProjectCardView card, ProjectCardStatus? status)
+    {
+        var catalogError = _catalogState == "카탈로그 오류";
+        card.Open.IsEnabled = !_running && !catalogError;
+        card.Action.IsEnabled = !_running && (catalogError || status is not null && status.State != GeneralLauncherState.RuntimeBlocked);
+    }
+
+    private void UpdateProjectCard(ProjectUiConfig project, ProjectCardView card)
+    {
+        var status = DisplayedCardStatus(project);
         var active = _cardOperation && _running && _selectedProject.ProjectId == project.ProjectId;
         var label = active ? "작업 중" : status?.Label ?? "상태 확인 중";
         var name = $"{project.DisplayName} — {label}";
-        var visual = _projectCardImages.GetValueOrDefault(project.ProjectId) is { } bitmap && !HighContrast
-            ? new Border { ClipToBounds = true, CornerRadius = new(LauncherVisualTokens.RadiusControl),
-                Child = new Image { Source = bitmap, Stretch = Stretch.UniformToFill } }
-            : BrandedFallback(ProjectVisualResolver.Fallback(project), hero: false);
-        visual.Height = 92;
-        var text = Txt(label, LauncherVisualTokens.FontCaption, true);
-        text.Foreground = StatusBrush(status?.State switch
+        var bitmap = HighContrast ? null : _projectCardImages.GetValueOrDefault(project.ProjectId).Bitmap;
+        var selected = _selectedProject.ProjectId == project.ProjectId;
+        if (card.Status == status && card.Title.Text == project.DisplayName && card.Label.Text == label &&
+            card.Bitmap == bitmap && card.Selected == selected) return;
+        if (card.Title.Text != project.DisplayName || card.Bitmap != bitmap)
+        {
+            var visual = bitmap is not null
+                ? new Border { ClipToBounds = true, CornerRadius = new(LauncherVisualTokens.RadiusControl),
+                    Child = new Image { Source = bitmap, Stretch = Stretch.UniformToFill } }
+                : BrandedFallback(ProjectVisualResolver.Fallback(project), hero: false);
+            visual.Height = 92;
+            card.Face.Children[0] = visual;
+            card.Bitmap = bitmap;
+        }
+        card.Title.Text = project.DisplayName;
+        card.Status = status;
+        card.Selected = selected;
+        card.Label.Text = label;
+        card.Label.Foreground = StatusBrush(status?.State switch
         {
             GeneralLauncherState.Ready => LauncherStatusTone.Normal,
             GeneralLauncherState.RecoverableError => LauncherStatusTone.Error,
             GeneralLauncherState.RuntimeBlocked or GeneralLauncherState.UpdateAvailable => LauncherStatusTone.Caution,
             _ => LauncherStatusTone.Progress
         });
-        var face = new StackPanel { Spacing = LauncherVisualTokens.SpaceSm,
-            Children = { visual, Txt(project.DisplayName, LauncherVisualTokens.FontSection, true), text } };
-        if (status?.Guidance is { } guidance) face.Children.Add(Muted(guidance, LauncherVisualTokens.FontCaption));
-        if (status is null)
-            face.Children.Add(new Border { Height = 6, Width = 96, HorizontalAlignment = HorizontalAlignment.Left,
-                CornerRadius = new(3), Background = LauncherVisualTokens.Brush(LauncherVisualTokens.MutedSurfaceColor(false, HighContrast)) });
-        var open = EnterpriseButton(name, "card-open-" + project.ProjectId, async (_, _) => await OpenProjectCardAsync(project), tracked: false);
-        open.Content = face;
-        open.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-        open.IsEnabled = !_running && _catalogState != "카탈로그 오류";
-        openButtons.Add(open);
-        open.KeyDown += (_, args) =>
-        {
-            var direction = args.Key switch { Key.Left => -1, Key.Right => 1, Key.Up => -columns, Key.Down => columns, _ => 0 };
-            if (direction == 0) return;
-            var index = Math.Clamp(openButtons.IndexOf(open) + direction, 0, openButtons.Count - 1);
-            openButtons[index].Focus(NavigationMethod.Directional);
-            args.Handled = true;
-        };
-        var actionText = status?.Action ?? "상태 확인 중";
-        var action = EnterpriseButton(actionText, "card-action-" + project.ProjectId, async (_, _) =>
-        {
-            if (status is not null) await ExecuteProjectCardAsync(project, status);
-        }, primary: true, tracked: false);
-        action.IsEnabled = !_running && status is not null && status.State != GeneralLauncherState.RuntimeBlocked;
-        if (status?.State == GeneralLauncherState.RuntimeBlocked)
-            ToolTip.SetTip(action, "프로그램을 종료하거나 실행 상태를 확인한 뒤 새로고침하세요.");
-        var card = Card(new StackPanel { Spacing = LauncherVisualTokens.SpaceMd, Children = { open, action } });
-        card.Width = Math.Max(216, Math.Floor((CurrentLayoutWidth() - 90) / columns));
-        card.Margin = new Thickness(0, 0, LauncherVisualTokens.SpaceMd, LauncherVisualTokens.SpaceMd);
-        if (_selectedProject.ProjectId == project.ProjectId)
-            card.BorderBrush = LauncherVisualTokens.Brush(LauncherVisualTokens.ProjectSelectionColor(false, HighContrast));
-        return Identify(card, "program-card-" + project.ProjectId, name);
+        card.Guidance.Text = status?.Guidance;
+        card.Guidance.IsVisible = status?.Guidance is not null;
+        card.Skeleton.IsVisible = status is null;
+        card.ActionText.Text = status?.Action ?? "상태 확인 중";
+        AutomationProperties.SetName(card.Card, name);
+        AutomationProperties.SetName(card.Open, name);
+        AutomationProperties.SetName(card.Action, card.ActionText.Text);
+        ToolTip.SetTip(card.Action, status?.State == GeneralLauncherState.RuntimeBlocked
+            ? "프로그램을 종료하거나 실행 상태를 확인한 뒤 새로고침하세요." : null);
+        card.Card.BorderBrush = LauncherVisualTokens.Brush(selected
+            ? LauncherVisualTokens.ProjectSelectionColor(false, HighContrast)
+            : LauncherVisualTokens.BorderColor(false, HighContrast));
+        SetProjectCardAvailability(card, status);
     }
 
-    private Control ProjectCardsBack() => EnterpriseButton("뒤로", "project-cards-back", (_, _) =>
+    private ProjectCardView CreateProjectCard(ProjectUiConfig project, WrapPanel panel)
+    {
+        var visual = BrandedFallback(ProjectVisualResolver.Fallback(project), hero: false);
+        visual.Height = 92;
+        var title = Txt(project.DisplayName, LauncherVisualTokens.FontSection, true);
+        var label = Txt(string.Empty, LauncherVisualTokens.FontCaption, true);
+        var guidance = Muted(string.Empty, LauncherVisualTokens.FontCaption);
+        var skeleton = new Border { Height = 6, Width = 96, HorizontalAlignment = HorizontalAlignment.Left,
+            CornerRadius = new(3), Background = LauncherVisualTokens.Brush(LauncherVisualTokens.MutedSurfaceColor(false, HighContrast)) };
+        var face = new StackPanel { Spacing = LauncherVisualTokens.SpaceSm,
+            Children = { visual, title, label, guidance, skeleton } };
+        var open = EnterpriseButton(project.DisplayName, "card-open-" + project.ProjectId,
+            async (_, _) => await OpenProjectCardAsync(project), tracked: false);
+        open.Content = face;
+        open.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+        var action = EnterpriseButton(string.Empty, "card-action-" + project.ProjectId, async (_, _) =>
+        {
+            if (DisplayedCardStatus(project) is { } status) await ExecuteProjectCardAsync(project, status);
+        }, primary: true, tracked: false);
+        var card = Card(new StackPanel { Spacing = LauncherVisualTokens.SpaceMd, Children = { open, action } });
+        card.Margin = new Thickness(0, 0, LauncherVisualTokens.SpaceMd, LauncherVisualTokens.SpaceMd);
+        open.KeyDown += (_, args) => MoveProjectCardFocus(panel, card, args);
+        Identify(card, "program-card-" + project.ProjectId, project.DisplayName);
+        return new(card, open, action, face, title, label, guidance, skeleton, (TextBlock)action.Content!);
+    }
+
+    private static void MoveProjectCardFocus(WrapPanel panel, Border card, KeyEventArgs args)
+    {
+        Control? target;
+        if (args.Key is Key.Left or Key.Right)
+        {
+            var index = panel.Children.IndexOf(card) + (args.Key == Key.Left ? -1 : 1);
+            target = index >= 0 && index < panel.Children.Count ? panel.Children[index] : null;
+        }
+        else if (args.Key is Key.Up or Key.Down)
+        {
+            var direction = args.Key == Key.Up ? -1 : 1;
+            target = panel.Children
+                .Where(candidate => direction * (candidate.Bounds.Top - card.Bounds.Top) > 1)
+                .OrderBy(candidate => direction * (candidate.Bounds.Top - card.Bounds.Top))
+                .ThenBy(candidate => Math.Abs(candidate.Bounds.Center.X - card.Bounds.Center.X))
+                .FirstOrDefault();
+        }
+        else return;
+        if (target is Border { Child: StackPanel body } && body.Children[0] is Button open)
+            open.Focus(NavigationMethod.Directional);
+        args.Handled = true;
+    }
+
+    private Control ProjectCardsBack() => EnterpriseButton("뒤로", "project-cards-back", async (_, _) =>
     {
         if (_running) return;
         _showProjectDetails = false;
         _workspaceFocus = "card-open-" + _selectedProject.ProjectId;
         Build();
+        await RefreshProjectCardsAsync(pendingOnly: true);
     });
 }

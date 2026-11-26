@@ -81,7 +81,11 @@ public sealed partial class MainWindow : Window
             MarkError(ex, "카탈로그 확인 실패", showDialog: !suppressDialog);
             return false;
         }
-        finally { if (ownsBusy) { _running = false; SetBusy(false); } if (rebuild || !HasProject || ShowsProjectCards) Build(); }
+        finally
+        {
+            if (ownsBusy) { _running = false; SetBusy(false); }
+            if (rebuild || !HasProject || ShowsProjectCards != (_projectCardsView is not null)) Build();
+        }
     }
 
     private void MergeCatalogProjects()

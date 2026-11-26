@@ -125,7 +125,7 @@ public sealed class ProjectCardsTests
         await fixture.Refresh();
         Assert.Equal(2, fixture.Cards().Length);
         Assert.Equal("a", fixture.Model.SelectedProject.ProjectId);
-        Assert.Contains("목록에서 제외", fixture.Find<TextBlock>("card-permission-notice").Text);
+        Assert.Equal("받을 수 있는 프로그램 목록이 변경되었습니다.", fixture.Find<TextBlock>("card-permission-notice").Text);
         Assert.DoesNotContain(fixture.Controls(), control => Id(control) == "program-card-b");
         Assert.Equal(0, fixture.Backend.Executions);
     }
@@ -148,6 +148,109 @@ public sealed class ProjectCardsTests
         Assert.Equal("b", fixture.Model.SelectedProject.ProjectId);
         Assert.True(fixture.Find<Button>("project-cards-back").IsFocused);
         Assert.Equal(0, fixture.Backend.Executions);
+    }
+
+    [AvaloniaFact]
+    public async Task DetailF6ChecksOnlyTheSelectedProject()
+    {
+        using var fixture = new Fixture();
+        await fixture.Refresh();
+        Click(fixture.Find<Button>("card-open-b"));
+        await WaitFor(() => !fixture.Model.Running);
+        fixture.Backend.Checks.Clear();
+        fixture.Window.Activate();
+        Assert.True(fixture.Find<Button>("status-check").Focus());
+        Press(fixture.Window, PhysicalKey.F6);
+        await WaitFor(() => fixture.Backend.Checks.Count > 0 && !fixture.Model.Running);
+        Assert.Equal(new[] { "b" }, fixture.Backend.Checks);
+        Assert.Empty(fixture.Cards());
+    }
+
+    [AvaloniaFact]
+    public async Task SequentialResultsCreateOneCardPerProjectAndUpdateTheExistingCard()
+    {
+        using var fixture = new Fixture();
+        for (var i = 1; i <= 3; i++)
+            fixture.Backend.CheckBarriers[i] = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var created = new HashSet<Border>(ReferenceEqualityComparer.Instance);
+        var refresh = fixture.Initialize();
+        await WaitFor(() => fixture.Backend.Checks.Count == 1);
+        var layout = fixture.Window.Content;
+        for (var i = 1; i <= 3; i++)
+        {
+            created.UnionWith(fixture.Cards());
+            fixture.Backend.CheckBarriers[i].SetResult();
+            var next = i + 1;
+            if (i < 3) await WaitFor(() => fixture.Backend.Checks.Count == next);
+            Assert.Same(layout, fixture.Window.Content);
+        }
+        await refresh;
+        Assert.Same(layout, fixture.Window.Content);
+        created.UnionWith(fixture.Cards());
+        Assert.Equal(3, created.Count);
+        var initialCards = fixture.Cards();
+
+        fixture.Backend.Runtime = new(RuntimeState.Running, "fixture", "fixture");
+        await fixture.Refresh();
+        created.UnionWith(fixture.Cards());
+        Assert.Equal(3, created.Count);
+        Assert.Equal(initialCards, fixture.Cards());
+        Assert.Equal("프로그램 A — 실행 중", AutomationProperties.GetName(initialCards[0]));
+    }
+
+    [AvaloniaFact]
+    public async Task VerticalArrowsFollowWrappedRowsAfterSameBucketResize()
+    {
+        using var fixture = new Fixture();
+        fixture.Window.Width = 1060;
+        Dispatcher.UIThread.RunJobs();
+        await fixture.Refresh();
+        fixture.Window.Activate();
+        var cards = fixture.Cards();
+        Assert.Equal(cards[0].Bounds.Top, cards[2].Bounds.Top);
+
+        fixture.Window.Width = 960;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(cards, fixture.Cards());
+        Assert.Equal(cards[0].Bounds.Top, cards[1].Bounds.Top);
+        Assert.True(cards[2].Bounds.Top > cards[0].Bounds.Top);
+        Assert.True(fixture.Find<Button>("card-open-a").Focus());
+        Press(fixture.Window, PhysicalKey.ArrowDown);
+        Assert.True(fixture.Find<Button>("card-open-c").IsFocused);
+        Press(fixture.Window, PhysicalKey.ArrowUp);
+        Assert.True(fixture.Find<Button>("card-open-a").IsFocused);
+    }
+
+    [AvaloniaFact]
+    public async Task NarrowIdleCardViewKeepsTheServiceStatusInTheHeader()
+    {
+        using var fixture = new Fixture();
+        fixture.Window.Width = 750;
+        Dispatcher.UIThread.RunJobs();
+        await fixture.Refresh();
+        var service = fixture.Find<TextBlock>("service-status");
+        Assert.True(service.IsEffectivelyVisible);
+        var header = fixture.Find<Image>("brand-logo").GetLogicalAncestors().OfType<Grid>().First();
+        Assert.Contains(header, service.GetLogicalAncestors());
+    }
+
+    [AvaloniaFact]
+    public async Task CancelledCardShowsTheOperationOutcomeAndOffersAReadOnlyCheck()
+    {
+        using var fixture = new Fixture();
+        fixture.Backend.CompleteExecution = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        await fixture.Refresh();
+        Click(fixture.Find<Button>("card-action-a"));
+        await WaitFor(() => fixture.Backend.Executions == 1);
+        Click(fixture.Find<Button>("cancel-operation"));
+        await WaitFor(() => !fixture.Model.Running);
+
+        Assert.Equal("프로그램 A — 작업 취소 완료", AutomationProperties.GetName(fixture.Find<Button>("card-open-a")));
+        Assert.Contains("작업 취소 완료 · 다시 확인해 주세요.", fixture.Texts());
+        Assert.Equal("다시 확인", AutomationProperties.GetName(fixture.Find<Button>("card-action-a")));
+        Click(fixture.Find<Button>("card-action-a"));
+        await WaitFor(() => fixture.Backend.Checks.Count == 7 && !fixture.Model.Running);
+        Assert.Equal(1, fixture.Backend.Executions);
     }
 
     private static string? Id(Control control) => AutomationProperties.GetAutomationId(control);
@@ -205,6 +308,13 @@ public sealed class ProjectCardsTests
             Dispatcher.UIThread.RunJobs();
         }
 
+        public async Task Initialize()
+        {
+            var startup = typeof(MainWindow).GetMethod("InitializeStartupAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            await (Task)startup.Invoke(Window, null)!;
+            Dispatcher.UIThread.RunJobs();
+        }
+
         public IEnumerable<Control> Controls() => Window.GetLogicalDescendants().OfType<Control>();
         public Border[] Cards() => Controls().OfType<Border>().Where(control => Id(control)?.StartsWith("program-card-", StringComparison.Ordinal) == true).ToArray();
         public T Find<T>(string id) where T : Control => Controls().OfType<T>().Single(control => Id(control) == id);
@@ -221,6 +331,7 @@ public sealed class ProjectCardsTests
     {
         public List<string> Checks { get; } = [];
         public TaskCompletionSource? FirstCheck { get; set; }
+        public Dictionary<int, TaskCompletionSource> CheckBarriers { get; } = new();
         public TaskCompletionSource? CompleteExecution { get; set; }
         public RuntimeObservation? Runtime { get; set; } = new(RuntimeState.Quiescent, "fixture", "fixture");
         private int _concurrentChecks;
@@ -237,6 +348,7 @@ public sealed class ProjectCardsTests
             try
             {
                 if (Checks.Count == 1 && FirstCheck is { } barrier) await barrier.Task.WaitAsync(token);
+                if (CheckBarriers.TryGetValue(Checks.Count, out var checkpoint)) await checkpoint.Task.WaitAsync(token);
                 if (context.ProjectId == "c") throw new HttpRequestException("secret-marker", null, HttpStatusCode.Forbidden);
                 VersionedReleasePaths.Bind(config, context.Selection!);
                 var installed = context.ProjectId == "b";

@@ -182,7 +182,7 @@ public sealed partial class MainWindow : Window
     {
         if (!_showStartupSkeleton) return;
         _showStartupSkeleton = false;
-        if (IsVisible) Build();
+        if (IsVisible && !ShowsProjectCards) Build();
     }
 
     private void LoadConfig() => ApplyDisplayConfig(ReadDisplayConfig(ConfigPath));

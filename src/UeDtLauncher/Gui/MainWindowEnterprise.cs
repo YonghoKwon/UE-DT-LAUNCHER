@@ -86,6 +86,7 @@ public sealed partial class MainWindow
             _configDraft=_configPathBox?.Text ?? _configDraft ?? _startupOptions.ConfigPath;
             _configPathBox=null;
             _enterpriseProjects=null; _projectSearchEmpty=null;
+            _projectCardsView = null;
             _actionButtons.Clear(); _selectionControls.Clear(); _nextTabIndex=0;
             Title=IsDeveloper?"POSCO DX · DT Launcher — 개발자":"POSCO DX · DT Launcher";
             RequestedThemeVariant=IsDeveloper||HighContrast?Avalonia.Styling.ThemeVariant.Dark:Avalonia.Styling.ThemeVariant.Light;
@@ -220,7 +221,14 @@ public sealed partial class MainWindow
         grid.Children.Add(At(new StackPanel {Spacing=LauncherVisualTokens.SpaceXs,VerticalAlignment=VerticalAlignment.Center,Children={Txt("DT Launcher",LauncherVisualTokens.FontSection,true),Muted(IsDeveloper?"개발자 배포 작업 공간":"디지털 트윈 프로그램",LauncherVisualTokens.FontCaption)}},1));
         _serviceLabel=Identify(Muted(_agentState,LauncherVisualTokens.FontCaption),"service-status","업데이트 서비스 상태");
         var right=new StackPanel {Orientation=Orientation.Horizontal,Spacing=12,VerticalAlignment=VerticalAlignment.Center};
-        if(CurrentLayoutWidth()>=800)right.Children.Add(_serviceLabel);
+        if (CurrentLayoutWidth() >= 800) right.Children.Add(_serviceLabel);
+        else if (ShowsProjectCards)
+        {
+            grid.RowDefinitions = new("Auto,Auto");
+            grid.RowSpacing = LauncherVisualTokens.SpaceXs;
+            Grid.SetColumnSpan(_serviceLabel, 3);
+            grid.Children.Add(AtRow(_serviceLabel, 1));
+        }
         var settings=EnterpriseButton("설정","settings",(_,_)=>SettingsDialog(IsDeveloper),tracked:false,icon:LauncherIconKind.Settings);right.Children.Add(settings);grid.Children.Add(At(right,2));
         return grid;
     }
@@ -433,7 +441,7 @@ public sealed partial class MainWindow
             _downloadCancellationGuidance = Identify(Muted("취소하면 다음 시도에서 다운로드를 처음부터 받을 수 있습니다.", 14), "cancel-guidance", "다운로드 취소 안내");
             detailsPanel.Children.Add(_downloadCancellationGuidance);
         }
-        if(CurrentLayoutWidth()<800 && _serviceLabel is not null)detailsPanel.Children.Add(_serviceLabel);
+        if(CurrentLayoutWidth()<800 && !projectCards && _serviceLabel is not null)detailsPanel.Children.Add(_serviceLabel);
         if(_presentation.SupportId is not null)detailsPanel.Children.Add(Muted("지원 ID: "+_presentation.SupportId,12));
         _actionDetails=Identify(new ScrollViewer {Content=detailsPanel,Focusable=true,IsTabStop=true,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled},"action-details","작업 상세 안내");
         panel.Children.Add(_actionDetails);

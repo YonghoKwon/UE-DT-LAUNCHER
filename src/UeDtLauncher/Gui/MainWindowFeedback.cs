@@ -39,10 +39,10 @@ public sealed partial class MainWindow
     }
     private async Task RefreshAuthorizedSelectionAsync(bool suppressDialog = false)
     {
-        if (HasProjectCards)
+        if (ShowsProjectCards)
         {
             await RefreshProjectCardsAsync();
-            if (!_showProjectDetails || _projectCardLifetime.IsCancellationRequested) return;
+            return;
         }
         await RefreshInstallStatusAsync(suppressDialog);
     }
