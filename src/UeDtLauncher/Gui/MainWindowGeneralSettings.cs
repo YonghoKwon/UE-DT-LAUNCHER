@@ -244,7 +244,7 @@ public sealed partial class MainWindow
         if (_configurationError is null && ReferenceEquals(_config, appliedConfig))
         {
             if (await RefreshCatalog(false, suppressDialog: true) && HasProject)
-                await RefreshInstallStatusAsync(suppressDialog: true);
+                await RefreshAuthorizedSelectionAsync(suppressDialog: true);
             if (_allowAutomaticChecks && _config.IsManagedDeployment && IsVisible)
             {
                 await RefreshAgentStatusAsync();

@@ -23,6 +23,7 @@ public sealed partial class MainWindow
         Interlocked.Increment(ref _uiProgressGeneration);
         _operationCancellation=null;
         _running=false;
+        RecordSelectedCardStatus();
         Build();
     }
     private void RecordCancelledOperation(OperationStatus? operation, bool? retainedPartial = null)
@@ -75,10 +76,12 @@ public sealed partial class MainWindow
     {
         if(_resumeOperation?.Selection==context.Selection)_resumeOperation=null;
     }
-    private LauncherUiOperationContext DisplaySelectionContext()
+    private LauncherUiOperationContext DisplaySelectionContext() => DisplaySelectionContext(_selectedProject);
+
+    private LauncherUiOperationContext DisplaySelectionContext(ProjectUiConfig project)
     {
-        var release=SelectedCatalogRelease();
-        return new(_config.IsManagedDeployment,_selectedProject.ProjectId,_config.Environment,_config.Channel,CurrentPlatform,
+        var release=SelectedCatalogRelease(project.ProjectId);
+        return new(_config.IsManagedDeployment,project.ProjectId,_config.Environment,_config.Channel,CurrentPlatform,
             _config.VersionPolicy,_config.RequestedVersion,release is null?null:new(release.ProjectId,release.Environment,release.Channel,release.Platform,release.Version));
     }
     private void InvalidateDisplayedInstallation()
@@ -139,8 +142,7 @@ public sealed partial class MainWindow
         ValidateUiResult(context,result);
         _selectedRuntimeConfig=result.Config;_viewModel.ApplyProjectStatus(result.Status);
         if (!SelectedInstallationDamaged) _damageDiagnostic = null;
-        _installState=_viewModel.GeneralState switch
-        {GeneralLauncherState.NotInstalled=>"설치 필요",GeneralLauncherState.UpdateAvailable=>"업데이트 가능",_=>"최신 상태"};
+        _installState=LauncherDashboardViewModel.InstallationLabel(_viewModel.GeneralState);
         _installDetail=result.Status switch
         {
             {IsInstalled:false,PreviousInstallation:{ } previous} when !IsDeveloper=>$"기존 설치 {previous.Release.Version}을 보존하고 새 버전을 설치합니다.",

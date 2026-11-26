@@ -30,6 +30,7 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 - 일반 `UeDtLauncher.exe`와 개발자 `UeDtLauncher.Developer.exe`는 별도 빌드이며, 설정으로 GUI 종류를 바꾸지 못합니다. 두 빌드의 CLI는 공통이고 다운로드 권한은 서버가 결정합니다.
 - **관리형**은 Agent(화면 표기: 업데이트 서비스)가 보호 설정·credential·Manifest·설치 상태를 검사하고 설치하며, GUI/CLI는 화면 설정의 정확한 선택만 사용해 사용자 세션에서 실행합니다. **Portable**은 Agent 없이 현재 계정의 로컬 엔진과 runtime 기록을 사용합니다.
 - 일반 화면은 첫 실행에 설치·업데이트·지원 안내를 표시합니다. 설정의 일반·정보·화면·문제 해결 탭과 배포 목록의 현재·이전 버전 변경 내역은 [GUI 사용법](docs/reference/launcher-user-guide.md)을 참고하세요.
+- 현재 OS에 허용된 프로그램이 여러 개면 일반 화면의 **내 프로그램**에서 각각의 설치·실행 상태를 확인하고 프로그램을 선택합니다. 하나면 해당 프로그램 화면이 바로 열립니다.
 - 일반 GUI는 자동 점검만 하며 설치는 사용자 클릭 후 수행합니다. 관리형 런처 자체 갱신은 MSI/RPM, 게임 콘텐츠 갱신은 Agent 책임입니다.
 - 기존 HTTPS/Bearer와 schema 3 사내 HTTP 요청 서명을 지원하며 Metadata 서명·해시·권한 검증을 유지합니다. nginx 뒤 API는 loopback에 바인딩합니다.
 
