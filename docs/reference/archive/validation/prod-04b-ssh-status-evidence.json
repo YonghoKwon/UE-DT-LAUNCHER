@@ -1,0 +1,322 @@
+{
+  "id": "PROD-04B",
+  "evidenceScope": "local",
+  "base": "0b34e419ae1195a817b5550fe54adaf30bed5c35",
+  "publishedSourceHead": "6cf598c510a25f60bc98493a94f869636c0f5a6f",
+  "runId": "p04b0625fb6e84d1",
+  "startedAtUtc": "2026-11-26T17:31:44.521+00:00",
+  "finishedAtUtc": "2026-11-26T17:34:36.826+00:00",
+  "publication": {
+    "windowsLauncherSha256": "d92f31b7f1a861f83ca50ddfda02010a8a5b9ec97b83c6d87436f91389101e10",
+    "linuxServerSha256": "52285d7ed19c59a8b745309652eb63c294b6681856dbd8a38dd65b6d6c2c27c3",
+    "sdk": "9.0.308",
+    "productSourceHash": "a850694d582da103aaf58878adc47eff96ff6ec97082cf99804501295c834c57"
+  },
+  "earlierExtraEvidence": {
+    "sourceHead": "97c188491214897fa61b9344d2ff6815197a8cc3",
+    "passed": 1552,
+    "failed": 0,
+    "skipped": 0
+  },
+  "gates": {
+    "G1": {
+      "status": "N/A",
+      "reason": "Validation scripts and evidence only",
+      "requiredBuildAndTestRerun": false
+    },
+    "G2": {
+      "status": "PASS",
+      "uploadId": "p04b0625fb6e84d1-primary",
+      "version": "1.1.0",
+      "zipBytes": 582163251,
+      "uploadSeconds": 8.938,
+      "finalPairHashesMatched": true,
+      "states": [
+        {
+          "uploadId": "p04b0625fb6e84d1-primary",
+          "state": "transferring",
+          "updatedAtUtc": "2026-11-26T17:32:57.469234+00:00",
+          "schemaVersion": 1,
+          "label": "전송 중",
+          "queriedAtUtc": "2026-11-26T17:32:58.2876559+00:00"
+        },
+        {
+          "uploadId": "p04b0625fb6e84d1-primary",
+          "state": "pending",
+          "updatedAtUtc": "2026-11-26T17:33:03.5170137+00:00",
+          "schemaVersion": 1,
+          "label": "승인 대기",
+          "queriedAtUtc": "2026-11-26T17:33:04.6512291+00:00"
+        },
+        {
+          "uploadId": "p04b0625fb6e84d1-primary",
+          "state": "published",
+          "updatedAtUtc": "2026-11-26T17:33:13.5402396+00:00",
+          "release": {
+            "projectId": "ma0t10-demo",
+            "version": "1.1.0",
+            "platform": "windows-x64",
+            "environment": "prod",
+            "channel": "stable"
+          },
+          "schemaVersion": 1,
+          "label": "게시됨",
+          "queriedAtUtc": "2026-11-26T17:33:14.0936568+00:00"
+        },
+        {
+          "uploadId": "p04b0625fb6e84d1-primary",
+          "state": "recommended",
+          "updatedAtUtc": "2026-11-26T17:33:17.5534337+00:00",
+          "release": {
+            "projectId": "ma0t10-demo",
+            "version": "1.1.0",
+            "platform": "windows-x64",
+            "environment": "prod",
+            "channel": "stable"
+          },
+          "schemaVersion": 1,
+          "label": "현재 추천판",
+          "queriedAtUtc": "2026-11-26T17:33:17.9955497+00:00"
+        },
+        {
+          "uploadId": "p04b0625fb6e84d1-primary",
+          "state": "published",
+          "updatedAtUtc": "2026-11-26T17:33:29.7870226+00:00",
+          "release": {
+            "projectId": "ma0t10-demo",
+            "version": "1.1.0",
+            "platform": "windows-x64",
+            "environment": "prod",
+            "channel": "stable"
+          },
+          "schemaVersion": 1,
+          "label": "게시됨",
+          "queriedAtUtc": "2026-11-26T17:33:30.5535589+00:00"
+        }
+      ],
+      "fallbacks": [],
+      "promotionExpectedRevisions": [
+        0,
+        1
+      ]
+    },
+    "G3": {
+      "status": "PASS",
+      "uploadId": "p04b0625fb6e84d1-primary",
+      "seconds": 3.328,
+      "exit": 0
+    },
+    "G4": {
+      "status": "PASS",
+      "fixedKoreanReasons": 2,
+      "sensitiveFields": 0,
+      "failed": {
+        "uploadId": "p04b0625fb6e84d1-bad-zip",
+        "state": "failed",
+        "updatedAtUtc": "2026-11-26T17:33:34.0199554+00:00",
+        "schemaVersion": 1,
+        "label": "검사 실패",
+        "reason": "서버의 패키지 검사에 실패했습니다. 운영자에게 검사 결과 확인을 요청하세요.",
+        "queriedAtUtc": "2026-11-26T17:33:34.1218402+00:00"
+      },
+      "rejected": {
+        "uploadId": "p04b0625fb6e84d1-reject",
+        "state": "rejected",
+        "updatedAtUtc": "2026-11-26T17:33:42.2515492+00:00",
+        "schemaVersion": 1,
+        "label": "거절",
+        "reason": "운영자가 업로드를 거절했습니다. 운영자에게 확인하세요.",
+        "queriedAtUtc": "2026-11-26T17:33:43.2710354+00:00"
+      }
+    },
+    "G5": {
+      "status": "PASS",
+      "cliExitCodes": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "missingSshExit": 44,
+      "consecutiveSshFailures": 3,
+      "consecutiveFailureCliExit": 1,
+      "timeoutSeconds": 5.187,
+      "timeoutSshAttempts": 4
+    },
+    "G6": {
+      "status": "PASS",
+      "sshFailures": 1,
+      "totalSshAttempts": 2,
+      "hashChanges": 0,
+      "seconds": 6.203,
+      "collector": "bash -o pipefail -euc",
+      "collection": {
+        "before": {
+          "exit": 0,
+          "pipefail": true,
+          "stderrPresent": false
+        },
+        "after": {
+          "exit": 0,
+          "pipefail": true,
+          "stderrPresent": false
+        }
+      },
+      "hashes": {
+        "before": {
+          "server": {
+            "files": 740,
+            "sha256": "013f528d3f07d04027d70a026249345acf7fe90ad547bc62d3aed8ad87ff2f00"
+          },
+          "status": {
+            "files": 5,
+            "sha256": "7efc2b165070047dddeaa8a17efa04345b33e01b9fc7e54d920f9f52f9fc928f"
+          }
+        },
+        "after": {
+          "server": {
+            "files": 740,
+            "sha256": "013f528d3f07d04027d70a026249345acf7fe90ad547bc62d3aed8ad87ff2f00"
+          },
+          "status": {
+            "files": 5,
+            "sha256": "7efc2b165070047dddeaa8a17efa04345b33e01b9fc7e54d920f9f52f9fc928f"
+          }
+        }
+      }
+    },
+    "G7": {
+      "status": "PASS",
+      "sshDenied": 10,
+      "jailDenied": 10,
+      "originalDenied": 10,
+      "originalUid": 20002,
+      "forbiddenReads": 6,
+      "forbiddenWrites": 4,
+      "allowedOperations": 2,
+      "sshdMounts": 2,
+      "matrix": [
+        {
+          "pathTest": "authority",
+          "sshExit": 126,
+          "jail": "ENOENT",
+          "original": "EACCES",
+          "originalExit": 1
+        },
+        {
+          "pathTest": "releases",
+          "sshExit": 126,
+          "jail": "ENOENT",
+          "original": "EACCES",
+          "originalExit": 2
+        },
+        {
+          "pathTest": "processing",
+          "sshExit": 126,
+          "jail": "ENOENT",
+          "original": "EACCES",
+          "originalExit": 2
+        },
+        {
+          "pathTest": "archive",
+          "sshExit": 126,
+          "jail": "ENOENT",
+          "original": "EACCES",
+          "originalExit": 2
+        },
+        {
+          "pathTest": "config",
+          "sshExit": 126,
+          "jail": "ENOENT",
+          "original": "EACCES",
+          "originalExit": 1
+        },
+        {
+          "pathTest": "keys",
+          "sshExit": 126,
+          "jail": "ENOENT",
+          "original": "EACCES",
+          "originalExit": 1
+        },
+        {
+          "pathTest": "status-overwrite",
+          "sshExit": 126,
+          "jail": "EACCES",
+          "original": "EACCES",
+          "originalExit": 1
+        },
+        {
+          "pathTest": "status-create",
+          "sshExit": 126,
+          "jail": "EROFS",
+          "original": "EACCES",
+          "originalExit": 1
+        },
+        {
+          "pathTest": "status-delete",
+          "sshExit": 126,
+          "jail": "EROFS",
+          "original": "EACCES",
+          "originalExit": 1
+        },
+        {
+          "pathTest": "store-create",
+          "sshExit": 126,
+          "jail": "EACCES",
+          "original": "EACCES",
+          "originalExit": 1
+        }
+      ],
+      "originalPathsPresent": true,
+      "originalStoreWritable": true,
+      "originalStatusRead": "OK",
+      "sshStatusReadExit": 0,
+      "incomingWrite": {
+        "mkdirExit": 0,
+        "scpExit": 0,
+        "bytes": 31
+      },
+      "mounts": [
+        {
+          "mountPoint": "/dt/upload-jail/dt/store/incoming",
+          "writable": true
+        },
+        {
+          "mountPoint": "/dt/upload-jail/dt/store/upload-status",
+          "writable": false
+        }
+      ]
+    },
+    "G8": {
+      "status": "PASS",
+      "resourceDiffCounts": {
+        "containers": {
+          "added": 0,
+          "removed": 0
+        },
+        "networks": {
+          "added": 0,
+          "removed": 0
+        },
+        "volumes": {
+          "added": 0,
+          "removed": 0
+        },
+        "images": {
+          "added": 0,
+          "removed": 0
+        }
+      },
+      "runLabelResidual": 0,
+      "buildCache": {
+        "before": "285개·16.23GB",
+        "after": "295개·16.72GB"
+      }
+    }
+  },
+  "pendingCompanyAcceptance": [
+    "T2",
+    "T7"
+  ]
+}
