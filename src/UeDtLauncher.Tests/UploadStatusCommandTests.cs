@@ -29,6 +29,41 @@ public sealed class UploadStatusCommandTests
         output.GetStringBuilder().Clear();
         Assert.Equal(0, await Program.UploadAsync([.. args, "--dry-run"], output, errors, new TransferRunner()));
         Assert.DoesNotContain("upload status --upload-id", output.ToString());
+
+        var hosts = Path.Combine(temp.Path, "fixture known hosts");
+        await File.WriteAllTextAsync(hosts, "fixture host entry");
+        var profile = Path.Combine(temp.Path, "upload.profile.json");
+        await JsonFiles.WriteAsync(profile, new UploadProfile("upload@host", "/srv/incoming", KnownHostsFile: hosts));
+        output.GetStringBuilder().Clear();
+        var runner = new TransferRunner();
+        Assert.Equal(0, await Program.UploadAsync([.. args, "--profile", profile, "--format", "json"], output, errors, runner));
+        using var result = JsonDocument.Parse(output.ToString());
+        Assert.Equal("upload status --upload-id upload-1 --wait", result.RootElement.GetProperty("statusCommand").GetString());
+        Assert.Equal(6, runner.Calls.Count);
+        var expected = OperatingSystem.IsWindows() ? hosts.Replace('\\', '/') : hosts;
+        Assert.All(runner.Calls, call =>
+        {
+            Assert.Contains("StrictHostKeyChecking=yes", call);
+            Assert.Contains($"UserKnownHostsFile=\"{expected}\"", call);
+        });
+        Assert.DoesNotContain("fixture known hosts", output.ToString());
+        Assert.DoesNotContain("fixture host entry", output.ToString());
+
+        output.GetStringBuilder().Clear();
+        Assert.Equal(0, await Program.UploadAsync([.. args, "--format", "json", "--dry-run"], output, errors, new TransferRunner()));
+        using var plan = JsonDocument.Parse(output.ToString());
+        Assert.False(plan.RootElement.TryGetProperty("statusCommand", out _));
+    }
+
+    [Fact]
+    public void DedicatedKnownHostsRequiresAnExistingAbsoluteFile()
+    {
+        using var temp = new UploadStatusTestDirectory();
+        var profile = new UploadProfile("upload@host", "/srv/incoming");
+        profile.Validate();
+        Assert.Throws<ArgumentException>(() => (profile with { KnownHostsFile = "relative" }).Validate());
+        Assert.Throws<ArgumentException>(() => (profile with { KnownHostsFile = Path.Combine(temp.Path, "missing") }).Validate());
+        Assert.Throws<ArgumentException>(() => (profile with { KnownHostsFile = temp.Path }).Validate());
     }
 
     [Fact]
@@ -288,8 +323,12 @@ public sealed class UploadStatusCommandTests
 
     private sealed class TransferRunner : IUploadProcessRunner
     {
+        public List<IReadOnlyList<string>> Calls { get; } = [];
         public bool IsAvailable(string executable) => true;
-        public Task<int> RunAsync(string executable, IReadOnlyList<string> arguments, CancellationToken token) =>
-            Task.FromResult(0);
+        public Task<int> RunAsync(string executable, IReadOnlyList<string> arguments, CancellationToken token)
+        {
+            Calls.Add(arguments);
+            return Task.FromResult(0);
+        }
     }
 }
