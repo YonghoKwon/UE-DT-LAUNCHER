@@ -179,7 +179,7 @@ publish/bin/obj, 테스트 로그·권위 저장소·인증서·토큰, 패키�
 ### 성능 계측
 
 - phase 계측의 일부 시간은 겹친다. 권위 읽기·커밋과 내부 writer 잠금 대기 등 합산 집계를 요청 latency 합계로 해석하지 않는다. 프로토콜/후보를 혼합하지 않으며 느려진 결과도 기록한다. 이번 PERF-03 미달과 unadopted signer pool을 실제 개선으로 보고하지 않는다.
-- release-meta 파싱 결과는 검증된 경로·내용 해시에 결속해 제한된 캐시에 보관한다. 권위 파일은 매번 읽고 해시를 확인한다. Catalog의 공통 디렉터리 검사 결과는 해당 읽기 동안만 재사용한다.
+- HTTP Catalog는 HEAD의 catalog 경로·digest에 결속된 release-meta 집합을 처음 사용할 때 전수 검증한다. 성공한 집합 하나만 최대 릴리스 1,024개·승격 1,024개 및 추정 4 MiB까지 보관한다. 요청마다 HEAD·자격 파일과 사용하는 catalog 색인의 원문을 확인하고 권한과 서명을 처리한다. jobs·sequence·events는 HTTP에서 새 HEAD를 선택할 때 확인하고 운영 읽기는 전체를 확인한다. 개별 다운로드는 해당 release-meta와 파일 경로를 검사한다.
 
 ## UI 규칙
 

@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using UeDtLauncher.Distribution;
+using UeDtLauncher.Distribution.Authority;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -101,6 +102,40 @@ public sealed class RequestAuthenticationTests(ITestOutputHelper output)
         Assert.Throws<CryptographicException>(() => RequestSignatures.VerifyBinding(envelope with { Payload = Convert.ToBase64String([1, 2]) }, fixture.Config, request));
         using var replay = await fixture.Send(request, challenge); Assert.Equal(HttpStatusCode.Unauthorized, replay.StatusCode);
         using var next = await fixture.Send(fixture.Proof("/api/v1/catalog"), challenge); Assert.Equal(HttpStatusCode.OK, next.StatusCode);
+    }
+
+    [Fact]
+    public async Task CatalogRejectsDamagedIndexAndRetriesUnverifiedReleaseSet()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        const string catalog = "/api/v1/catalog";
+        var challenge = await fixture.Challenge();
+        async Task Check(HttpStatusCode expected)
+        {
+            using var response = await fixture.Send(fixture.Proof(catalog), challenge);
+            Assert.Equal(expected, response.StatusCode);
+        }
+
+        await Check(HttpStatusCode.OK);
+        var authority = fixture.Store.Authority;
+        var snapshot = authority.ReadSnapshot();
+        var index = authority.DataPath(snapshot.Head.Files["catalog"]);
+        var indexBytes = File.ReadAllBytes(index);
+        File.AppendAllText(index, " ");
+        await Check(HttpStatusCode.ServiceUnavailable);
+        File.WriteAllBytes(index, indexBytes);
+        await Check(HttpStatusCode.OK);
+
+        var metadata = Path.Combine(authority.ReleaseMetadataPath, "demo/prod/stable/1.0.0/windows-x64.json");
+        var metadataBytes = File.ReadAllBytes(metadata);
+        File.AppendAllText(metadata, " ");
+        authority.Commit(current => new(new Dictionary<AuthorityArea, JsonElement>
+        {
+            [AuthorityArea.Catalog] = current.Get(AuthorityArea.Catalog)
+        }, []));
+        await Check(HttpStatusCode.ServiceUnavailable);
+        File.WriteAllBytes(metadata, metadataBytes);
+        await Check(HttpStatusCode.OK);
     }
 
     [Fact]

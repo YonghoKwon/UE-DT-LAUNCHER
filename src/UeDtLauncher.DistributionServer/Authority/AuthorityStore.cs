@@ -16,6 +16,10 @@ internal sealed class AuthorityStore
     private readonly DistributionMaintenanceLease? inspectionLease;
     private readonly string[] generationDirectories;
     private readonly string[] dataDirectories;
+    private readonly object requestGenerationGate = new();
+    private AuthorityHead? validatedRequestGeneration;
+    private (byte[] Bytes, AuthorityHead Head)? cachedHead;
+    private readonly object headGate = new();
     private string Root { get; }
     internal string DirectoryPath { get; }
     internal string ReleaseMetadataPath => DataPath(layout.ReleaseMetadataDirectory);
@@ -77,15 +81,18 @@ internal sealed class AuthorityStore
     }
 
     internal AuthoritySnapshot ReadSnapshot() => inspectionLease is null
-        ? ReadSnapshotCore()
-        : inspectionLease.UseExclusive(Root, ReadSnapshotCore);
+        ? ReadSnapshotCore(request: false, includeCatalog: true)
+        : inspectionLease.UseExclusive(Root, () => ReadSnapshotCore(request: false, includeCatalog: true));
 
-    private AuthoritySnapshot ReadSnapshotCore()
+    internal AuthoritySnapshot ReadRequestSnapshot(bool includeCatalog) =>
+        ReadSnapshotCore(request: true, includeCatalog);
+
+    private AuthoritySnapshot ReadSnapshotCore(bool request, bool includeCatalog)
     {
         using var measurement = DistributionPerformance.MeasureAuthorityRead();
         for (var attempt = 0; ; attempt++)
         {
-            try { return LoadSnapshot(); }
+            try { return LoadSnapshot(request, includeCatalog); }
             catch (Exception error) when (IsReadError(error))
             {
                 if (attempt == ReadRetries)
@@ -198,28 +205,72 @@ internal sealed class AuthorityStore
         if (snapshot.Store != this) throw new ArgumentException("Snapshot belongs to another authority store.", nameof(snapshot));
     }
 
-    private AuthoritySnapshot LoadSnapshot()
+    private AuthoritySnapshot LoadSnapshot(bool request, bool includeCatalog)
     {
-        var bytes = ReadCommittedFile("HEAD");
-        var head = AuthorityDocuments.Decode<AuthorityHead>(bytes);
-        AuthorityDocuments.Validate(head, layout);
-        if (!bytes.AsSpan().SequenceEqual(AuthorityDocuments.Encode(head)))
-            throw new InvalidDataException("Authority HEAD is not in its canonical format.");
+        var head = ReadHead();
         AfterReadHead.Value?.Invoke(head.Generation);
+        if (request)
+        {
+            // Credential and serving-index bytes are current request inputs.
+            var requested = new Dictionary<AuthorityArea, JsonElement> { [AuthorityArea.Auth] = ReadArea(head, AuthorityArea.Auth) };
+            if (includeCatalog) requested.Add(AuthorityArea.Catalog, ReadArea(head, AuthorityArea.Catalog));
+            ValidateRequestGeneration(head, includeCatalog);
+            return new(this, head, requested);
+        }
+
         var areas = new Dictionary<AuthorityArea, JsonElement>();
         foreach (var area in AuthorityDocuments.Areas)
+            areas.Add(area, ReadArea(head, area));
+        VerifyCurrentEvents(head);
+        return new(this, head, areas);
+    }
+
+    private AuthorityHead ReadHead()
+    {
+        var bytes = ReadCommittedFile("HEAD", maxBytes: 64 * 1024);
+        lock (headGate)
         {
-            var name = AuthorityDocuments.Name(area);
-            var relative = head.Files[name];
-            var digest = head.Sha256[name];
-            var content = ReadCommittedFile(relative);
-            VerifyHash(content, digest);
-            areas.Add(area, cache.Parse(relative, digest, content));
+            if (cachedHead is { } cached && bytes.AsSpan().SequenceEqual(cached.Bytes)) return cached.Head;
+            var head = AuthorityDocuments.Decode<AuthorityHead>(bytes);
+            AuthorityDocuments.Validate(head, layout);
+            if (!bytes.AsSpan().SequenceEqual(AuthorityDocuments.Encode(head)))
+                throw new InvalidDataException("Authority HEAD is not in its canonical format.");
+            var frozen = AuthorityDocuments.Freeze(head);
+            cachedHead = (bytes, frozen);
+            return frozen;
         }
+    }
+
+    private JsonElement ReadArea(AuthorityHead head, AuthorityArea area)
+    {
+        var name = AuthorityDocuments.Name(area);
+        var relative = head.Files[name];
+        var digest = head.Sha256[name];
+        var content = ReadCommittedFile(relative);
+        VerifyHash(content, digest);
+        return cache.Parse(relative, digest, content);
+    }
+
+    private void ValidateRequestGeneration(AuthorityHead head, bool catalogRead)
+    {
+        if (Volatile.Read(ref validatedRequestGeneration)?.HeadSha256 == head.HeadSha256) return;
+        lock (requestGenerationGate)
+        {
+            if (validatedRequestGeneration?.HeadSha256 == head.HeadSha256) return;
+            _ = ReadArea(head, AuthorityArea.Jobs);
+            _ = ReadArea(head, AuthorityArea.Sequence);
+            if (!catalogRead) _ = ReadArea(head, AuthorityArea.Catalog);
+            VerifyCurrentEvents(head);
+            if (validatedRequestGeneration is null || validatedRequestGeneration.Generation <= head.Generation)
+                Volatile.Write(ref validatedRequestGeneration, head);
+        }
+    }
+
+    private void VerifyCurrentEvents(AuthorityHead head)
+    {
         var events = ReadCommittedFile(head.Files[AuthorityDocuments.Events]);
         VerifyHash(events, head.Sha256[AuthorityDocuments.Events]);
         DecodeBatch(events, head.Generation);
-        return new(this, AuthorityDocuments.Freeze(head), areas);
     }
 
     private static AuthorityEventBatch DecodeBatch(byte[] bytes, long generation)
@@ -236,19 +287,20 @@ internal sealed class AuthorityStore
             throw new InvalidDataException("Authority generation checksum is invalid.");
     }
 
-    private byte[] ReadCommittedFile(string relative)
+    private byte[] ReadCommittedFile(string relative, int maxBytes = int.MaxValue)
     {
         var path = SafePath.ResolveInside(DirectoryPath, relative);
         // A single attribute lookup checks each component. File.Exists followed by GetAttributes
         // performs the same probe twice and suppresses access errors on the first probe.
         for (var component = path; component.Length > DirectoryPath.Length; component = Path.GetDirectoryName(component)!)
             RejectLink(component);
-        return ReadFile(path);
+        return ReadFile(path, maxBytes);
     }
 
-    private static byte[] ReadFile(string path)
+    private static byte[] ReadFile(string path, int maxBytes = int.MaxValue)
     {
         using var stream = AuthorityDisk.OpenReader(path);
+        if (stream.Length > maxBytes) throw new InvalidDataException("Authority document exceeds its size limit.");
         var bytes = new byte[checked((int)stream.Length)];
         stream.ReadExactly(bytes);
         if (stream.ReadByte() != -1) throw new IOException("Authority file length changed while reading.");
