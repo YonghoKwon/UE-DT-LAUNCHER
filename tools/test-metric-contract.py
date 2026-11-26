@@ -11,8 +11,8 @@ class Metrics(unittest.TestCase):
         value=sanitize({'requests':3, 'authorityReads':4, 'authorityReadElapsedMs':2.5,
                         'authorityCommitAttempts':1, 'authorityCommitElapsedMs':5,
                         'databaseOperations':999, 'databaseElapsedMs':999,
-                        'phaseElapsedMs':{'authority-writer-wait':1.25, 'database-wait':30}})
+                        'phaseElapsedMs':{'authority-writer-wait':1.25, 'authority-release-read':8, 'database-wait':30}})
         self.assertEqual({'requests':3, 'authorityReads':4, 'authorityReadElapsedMs':2.5,
                           'authorityCommitAttempts':1, 'authorityCommitElapsedMs':5,
-                          'phaseElapsedMs':{'authority-writer-wait':1.25}}, value)
+                          'phaseElapsedMs':{'authority-writer-wait':1.25, 'authority-release-read':8}}, value)
 if __name__=='__main__':unittest.main()

@@ -10,7 +10,7 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
         ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
     private const int MaxMetadataBytes = 1024 * 1024;
     internal static readonly AsyncLocal<Action<AuthorityBoundary>?> PublicationBoundary = new();
-    private readonly AuthorityParsedCache<ReleaseSidecar> metadataCache = new(SidecarPackageValidator.Parse);
+    private readonly AuthorityParsedCache<ReleaseSidecar> metadataCache = new(SidecarPackageValidator.Parse, entryLimit: 512);
     private readonly object catalogCacheGate = new();
     private ((string Path, string Digest) Key, CatalogDocument Document)? cachedCatalog;
 
@@ -41,13 +41,19 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
     internal PromotionSnapshot Snapshot(AuthoritySnapshot snapshot)
     {
         var catalog = ReadCatalog(snapshot);
-        return new PromotionSnapshot(catalog.PromotionReady, catalog.Releases.Select(LoadRelease).ToArray(), catalog.Promotions.ToArray());
+        // A path component shared by releases needs one reparse check in this snapshot read.
+        // Discard the directory checks before the next request.
+        var checkedDirectories = new HashSet<string>(PathComparer);
+        using var measurement = DistributionPerformance.MeasurePhase("authority-release-read");
+        return new PromotionSnapshot(catalog.PromotionReady,
+            catalog.Releases.Select(entry => LoadRelease(entry, checkedDirectories)).ToArray(), catalog.Promotions.ToArray());
     }
 
     internal PublishedRelease? Find(string value, bool byJob = false, AuthoritySnapshot? snapshot = null)
     {
         var catalog = ReadCatalog(snapshot ?? store.ReadSnapshot());
         var entry = catalog.Releases.Find(row => (byJob ? row.Job : row.Id) == value);
+        using var measurement = DistributionPerformance.MeasurePhase("authority-release-read");
         return entry is null ? null : LoadRelease(entry);
     }
 
@@ -208,9 +214,9 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
         }
     }
 
-    private PublishedRelease LoadRelease(CatalogRelease entry)
+    private PublishedRelease LoadRelease(CatalogRelease entry, HashSet<string>? checkedDirectories = null)
     {
-        var path = MetadataPath(entry.Id);
+        var path = ResolveChecked(store.ReleaseMetadataPath, entry.Id + ".json", checkedDirectories);
         using var input = AuthorityDisk.OpenReader(path);
         if (input.Length is <= 0 or > MaxMetadataBytes)
             throw new InvalidDataException("Published metadata has an invalid length.");
@@ -219,7 +225,7 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
         if (input.ReadByte() != -1 || AuthorityDocuments.Hash(bytes) != entry.MetadataSha256)
             throw new InvalidDataException("Published metadata checksum is invalid.");
         ReleaseSidecar metadata;
-        try { metadata = metadataCache.Parse(entry.Id + ".json", entry.MetadataSha256, bytes); }
+        try { metadata = metadataCache.Parse(path, entry.MetadataSha256, bytes); }
         catch (Exception error) when (error is ArgumentException or NullReferenceException)
         {
             throw new InvalidDataException("Published metadata has invalid fields.", error);
@@ -227,7 +233,7 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
         if (metadata.ReleaseId != entry.Id || CatalogFields.From(metadata) != entry.Fields)
             throw new InvalidDataException("Published metadata identity or catalog fields differ.");
         // Public callers get their own mutable metadata object, never the cached instance.
-        return new(entry.Id, entry.Job, ResolveChecked(payloadRoot, entry.Directory), new ReleaseSidecar
+        return new(entry.Id, entry.Job, ResolveChecked(payloadRoot, entry.Directory, checkedDirectories), new ReleaseSidecar
         {
             SchemaVersion = metadata.SchemaVersion, PackageFile = metadata.PackageFile, PackageSize = metadata.PackageSize,
             PackageSha256 = metadata.PackageSha256, ProjectId = metadata.ProjectId, DisplayName = metadata.DisplayName,
@@ -239,10 +245,33 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
 
     private string MetadataPath(string releaseId) => ResolveChecked(store.ReleaseMetadataPath, releaseId + ".json");
 
-    private static string ResolveChecked(string root, string relative)
+    private static string ResolveChecked(string root, string relative, HashSet<string>? checkedDirectories = null)
     {
-        try { return SafePath.ResolveInsideChecked(root, relative); }
+        try
+        {
+            var path = SafePath.ResolveInside(root, relative);
+            var component = path;
+            while (component.Length > root.Length)
+            {
+                var attributes = GetAttributes(component);
+                if (attributes is { } found && (found & FileAttributes.ReparsePoint) != 0)
+                    throw new InvalidOperationException("Published release path contains a link.");
+                if (checkedDirectories is not null && component != path && attributes is { } item &&
+                    (item & FileAttributes.Directory) != 0)
+                    checkedDirectories.Add(component);
+                component = Path.GetDirectoryName(component)!;
+                if (checkedDirectories?.Contains(component) == true)
+                    break;
+            }
+            return path;
+        }
         catch (InvalidOperationException error) { throw new InvalidDataException("Published release path is unsafe.", error); }
+    }
+
+    private static FileAttributes? GetAttributes(string path)
+    {
+        try { return File.GetAttributes(path); }
+        catch (Exception error) when (error is FileNotFoundException or DirectoryNotFoundException) { return null; }
     }
 
     private static CommitPlan Change(CatalogDocument catalog, AuthorityEvent audit)

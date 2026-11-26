@@ -18,7 +18,7 @@ public static class DistributionPerformance
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string,long> phases=new(StringComparer.Ordinal);
     public static IDisposable MeasurePhase(string phase)
     {
-        if(phase is not ("policy-read" or "signing" or "catalog-build" or "authority-writer-wait"))throw new ArgumentException("Unknown bounded metric phase.");
+        if(phase is not ("policy-read" or "signing" or "catalog-build" or "authority-writer-wait" or "authority-release-read"))throw new ArgumentException("Unknown bounded metric phase.");
         return new Measurement(elapsed=>phases.AddOrUpdate(phase,elapsed.Ticks,(_,prior)=>prior+elapsed.Ticks));
     }
 

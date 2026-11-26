@@ -184,9 +184,16 @@ public sealed class CatalogAuthorityTests
         var metadata = Path.Combine(fixture.Authority.ReleaseMetadataPath, release.ReleaseId + ".json");
         var captured = Path.Combine(fixture.Intake.Get(release.JobId).Snapshot!, "release.json");
         Assert.Equal(File.ReadAllBytes(captured), File.ReadAllBytes(metadata));
-        File.AppendAllText(metadata, " ");
+        var promotions = new ReleasePromotions(fixture.Intake);
+        Assert.Equal("Demo", Assert.Single(promotions.Snapshot().Releases).Metadata.DisplayName);
+        var modified = File.GetLastWriteTimeUtc(metadata);
+        var originalLength = new FileInfo(metadata).Length;
+        File.WriteAllText(metadata, File.ReadAllText(metadata).Replace("Demo", "Demi", StringComparison.Ordinal));
+        File.SetLastWriteTimeUtc(metadata, modified);
+        Assert.Equal(originalLength, new FileInfo(metadata).Length);
+        Assert.Equal(modified, File.GetLastWriteTimeUtc(metadata));
         Assert.Throws<InvalidDataException>(() => fixture.Publisher.Find(release.ReleaseId));
-        Assert.Throws<InvalidDataException>(() => new ReleasePromotions(fixture.Intake).Snapshot());
+        Assert.Throws<InvalidDataException>(() => promotions.Snapshot());
     }
 
     [Fact]

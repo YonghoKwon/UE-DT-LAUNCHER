@@ -4,7 +4,7 @@ FIELDS={'requests','httpElapsedMs','sequenceWaitMs','authenticationOperations','
         'authorityReads','authorityReadRetries','authorityReadElapsedMs','authorityCommitAttempts',
         'authorityCommitElapsedMs','authorityUnavailable','policyUnavailable','policyCompilations',
         'policyReuses','assetCacheHits','assetCacheMisses'}
-PHASES={'policy-read','signing','catalog-build','authority-writer-wait'}
+PHASES={'policy-read','signing','catalog-build','authority-writer-wait','authority-release-read'}
 def numeric(value):return isinstance(value,(int,float)) and not isinstance(value,bool) and math.isfinite(value) and value>=0
 def sanitize(value):
     if not isinstance(value,dict):return None
