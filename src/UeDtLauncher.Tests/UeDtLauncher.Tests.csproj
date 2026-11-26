@@ -19,5 +19,6 @@
     <ProjectReference Include="..\UeDtLauncher\UeDtLauncher.csproj" />
     <ProjectReference Include="..\UeDtLauncher.Core\UeDtLauncher.Core.csproj" />
     <ProjectReference Include="../../tools/ConsoleStreamHarness/ConsoleStreamHarness.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../tools/AuthorityHarness/AuthorityHarness.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>
