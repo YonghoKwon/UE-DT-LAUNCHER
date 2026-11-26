@@ -132,9 +132,15 @@ public sealed record ManagedProjectStatus(
     int MissingFiles,
     int ChangedFiles,
     bool HasBackup,
-    PreviousInstallation? PreviousInstallation = null);
+    PreviousInstallation? PreviousInstallation = null)
+{
+    public RecommendationHistory? RecommendationHistory { get; init; }
+}
 
 public sealed record PreviousInstallation(ReleaseSelection Release, string InstalledAtUtc);
+
+// The envelope distinguishes a completed lookup with no candidate from a legacy response.
+public sealed record RecommendationHistory(ReleaseSelection? LastActiveRelease);
 
 public static class ManagedProjectStatusInspector
 {
@@ -182,6 +188,8 @@ public static class ManagedProjectStatusInspector
                              || !string.Equals(installedVersion, availableManifest.Version, StringComparison.OrdinalIgnoreCase)
                              || missing > 0
                              || changed > 0;
+        var (previous, recommendationHistory) = await PreviousInstallationStatus.InspectAsync(
+            config, installedManifest is not null, cancellationToken);
         return new ManagedProjectStatus(
             installedManifest is not null,
             installedVersion,
@@ -190,7 +198,10 @@ public static class ManagedProjectStatusInspector
             missing,
             changed,
             BackupManager.List(config.BackupDir).Count > 0,
-            installedManifest is null ? await PreviousInstallationStatus.FindAsync(config, cancellationToken) : null);
+            previous)
+        {
+            RecommendationHistory = recommendationHistory
+        };
     }
 }
 

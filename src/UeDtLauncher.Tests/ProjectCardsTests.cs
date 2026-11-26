@@ -354,6 +354,26 @@ public sealed class ProjectCardsTests
     }
 
     [AvaloniaFact]
+    public async Task RetainedRecommendationShowsChangeAndBlocksWhilePreviousVersionRuns()
+    {
+        using var fixture = new Fixture { Allowed = ["a"] };
+        fixture.Backend.RecommendationInstalled = true;
+        fixture.Backend.LastActiveVersion = "2.0.0";
+        fixture.Backend.PreviousRuntime = new(RuntimeState.Running, "fixture", "이전 설치 실행 중");
+        await fixture.Refresh();
+
+        var dialog = Assert.Single(fixture.Window.OwnedWindows);
+        Assert.False(dialog.GetLogicalDescendants().OfType<Button>().Single(control => Id(control) == "recommendation-change").IsEnabled);
+        Assert.False(fixture.Find<Button>("primary-action").IsEnabled);
+        Assert.Null(fixture.Model.ProjectStatus?.PreviousInstallation);
+        Assert.Equal("1.0.0", fixture.Model.ProjectStatus?.InstalledVersion);
+        Assert.Equal("2.0.0", Assert.Single(fixture.Backend.RuntimeReads).Version);
+        Click(dialog.GetLogicalDescendants().OfType<Button>().Single(control => Id(control) == "recommendation-later"));
+        Assert.True(fixture.Find<TextBlock>("recommendation-badge").IsVisible);
+        Assert.Equal(0, fixture.Backend.Executions);
+    }
+
+    [AvaloniaFact]
     public async Task PreviousRuntimeIsRecheckedBeforeAccepting()
     {
         using var fixture = new Fixture { Allowed = ["a"] };
@@ -503,6 +523,7 @@ public sealed class ProjectCardsTests
         public RuntimeObservation? Runtime { get; set; } = new(RuntimeState.Quiescent, "fixture", "fixture");
         public RuntimeObservation? PreviousRuntime { get; set; } = new(RuntimeState.Quiescent, "fixture", "fixture");
         public string? PreviousVersion { get; set; }
+        public string? LastActiveVersion { get; set; }
         public bool RecommendationInstalled { get; set; }
         public bool RetainCancelledDownload { get; set; }
         public OperationStatus? ResumedOperation { get; private set; }
@@ -530,7 +551,14 @@ public sealed class ProjectCardsTests
                     : null;
                 var installed = context.ProjectId == "b" || RecommendationInstalled;
                 var runtime = context.ProjectId == "b" ? new(RuntimeState.Quiescent, "fixture", "fixture") : Runtime;
-                return new(config, selected, new(installed, installed ? selected.Version : null, selected.Version, !installed, 0, 0, false, hint), runtime);
+                var status = new ManagedProjectStatus(installed, installed ? selected.Version : null, selected.Version,
+                    !installed, 0, 0, false, hint)
+                {
+                    RecommendationHistory = LastActiveVersion is { } active
+                        ? new(selected with { Version = active })
+                        : null
+                };
+                return new(config, selected, status, runtime);
             }
             finally { _concurrentChecks--; }
         }
@@ -539,8 +567,8 @@ public sealed class ProjectCardsTests
             CancellationToken token = default)
         {
             Assert.Equal("exact", context.VersionPolicy);
-            Assert.Equal(PreviousVersion, context.RequestedVersion);
-            Assert.Equal(PreviousVersion, context.Selection?.Version);
+            Assert.Equal(LastActiveVersion ?? PreviousVersion, context.RequestedVersion);
+            Assert.Equal(LastActiveVersion ?? PreviousVersion, context.Selection?.Version);
             RuntimeReads.Add(context.Selection!);
             return Task.FromResult(PreviousRuntime);
         }

@@ -25,8 +25,9 @@ public class PreviousInstallationStatusTests
             if(scenario=="pending")await JsonFiles.WriteAsync(Path.Combine(state,"transaction.json"),new UpdateTransactionJournal());
             if(scenario=="large")await File.WriteAllTextAsync(Path.Combine(state,"install-state.json"),new string(' ',65537));
             if(scenario=="too-many")for(var i=0;i<257;i++)Directory.CreateDirectory(Path.Combine(config.StateRootDir,"demo","prod","stable","extra"+i));
-            var hint=await PreviousInstallationStatus.FindAsync(config);
+            var (hint, history)=await PreviousInstallationStatus.InspectAsync(config, selectedInstalled: false);
             if(scenario=="normal")Assert.Equal(old,hint!.Release);else Assert.Null(hint);
+            Assert.Equal(scenario=="normal" ? old : null, history?.LastActiveRelease);
             Assert.Equal(selection,config.SelectedRelease);
         }
         finally{if(Directory.Exists(root))Directory.Delete(root,true);}
@@ -36,6 +37,7 @@ public class PreviousInstallationStatusTests
     {
         var old=JsonSerializer.Deserialize<ManagedProjectStatus>("{\"isInstalled\":false,\"updateRequired\":true}",JsonFiles.Options)!;
         Assert.Null(old.PreviousInstallation);
+        Assert.Null(old.RecommendationHistory);
         var model=new LauncherDashboardViewModel();model.ApplyProjectStatus(old);Assert.Equal(PrimaryActionKind.InstallAndLaunch,model.PrimaryAction);
         var hint=new PreviousInstallation(new("demo","prod","stable","windows-x64","1"),"2026-09-28T00:00:00Z");
         model.ApplyProjectStatus(old with {PreviousInstallation=hint});Assert.Equal(PrimaryActionKind.UpdateAndLaunch,model.PrimaryAction);
