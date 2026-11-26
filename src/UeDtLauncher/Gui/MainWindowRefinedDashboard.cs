@@ -238,7 +238,7 @@ public sealed partial class MainWindow : Window
 
     private void SelectProject()
     {
-        var projects = VisibleProjects().ToList();
+        var projects = _viewModel.ProjectsForProfile().ToList();
         _selectedProject = projects.FirstOrDefault(p => string.Equals(p.ProjectId, _config.ProjectId, StringComparison.OrdinalIgnoreCase))
             ?? projects.FirstOrDefault()
             ?? new ProjectUiConfig { ProjectId = "", DisplayName = "사용 가능한 프로젝트가 없습니다" };

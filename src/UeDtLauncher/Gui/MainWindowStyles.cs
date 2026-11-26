@@ -32,7 +32,15 @@ public sealed partial class MainWindow : Window
         return StatusBrush(LauncherStatusTone.Progress);
     }
     private string ModeStatus() => IsDeveloper ? "개발자 빌드" : "안정 버전";
-    private Border Card(Control child, double padding) => new() { Padding = new Thickness(padding), CornerRadius = new CornerRadius(LauncherVisualTokens.RadiusCard), Background = LauncherVisualTokens.Surface(IsDeveloper), BorderBrush = LauncherVisualTokens.Border(IsDeveloper), BorderThickness = new Thickness(1), Child = child };
+    private Border Card(Control child, double padding = LauncherVisualTokens.SpaceLg) => new()
+    {
+        Child = child,
+        Padding = new Thickness(padding),
+        CornerRadius = new CornerRadius(LauncherVisualTokens.RadiusCard),
+        Background = SurfaceBrush,
+        BorderBrush = LauncherVisualTokens.Brush(LauncherVisualTokens.BorderColor(IsDeveloper, HighContrast)),
+        BorderThickness = new Thickness(1)
+    };
     private Button PrimaryButton(string text, EventHandler<RoutedEventArgs> handler, double height)
     {
         var button = BaseButton(text, handler, height, Brushes.White);

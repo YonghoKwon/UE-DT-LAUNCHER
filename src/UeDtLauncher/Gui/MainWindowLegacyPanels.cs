@@ -290,7 +290,26 @@ public sealed partial class MainWindow : Window
 
     private Control ReleaseInfo()
     {
-        return Card(new StackPanel { Spacing = 7, Children = { Txt("선택된 배포 정보", LauncherVisualTokens.FontStatus, true), DeveloperKeyValue("프로젝트", _selectedProject.ProjectId), DeveloperKeyValue("프로필", _config.ClientProfile), DeveloperKeyValue("가동/개발", _config.Environment), DeveloperKeyValue("채널", _config.Channel), DeveloperKeyValue("버전 정책", _config.VersionPolicy == "exact" ? $"exact / {_config.RequestedVersion ?? "미입력"}" : "latest"), DeveloperKeyValue("설치 버전", ReadInstalledVersion() ?? "미설치"), DeveloperKeyValue("최신 버전", LatestCatalogVersion() ?? "카탈로그 확인 필요"), DeveloperKeyValue("OS", CurrentPlatform), DeveloperKeyValue("카탈로그", _catalogState), DeveloperKeyValue("릴리스 노트", _releaseNotes), DeveloperKeyValue("캐시/백업", StorageSummary()) } }, 16);
+        var contents = new StackPanel
+        {
+            Spacing = LauncherVisualTokens.SpaceSm,
+            Children =
+            {
+                Txt("선택된 배포 정보", LauncherVisualTokens.FontStatus, true),
+                DeveloperKeyValue("프로젝트", _selectedProject.ProjectId),
+                DeveloperKeyValue("프로필", _config.ClientProfile),
+                DeveloperKeyValue("가동/개발", _config.Environment),
+                DeveloperKeyValue("채널", _config.Channel),
+                DeveloperKeyValue("버전 정책", _config.VersionPolicy == "exact" ? $"exact / {_config.RequestedVersion ?? "미입력"}" : "latest"),
+                DeveloperKeyValue("설치 버전", ReadInstalledVersion() ?? "미설치"),
+                DeveloperKeyValue("최신 버전", LatestCatalogVersion() ?? "카탈로그 확인 필요"),
+                DeveloperKeyValue("OS", CurrentPlatform),
+                DeveloperKeyValue("카탈로그", _catalogState),
+                DeveloperKeyValue("릴리스 노트", _releaseNotes),
+                DeveloperKeyValue("캐시/백업", StorageSummary())
+            }
+        };
+        return Identify(Card(contents), "release-info", "선택된 배포 정보");
     }
 
     private Control StatusPanel(bool developerLog)

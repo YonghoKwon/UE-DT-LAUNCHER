@@ -4,10 +4,27 @@ namespace UeDtLauncher.Gui;
 public sealed record LauncherUiPreferences(double TextScale = 1, bool HighContrast = false)
 {
     public static readonly double[] SupportedScales = [1, 1.25, 1.5, 2];
-    public static string DefaultPath => Path.Combine(OperatingSystem.IsWindows()
-        ? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
-        : Environment.GetEnvironmentVariable("XDG_CONFIG_HOME") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config"),
-        "UE-DT Launcher", "ui-preferences.json");
+    internal const string DirectoryOverride = "UE_DT_UI_PREFERENCES_DIR";
+    private const string FileName = "ui-preferences.json";
+
+    public static string DefaultPath
+    {
+        get
+        {
+            if (Environment.GetEnvironmentVariable(DirectoryOverride) is { } directory)
+            {
+                if (!Path.IsPathFullyQualified(directory))
+                    throw new IOException("The isolated UI preferences directory must be an absolute path.");
+                return Path.Combine(directory, FileName);
+            }
+
+            var userConfigDirectory = OperatingSystem.IsWindows()
+                ? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
+                : Environment.GetEnvironmentVariable("XDG_CONFIG_HOME")
+                    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config");
+            return Path.Combine(userConfigDirectory, "UE-DT Launcher", FileName);
+        }
+    }
     public static LauncherUiPreferences Load(string? path = null)
     {
         try

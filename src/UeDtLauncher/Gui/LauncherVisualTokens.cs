@@ -74,6 +74,10 @@ public static class LauncherVisualTokens
     internal static readonly Color ContrastSkeleton = Color.Parse("#A0A0A0");
     private static readonly Color FallbackBlue = Color.Parse("#164E73");
     private static readonly Color FallbackTeal = Color.Parse("#124F58");
+    private static readonly Color DarkProjectSelection = Color.Parse("#286E95");
+
+    internal static Color ProjectSelectionColor(bool dark, bool highContrast) =>
+        dark || highContrast ? DarkProjectSelection : Accent;
 
     internal static Color ProjectTileColor(int variant, bool highContrast) => (variant, highContrast) switch
     {

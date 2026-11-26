@@ -67,12 +67,6 @@ public sealed partial class MainWindow
         control.FontSize=LauncherVisualTokens.FontBody*_preferences.TextScale;
         return control;
     }
-    private Control EnterpriseCard(Control content,double padding=LauncherVisualTokens.SpaceLg) => new Border
-    {
-        Child=content, Padding=new Thickness(padding), Background=SurfaceBrush,
-        BorderBrush=LauncherVisualTokens.Brush(LauncherVisualTokens.BorderColor(IsDeveloper, HighContrast)), BorderThickness=new Thickness(1),
-        CornerRadius=new CornerRadius(LauncherVisualTokens.RadiusCard)
-    };
     private void BuildEnterprise()
     {
         if(_building) return;
@@ -107,6 +101,8 @@ public sealed partial class MainWindow
             var sidebar=wide && (IsDeveloper || projects.Count>1);
             Background=PageBrush;
             Classes.Set("high-contrast",HighContrast);
+            Resources["LauncherProjectSelectionBrush"] = LauncherVisualTokens.Brush(
+                LauncherVisualTokens.ProjectSelectionColor(IsDeveloper, HighContrast));
             if(!IsDeveloper)_logBox=null;
             var root=new Grid { RowDefinitions=new("Auto,*,Auto"), RowSpacing=LauncherVisualTokens.SpaceMd, Background=PageBrush, Margin=new Thickness(width<800?LauncherVisualTokens.SpaceMd:LauncherVisualTokens.SpaceXl) };
             root.Children.Add(EnterpriseHeader());
@@ -117,7 +113,7 @@ public sealed partial class MainWindow
             {
                 var example="UeDtLauncher.exe sample-config --mode managed-client --project-id <프로젝트ID> --output launcher.config.json";
                 var command=Identify(new TextBox{Text=example,IsReadOnly=true,TextWrapping=TextWrapping.Wrap,FontSize=14*_preferences.TextScale,MinHeight=72},"configuration-example","관리형 화면 설정 생성 명령 예시");
-                content.Children.Add(Identify(EnterpriseCard(new StackPanel{Spacing=12,Children={Txt("화면 설정 준비",18,true),Muted("관리자에게 프로젝트 ID와 업데이트 서비스 준비 상태를 확인해 주세요. 실행 파일 옆에 화면 설정을 생성한 뒤 다시 확인하세요. 아래 명령의 프로젝트ID를 실제 등록값으로 바꿉니다.",14),command}}),"configuration-help","화면 설정 생성 안내"));
+                content.Children.Add(Identify(Card(new StackPanel{Spacing=12,Children={Txt("화면 설정 준비",18,true),Muted("관리자에게 프로젝트 ID와 업데이트 서비스 준비 상태를 확인해 주세요. 실행 파일 옆에 화면 설정을 생성한 뒤 다시 확인하세요. 아래 명령의 프로젝트ID를 실제 등록값으로 바꿉니다.",14),command}}),"configuration-help","화면 설정 생성 안내"));
             }
             if(!sidebar && projects.Count>1) content.Children.Add(CompactProjectSelector());
             if(IsDeveloper) content.Children.Add(EnterpriseFilters());
@@ -165,7 +161,7 @@ public sealed partial class MainWindow
                     KeyboardNavigation.SetTabNavigation(help,KeyboardNavigationMode.Local);
                     Identify(help,"release-help","릴리스 설명 및 도움말");
                     help.PropertyChanged+=(_,e)=>{if(e.Property==Expander.IsExpandedProperty)_helpExpanded=help.IsExpanded;};
-                    content.Children.Add(EnterpriseCard(help));
+                    content.Children.Add(Card(help));
                 }
             }
             _enterpriseScroll=Identify(new ScrollViewer {Content=content,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled},"workspace-scroll","프로젝트 작업 공간");
@@ -231,7 +227,26 @@ public sealed partial class MainWindow
         var previous=_building; _building=true;
         try
         {
-            var items=VisibleProjects().Select(p=>Identify(new ListBoxItem {Tag=p,Padding=new Thickness(LauncherVisualTokens.SpaceMd),Margin=new Thickness(0,0,0,LauncherVisualTokens.SpaceSm),Content=new StackPanel {Spacing=LauncherVisualTokens.SpaceXs,Children={Label(p.DisplayName,LauncherVisualTokens.FontBody,p.ProjectId==_selectedProject.ProjectId?Brushes.White:Fg(),true),Label(p.ProjectId,LauncherVisualTokens.FontCaption,p.ProjectId==_selectedProject.ProjectId?Brushes.White:MutedBrush())}}},"project-"+p.ProjectId,p.DisplayName)).ToList();
+            var items = VisibleProjects().Select(project =>
+            {
+                var selected = project.ProjectId == _selectedProject.ProjectId;
+                return Identify(new ListBoxItem
+                {
+                    Tag = project,
+                    Classes = { "launcher-project" },
+                    Padding = new Thickness(LauncherVisualTokens.SpaceMd),
+                    Margin = new Thickness(0, 0, 0, LauncherVisualTokens.SpaceSm),
+                    Content = new StackPanel
+                    {
+                        Spacing = LauncherVisualTokens.SpaceXs,
+                        Children =
+                        {
+                            Label(project.DisplayName, LauncherVisualTokens.FontBody, selected ? Brushes.White : Fg(), true),
+                            Label(project.ProjectId, LauncherVisualTokens.FontCaption, selected ? Brushes.White : MutedBrush())
+                        }
+                    }
+                }, "project-" + project.ProjectId, project.DisplayName);
+            }).ToList();
             _enterpriseProjects.ItemsSource=items;
             _enterpriseProjects.SelectedItem=items.FirstOrDefault(i=>((ProjectUiConfig)i.Tag!).ProjectId==_selectedProject.ProjectId);
             empty.IsVisible = items.Count == 0 && !string.IsNullOrWhiteSpace(_search) && _viewModel.ProjectsForProfile().Any();
@@ -253,7 +268,7 @@ public sealed partial class MainWindow
                 actions
             }
         };
-        return Identify(EnterpriseCard(content), id, title);
+        return Identify(Card(content), id, title);
     }
 
     private Control StartupSkeleton()
@@ -272,7 +287,7 @@ public sealed partial class MainWindow
                 Background = brush
             });
         }
-        return Identify(EnterpriseCard(blocks), "startup-skeleton", "프로그램 상태 확인 중");
+        return Identify(Card(blocks), "startup-skeleton", "프로그램 상태 확인 중");
     }
     private Control EnterpriseFilters()
     {
@@ -280,7 +295,7 @@ public sealed partial class MainWindow
         foreach(var control in new[]{ComboLine("환경",_config.Environment,["prod","dev"],v=>{_config.Environment=v;SelectionChanged();}),ComboLine("채널",_config.Channel,["stable","beta","dev"],v=>{_config.Channel=v;SelectionChanged();}),ComboLine("버전 정책",_config.VersionPolicy,["latest","exact"],v=>{_config.VersionPolicy=v;SelectionChanged();})})
         {control.Width=220;control.Margin=new Thickness(0,0,12,8);wrap.Children.Add(control);}
         if(_config.VersionPolicy=="exact"){var exact=ExactVersionLine();exact.Width=240;exact.Margin=new Thickness(0,0,0,8);wrap.Children.Add(exact);}
-        return EnterpriseCard(wrap,12);
+        return Card(wrap,12);
     }
     private Control EnterpriseOverview()
     {
@@ -313,7 +328,7 @@ public sealed partial class MainWindow
         visual.VerticalAlignment = VerticalAlignment.Top;
         AutomationProperties.SetAccessibilityView(visual, AccessibilityView.Raw);
         grid.Children.Add(At(visual, 1));
-        return EnterpriseCard(grid,LauncherVisualTokens.SpaceLg);
+        return Card(grid,LauncherVisualTokens.SpaceLg);
     }
     private Control EnterpriseMaintenance()
     {
@@ -326,7 +341,7 @@ public sealed partial class MainWindow
     private Control EnterpriseLogs()
     {
         _logBox=Identify(new TextBox {Text=_presentation.LogText,IsReadOnly=true,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,MinHeight=180,MaxHeight=360,FontSize=LauncherVisualTokens.FontCaption*_preferences.TextScale,FontFamily=new FontFamily("Cascadia Mono,Consolas"),Foreground=Fg(),Background=SurfaceBrush},"operation-log","작업 기록");
-        return EnterpriseCard(new StackPanel {Spacing=LauncherVisualTokens.SpaceMd,Children={Txt("작업 기록",LauncherVisualTokens.FontSection,true),_logBox}});
+        return Card(new StackPanel {Spacing=LauncherVisualTokens.SpaceMd,Children={Txt("작업 기록",LauncherVisualTokens.FontSection,true),_logBox}});
     }
     private Control EnterpriseActionBar()
     {
@@ -358,7 +373,9 @@ public sealed partial class MainWindow
         panel.Children.Add(actions);
         _statusText=Identify(Txt(_presentation.Title,LauncherVisualTokens.FontBody,true),"operation-status","작업 상태");
         _percentText=Muted("",LauncherVisualTokens.FontSecondary);_stageLabel=Muted("",LauncherVisualTokens.FontSecondary);
-        _progress=Identify(new ProgressBar {Minimum=0,Maximum=100,Height=6,Foreground=StatusBrush(LauncherStatusTone.Progress)},"operation-progress","작업 진행률");
+        _progress=Identify(new ProgressBar {Minimum=0,Maximum=100,Height=6,
+            Background=LauncherVisualTokens.Brush(LauncherVisualTokens.MutedSurfaceColor(IsDeveloper, HighContrast)),
+            Foreground=StatusBrush(LauncherStatusTone.Progress)},"operation-progress","작업 진행률");
         if(_announcer?.Parent is Panel oldParent)oldParent.Children.Remove(_announcer);
         _announcer ??= Identify(new TextBlock {Height=1,Opacity=0,IsHitTestVisible=false},"operation-announcement","작업 상태 알림");
         AutomationProperties.SetLiveSetting(_announcer,AutomationLiveSetting.Polite);
@@ -369,7 +386,7 @@ public sealed partial class MainWindow
         if(_presentation.SupportId is not null)detailsPanel.Children.Add(Muted("지원 ID: "+_presentation.SupportId,12));
         _actionDetails=Identify(new ScrollViewer {Content=detailsPanel,Focusable=true,IsTabStop=true,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled},"action-details","작업 상세 안내");
         panel.Children.Add(_actionDetails);
-        return EnterpriseCard(panel,12);
+        return Card(panel,12);
     }
     private void UpdateActionDetailsLimit()
     {

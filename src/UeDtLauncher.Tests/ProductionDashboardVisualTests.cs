@@ -118,6 +118,50 @@ public class ProductionDashboardVisualTests
     }
 
     [AvaloniaTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task RefreshDuringEmptySearchSelectsFromAllowedProjects(bool stillAllowed)
+    {
+        using var fixture = new Fixture();
+        var model = fixture.Model(developer: true);
+        model.Config.DistributionServerUrl = "https://fixture.invalid";
+        var backend = new DelayedCheck();
+        backend.Completed.SetResult();
+        var ids = stillAllowed ? new[] { "another", "demo" } : new[] { "another" };
+        var platform = OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64";
+        var snapshot = new CatalogSnapshot
+        {
+            Projects = ids.Select(id => new CatalogProjectOption { ProjectId = id, DisplayName = id, ReleaseCount = 1 }).ToList(),
+            Releases = ids.Select(id => new CatalogReleaseOption
+            {
+                ProjectId = id, Version = "1.0.0", Environment = "prod", Channel = "stable", Platform = platform, IsLatest = true
+            }).ToList()
+        };
+        var window = fixture.Window(model, backend, (_, _, _) => Task.FromResult(snapshot));
+        window.Show();
+        try
+        {
+            Find<TextBox>(window, "project-search").Text = "일치하지 않는 검색어";
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(Find<Border>(window, "project-search-empty").IsEffectivelyVisible);
+            await Invoke(window, "RefreshSelectionStatusAsync", true).WaitAsync(TimeSpan.FromSeconds(5));
+            Dispatcher.UIThread.RunJobs();
+
+            var expected = stillAllowed ? "demo" : "another";
+            Assert.Equal(expected, model.SelectedProject.ProjectId);
+            Assert.Equal(expected, model.Config.ProjectId);
+            Assert.Equal(expected, backend.CheckedProject);
+            Assert.True(Find<Border>(window, "project-search-empty").IsEffectivelyVisible);
+
+            Find<Button>(window, "clear-project-search").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal("project-" + expected, Id(Assert.IsType<ListBoxItem>(Find<ListBox>(window, "project-list").SelectedItem)));
+            Assert.Equal(expected, model.SelectedProject.ProjectId);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaTheory]
     [InlineData(false, false)]
     [InlineData(true, true)]
     public async Task FirstCheckShowsSkeletonUntilExistingStatusResultIsApplied(bool developer, bool highContrast)
@@ -185,20 +229,26 @@ public class ProductionDashboardVisualTests
 
     private static string? Id(Control control) => AutomationProperties.GetAutomationId(control);
 
-    private static Task Initialize(MainWindow window) =>
-        (Task)typeof(MainWindow).GetMethod("InitializeStartupAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .Invoke(window, null)!;
+    private static Task Initialize(MainWindow window) => Invoke(window, "InitializeStartupAsync");
+
+    private static Task Invoke(MainWindow window, string method, params object[] args) =>
+        (Task)typeof(MainWindow).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(window, args)!;
 
     private sealed class DelayedCheck : ILauncherUiBackend
     {
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Completed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public string? CheckedProject { get; private set; }
 
         public async Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext context, LauncherConfig config,
             Action<LauncherProgress> progress, CancellationToken token = default)
         {
+            CheckedProject = context.ProjectId;
             Started.SetResult();
             await Completed.Task.WaitAsync(token);
+            if (context.Selection is { } selection)
+                VersionedReleasePaths.Bind(config, selection);
             return new(config, context.Selection, new(true, "1.0.0", "1.0.0", false, 0, 0, false),
                 new(RuntimeState.Quiescent, "stopped", "stopped"));
         }
