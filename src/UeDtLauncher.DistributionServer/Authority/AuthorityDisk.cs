@@ -30,6 +30,27 @@ internal static class AuthorityDisk
 
     internal static string Temporary(string path) => path + ".tmp-" + Guid.NewGuid().ToString("N");
 
+    // Create exactly one entry. Directory.CreateDirectory can recreate missing ancestors.
+    internal static void ReserveInitializationDirectory(string path)
+    {
+        bool created;
+        int alreadyExists;
+        if (OperatingSystem.IsLinux())
+        {
+            created = Mkdir(path, 0x1c0) == 0; // 0700
+            alreadyExists = 17; // EEXIST
+        }
+        else if (OperatingSystem.IsWindows())
+        {
+            created = CreateWindowsDirectory(ExtendedPath(path), IntPtr.Zero);
+            alreadyExists = 183; // ERROR_ALREADY_EXISTS
+        }
+        else throw new PlatformNotSupportedException("Authority storage supports Windows or Linux.");
+        if (created) return;
+        var error = Marshal.GetLastPInvokeError();
+        if (error != alreadyExists) throw NativeError("Reserve authority initialization directory", error);
+    }
+
     internal static void Write(string path, byte[] bytes, bool head = false)
     {
         var temporary = Temporary(path);
@@ -198,6 +219,12 @@ internal static class AuthorityDisk
     private static extern int OpenDirectory(string path, int flags);
     [DllImport("libc", EntryPoint = "close", SetLastError = true)]
     private static extern int Close(int descriptor);
+    [DllImport("libc", EntryPoint = "mkdir", SetLastError = true)]
+    private static extern int Mkdir(string path, uint mode);
+
+    [DllImport("kernel32.dll", EntryPoint = "CreateDirectoryW", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CreateWindowsDirectory(string path, IntPtr securityAttributes);
     [DllImport("libc", EntryPoint = "fsync", SetLastError = true)]
     private static extern int Fsync(int descriptor);
     [DllImport("libc", EntryPoint = "syncfs", SetLastError = true)]

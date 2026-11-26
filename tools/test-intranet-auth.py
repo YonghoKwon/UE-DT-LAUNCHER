@@ -186,6 +186,7 @@ def main():
     if args.gui_download_proof:
         from gui_download_proxy import DownloadProxy
         download_proxy=DownloadProxy(root,port,urllib.parse.urlsplit(backend).port)
+    (root / "server").mkdir()
     write(root / "server.json", {"root": str(root / "server"), "publicUrl": origin, "listenUrl": backend,
           "signingKeyPath": str(root / "release.pem"), "policyPath": str(root / "policy.json"),
           "authenticationMode": "request-signature-v1"})

@@ -17,6 +17,7 @@ public sealed class DistributionBackupTests : IDisposable
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256); File.WriteAllText(Path.Combine(root, "private.pem"), key.ExportPkcs8PrivateKeyPem());
         File.WriteAllText(Path.Combine(root, "policy.json"), "{\"clients\":[]}");
         settings = new() { Root = Path.Combine(root, "server"), SigningKeyPath = Path.Combine(root, "private.pem"), PolicyPath = Path.Combine(root, "policy.json"), AuthenticationMode = "request-signature-v1" };
+        Directory.CreateDirectory(settings.Root);
         store = new(settings); File.WriteAllText(Path.Combine(settings.Root, "incoming", "private-upload.txt"), "payload");
     }
     public void Dispose() { Directory.Delete(root, true); }

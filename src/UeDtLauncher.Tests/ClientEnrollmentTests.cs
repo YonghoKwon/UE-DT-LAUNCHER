@@ -260,7 +260,11 @@ public sealed class ClientEnrollmentTests
             Directory.CreateDirectory(Bundles);
             await JsonFiles.WriteAsync(Config, Settings);
             await JsonFiles.WriteAsync(Settings.PolicyPath, new AccessPolicy());
-            if (createStore) Keys = new(new IntakeStore(Settings));
+            if (createStore)
+            {
+                Directory.CreateDirectory(Settings.Root);
+                Keys = new(new IntakeStore(Settings));
+            }
         }
 
         internal async Task<DeviceEnrollmentBundle> AddBundleAsync(string client, string id, bool invalidAddress = false, bool privatePem = false)

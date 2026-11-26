@@ -15,7 +15,9 @@ ZIP과 JSON은 별개 파일입니다. 내부 release.json은 분류에 사용�
 오프라인 유지보수(2026-10-03): 서버/watch/작업을 정상 중지 → `backup plan --config server.json` → `backup create --output 새백업 --config server.json` → `backup verify --backup 새백업 --config server.json`. private key는 별도 보관한다. 복원은 `restore stage --backup ... --target 빈폴더 --config 원본server.json` 후 `restore activate --target ... --confirm --config 원본server.json`이며 최신 생존 원본의 파일·보안·순번·승격·정책을 대조한다. 누락/불명이면 staged로 차단한다. 반환한 policyPath와 새 root를 운영 설정에 명시하고 별도 서명키를 준비한다. 회사 완전 유실 복구/RPO·RTO는 미검증이다.
 
 `dotnet publish src/UeDtLauncher.DistributionServer -c Release -r linux-x64 --self-contained true -o artifacts/distribution-server`로 생성하고 `/dt/publish/server-linux-x64`에 설치합니다.
-전용 `uedt-distribution` 계정이 `/dt/store`를 소유합니다. 최초 실행에는 전용 빈 root와 같은 파일시스템의 부모 디렉터리에 초기화 권한이 필요합니다. 서비스 계정의 `list --config /dt/config/server.json` 실행으로 초기 HEAD를 만든 뒤 업로드 계정에 `/dt/store/incoming` 쓰기와 `/dt/store/upload-status` 읽기 권한을 부여합니다. 구형 저장소, 혼합 root, 손상된 HEAD는 변경 없이 거부됩니다. 새 배치에 사용할 전용 빈 root를 지정하세요. `authority`, `processing`, `archive`, `releases`, 그리고 `/dt/keys`의 서명 개인키는 서비스 계정만 접근하도록 구성합니다.
+최초 설치에서 관리자는 `/dt`와 전용 `uedt-distribution` 계정·그룹을 준비한 뒤 `sudo bash scripts/prepare-server-store.sh /dt/store`로 빈 `/dt/store`를 만들고 서비스 계정에 쓰기 권한을 부여합니다. 서비스 계정은 `/dt`를 통과할 권한이 필요하고, 초기화 작업은 `/dt/store` 안에서 수행합니다. `/dt/store/authority`는 같은 마운트에 둡니다. 서비스 계정의 `list --config /dt/config/server.json` 실행으로 초기 HEAD를 만든 뒤 업로드 계정에 `/dt/store/incoming` 쓰기와 `/dt/store/upload-status` 읽기 권한을 부여합니다.
+
+초기화 도중 중단되면 같은 설정으로 다시 실행합니다. 서버는 저장소 안의 초기 준비 상태를 확인하고 세대 0 게시를 마칩니다. 구형·혼합·손상·미인식 저장소는 변경 전에 거부합니다. `authority`, `processing`, `archive`, `releases`, 그리고 `/dt/keys`의 서명 개인키는 서비스 계정만 접근하도록 구성합니다. [저장소 준비 스크립트](../../scripts/prepare-server-store.sh)
 
 `/dt/config/server.json`:
 

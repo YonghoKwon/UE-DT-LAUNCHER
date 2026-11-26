@@ -284,6 +284,7 @@ def measure_run(args, root, workers, iteration, package, metadata, probe, probe_
     run_root.mkdir(exist_ok=False)
     claim(run_root)
     server_root = run_root / "server"
+    server_root.mkdir()
     server_port = free_port()
     base = f"http://127.0.0.1:{server_port}"
     env = {**os.environ, "UE_DT_AGENT_DATA_ROOT": str(run_root / "credentials")}

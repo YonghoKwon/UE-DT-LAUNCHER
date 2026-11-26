@@ -7,7 +7,7 @@ namespace UeDtLauncher.Tests;
 
 public sealed class ReleasePromotionTests : IDisposable
 {
-    private readonly string root = Path.Combine(Path.GetTempPath(), "promotion-tests-"+Guid.NewGuid().ToString("N"));
+    private readonly string root = Directory.CreateTempSubdirectory("promotion-tests-").FullName;
     private readonly IntakeStore store;
     public ReleasePromotionTests() => store = new(new() { Root = root });
     public void Dispose() { Directory.Delete(root, true); }
@@ -84,7 +84,7 @@ public sealed class ReleasePromotionTests : IDisposable
     [Fact]
     public void MigrationOnFileRootIsReadOnlyEvenWhenLive()
     {
-        var fresh = Path.Combine(root, "file-root");
+        var fresh = Directory.CreateDirectory(Path.Combine(root, "file-root")).FullName;
         AuthorityStore.Open(fresh);
         using (new AuthenticationProcessLease(fresh)) { }
         var before = Snapshot(fresh);
@@ -102,7 +102,7 @@ public sealed class ReleasePromotionTests : IDisposable
     [InlineData(false)]
     public void MigrationRejectsMixedOrDamagedRootWithoutWriting(bool mixed)
     {
-        var path = Path.Combine(root, "file-root");
+        var path = Directory.CreateDirectory(Path.Combine(root, "file-root")).FullName;
         var authority = AuthorityStore.Open(path);
         File.WriteAllText(mixed ? Path.Combine(path, "distribution.db") : authority.DataPath("HEAD"), "invalid");
         var before = Snapshot(path);

@@ -7,7 +7,7 @@ nginx=$(realpath "${3:?nginx executable}")
 root=$(mktemp -d /tmp/uedt-distribution-e2e.XXXXXX)
 server_pid= nginx_pid=
 trap 'test -z "$nginx_pid" || kill "$nginx_pid" 2>/dev/null || true; test -z "$server_pid" || kill "$server_pid" 2>/dev/null || true' EXIT
-mkdir -p "$root/client" "$root/nginx" "$root/game"
+mkdir -p "$root/client" "$root/nginx" "$root/game" "$root/server"
 wait_runtime() {
     for attempt in {1..50}; do
         "$launcher" runtime inspect --config "$root/client/config.json" > "$root/runtime-inspect.json"

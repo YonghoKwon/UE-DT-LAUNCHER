@@ -74,6 +74,7 @@ def main():
     def write(path,value): path.write_text(json.dumps(value), encoding='utf-8')
     run(launcher,'generate-signing-key','--private-key',root/'sign.pem','--public-key',root/'public.pem')
     with socket.socket() as reservation: reservation.bind(('127.0.0.1',0)); port=reservation.getsockname()[1]
+    (root/'server').mkdir()
     write(root/'server.json',{'root':str(root/'server'),'publicUrl':'https://localhost:19443','listenUrl':'http://127.0.0.1:'+str(port),
         'signingKeyPath':str(root/'sign.pem'),'policyPath':str(root/'policy.json')})
     config=['--config',root/'server.json']

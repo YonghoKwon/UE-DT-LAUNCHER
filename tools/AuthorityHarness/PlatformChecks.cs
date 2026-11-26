@@ -75,6 +75,7 @@ internal static class PlatformChecks
 
     private static async Task ConcurrentReaders(string root)
     {
+        Directory.CreateDirectory(root);
         Open(root);
         using var writer = Start("platform-write", root, Commits.ToString());
         var readers = new List<Child>();
@@ -155,6 +156,7 @@ internal static class PlatformChecks
 
     private static async Task Cleanup(string root)
     {
+        Directory.CreateDirectory(root);
         var store = Open(root);
         var old = store.DataPath(store.ReadSnapshot().Head.Files["catalog"]);
         using var holder = Start("platform-hold", root);
@@ -189,6 +191,7 @@ internal static class PlatformChecks
 
     private static async Task Leases(string root)
     {
+        Directory.CreateDirectory(root);
         Open(root);
         using (var exclusive = Start("platform-lease", root, "exclusive"))
         {
@@ -280,6 +283,7 @@ internal static class PlatformChecks
     private static void Seed(string root)
     {
         Require(!Path.Exists(root), "Crash fixture path already exists.");
+        Directory.CreateDirectory(root);
         Write(Open(root), 1);
     }
 

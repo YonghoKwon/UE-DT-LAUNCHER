@@ -8,14 +8,11 @@ namespace UeDtLauncher.Tests;
 
 public sealed class AuthorityRootAndCacheTests(ITestOutputHelper output)
 {
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void G8_NewOrEmptyRootInitializesGenerationZero(bool missing)
+    [Fact]
+    public void G8_EmptyRootInitializesGenerationZero()
     {
         using var fixture = new AuthorityStoreFixture();
-        var root = missing ? Path.Combine(fixture.Root, "new", "storage") : fixture.Root;
-        var store = AuthorityStore.Open(root);
+        var store = fixture.Open();
         var snapshot = store.ReadSnapshot();
         Assert.Equal(0, snapshot.Generation);
         Assert.Null(snapshot.Head.Previous);
@@ -25,6 +22,17 @@ public sealed class AuthorityRootAndCacheTests(ITestOutputHelper output)
         Assert.Empty(store.ReadAudit(snapshot));
         Assert.Empty(ReadProjection(store));
         Assert.Null(store.OpenMaintenanceError);
+    }
+
+    [Fact]
+    public void G8_MissingRootRequiresProvisioningWithoutChangingParent()
+    {
+        using var fixture = new AuthorityStoreFixture();
+        var root = Path.Combine(fixture.Root, "missing", "store");
+        var error = Assert.Throws<AuthorityRootException>(() => AuthorityStore.Open(root));
+        Assert.Equal(AuthorityRootKind.MissingRoot, error.Kind);
+        Assert.Contains("Create the empty root", error.Message);
+        Assert.Empty(Directory.EnumerateFileSystemEntries(fixture.Root));
     }
 
     [Theory]
@@ -39,6 +47,8 @@ public sealed class AuthorityRootAndCacheTests(ITestOutputHelper output)
     [InlineData("dt-parent", "UnrecognizedLayout")]
     [InlineData("dt-static", "UnrecognizedLayout")]
     [InlineData("standalone-lock", "UnrecognizedLayout")]
+    [InlineData("unrelated-init-files", "UnrecognizedLayout")]
+    [InlineData("invalid-init-document", "UnrecognizedLayout")]
     public async Task G8_RejectedRootExitsNonzeroBeforeAnyChange(string scenario, string expectedKind)
     {
         using var fixture = new AuthorityStoreFixture();
@@ -101,6 +111,11 @@ public sealed class AuthorityRootAndCacheTests(ITestOutputHelper output)
             case "standalone-lock":
                 File.WriteAllText(writer, "unknown lock");
                 break;
+            case "unrelated-init-files":
+            case "invalid-init-document":
+                var staging = Directory.CreateDirectory(Path.Combine(root, ".authority-init.v1"));
+                File.WriteAllText(Path.Combine(staging.FullName, scenario == "invalid-init-document" ? "HEAD" : "foreign.txt"), "unrelated data");
+                break;
         }
         if (scenario is "dt-parent" or "dt-static")
         {
@@ -138,7 +153,8 @@ public sealed class AuthorityRootAndCacheTests(ITestOutputHelper output)
         var rejected = Assert.Throws<AuthorityRootException>(() => AuthorityStore.Open(fixture.Root, layout));
         Assert.Equal(AuthorityRootKind.ExistingDistribution, rejected.Kind);
         Assert.True(old.Exists);
-        var store = AuthorityStore.Open(Path.Combine(fixture.Root, "new-store"), layout);
+        var newStore = Directory.CreateDirectory(Path.Combine(fixture.Root, "new-store"));
+        var store = AuthorityStore.Open(newStore.FullName, layout);
         var committed = Committed(store.Commit(snapshot => SetCounters(snapshot, 42, Event("configured"))));
         Assert.EndsWith("state", store.DirectoryPath);
         Assert.Equal(Path.Combine(store.DirectoryPath, "release-info"), store.ReleaseMetadataPath);

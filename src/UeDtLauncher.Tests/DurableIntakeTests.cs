@@ -6,7 +6,7 @@ namespace UeDtLauncher.Tests;
 
 public sealed class DurableIntakeTests : IDisposable
 {
-    private readonly string root = Path.Combine(Path.GetTempPath(), "intake-" + Guid.NewGuid().ToString("N"));
+    private readonly string root = Directory.CreateTempSubdirectory("intake-").FullName;
     [Theory]
     [InlineData(true)]
     [InlineData(false)]

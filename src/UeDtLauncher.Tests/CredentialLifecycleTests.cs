@@ -8,7 +8,7 @@ namespace UeDtLauncher.Tests;
 
 public sealed class CredentialLifecycleTests : IDisposable
 {
-    private readonly string root = Path.Combine(Path.GetTempPath(), "lifecycle-" + Guid.NewGuid().ToString("N"));
+    private readonly string root = Directory.CreateTempSubdirectory("lifecycle-").FullName;
     private readonly IntakeStore store;
     private sealed class Clock : TimeProvider { public DateTimeOffset Now = DateTimeOffset.Parse("2030-01-01T00:00:00Z"); public override DateTimeOffset GetUtcNow() => Now; }
     public CredentialLifecycleTests() => store = new(new() { Root = root });

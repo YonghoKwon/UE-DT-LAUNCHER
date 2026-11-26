@@ -432,7 +432,7 @@ public sealed class CatalogAuthorityTests
 
         internal CatalogFixture()
         {
-            AuthorityRoot = Path.Combine(fixture.Root, "files");
+            AuthorityRoot = Directory.CreateDirectory(Path.Combine(fixture.Root, "files")).FullName;
             var settings = new DistributionSettings
             {
                 Root = AuthorityRoot,

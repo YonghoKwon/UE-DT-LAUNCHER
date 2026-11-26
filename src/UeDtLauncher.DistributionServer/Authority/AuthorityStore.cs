@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace UeDtLauncher.Distribution.Authority;
 
-internal sealed class AuthorityStore
+internal sealed partial class AuthorityStore
 {
     internal const int ReadRetries = 3;
     internal const int PriorGenerationsToKeep = 8;
@@ -51,6 +51,9 @@ internal sealed class AuthorityStore
     private static AuthorityStore OpenCore(AuthorityStore store, Action<AuthoritySnapshot>? validate = null)
     {
         // Validation precedes creation of even the maintenance/writer locks.
+        if (Attributes(store.Root) is null)
+            throw new AuthorityRootException(AuthorityRootKind.MissingRoot,
+                "The configured store root is missing. Create the empty root and grant the service account write access before starting the server.");
         if (!store.CheckRoot(validateHistory: true, out var previous)) store.Initialize();
         else validate?.Invoke(previous!);
         using var writer = store.AcquireWriter(exclusiveMaintenance: false);
@@ -171,6 +174,7 @@ internal sealed class AuthorityStore
         {
             var snapshot = ReadSnapshot();
             PrepareCleanup(snapshot);
+            RemoveEmptyInitializationDirectory();
             return RunMaintenance(snapshot);
         }
         catch (Exception error) when (IsReadError(error)) { return error; }
@@ -399,13 +403,10 @@ internal sealed class AuthorityStore
                 foreach (var marker in layout.ExistingDistributionMarkers ?? AuthorityLayout.Default.ExistingDistributionMarkers!)
                     if (Attributes(SafePath.ResolveInsideChecked(Root, marker)) is not null)
                         throw new AuthorityRootException(AuthorityRootKind.ExistingDistribution, "Distribution files exist without an authority HEAD.");
-                if (names.Length != 0)
-                {
-                    // A concurrent initializer can publish authority between enumeration and this probe.
-                    if (Attributes(DirectoryPath) is not null) return CheckRoot(validateHistory, out validatedSnapshot);
-                    throw new AuthorityRootException(AuthorityRootKind.UnrecognizedLayout, "Existing files use an unrecognized distribution layout.");
-                }
-                return false;
+                if (names.Length == 0 || IsPendingInitialization(names)) return false;
+                // A concurrent initializer can publish authority between enumeration and this probe.
+                if (Attributes(DirectoryPath) is not null) return CheckRoot(validateHistory, out validatedSnapshot);
+                throw new AuthorityRootException(AuthorityRootKind.UnrecognizedLayout, "Existing files use an unrecognized distribution layout.");
             }
             RejectLink(DirectoryPath);
             AuthorityDisk.EnsureSupportedFileSystem(DirectoryPath);
@@ -448,46 +449,6 @@ internal sealed class AuthorityStore
     private static bool IsReadError(Exception error) =>
         error is IOException or UnauthorizedAccessException or InvalidDataException or JsonException or InvalidOperationException or OverflowException;
 
-    private static void CreateDurableDirectory(string directory)
-    {
-        if (Directory.Exists(directory)) return;
-        var parent = Path.GetDirectoryName(directory)!;
-        CreateDurableDirectory(parent);
-        Directory.CreateDirectory(directory);
-        AuthorityDisk.FlushDirectory(parent);
-    }
-
-    private void Initialize()
-    {
-        var parent = Path.GetDirectoryName(Root) ?? throw new IOException("Authority initialization requires a parent directory.");
-        CreateDurableDirectory(Root);
-        var staging = AuthorityDisk.Temporary(Path.Combine(parent, ".authority-init"));
-        Directory.CreateDirectory(staging);
-        try
-        {
-            foreach (var name in dataDirectories) CreateDurableDirectory(Path.Combine(staging, name));
-            var updates = AuthorityDocuments.Areas.ToDictionary(area => area, area => AuthorityDocuments.Encode(AuthorityDocuments.Empty(area)));
-            Publish(staging, null, 0, updates, AuthorityDocuments.MakeBatch(0, []));
-            AuthorityDisk.FlushDirectory(parent);
-            AuthorityDisk.Reach(AuthorityBoundary.InitializationPrepared);
-            if (CheckRoot()) return; // A concurrent opener published a complete authority first.
-            try { AuthorityDisk.Rename(staging, DirectoryPath, directory: true); }
-            catch (IOException) when (Attributes(DirectoryPath) is not null && CheckRoot()) { return; }
-            try
-            {
-                AuthorityDisk.Reach(AuthorityBoundary.InitializationPublished);
-                AuthorityDisk.FlushDirectory(Root);
-                AuthorityDisk.FlushDirectory(parent);
-            }
-            catch (IOException error) { throw new AuthorityCommitDurabilityException(0, error); }
-        }
-        finally
-        {
-            // This path is unique to this initializer. A killed process leaves it outside the selected root.
-            if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
-        }
-    }
-
     private WriterLease AcquireWriter(bool exclusiveMaintenance)
     {
         BeforeAcquireWriter.Value?.Invoke();
@@ -508,18 +469,17 @@ internal sealed class AuthorityStore
         }
     }
 
-    private AuthorityHead Publish(string directory, AuthorityHead? previous, long generation,
+    private AuthorityHead Publish(string directory, AuthorityHead previous, long generation,
         IReadOnlyDictionary<AuthorityArea, byte[]> updates, AuthorityEventBatch batch)
     {
-        var files = previous is null ? new Dictionary<string, string>() : new(previous.Files);
-        var hashes = previous is null ? new Dictionary<string, string>() : new(previous.Sha256);
+        var files = new Dictionary<string, string>(previous.Files);
+        var hashes = new Dictionary<string, string>(previous.Sha256);
         foreach (var (area, bytes) in updates) WriteGeneration(AuthorityDocuments.Name(area), bytes);
         WriteGeneration(AuthorityDocuments.Events, AuthorityDocuments.Encode(batch));
 
-        var head = AuthorityDocuments.Seal(new(AuthorityDocuments.Schema, generation, files, hashes, previous?.Generation, ""));
+        var head = AuthorityDocuments.Seal(new(AuthorityDocuments.Schema, generation, files, hashes, previous.Generation, ""));
         AuthorityDisk.Write(Path.Combine(directory, "HEAD"), AuthorityDocuments.Encode(head), head: true);
-        if (previous is null) AuthorityDisk.FlushDirectory(directory);
-        else AuthorityDisk.CompleteHeadPublication(directory, generation);
+        AuthorityDisk.CompleteHeadPublication(directory, generation);
         return AuthorityDocuments.Freeze(head);
 
         void WriteGeneration(string area, byte[] bytes)

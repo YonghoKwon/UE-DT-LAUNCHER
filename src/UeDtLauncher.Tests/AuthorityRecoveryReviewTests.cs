@@ -75,21 +75,21 @@ public sealed class AuthorityRecoveryReviewTests(ITestOutputHelper output)
     }
 
     [Theory]
-    [InlineData("InitializationPrepared", false)]
-    [InlineData("InitializationPrepared", true)]
-    [InlineData("InitializationPublished", false)]
-    [InlineData("InitializationPublished", true)]
-    public async Task InterruptedInitializationCanReopenEmptyOrPublishedRoot(string boundary, bool precreate)
+    [InlineData("GenerationWrite")]
+    [InlineData("BeforeHeadRename")]
+    [InlineData("InitializationPrepared")]
+    [InlineData("InitializationPublished")]
+    public async Task InterruptedInitializationCanReopenStagedOrPublishedRoot(string boundary)
     {
         using var fixture = new AuthorityStoreFixture();
         var root = Path.Combine(fixture.Root, "store");
-        if (precreate) Directory.CreateDirectory(root);
+        Directory.CreateDirectory(root);
         using (var child = Start(root, "crash-init", boundary)) await ForceStop(child);
         var published = boundary == nameof(AuthorityBoundary.InitializationPublished);
-        Assert.Equal(published ? ["authority"] : Array.Empty<string>(),
-            Directory.EnumerateFileSystemEntries(root).Select(Path.GetFileName));
-        Assert.False(File.Exists(Path.Combine(root, ".maintenance.lock")));
-        Assert.False(File.Exists(Path.Combine(root, ".writer.lock")));
+        string[] expected = [published ? "authority" : ".authority-init.v1", ".maintenance.lock", ".writer.lock"];
+        Assert.Equal(expected.Order(StringComparer.Ordinal),
+            Directory.EnumerateFileSystemEntries(root).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        Assert.Equal([root], Directory.EnumerateFileSystemEntries(fixture.Root));
 
         using var restarted = Start(root, "reopen");
         var outcome = await restarted.Finish();
@@ -99,7 +99,9 @@ public sealed class AuthorityRecoveryReviewTests(ITestOutputHelper output)
         Assert.Equal(0, store.ReadSnapshot().Generation);
         Assert.True(store.ReadSnapshot().Get(AuthorityArea.Catalog).GetProperty("promotionReady").GetBoolean());
         Assert.Empty(ReadProjection(store));
-        output.WriteLine($"{boundary}, existing empty directory {precreate}: restart initialized or reopened generation zero.");
+        Assert.False(Directory.Exists(Path.Combine(root, ".authority-init.v1")));
+        Assert.Empty(Directory.EnumerateFiles(store.DirectoryPath, "*.tmp-*", SearchOption.AllDirectories));
+        output.WriteLine($"{boundary}: restart initialized or reopened generation zero from the precreated root.");
     }
 
     [Fact]
@@ -107,6 +109,7 @@ public sealed class AuthorityRecoveryReviewTests(ITestOutputHelper output)
     {
         using var fixture = new AuthorityStoreFixture();
         var root = Path.Combine(fixture.Root, "store");
+        Directory.CreateDirectory(root);
         using var first = Start(root, "reopen");
         using var second = Start(root, "reopen");
         foreach (var result in await Task.WhenAll(first.Finish(), second.Finish()))
@@ -114,7 +117,8 @@ public sealed class AuthorityRecoveryReviewTests(ITestOutputHelper output)
         var store = AuthorityStore.Open(root);
         Assert.Equal(0, store.ReadSnapshot().Generation);
         Assert.Single(Directory.EnumerateFiles(store.DataPath("events")));
-        Assert.Empty(Directory.EnumerateDirectories(fixture.Root, ".authority-init.tmp-*"));
+        Assert.Equal([root], Directory.EnumerateFileSystemEntries(fixture.Root));
+        Assert.False(Directory.Exists(Path.Combine(root, ".authority-init.v1")));
     }
 
     [Fact]

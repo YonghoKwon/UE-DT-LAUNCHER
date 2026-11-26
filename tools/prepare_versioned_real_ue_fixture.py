@@ -279,6 +279,7 @@ def prepare(args):
     write(root/'policy.json', {'clients': [{'id': 'ue-test-pc', 'addresses': ['127.0.0.1/32'],
         'grants': [{'projectId': 'ma0t10-dt', 'environment': 'prod', 'channel': 'stable', 'versions': args.versions}]}]})
     run('launcher', 'generate-signing-key', '--private-key', root/'release.pem', '--public-key', root/'public.pem')
+    (root/'server').mkdir()
     write(root/'server.json', {'root': str(root/'server'), 'publicUrl': f['origin'], 'listenUrl': f['origin'],
         'signingKeyPath': str(root/'release.pem'), 'policyPath': str(root/'policy.json'), 'authenticationMode': 'request-signature-v1'})
     run('launcher', 'credential', 'keygen', '--name', 'ue-test-device', '--key-id', 'ue-test-device-key',

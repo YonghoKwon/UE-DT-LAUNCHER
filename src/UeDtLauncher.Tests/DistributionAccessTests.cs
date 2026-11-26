@@ -23,7 +23,7 @@ public class DistributionAccessTests
     [Fact]
     public void TokenIsHashedAndRevokedTokensFail()
     {
-        var root = Path.Combine(Path.GetTempPath(), "access-test-" + Guid.NewGuid().ToString("N"));
+        var root = Directory.CreateTempSubdirectory("access-test-").FullName;
         try
         {
             var store = new IntakeStore(new DistributionSettings { Root = root });
