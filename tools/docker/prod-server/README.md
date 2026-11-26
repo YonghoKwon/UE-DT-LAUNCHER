@@ -24,7 +24,7 @@ python tools/prepare_prod_server.py up --run-id $id --work $work --server-multi 
 
 각 명령의 종료 코드를 확인합니다. `up`은 고정 Rocky 8.4 이미지에서 ELF 요구 버전을 검사하고, 시험 서명 키와 정책을 준비한 뒤 `dist`, `nginx`, `sshd`를 기동합니다. 게시된 서버는 빈 `/dt/store`에서 세대 0을 생성합니다. 기존 파일이 들어 있는 별도의 미인식 루트는 변경 전에 거부되는지 대조합니다.
 
-`dist`가 하나의 `store` 볼륨 전체를 쓰며, `sshd`는 같은 볼륨의 `incoming`(쓰기 가능)과 `upload-status`(읽기 전용)만 각각 `volume.subpath`로 사용합니다. `config`와 `keys`는 `dist`에서 읽기 전용입니다. SSH 시험에 쓸 키는 `stage --ssh-public-key <키.pub>`로 전달합니다. 옵션을 생략하면 개인키를 보관하지 않는 시험용 공개키를 준비합니다.
+`dist`가 하나의 `store` 볼륨 전체를 쓰며, `sshd`는 같은 볼륨의 `incoming`(쓰기 가능)과 `upload-status`(읽기 전용)만 각각 `volume.subpath`로 사용합니다. SSH는 별도 `upload` 브리지에서 실행합니다. SSH 세션의 `/dt/store`는 chroot 내부 경로이며 제품 업로드에 필요한 명령과 제한된 SFTP 요청만 허용합니다. 클라이언트는 SFTP를 사용하는 OpenSSH `scp`가 필요합니다. `config`와 `keys`는 `dist`에서 읽기 전용입니다. SSH 시험에 쓸 키는 `stage --ssh-public-key <키.pub>`로 전달합니다. 옵션을 생략하면 개인키를 보관하지 않는 시험용 공개키를 준비합니다.
 
 ## 설치·직접 접속·점유 측정
 
@@ -41,6 +41,6 @@ python tools/prepare_prod_server.py restart --run-id $id --work $work
 
 ## 정리
 
-시험 직후 `python tools/prepare_prod_server.py down --run-id $id --work $work`를 실행합니다. 같은 실행 ID가 달린 컨테이너, 네트워크, 볼륨과 이미지가 모두 사라졌는지 확인합니다. 시작 전과 정리 후의 Docker 리소스 목록을 대조하고 빌드 캐시 수치는 `docker system df`에 기록합니다.
+시험 직후 `python tools/prepare_prod_server.py down --run-id $id --work $work`를 실행합니다. `stage`가 만든 `docker-ownership.json`은 정리까지 유지합니다. 각 볼륨은 생성 시 기록한 소유 표식·생성 시각·마운트 지점과 사용 및 삭제 직전 값을 대조합니다. 동일 이름의 다른 볼륨이 있으면 중단해 그대로 보존합니다. 시작 전과 정리 후 Docker 리소스 목록을 대조합니다. 빌드 캐시 수치는 `docker system df`에 기록합니다.
 
-회사 배치는 [RHEL 설치 스크립트 초안](../../../scripts/install-server.sh)을 참고합니다. 회사 서버와 SELinux는 인수 환경에서 확인합니다.
+회사 배치는 [RHEL 설치 스크립트 초안](../../../scripts/install-server.sh)을 참고합니다. 기존 키·런처 파일은 파일별로 대조합니다. 후보 nginx 설정 검사 후 원자적으로 게시하며, 실제 구성 검사가 실패하면 해당 실행이 추가한 설정을 되돌립니다. 재실행은 이미 설치된 동일 파일을 보존합니다. SELinux가 활성화된 경우 설치 전에 대상의 fcontext 매핑을 확인합니다. 회사 서버와 실제 SELinux 정책은 인수 환경에서 확인합니다.

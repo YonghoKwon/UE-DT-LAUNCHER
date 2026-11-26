@@ -2,7 +2,8 @@
 set -euo pipefail
 export LC_ALL=C
 server=/dt/publish/server-linux-x64
-export DOTNET_BUNDLE_EXTRACT_BASE_DIR=$(mktemp -d)
+DOTNET_BUNDLE_EXTRACT_BASE_DIR=$(mktemp -d)
+export DOTNET_BUNDLE_EXTRACT_BASE_DIR
 echo 'Single-file apphost and extracted native files:'
 "$server/UeDtLauncher.DistributionServer" --help
 

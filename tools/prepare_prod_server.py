@@ -11,12 +11,14 @@ import socket
 import subprocess
 import time
 import tempfile
+import uuid
 import zipfile
 from pathlib import Path
 
 TEMPLATES = Path(__file__).resolve().parent / "docker" / "prod-server"
 ORIGIN = "http://host.docker.internal:18080"
 ROOT = "/dt/store"
+SSH_ROOT = "/dt/upload-jail" + ROOT
 ENTRY_HOME = "/dt/tools/server-home"
 ENTRY = "/dt/tools/entrypoint.sh"
 KEYS = "/dt/keys"
@@ -62,11 +64,108 @@ class Fixture:
         self.sim_image = f"uedt-prod-simulator:{self.run_id}"
         self.work = args.work.resolve()
         self.context = self.work / "context"
+        self.ownership_path = self.work / "docker-ownership.json"
+        self.ownership = (json.loads(self.ownership_path.read_text(encoding="utf-8"))
+                          if self.ownership_path.exists() else None)
+        if self.ownership is not None:
+            if self.ownership["runId"] != self.run_id or not re.fullmatch(r"[0-9a-f]{32}", self.ownership["owner"]):
+                raise ValueError("Docker ownership record differs from this run")
+            os.environ["UEDT_OWNER_TOKEN"] = self.ownership["owner"]
         os.environ["UEDT_RUN_ID"] = self.run_id
         os.environ["UEDT_BUILD_CONTEXT"] = str(self.context)
 
     def compose(self, *args, **kwargs):
+        volumes = self.guard_docker()
+        if args[0] in {"up", "run", "exec", "cp", "start", "restart"}:
+            if any(f"{self.project}_{role}" not in volumes for role in ("store", "config", "keys")):
+                raise RuntimeError("Refusing Compose operation with a missing owned volume")
         return run("docker", "compose", "-p", self.project, "-f", TEMPLATES / "compose.yaml", *args, **kwargs)
+
+    @property
+    def owner_labels(self):
+        if self.ownership is None:
+            raise RuntimeError("Stage a private fixture before using Docker resources")
+        return {"uedt.run": self.run_id, "uedt.owner": self.ownership["owner"]}
+
+    def docker_labels(self):
+        return [value for key, label in self.owner_labels.items() for value in ("--label", f"{key}={label}")]
+
+    def matches_owner(self, labels):
+        return all((labels or {}).get(key) == value for key, value in self.owner_labels.items())
+
+    def save_ownership(self):
+        pending = self.work / f".docker-ownership-{uuid.uuid4().hex}.tmp"
+        with pending.open("x", encoding="utf-8") as file:
+            json.dump(self.ownership, file, indent=2)
+        pending.replace(self.ownership_path)
+
+    def volume_names(self):
+        return {f"{self.project}_{role}" for role in ("store", "config", "keys", "unknown")}
+
+    def volume_inventory(self):
+        names = set(run("docker", "volume", "ls", "-q").splitlines()) & self.volume_names()
+        if not names:
+            return {}
+        return {row["Name"]: row for row in json.loads(run("docker", "volume", "inspect", *sorted(names)))}
+
+    def volume_identity(self, row):
+        # Docker local volumes have a name but no immutable engine ID. The
+        # unique owner label, creation time, driver and mountpoint bind this instance.
+        return {name: row.get(name) for name in ("Name", "Driver", "Mountpoint", "CreatedAt", "Labels")}
+
+    def guard_volumes(self):
+        records = self.ownership["volumes"]
+        volumes = self.volume_inventory()
+        for name, row in volumes.items():
+            if not self.matches_owner(row["Labels"]) or self.volume_identity(row) != records.get(name):
+                raise RuntimeError(f"Refusing unowned or replaced Docker volume: {name}")
+        return volumes
+
+    def guard_docker(self):
+        _ = self.owner_labels
+        for kind, labels_key, list_args in (
+            ("container", ("Config", "Labels"), ("ps", "-aq", "--no-trunc", "--filter")),
+            ("network", ("Labels",), ("network", "ls", "-q", "--no-trunc", "--filter")),
+        ):
+            ids = set(run("docker", *list_args, f"label=com.docker.compose.project={self.project}").splitlines())
+            if kind == "network":
+                expected = {self.project + "_default", self.project + "_upload"}
+                for line in run("docker", "network", "ls", "--no-trunc", "--format", "{{.ID}} {{.Name}}").splitlines():
+                    network_id, name = line.split(maxsplit=1)
+                    if name in expected:
+                        ids.add(network_id)
+            if ids:
+                for row in json.loads(run("docker", kind, "inspect", *sorted(ids))):
+                    labels = row
+                    for key in labels_key:
+                        labels = labels[key]
+                    if not self.matches_owner(labels):
+                        raise RuntimeError(f"Refusing unowned Compose {kind}: {row['Name']}")
+        return self.guard_volumes()
+
+    def create_volume(self, role):
+        name = f"{self.project}_{role}"
+        if name in self.volume_inventory() or name in self.ownership["volumes"]:
+            raise RuntimeError(f"Volume must be fresh: {name}")
+        labels = ("--label", f"com.docker.compose.project={self.project}", "--label", f"com.docker.compose.volume={role}")
+        run("docker", "volume", "create", *self.docker_labels(), *labels, name)
+        row = json.loads(run("docker", "volume", "inspect", name))[0]
+        if not self.matches_owner(row["Labels"]):
+            raise RuntimeError(f"Volume creation returned an unowned resource: {name}")
+        self.ownership["volumes"][name] = self.volume_identity(row)
+        self.save_ownership()
+        return name
+
+    def require_volume(self, name):
+        row = json.loads(run("docker", "volume", "inspect", name))[0]
+        if not self.matches_owner(row["Labels"]) or self.volume_identity(row) != self.ownership["volumes"].get(name):
+            raise RuntimeError(f"Refusing unowned or replaced Docker volume: {name}")
+
+    def remove_volume(self, name):
+        self.require_volume(name)
+        run("docker", "volume", "rm", name)
+        del self.ownership["volumes"][name]
+        self.save_ownership()
 
     def dist(self, *args, **kwargs):
         return self.compose("exec", "-T", "dist", *args, **kwargs)
@@ -92,6 +191,9 @@ class Fixture:
         )) or run("docker", "image", "ls", "-q", self.image):
             raise ValueError("Run image already exists")
         self.work.mkdir(parents=True, exist_ok=False)
+        self.ownership = {"runId": self.run_id, "owner": uuid.uuid4().hex, "volumes": {}}
+        os.environ["UEDT_OWNER_TOKEN"] = self.ownership["owner"]
+        self.save_ownership()
         self.context.mkdir()
         for template in TEMPLATES.iterdir():
             if template.is_file() and template.name not in {"README.md", "compose.yaml"}:
@@ -123,10 +225,14 @@ class Fixture:
             shutil.copytree(source.parent, destination)
 
     def up(self, server_multi):
+        volumes = self.guard_docker()
+        for role in ("store", "config", "keys"):
+            if f"{self.project}_{role}" not in volumes:
+                self.create_volume(role)
         self.compose("build", "dist", timeout=900)
         audited_image = run("docker", "image", "inspect", "--format", "{{.Id}}", self.image)
         audit = (TEMPLATES / "check-elf.sh").read_text(encoding="utf-8")
-        elf = run("docker", "run", "--rm", "-i", "--network", "none", "--label", f"uedt.run={self.run_id}",
+        elf = run("docker", "run", "--rm", "-i", "--network", "none", *self.docker_labels(),
                   "--mount", f"type=bind,source={server_multi},target=/mnt/server-multi,readonly",
                   "--entrypoint", "bash", self.image, "-s", input_text=audit)
         (self.work / "elf-readelf.txt").write_text(elf + "\n", encoding="utf-8")
@@ -152,9 +258,7 @@ class Fixture:
         self.unknown_root()
 
     def unknown_root(self):
-        volume = self.project + "_unknown"
-        label = f"uedt.run={self.run_id}"
-        run("docker", "volume", "create", "--label", label, volume)
+        volume = self.create_volume("unknown")
         script = r"""
 set -euo pipefail
 root=/dt/store
@@ -179,23 +283,34 @@ grep -F 'UnrecognizedLayout:' /tmp/migrate.log
 printf '%s\n' "$before"
 """
         try:
-            evidence = run("docker", "run", "--rm", "-i", "--network", "none", "--label", label,
+            self.require_volume(volume)
+            self.require_volume(f"{self.project}_config")
+            evidence = run("docker", "run", "--rm", "-i", "--network", "none", *self.docker_labels(),
                            "--mount", f"type=volume,source={volume},target={ROOT},volume-nocopy",
                            "--mount", f"type=volume,source={self.project}_config,target=/dt/config,readonly",
                            "--entrypoint", "bash", self.image, "-s", input_text=script)
             (self.work / "unknown-root.txt").write_text(evidence + "\n", encoding="utf-8")
         finally:
-            run("docker", "volume", "rm", volume)
+            self.remove_volume(volume)
 
     def down(self):
-        label = f"label=uedt.run={self.run_id}"
+        self.guard_docker()
+        label = f"label=uedt.owner={self.ownership['owner']}"
         for container in run("docker", "ps", "-aq", "--filter", label).splitlines():
-            name = run("docker", "inspect", "--format", "{{.Name}}", container).lstrip("/")
-            if name in {self.linux, self.simulator}:
-                run("docker", "rm", "-f", container)
-        self.compose("--profile", "setup", "down", "-v", timeout=120)
+            row = json.loads(run("docker", "container", "inspect", container))[0]
+            labels = row["Config"]["Labels"]
+            compose_service = (labels.get("com.docker.compose.project") == self.project and
+                               labels.get("com.docker.compose.oneoff") == "False")
+            if self.matches_owner(labels) and not compose_service:
+                run("docker", "rm", "-f", row["Id"])
+        self.compose("--profile", "setup", "down", timeout=120)
+        for volume in self.guard_volumes():
+            self.remove_volume(volume)
         for image in set(run("docker", "image", "ls", "-aq", "--no-trunc", "--filter", label).splitlines()):
-            run("docker", "image", "rm", image)
+            row = json.loads(run("docker", "image", "inspect", image))[0]
+            if not self.matches_owner(row["Config"]["Labels"]):
+                raise RuntimeError(f"Refusing unowned Docker image: {image}")
+            run("docker", "image", "rm", row["Id"])
         residual = {category: run("docker", *args, "--filter", label).splitlines() for category, args in (
             ("container", ("ps", "-aq")), ("network", ("network", "ls", "-q")),
             ("volume", ("volume", "ls", "-q")), ("image", ("image", "ls", "-aq")))}
@@ -207,11 +322,11 @@ printf '%s\n' "$before"
         network = self.project + "_default"
         dist = self.compose("ps", "-q", "dist")
         ip = self.container_address(dist, network)
-        label = f"uedt.run={self.run_id}"
         run("docker", "build", "--platform", "linux/amd64", "--build-arg", f"RUN_ID={self.run_id}",
+            "--build-arg", f"OWNER_TOKEN={self.ownership['owner']}",
             "-t", self.sim_image, self.work / "sim-context", timeout=900)
-        run("docker", "run", "-d", "--init", "--name", self.simulator, "--label", label, "--network", network,
-            "--add-host", f"host.docker.internal:{ip}", self.sim_image, "sleep", "infinity")
+        simulator_id = run("docker", "run", "-d", "--init", "--name", self.simulator, *self.docker_labels(),
+                           "--network", network, "--add-host", f"host.docker.internal:{ip}", self.sim_image, "sleep", "infinity")
         try:
             peer = self.container_address(self.simulator, network)
             registration = self.work / "simulator-public.json"
@@ -243,7 +358,10 @@ printf '%s\n' "$before"
             self.save("direct-proof.json", {"origin": ORIGIN, "dist": ip, "simulator": peer, "logs": matching,
                                             "getStatus": 200, "rangeStatus": 206, "contentRange": expected_range})
         finally:
-            run("docker", "rm", "-f", self.simulator)
+            row = json.loads(run("docker", "container", "inspect", simulator_id))[0]
+            if not self.matches_owner(row["Config"]["Labels"]):
+                raise RuntimeError("Refusing unowned simulator cleanup")
+            run("docker", "rm", "-f", row["Id"])
 
     @staticmethod
     def container_address(container, network):
@@ -305,7 +423,16 @@ printf '%s\n' "$before"
         container = self.compose("ps", "-q", "sshd")
         instance = json.loads(run("docker", "inspect", container))[0]
         mounts = {entry["Destination"]: entry for entry in instance["Mounts"]}
-        expected = {f"{ROOT}/incoming": True, f"{ROOT}/upload-status": False}
+        expected = {f"{SSH_ROOT}/incoming": True, f"{SSH_ROOT}/upload-status": False}
+        network = self.project + "_upload"
+        if set(instance["NetworkSettings"]["Networks"]) != {network}:
+            raise RuntimeError("sshd must have its own upload network, separate from dist")
+        ssh_namespace = self.compose("exec", "-T", "sshd", "readlink", "/proc/1/ns/net")
+        backend_namespace = self.dist("readlink", "/proc/1/ns/net")
+        if ssh_namespace == backend_namespace:
+            raise RuntimeError("sshd is sharing the backend loopback namespace")
+        if instance["HostConfig"]["PortBindings"] != {"22/tcp": [{"HostIp": "127.0.0.1", "HostPort": "12222"}]}:
+            raise RuntimeError("sshd must expose only the approved Windows loopback port")
         if {path: item["RW"] for path, item in mounts.items()} != expected:
             raise RuntimeError("Unexpected sshd mount paths or modes")
         if {item["Name"] for item in mounts.values()} != {self.project + "_store"}:
@@ -325,12 +452,13 @@ printf '%s\n' "$before"
             raise RuntimeError(f"Status file ownership or mode differs: {statuses}")
         probe = (
             'set -eu; test "$(id -un)" = uploader; '
-            'for p in /dt/store/authority /dt/store/releases /dt/store/processing /dt/config /dt/keys; do '
+            'jail=/dt/upload-jail; '
+            'for p in "$jail/dt/store/authority" "$jail/dt/store/releases" "$jail/dt/store/processing" "$jail/dt/config" "$jail/dt/keys"; do '
             'if ls -A "$p" >/dev/null 2>&1; then exit 1; fi; done; '
-            'status=$(find /dt/store/upload-status -maxdepth 1 -type f -name "*.json" -print -quit); '
+            'status=$(find "$jail/dt/store/upload-status" -maxdepth 1 -type f -name "*.json" -print -quit); '
             'test -n "$status"; cat "$status" >/dev/null; '
-            'if touch /dt/store/upload-status/.permission-probe 2>/dev/null; then exit 1; fi; '
-            'probe=$(mktemp /dt/store/incoming/.permission-probe-XXXXXX); '
+            'if touch "$jail/dt/store/upload-status/.permission-probe" 2>/dev/null; then exit 1; fi; '
+            'probe=$(mktemp "$jail/dt/store/incoming/.permission-probe-XXXXXX"); '
             'printf success > "$probe"; test "$(cat "$probe")" = success; rm -- "$probe"'
         )
         self.compose("exec", "-T", "sshd", "setpriv", "--reuid=uploader", "--regid=uedt-upload",
@@ -349,6 +477,8 @@ printf '%s\n' "$before"
             "mounts": [{"volume": v["Name"], "path": v["Destination"], "writable": v["RW"],
                         "subpath": subpaths[v["Destination"]]} for v in mounts.values()],
             "probeExit": 0, "permissions": permissions.splitlines(), "statusModes": statuses.splitlines(),
+            "sshdNetwork": network, "backendNamespaceShared": False,
+            "sshdNamespace": ssh_namespace, "backendNamespace": backend_namespace,
         })
 
     def measure(self, launcher, source):
@@ -420,8 +550,8 @@ printf '%s\n' "$before"
         command = 'cd "$1" && find authority releases -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum'
         before = self.dist("bash", "-e", "-o", "pipefail", "-c", command, "_", ROOT)
         (self.work / "restart-before.sha256").write_text(before + "\n", encoding="utf-8")
-        # The sidecars share dist's network namespace. Stop them before that
-        # namespace goes away and rejoin after the new backend is healthy.
+        # nginx shares dist's network namespace. Bring the frontends back only
+        # after the restarted backend has established its new namespace.
         self.compose("stop", "nginx", "sshd")
         self.compose("restart", "--no-deps", "dist")
         container = self.compose("ps", "--all", "-q", "dist")
@@ -557,12 +687,15 @@ printf '%s\n' "$before"
             raise RuntimeError("Prepare and promote the synthetic Linux release first")
 
         def start(alias=None):
-            owned = run("docker", "ps", "-aq", "--filter", f"label=uedt.run={self.run_id}",
+            owned = run("docker", "ps", "-aq", "--filter", f"label=uedt.owner={self.ownership['owner']}",
                         "--filter", f"name=^/{self.linux}$")
             if owned:
-                run("docker", "rm", "-f", owned)
+                row = json.loads(run("docker", "container", "inspect", owned))[0]
+                if not self.matches_owner(row["Config"]["Labels"]):
+                    raise RuntimeError("Refusing unowned Linux client cleanup")
+                run("docker", "rm", "-f", row["Id"])
             hosts = ["--add-host", f"host.docker.internal:{alias}"] if alias else []
-            run("docker", "run", "-d", "--init", "--name", self.linux, "--label", f"uedt.run={self.run_id}",
+            run("docker", "run", "-d", "--init", "--name", self.linux, *self.docker_labels(),
                 "--network", self.project + "_default", *hosts, "--entrypoint", "/usr/bin/sleep", self.image, "infinity")
 
         alias = "host-gateway" if linux_host_gateway else None

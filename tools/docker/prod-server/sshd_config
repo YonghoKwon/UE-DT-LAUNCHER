@@ -7,6 +7,11 @@ PermitRootLogin no
 PasswordAuthentication no
 ChallengeResponseAuthentication no
 DisableForwarding yes
+PermitTunnel no
 PermitTTY no
+PermitUserEnvironment no
+PermitUserRC no
 UsePAM no
-Subsystem sftp internal-sftp
+ChrootDirectory /dt/upload-jail
+ForceCommand /upload-command.sh
+Subsystem sftp /usr/libexec/openssh/sftp-server

@@ -4,6 +4,7 @@ x-image: &image
   init: true
   labels: &labels
     uedt.run: ${UEDT_RUN_ID:?set UEDT_RUN_ID}
+    uedt.owner: ${UEDT_OWNER_TOKEN:?run stage first}
 
 services:
   dist:
@@ -12,11 +13,11 @@ services:
       context: ${UEDT_BUILD_CONTEXT:?set UEDT_BUILD_CONTEXT}
       args:
         RUN_ID: ${UEDT_RUN_ID:?set UEDT_RUN_ID}
+        OWNER_TOKEN: ${UEDT_OWNER_TOKEN:?run stage first}
         ROCKY_IMAGE: docker.io/rockylinux/rockylinux:8.4@sha256:f0d7460b97156f6c8ea2ae73152bc11fe410d272387d60ddff36dfcea22ef689
     command: [dist]
     ports:
       - "192.168.0.2:18080:80"
-      - "127.0.0.1:12222:22"
     volumes:
       - store:/dt/store
       - config:/dt/config:ro
@@ -41,20 +42,22 @@ services:
   sshd:
     <<: *image
     command: [sshd]
-    network_mode: "service:dist"
+    networks: [upload]
+    ports:
+      - "127.0.0.1:12222:22"
     depends_on:
       dist:
         condition: service_healthy
     volumes:
       - type: volume
         source: store
-        target: /dt/store/incoming
+        target: /dt/upload-jail/dt/store/incoming
         volume:
           nocopy: true
           subpath: incoming
       - type: volume
         source: store
-        target: /dt/store/upload-status
+        target: /dt/upload-jail/dt/store/upload-status
         read_only: true
         volume:
           nocopy: true
@@ -75,3 +78,4 @@ volumes:
 
 networks:
   default: {labels: *labels}
+  upload: {labels: *labels}

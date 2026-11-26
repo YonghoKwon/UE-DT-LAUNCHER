@@ -64,6 +64,10 @@ case "${1:-}" in
         ;;
     sshd)
         umask 0077
+        install -d -m 0755 /dt/upload-jail/dev
+        if [[ ! -c /dt/upload-jail/dev/null ]]; then
+            mknod -m 0666 /dt/upload-jail/dev/null c 1 3
+        fi
         test -s "$tools/ssh_host_ed25519_key" ||
             ssh-keygen -q -t ed25519 -N '' -f "$tools/ssh_host_ed25519_key"
         exec /usr/sbin/sshd -D -e -f /etc/ssh/uedt-sshd_config

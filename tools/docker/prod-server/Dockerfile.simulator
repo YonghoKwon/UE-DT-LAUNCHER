@@ -1,5 +1,6 @@
 FROM docker.io/library/python:3.12-slim@sha256:4a68d3169325c47e1bafbb86425220f03fbdff6f079a419e8d39407183288217
 ARG RUN_ID
-LABEL uedt.run=$RUN_ID
+ARG OWNER_TOKEN
+LABEL uedt.run=$RUN_ID uedt.owner=$OWNER_TOKEN
 RUN pip install --no-cache-dir --only-binary=:all: cryptography==43.0.0 cffi==1.17.1 pycparser==2.22
 COPY large_download_driver.py /driver.py
