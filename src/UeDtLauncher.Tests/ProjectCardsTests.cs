@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Net;
 using System.Reflection;
 using Avalonia.Automation;
@@ -248,8 +249,27 @@ public sealed class ProjectCardsTests
         Assert.Equal("프로그램 A — 작업 취소 완료", AutomationProperties.GetName(fixture.Find<Button>("card-open-a")));
         Assert.Contains("작업 취소 완료 · 다시 확인해 주세요.", fixture.Texts());
         Assert.Equal("다시 확인", AutomationProperties.GetName(fixture.Find<Button>("card-action-a")));
-        Click(fixture.Find<Button>("card-action-a"));
-        await WaitFor(() => fixture.Backend.Checks.Count == 7 && !fixture.Model.Running);
+
+        var beforeRefresh = fixture.Backend.Checks.Count;
+        var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnRunningChanged(object? sender, PropertyChangedEventArgs args)
+        {
+            // Catalog refresh also becomes idle, before the card status checks start.
+            if (args.PropertyName == nameof(LauncherDashboardViewModel.Running) && !fixture.Model.Running &&
+                fixture.Backend.Checks.Count > beforeRefresh)
+                completed.TrySetResult();
+        }
+
+        fixture.Model.PropertyChanged += OnRunningChanged;
+        try
+        {
+            Click(fixture.Find<Button>("card-action-a"));
+            await completed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally { fixture.Model.PropertyChanged -= OnRunningChanged; }
+
+        Assert.Equal(new[] { "a", "b", "c", "a", "a", "b", "c" }, fixture.Backend.Checks);
+        Assert.False(fixture.Model.Running);
         Assert.Equal(1, fixture.Backend.Executions);
     }
 
