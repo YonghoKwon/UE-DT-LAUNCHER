@@ -6,6 +6,7 @@
 
 | 기록 | 내용 |
 |---|---|
+| [PROD-04B Docker SSH 업로드 상태](validation/prod-04b-ssh-status.md) · [정제 증거](validation/prod-04b-ssh-status-evidence.json) | 같은 업로드 ID 상태 전이, SSH 복구 전후 해시, jail과 서버 원본 UID 권한, Docker 정리 검증 |
 | [PROD-03I 실제 SSH 업로드](validation/prod-03i-ssh-upload.md) | Windows에서 Rocky 8.4로 실제 전송 두 건, 승인 대기, 전송 중단·중복·키 불일치, Docker 정리 검증 |
 | [fix-01 추가 검증](validation/sprint-01-quality-admin-validation.md) · [fix-01 정제 프로세스](validation/sprint-01-fix-01-process-evidence.json) · [자동화 입력](validation/sprint-01-fix-01-runtime.json) | 1차 리뷰35dde8a/926건 보존 후 2e4b8f9 제품 입력966건·readiness8/headless3. 사람용 출력·사전 점검·소유 사본 정리·번호 콘솔·내용 해시 없는 목록. 실제 SSH 성공/운영 인수 별도 |
 | [SPRINT-01 품질·관리 편의](validation/sprint-01-quality-admin-validation.md) · [정제 프로세스](validation/sprint-01-process-evidence.json) · [현재 자동화 입력](validation/sprint-01-runtime.json) · [현재 생성 진행표](validation/local-completion-progress.md) | 2026-11-12, e24aa93 Windows890·readiness8/headless3, 이전 후보의 인코딩 실패 보존. 실제 SSH/GUI/회사 인수 미실행 |
