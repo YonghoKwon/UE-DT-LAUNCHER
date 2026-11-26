@@ -121,17 +121,15 @@ public sealed partial class IntakeStore
 
     internal ThrottledPackageProgress Progress(string id, IProgress<PackageWorkProgress>? observer = null)
     {
-        var claimId = IntakeJobs.Read(Authority.ReadSnapshot()).Jobs.Find(job => job.Id == id)?.ClaimId;
+        Guid? claimId = null;
+        try { claimId = IntakeJobs.Read(Authority.ReadSnapshot()).Jobs.Find(job => job.Id == id)?.ClaimId; }
+        catch (Exception error) when (IsAdvisoryProgressError(error)) { }
+
         return new(value =>
         {
             if (claimId is { } claim)
-            {
-                using var writer = LockWriter();
-                var current = IntakeJobs.Read(Authority.ReadSnapshot()).Jobs.Find(job => job.Id == id);
-                if (current?.ClaimId == claim)
-                    WriteProgress(new(id, claim, value.Phase, value.ProcessedBytes, value.TotalBytes,
-                        value.EstimatedAdditionalDiskBytes, DateTimeOffset.UtcNow.ToString("O")));
-            }
+                WriteProgressIfWriterAvailable(new(id, claim, value.Phase, value.ProcessedBytes, value.TotalBytes,
+                    value.EstimatedAdditionalDiskBytes, DateTimeOffset.UtcNow.ToString("O")));
             observer?.Report(value);
         });
     }
@@ -158,6 +156,23 @@ public sealed partial class IntakeStore
         }
     }
 
+    private void WriteProgressIfWriterAvailable(StoredProgress progress)
+    {
+        try
+        {
+            // Advisory progress gets one writer attempt; job state and audit still use the required lease.
+            using var writer = Authority.LockProgress();
+            var current = IntakeJobs.Read(Authority.ReadSnapshot()).Jobs.Find(job => job.Id == progress.Job);
+            if (current?.ClaimId == progress.ClaimId)
+                WriteProgress(progress);
+        }
+        catch (Exception error) when (IsAdvisoryProgressError(error))
+        {
+            // An unavailable writer or snapshot must not fail package work.
+        }
+    }
+
+    // Both the best-effort report and SaveJob publish progress under their already acquired lease.
     private void WriteProgress(StoredProgress progress)
     {
         try
@@ -172,9 +187,12 @@ public sealed partial class IntakeStore
             }
             finally { AuthorityDisk.TryDelete(temporary); }
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException)
+        catch (Exception error) when (IsAdvisoryProgressError(error))
         {
             // An unavailable progress file must not fail package work or change its authoritative state.
         }
     }
+
+    private static bool IsAdvisoryProgressError(Exception error) =>
+        error is IOException or UnauthorizedAccessException or InvalidDataException or JsonException or InvalidOperationException;
 }
