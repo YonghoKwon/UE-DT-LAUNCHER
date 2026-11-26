@@ -234,10 +234,10 @@ public sealed class DistributionPerformanceTests
     }
 
     [Fact]
-    public async Task HttpCatalogAndBackgroundClaimsProgressAndPublicationShareSqlCoordination()
+    public async Task HttpCatalogAndBackgroundClaimsProgressAndPublicationShareFileAuthority()
     {
         await using var server = await ServerFixture.CreateAsync();
-        // Separate store objects for the same root must participate in the same process-local gate.
+        // The background stores and HTTP server share the root's authority writer lease.
         var stores = new[] { new IntakeStore(server.Store.Settings), new IntakeStore(server.Store.Settings) };
         var uploads = new List<string>();
         for (var index = 0; index < 8; index++)
@@ -252,25 +252,15 @@ public sealed class DistributionPerformanceTests
             uploads.Add(upload);
         }
         var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var observerProbe = 0;
         var progressCount = 0;
         var writes = stores.Select((store, worker) => Task.Run(async () =>
         {
             await start.Task;
             for (var index = worker; index < uploads.Count; index += stores.Length)
             {
-                var job = await store.IngestAsync(uploads[index], observer: new InlinePackageProgress(_ =>
-                {
-                    Interlocked.Increment(ref progressCount);
-                    if (Interlocked.CompareExchange(ref observerProbe, 1, 0) == 0)
-                    {
-                        // Deadlock guard, not a throughput assertion: observers must run outside the SQL gate.
-                        var nestedWrite = Task.Run(() => server.Store.Audit("observer-probe", "synthetic"));
-                        Assert.True(nestedWrite.Wait(TimeSpan.FromSeconds(15)), "Progress observer retained the database gate.");
-                        nestedWrite.GetAwaiter().GetResult();
-                    }
-                }));
-                Assert.Equal("pending", job.State);
+                var job = await store.IngestAsync(uploads[index],
+                    observer: new InlinePackageProgress(_ => Interlocked.Increment(ref progressCount)));
+                Assert.True(job.State == "pending", $"Expected pending, got {job.State}: {job.Message}");
                 await new ApprovedPublisher(store).ApproveAsync(job.Id);
                 Assert.Equal("published", store.Get(job.Id).State);
             }

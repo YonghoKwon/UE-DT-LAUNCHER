@@ -67,6 +67,27 @@ public sealed class IntakePerformanceTests(ITestOutputHelper testOutput) : IDisp
     }
 
     [Fact]
+    public async Task IntakeProgressObserverCanCommitAuditOutsideTheAuthorityWriterLease()
+    {
+        var store = new IntakeStore(new() { Root = root });
+        var observerStore = new IntakeStore(store.Settings);
+        var checkedLease = false;
+        var job = await store.IngestAsync(await Package(store), observer: new InlineProgress(_ =>
+        {
+            if (checkedLease) return;
+            // No other writers use this fixture. An exclusive open fails immediately if progress still owns the lease.
+            using (File.Open(Path.Combine(root, ".writer.lock"), FileMode.Open, FileAccess.ReadWrite, FileShare.None)) { }
+            observerStore.Audit("observer-probe", "synthetic");
+            checkedLease = true;
+        }));
+
+        Assert.True(job.State == "pending", $"Expected pending, got {job.State}: {job.Message}");
+        Assert.True(checkedLease);
+        var snapshot = store.Authority.ReadSnapshot();
+        Assert.Single(store.Authority.ReadAudit(snapshot), entry => entry.Action == "observer-probe" && entry.Job == "synthetic");
+    }
+
+    [Fact]
     public async Task CleanupSkipsLiveScratchWhileAnotherJobCanIngest()
     {
         var store = new IntakeStore(new() { Root = root });
