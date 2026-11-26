@@ -6,7 +6,7 @@ public static partial class Program
 {
     private static readonly string[] ValueOptions =
     [
-        "--server", "--remote-incoming", "--port", "--identity-file", "--upload-id",
+        "--server", "--remote-incoming", "--remote-status", "--port", "--identity-file", "--upload-id", "--timeout",
         "--allowed-profiles",
         "--allowlist",
         "--app-id",
@@ -91,9 +91,11 @@ public static partial class Program
         output.WriteLine("Current commands (distribution server mode):");
         output.WriteLine("  upload init --output upload.profile.json [--force]");
         output.WriteLine("  upload project-init --output ma0t10.project.json [--force]");
-        output.WriteLine("  upload check --profile upload.profile.json (또는 --server user@host --remote-incoming /absolute/incoming)");
+        output.WriteLine("  upload check --profile upload.profile.json (또는 --server user@host --remote-incoming /dt/store/incoming)");
         output.WriteLine("    키 인증 전용(BatchMode): 비밀번호를 묻지 않습니다. 최초 호스트 키 등록은 터미널 ssh로 확인하세요.");
-        output.WriteLine("  upload --zip package.zip --project-id id --version version --platform windows-x64|linux-x64 --entry-point app [--profile upload.profile.json] [--server user@host --remote-incoming /absolute/incoming] [--port 22] [--identity-file path] [--upload-id id] [--dry-run]");
+        output.WriteLine("  upload status --upload-id <ID> [--profile upload.profile.json] [--remote-status /dt/store/upload-status] [--wait] [--timeout <초>] [--interval <초>] [--format text|json]");
+        output.WriteLine("    읽기 전용 SSH 조회. --wait 기본 제한 1800초, 간격 5초. 종료 0 성공, 1 조회 실패, 2 입력 오류, 3 검사 실패·거절, 4 제한시간 초과.");
+        output.WriteLine("  upload --zip package.zip --project-id id --version version --platform windows-x64|linux-x64 --entry-point app [--profile upload.profile.json] [--server user@host --remote-incoming /dt/store/incoming] [--port 22] [--identity-file path] [--upload-id id] [--dry-run]");
         output.WriteLine("  upload --profile upload.profile.json --project-profile ma0t10.project.json --zip Windows.zip --version 1.4.0 --notes-file notes.md --dry-run");
         output.WriteLine("    실제 접속 정보를 준비한 뒤 --dry-run을 빼면 전송합니다.");
         output.WriteLine("    명령줄 > 프로젝트 프로필 > 기본값. --project-profile만 주는 dry-run은 예시 접속 정보를 사용합니다.");

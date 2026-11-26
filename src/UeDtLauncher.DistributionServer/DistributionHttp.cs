@@ -12,12 +12,9 @@ public static class DistributionHttp
     public static async Task RunAsync(IntakeStore store)
     {
         await using var app = CreateApplication(store);
-        var scanner = Task.Run(async () =>
-        {
-            var token = app.Lifetime.ApplicationStopping;
-            try { while (!token.IsCancellationRequested) { await store.ScanAsync(token); await Task.Delay(2000, token); } }
-            catch (OperationCanceledException) { }
-        });
+        var scanner = Task.Run(() => UploadStatusScanner.RunAsync(store,
+            error => app.Logger.LogWarning("업로드 상태 파일을 갱신할 수 없습니다. 서버 상태 폴더를 확인하세요. ({ErrorType})",
+                error.GetType().Name), app.Lifetime.ApplicationStopping));
         await app.RunAsync(); await scanner;
     }
 

@@ -2,36 +2,69 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace UeDtLauncher;
 
-public sealed record UploadProfile(string? Server = null, string? RemoteIncoming = null, int? Port = null, string? IdentityFile = null)
+public sealed record UploadProfile(string? Server = null, string? RemoteIncoming = null, int? Port = null,
+    string? IdentityFile = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RemoteStatus = null)
 {
     public UploadProfile Override(UploadProfile command) => new(command.Server ?? Server,
-        command.RemoteIncoming ?? RemoteIncoming, command.Port ?? Port, command.IdentityFile ?? IdentityFile);
+        command.RemoteIncoming ?? RemoteIncoming, command.Port ?? Port, command.IdentityFile ?? IdentityFile,
+        command.RemoteStatus ?? RemoteStatus);
 
     public void Validate()
     {
+        ValidateServer();
+        ValidateRemotePath(RemoteIncoming, "--remote-incoming");
+        ValidateLocalOptions();
+    }
+
+    internal string ResolveStatusDirectory()
+    {
+        ValidateServer();
+        ValidateLocalOptions();
+        if (RemoteStatus is not null) return ValidateRemotePath(RemoteStatus, "--remote-status");
+        var incoming = ValidateRemotePath(RemoteIncoming, "--remote-incoming");
+        return incoming[..incoming.LastIndexOf('/')] + "/upload-status";
+    }
+
+    private void ValidateServer()
+    {
         if (Server is null || !Regex.IsMatch(Server, @"\A[A-Za-z0-9_][A-Za-z0-9._-]*@[A-Za-z0-9][A-Za-z0-9.-]*\z"))
             throw new ArgumentException("--server requires an allowlisted user@host.");
-        if (RemoteIncoming is null || !RemoteIncoming.StartsWith('/') ||
-            RemoteIncoming[1..].Split('/').Any(s => s is "" or "." or ".." || !Regex.IsMatch(s, @"\A[A-Za-z0-9._-]+\z")))
-            throw new ArgumentException("--remote-incoming requires an absolute path with safe segments.");
+    }
+
+    private void ValidateLocalOptions()
+    {
         if (Port is < 1 or > 65535) throw new ArgumentException("--port must be 1..65535.");
         if (IdentityFile is not null && (!File.Exists(IdentityFile) || IdentityFile.Any(char.IsControl)))
             throw new ArgumentException("--identity-file must name an existing local file.");
     }
 
+    private static string ValidateRemotePath(string? path, string option)
+    {
+        if (path is null || !path.StartsWith('/') ||
+            path[1..].Split('/').Any(s => s is "" or "." or ".." || !Regex.IsMatch(s, @"\A[A-Za-z0-9._-]+\z")))
+            throw new ArgumentException(option + " requires an absolute path with safe segments.");
+        return path;
+    }
+
     public static Task InitializeAsync(string output, bool force) => JsonFiles.WriteAsync(output,
-        new UploadProfile("upload-user@server.example", "/srv/ue-dt/incoming", 22), force);
+        new UploadProfile("upload-user@server.example", "/dt/store/incoming", 22), force);
 }
 
 public interface IUploadProcessRunner
 {
     bool IsAvailable(string executable);
     Task<int> RunAsync(string executable, IReadOnlyList<string> arguments, CancellationToken token);
+    Task<UploadProcessOutput> CaptureAsync(string executable, IReadOnlyList<string> arguments, int maximumBytes, CancellationToken token)
+        => throw new NotSupportedException("This OpenSSH runner does not support output capture.");
 }
+
+public sealed record UploadProcessOutput(int ExitCode, byte[] StandardOutput);
 
 public sealed class OpenSshProcessRunner : IUploadProcessRunner
 {
@@ -52,24 +85,61 @@ public sealed class OpenSshProcessRunner : IUploadProcessRunner
     }
     public bool IsAvailable(string executable) => FindExecutable(executable) is not null;
     public async Task<int> RunAsync(string executable, IReadOnlyList<string> arguments, CancellationToken token)
+        => (await RunCoreAsync(executable, arguments, 0, token)).ExitCode;
+
+    public Task<UploadProcessOutput> CaptureAsync(string executable, IReadOnlyList<string> arguments, int maximumBytes, CancellationToken token)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumBytes);
+        return RunCoreAsync(executable, arguments, maximumBytes, token);
+    }
+
+    private static async Task<UploadProcessOutput> RunCoreAsync(string executable, IReadOnlyList<string> arguments,
+        int maximumBytes, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
         var resolved = FindExecutable(executable) ?? throw new UploadExecutableMissingException();
         var start = new ProcessStartInfo(resolved) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (var argument in arguments) start.ArgumentList.Add(argument);
         using var process = Process.Start(start) ?? throw new IOException("OpenSSH process could not start.");
-        // Drain without retaining remote text, which may contain secrets or arbitrary terminal control sequences.
-        var stdout = DrainAsync(process.StandardOutput);
+        // Retain stdout only for the bounded status response. Never retain remote stderr.
+        var stdout = ReadOutputAsync(process.StandardOutput, maximumBytes, token);
         var stderr = DrainAsync(process.StandardError);
-        try { await process.WaitForExitAsync(token); }
-        catch (OperationCanceledException)
+        try
+        {
+            var exited = process.WaitForExitAsync(token);
+            // Overflow must abort even if ssh is still waiting for its stdout pipe to drain.
+            var completed = await Task.WhenAny(exited, stdout);
+            await completed;
+            await exited;
+            return new(process.ExitCode, await stdout);
+        }
+        finally
         {
             if (!process.HasExited) process.Kill(entireProcessTree: true);
             await process.WaitForExitAsync(CancellationToken.None);
-            await Task.WhenAll(stdout, stderr);
-            throw;
+            try { await stdout; }
+            catch (Exception error) when (error is IOException or InvalidDataException or OperationCanceledException) { }
+            await stderr;
         }
-        await Task.WhenAll(stdout, stderr);
-        return process.ExitCode;
+    }
+
+    private static async Task<byte[]> ReadOutputAsync(StreamReader reader, int maximumBytes, CancellationToken token)
+    {
+        if (maximumBytes == 0)
+        {
+            await DrainAsync(reader);
+            return [];
+        }
+        using var output = new MemoryStream();
+        var buffer = new byte[4096];
+        while (true)
+        {
+            var capacity = (int)Math.Min(buffer.Length, maximumBytes - output.Length + 1);
+            var read = await reader.BaseStream.ReadAsync(buffer.AsMemory(0, capacity), token);
+            if (read == 0) return output.ToArray();
+            if (output.Length + read > maximumBytes) throw new InvalidDataException("Upload status response exceeds the size limit.");
+            output.Write(buffer, 0, read);
+        }
     }
 
     private static async Task DrainAsync(StreamReader reader)

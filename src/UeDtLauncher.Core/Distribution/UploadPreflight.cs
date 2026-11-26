@@ -35,7 +35,12 @@ internal static class UploadTransport
         if (profile.IdentityFile is not null) { args.Add("-i"); args.Add(Path.GetFullPath(profile.IdentityFile)); }
         return args;
     }
-    internal static UploadStep Ssh(UploadProfile profile, string name, string command) => new(name, "ssh", [.. Options(profile, false), "-T", profile.Server!, command]);
+    internal static UploadStep Ssh(UploadProfile profile, string name, string command, bool closeInput = false)
+    {
+        var options = Options(profile, false);
+        if (closeInput) options.Add("-n");
+        return new(name, "ssh", [.. options, "-T", profile.Server!, command]);
+    }
 }
 
 public sealed class UploadPreflight(IUploadProcessRunner runner)

@@ -9,6 +9,8 @@ public static partial class Program
     {
         output ??= Console.Out;
         errors ??= Console.Error;
+        if (args.FirstOrDefault() == "status")
+            return await UploadStatusAsync(args, output, errors, runner ?? new OpenSshProcessRunner());
         var format = Get(args, "--format") ?? "text";
         if (format is not ("text" or "json")) throw new CliArgumentException("--format은 text 또는 json을 지정하세요.");
         int? port = null;
@@ -93,6 +95,9 @@ public static partial class Program
         {
             UploadPresentation.Write(output, result);
             input.WriteSummary(output);
+            if (result.Success && !result.DryRun)
+                output.WriteLine("상태 조회: upload status --upload-id " + HumanText.Safe(result.UploadId) +
+                    " --wait (같은 SSH 프로필 또는 서버 옵션 사용)");
             if (planWithoutDestination)
                 output.WriteLine("계획에 예시 목적지를 사용했습니다. 전송에는 실제 업로드 접속 프로필이나 서버 옵션이 필요합니다.");
         }
@@ -103,8 +108,7 @@ public static partial class Program
     {
         try
         {
-            var profile = path is null ? new UploadProfile() : await JsonFiles.ReadAsync<UploadProfile>(path);
-            profile = profile.Override(options);
+            var profile = await ReadUploadProfileAsync(path, options);
             profile.Validate();
             return profile;
         }
@@ -113,5 +117,11 @@ public static partial class Program
         {
             throw new CliArgumentException("--profile 및 서버, 원격 incoming, 포트, identity 파일 설정을 확인하세요.");
         }
+    }
+
+    private static async Task<UploadProfile> ReadUploadProfileAsync(string? path, UploadProfile options)
+    {
+        var profile = path is null ? new UploadProfile() : await JsonFiles.ReadAsync<UploadProfile>(path);
+        return profile.Override(options);
     }
 }

@@ -14,24 +14,24 @@ ZIP과 JSON은 별개 파일입니다. 내부 release.json은 분류에 사용�
 
 오프라인 유지보수(2026-10-03): 서버/watch/작업을 정상 중지 → `backup plan --config server.json` → `backup create --output 새백업 --config server.json` → `backup verify --backup 새백업 --config server.json`. private key는 별도 보관한다. 복원은 `restore stage --backup ... --target 빈폴더 --config 원본server.json` 후 `restore activate --target ... --confirm --config 원본server.json`이며 최신 생존 원본의 파일·보안·순번·승격·정책을 대조한다. 누락/불명이면 staged로 차단한다. 반환한 policyPath와 새 root를 운영 설정에 명시하고 별도 서명키를 준비한다. 회사 완전 유실 복구/RPO·RTO는 미검증이다.
 
-`dotnet publish src/UeDtLauncher.DistributionServer -c Release -r linux-x64 --self-contained true -o artifacts/distribution-server`로 생성하고 `/opt/ue-dt-distribution`에 설치합니다.
-전용 `uedt-distribution` 계정을 만들고 `/srv/ue-dt-distribution`을 소유하게 합니다. `processing`, `archive`, DB, 서명키는 업로드 계정에서 접근할 수 없어야 합니다. 업로드 계정에는 `incoming`만 쓸 수 있도록 그룹/ACL을 제한합니다.
+`dotnet publish src/UeDtLauncher.DistributionServer -c Release -r linux-x64 --self-contained true -o artifacts/distribution-server`로 생성하고 `/dt/publish/server-linux-x64`에 설치합니다.
+전용 `uedt-distribution` 계정이 `/dt/store`를 소유합니다. 업로드 계정에는 `/dt/store/incoming` 쓰기와 `/dt/store/upload-status` 읽기 권한을 부여합니다. `processing`, `archive`, `releases`, DB와 `/dt/keys`의 서명 개인키는 서비스 계정만 접근하도록 구성합니다.
 
-`/etc/ue-dt-distribution/server.json`:
+`/dt/config/server.json`:
 
 ```json
 {
-  "root": "/srv/ue-dt-distribution",
+  "root": "/dt/store",
   "publicUrl": "https://updates.example.com",
   "listenUrl": "http://127.0.0.1:18500",
-  "signingKeyPath": "/etc/ue-dt-distribution/release-private.pem",
+  "signingKeyPath": "/dt/keys/signing.pem",
   "signingKeyId": "release-1",
-  "policyPath": "/etc/ue-dt-distribution/access-policy.json",
+  "policyPath": "/dt/config/access-policy.json",
   "limits": {"maxExpandedBytes": 536870912000, "maxFiles": 250000, "maxZipBytes": 214748364800}
 }
 ```
 
-사이트 주소, 인증서, 크기 제한은 실제 패키지와 디스크 용량에 맞게 설정합니다. `packaging/linux/ue-dt-distribution.service`와 `distribution-nginx.conf`를 배포합니다. nginx의 auth_request 모듈을 확인하고 `nginx -t` 후 적용합니다. backend 18500은 외부에 열지 않습니다.
+사이트 주소, 인증서, 크기 제한은 실제 패키지와 디스크 용량에 맞게 설정합니다. `packaging/linux/ue-dt-distribution.service` 사본의 실행 파일·설정·쓰기 경로를 예시 배치에 맞춰 지정합니다. [서비스 경로 설정](feature-workflow.md#a2-linux-서버-구성--관리자)에 따라 서비스와 `distribution-nginx.conf`를 배포합니다. nginx의 auth_request 모듈을 확인하고 `nginx -t` 후 적용합니다. backend 18500은 외부에 열지 않습니다.
 새 전용 HTTPS 가상 호스트에는 기존 `/projects`, `/catalogs`, json 확장자별 공개 location을 혼합하지 않습니다. 공개 파일 루트를 지정하지 않아 incoming/DB/키에 접근할 수 없습니다.
 
 ## 2. 서명과 PC 권한
@@ -59,8 +59,8 @@ UeDtLauncher generate-signing-key --private-key release-private.pem --public-key
 빈 versions는 해당 트랙의 모든 버전을 의미합니다. grants가 비어 있으면 아무것도 허용하지 않습니다. 정책은 요청 시 다시 읽으므로 임시 파일에 작성 후 rename으로 적용합니다. 오류가 있으면 접근을 허용하지 않습니다.
 
 ```text
-UeDtLauncher.DistributionServer token-issue pc-a --config /etc/ue-dt-distribution/server.json
-UeDtLauncher.DistributionServer token-revoke pc-a --config /etc/ue-dt-distribution/server.json
+UeDtLauncher.DistributionServer token-issue pc-a --config /dt/config/server.json
+UeDtLauncher.DistributionServer token-revoke pc-a --config /dt/config/server.json
 UeDtLauncher credential set --name company-distribution
 ```
 
@@ -76,7 +76,7 @@ UeDtLauncher credential set --name company-distribution
 
 Windows PowerShell에서 `upload check --profile upload.profile.json`으로 최초 준비를 확인합니다. Linux 터미널은 `./UeDtLauncher upload check --profile upload.profile.json`을 사용합니다. 키 인증 전용(BatchMode)이고 비밀번호를 묻지 않으며, 미등록 호스트 키는 최초1회 터미널 ssh로 직접 확인·등록합니다. check는 디렉터리/쓰기 권한 조회만 하므로 실제 전송·디스크 공간·서비스 읽기 ACL 인수를 대신하지 않습니다. 기본 출력은 한국어이며 기계 연동에는 `--format json`을 붙입니다. 성공 시 소유 작업 사본만 정리하고 `--keep-work` 또는 실패 시에는 보존합니다.
 
-upload는 셸 없이 ArgumentList로 ssh/scp를 호출합니다. 원격 경로·계정/호스트·ID를 허용 문자로 검사하며 두 전송 성공 전에는 이름을 바꾸지 않습니다. 실패 시 단계·잔여 가능 자료를 확인하고 새 ID로 다시 접수합니다. 업로드 계정의 DB 조회·검사 결과 대기·자동 승인 기능은 없습니다. 실제 SSH 왕복과 운영 계정 수용은 [SPRINT-01 검증](archive/validation/sprint-01-quality-admin-validation.md)의 미실행 조건으로 남습니다.
+upload는 셸 없이 ArgumentList로 ssh/scp를 호출합니다. 원격 경로·계정/호스트·ID를 허용 문자로 검사하며 두 전송 성공 전에는 이름을 바꾸지 않습니다. 실패 시 단계·잔여 가능 자료를 확인하고 새 ID로 다시 접수합니다. `serve`와 `watch`는 첫 스캔 전에, 스캔 중에는 주기적으로, 스캔이 끝나면 다시 업로드 ID별 상태 JSON을 갱신합니다. 개발자는 같은 SSH 프로필로 `upload status --upload-id <ID> --wait`를 실행해 승인 대기까지 확인합니다. [B3 상태 조회·계정 권한](feature-workflow.md#b3-서버로-두-파일-올리기--개발-pc)
 
 **직접 실행 대안:**
 
@@ -95,9 +95,9 @@ upload는 셸 없이 ArgumentList로 ssh/scp를 호출합니다. 원격 경로·
 ### 3.1 개발자 검증 후 추천 승격
 
 ```bash
-./UeDtLauncher.DistributionServer promotion inspect --project-id demo --environment prod --channel stable --platform windows-x64 --config /etc/ue-dt-distribution/server.json
+./UeDtLauncher.DistributionServer promotion inspect --project-id demo --environment prod --channel stable --platform windows-x64 --config /dt/config/server.json
 # inspect의 revision을 아래 N으로 치환. 첫 승격은 0.
-./UeDtLauncher.DistributionServer promote --project-id demo --environment prod --channel stable --platform windows-x64 --version 1.2.0 --expected-revision N --reason '개발자 실행 검증 통과' --config /etc/ue-dt-distribution/server.json
+./UeDtLauncher.DistributionServer promote --project-id demo --environment prod --channel stable --platform windows-x64 --version 1.2.0 --expected-revision N --reason '개발자 실행 검증 통과' --config /dt/config/server.json
 ```
 
 프로젝트/환경/채널/플랫폼마다 독립적으로 지정합니다. Linux 판은 platform=linux-x64로 실행합니다. 승격은 파일·사용 중 앱·PC 권한을 변경하지 않습니다. v2 권한이 없는 PC는 허용된 이전 승격판을 추천받고, 승격 이력이 전혀 없는 PC는 지정 대기 안내를 봅니다. 이미 최신인 대상과 현재 revision으로 반복하면 no-op입니다. revision 변경 오류가 나면 inspect를 다시 확인한 후 판단합니다.
@@ -107,10 +107,10 @@ upload는 셸 없이 ArgumentList로 ssh/scp를 호출합니다. 원격 경로·
 기존 서버 프로세스를 중지하고 새 서버 바이너리로 아래 순서를 수행합니다. 회사 서비스 이름은 실제 설치 구성에 맞춥니다. 이전/구 서버를 같은 DB에 동시에 실행하지 않습니다.
 
 ```bash
-./UeDtLauncher.DistributionServer promotion migrate --dry-run --config /etc/ue-dt-distribution/server.json
-./UeDtLauncher.DistributionServer promotion migrate --apply --config /etc/ue-dt-distribution/server.json
-./UeDtLauncher.DistributionServer promotion inspect --project-id demo --environment prod --channel stable --platform windows-x64 --config /etc/ue-dt-distribution/server.json
-./UeDtLauncher.DistributionServer serve --config /etc/ue-dt-distribution/server.json
+./UeDtLauncher.DistributionServer promotion migrate --dry-run --config /dt/config/server.json
+./UeDtLauncher.DistributionServer promotion migrate --apply --config /dt/config/server.json
+./UeDtLauncher.DistributionServer promotion inspect --project-id demo --environment prod --channel stable --platform windows-x64 --config /dt/config/server.json
+./UeDtLauncher.DistributionServer serve --config /dt/config/server.json
 ```
 
 dry-run은 read-only DB 조회로 파일/DB를 변경하지 않습니다. apply의 schema 변경 전 SQLite 일관된 `distribution.pre-v4-*.db` 백업을 만들고, 기존 공개판 순서를 legacy-baseline으로 기록하여 PC별 기존 추천을 유지합니다. 반복 apply는 기준선을 중복 생성하지 않습니다. 기존 서버는 migration 전 serve를 거부하며, 새 빈 DB는 승격 이력이 없는 상태로 바로 시작합니다. baseline은 실제 수동 승격과 구분하고 이후 approve는 자동 승격하지 않습니다.

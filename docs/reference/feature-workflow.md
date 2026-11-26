@@ -66,7 +66,7 @@ flowchart LR
 | PC 추가 시 | A4 | 관리자 / 클라이언트 PC | Agent 운영 설정 + GUI 표시 설정 | status 성공, 게시·허용 릴리스가 있으면 check 성공 |
 | 버전마다 | B1 | 개발자 / Unreal·작업 PC | Windows/Linux 각각 패키징·ZIP | 완성된 ZIP |
 | 버전마다 | B2 | 개발자 / Windows PowerShell·Linux 터미널 | 쉬운 방법 `upload --zip …`가 ZIP 검사·외부 JSON 생성. 직접 실행 `release-metadata` | 새 작업 폴더의 payload.zip + release.json |
-| 버전마다 | B3 | 개발자 / 같은 PC | 같은 `upload`가 새 incoming 폴더 생성 → 두 전송 → 두 이름 변경 → 확인. 직접 실행 SSH/SCP | 최종 ZIP + JSON, .uploading 없음 |
+| 버전마다 | B3 | 개발자 / 같은 PC | 같은 `upload`가 새 incoming 폴더 생성 → 두 전송 → 두 이름 변경 → 확인. 전송 뒤 `upload status --upload-id <ID> --wait` | 최종 ZIP + JSON, 상태 조회에 승인 대기 또는 이후 상태 |
 | 자동 | B4 | 배포 서버 | 폴더 감지·크기/해시/경로/압축 검사 | `pending` 승인 대기 |
 | 버전마다 | B5 | 관리자 / Linux 터미널 | 쉬운 방법 `console` 1현황 → 2snapshot 상세 → 3승인·버전 재입력. 직접 실행 list/inspect/approve | `published`, 배포 폴더 자동 생성; 추천은 그대로 |
 | 검증 후 | B6 | 개발자·관리자 / PC·Linux | 개발자 exact 검증 → console 6현재 추천/revision·사유·버전 확인. 직접 실행 promotion inspect/promote | PC별 최신 추천 갱신; revision 변경은 재조회 |
@@ -105,10 +105,11 @@ $Launcher = (Resolve-Path .\publish\client-win-x64\UeDtLauncher.exe).Path
 
 | 준비물 | 배치 위치 / 입력 내용 | 확인할 점 |
 |---|---|---|
-| 배포 서버 publish 폴더 전체 | `/opt/ue-dt-distribution/` | Linux 실행 권한과 네이티브 의존성 |
-| 서버 설정 | `/etc/ue-dt-distribution/server.json` | root·publicUrl·서명키·policy 경로 |
-| 접근 정책 | `/etc/ue-dt-distribution/access-policy.json` | PC별 IP와 허용 프로젝트/트랙 |
-| 업로드 경로 | `/srv/ue-dt-distribution/incoming/` | 업로더 쓰기 + 서비스 계정 읽기/폴더 접근 |
+| 배포 서버 publish 폴더 전체 | `/dt/publish/server-linux-x64/` | Linux 실행 권한과 네이티브 의존성 |
+| 서버 설정 | `/dt/config/server.json` | root·publicUrl·서명키·policy 경로 |
+| 접근 정책 | `/dt/config/access-policy.json` | PC별 IP와 허용 프로젝트/트랙 |
+| 업로드 경로 | `/dt/store/incoming/` | 업로더 쓰기 + 서비스 계정 읽기/폴더 접근 |
+| 업로드 상태 | `/dt/store/upload-status/` | 서비스 계정 쓰기 + 업로더 읽기/폴더 접근 |
 | 비공개 처리·보관 | 같은 root의 processing·DB·releases | 업로더가 검사 snapshot·키·DB를 바꾸지 못함 |
 | 서명키 | 서버 개인키, PC 공개키 | ZIP/JSON에 개인키·토큰을 넣지 않음 |
 
@@ -119,9 +120,9 @@ New-Item -ItemType Directory -Force "$env:USERPROFILE\DT-Deploy\keys" | Out-Null
 & $Launcher generate-signing-key --private-key "$env:USERPROFILE\DT-Deploy\keys\release-private.pem" --public-key "$env:USERPROFILE\DT-Deploy\keys\release-public.pem" | Out-Host
 ```
 
-개인키는 서버 관리자가 안전한 경로로 받아 서버 서비스/승인 운영자만 읽도록 보호합니다. 공개키만 PC에 전달합니다. 이미 운영 중인 키를 배포할 때마다 새로 만들지 않습니다. TLS 인증서와 이 배포 서명키는 서로 다른 용도입니다.
+개인키는 서버 관리자가 안전한 경로로 받아 예시 배치의 `/dt/keys/signing.pem`에 저장하고 서버 서비스/승인 운영자만 읽도록 보호합니다. 공개키만 PC에 전달합니다. 이미 운영 중인 키를 배포할 때마다 새로 만들지 않습니다. TLS 인증서와 이 배포 서명키는 서로 다른 용도입니다.
 
-서버 설정 JSON 전문·정책 예시는 [통합 운영 가이드](distribution-workflow.md)를 사용합니다. 서비스 파일은 `packaging/linux/ue-dt-distribution.service`, nginx 예시는 `packaging/linux/distribution-nginx.conf`입니다. 템플릿의 도메인·TLS 경로를 실제 값으로 수정하고, 서버 관리자가 표준 설치 위치에 배치한 **후** 다음을 실행합니다.
+서버 설정 JSON 전문·정책 예시는 [통합 운영 가이드](distribution-workflow.md)를 사용합니다. 서비스 파일은 `packaging/linux/ue-dt-distribution.service`, nginx 예시는 `packaging/linux/distribution-nginx.conf`입니다. 서버 관리자가 서비스 사본의 `ExecStart`에 `/dt/publish/server-linux-x64/UeDtLauncher.DistributionServer serve --config /dt/config/server.json`을, `ReadWritePaths`에 `/dt/store`를 지정합니다. nginx의 도메인·TLS 경로를 실제 값으로 정하고 설정을 배치한 **후** 다음을 실행합니다.
 
 ```bash
 sudo systemctl daemon-reload
@@ -156,7 +157,7 @@ curl --silent --output /dev/null --write-out '%{http_code}\n' https://updates.ex
 Linux 서버에서 토큰 발급:
 
 ```bash
-sudo -u uedt-distribution /opt/ue-dt-distribution/UeDtLauncher.DistributionServer token-issue office-pc-01 --config /etc/ue-dt-distribution/server.json
+sudo -u uedt-distribution /dt/publish/server-linux-x64/UeDtLauncher.DistributionServer token-issue office-pc-01 --config /dt/config/server.json
 ```
 
 표시된 토큰은 해당 PC 관리자에게 안전하게 전달합니다. 토큰을 문서·Git·명령 인자·스크린샷에 붙여 넣지 않습니다. PC의 보호 저장소에 입력합니다.
@@ -221,6 +222,8 @@ flowchart TD
     paired -->|"아니오"| waiting["서버: 파일 대기"]
     waiting -->|"개발자: 원인 확인·새 ID로 재전송"| upload
     paired -->|"예"| validate["B4 서버: 비공개 검사"]
+    paired -->|"예: 업로드 ID 사용"| status["B3 개발자 선택: upload status --wait"]
+    validate -.->|"서버가 상태 파일 갱신"| status
     validate --> valid{"검사 통과?"}
     valid -->|"아니오"| fix["원인 확인 후 수정·재접수"]
     valid -->|"예"| pending["B5 승인 대기"]
@@ -249,14 +252,15 @@ ZIP을 열자마자 `Demo.exe`가 보인다면 프로젝트 프로필의 `payloa
 
 #### 쉬운 방법: B2~B3를 upload 한 명령으로
 
-담당자는 개발자이며 Windows PowerShell에서 실행합니다. 최초1회 OpenSSH `ssh`/`scp`, 기존 known-host 등록, incoming 쓰기 권한과 서버 서비스 계정의 읽기 권한을 준비합니다. 업로드 접속 프로필은 서버/계정·원격 incoming·포트·identity **경로**를 보관합니다. 프로젝트 프로필은 프로젝트와 ZIP에 관한 값을 보관합니다. 두 프로필에 비밀번호·키 내용은 넣지 않습니다.
+담당자는 개발자이며 Windows PowerShell에서 실행합니다. 최초1회 OpenSSH `ssh`/`scp`, 기존 known-host 등록, incoming 쓰기 권한과 서버 서비스 계정의 읽기 권한을 준비합니다. 업로드 접속 프로필은 서버/계정·원격 incoming·선택 상태 경로·포트·identity **경로**를 보관합니다. 프로젝트 프로필은 프로젝트와 ZIP에 관한 값을 보관합니다. 두 프로필에 비밀번호·키 내용은 넣지 않습니다.
 
 키 인증 전용(BatchMode)이므로 비밀번호를 묻지 않습니다. 최초 호스트 키 등록은 터미널 `ssh 계정@호스트`로 직접 확인합니다. 아래 `upload check`는 접속·키 인증 및 `test -d`/`test -w` 조회만 하며 원격 파일·폴더를 만들지 않습니다. 호스트 키를 자동 등록하지 않으며 원격 출력은 버립니다.
 
 ```powershell
 $Launcher = (Resolve-Path .\publish\client-win-x64\UeDtLauncher.exe).Path
 & $Launcher upload init --output upload.profile.json | Out-Host
-# server=user@host, remoteIncoming=/절대/경로/incoming 등을 실제 회사값으로 편집
+# server를 실제 계정@호스트로 지정. 실서버 예시는 remoteIncoming=/dt/store/incoming
+# 상태 경로를 명시할 경우 remoteStatus=/dt/store/upload-status
 & $Launcher upload project-init --output ma0t10.project.json | Out-Host
 # 프로젝트 프로필을 ZIP 내부 경로와 프로젝트에 맞게 편집
 & $Launcher upload check --profile upload.profile.json | Out-Host
@@ -280,13 +284,13 @@ if ($LASTEXITCODE -ne 0) { throw '실패한 사전 점검 항목을 해결한 �
 Linux 개발 PC의 터미널에서는 같은 옵션에 `./UeDtLauncher`를 사용하며 `Out-Host`는 붙이지 않습니다:
 
 ```bash
-./UeDtLauncher upload check --server uploader@updates.example.com --remote-incoming /srv/ue-dt-distribution/incoming
-./UeDtLauncher upload --zip ./Linux.zip --project-id demo --version 1.2.0 --platform linux-x64 --payload-root Linux --entry-point Demo.sh --executable-paths Demo.sh,Demo/Binaries/Linux/Demo --server uploader@updates.example.com --remote-incoming /srv/ue-dt-distribution/incoming --dry-run
+./UeDtLauncher upload check --server uploader@updates.example.com --remote-incoming /dt/store/incoming
+./UeDtLauncher upload --zip ./Linux.zip --project-id demo --version 1.2.0 --platform linux-x64 --payload-root Linux --entry-point Demo.sh --executable-paths Demo.sh,Demo/Binaries/Linux/Demo --server uploader@updates.example.com --remote-incoming /dt/store/incoming --dry-run
 ```
 
 위 Linux 예시는 메타데이터와 접속 값을 직접 지정해 계획을 확인합니다. 실제 전송은 검토 후 `--dry-run`을 제거합니다. 접속 옵션 `--port`, `--identity-file`과 식별자 옵션 `--upload-id`도 지정할 수 있습니다.
 
-정상 결과는 새 로컬 `upload-work/<ID>-<고유값>/payload.zip`과 외부 `release.json`, 원격 `<incoming>/<ID>/`의 최종 두 파일 확인 및 운영자 승인 안내입니다. 자동 ID는 프로젝트-버전-플랫폼 접두부를 필요할 때 자르고 UTC 밀리초 시각·난수16자리 hex를 붙여 최대128자로 만듭니다. 릴리스의 프로젝트/버전 값 자체는 바꾸지 않으며 명시한 `--upload-id`는 자르지 않고 기존 Segment 규칙으로 검증합니다. `mkdir` 실패 시 기존 폴더를 재사용하지 않습니다. 전송 실패 뒤에는 이름을 바꾸지 않으며 실패 단계·남을 수 있는 `.uploading`과 다음 조치를 출력합니다. `mv -n` 뒤 실제 원본 이름 소멸도 확인합니다. `--dry-run`은 네트워크·폴더·파일을 만들지 않습니다. 업로드 계정은 DB를 읽을 수 없으므로 검사 결과를 기다리거나 자동 승인하지 않습니다.
+정상 결과는 새 로컬 `upload-work/<ID>-<고유값>/payload.zip`과 외부 `release.json`, 원격 `<incoming>/<ID>/`의 최종 두 파일 확인 및 상태 조회 안내입니다. 자동 ID는 프로젝트-버전-플랫폼 접두부를 필요할 때 자르고 UTC 밀리초 시각·난수16자리 hex를 붙여 최대128자로 만듭니다. 릴리스의 프로젝트/버전 값 자체는 바꾸지 않으며 명시한 `--upload-id`는 자르지 않고 기존 Segment 규칙으로 검증합니다. `mkdir` 실패 시 기존 폴더를 재사용하지 않습니다. 전송 실패 뒤에는 이름을 바꾸지 않으며 실패 단계·남을 수 있는 `.uploading`과 다음 조치를 출력합니다. `mv -n` 뒤 실제 원본 이름 소멸도 확인합니다. `--dry-run`은 네트워크·폴더·파일을 만들지 않습니다.
 
 기본 출력은 한국어 요약(업로드 ID·원격 폴더·단계별 결과·적용 프로젝트 값·노트 본문 UTF-8 바이트 수·출처)이고 stderr에는 `[3/6] ZIP 전송 중 (3 GB) — 큰 파일은 오래 걸릴 수 있습니다` 같은 안내가 나옵니다. 도구 연동에 `--format json`을 붙이면 기존 결과 필드와 `project`, `sources`가 나오며 dry-run에는 생성 예정 설명 파일의 해시 `sidecarSha256`도 포함됩니다. 예시 목적지로 검증했으면 `placeholderDestination`이 `true`입니다. JSON의 로컬 경로는 홈 기준 `~/…` 또는 파일·폴더명으로 표시하며, 실제 전송은 입력한 경로를 사용합니다. 필수 메타데이터 누락, 노트 충돌·형식 오류, 접속 프로필 오류와 ZIP 내부 경로 불일치는 종료2입니다.
 
@@ -303,7 +307,7 @@ $Launcher = (Resolve-Path .\publish\client-win-x64\UeDtLauncher.exe).Path
 $UploadDir = "$env:USERPROFILE\DT-Deploy\upload-001"
 $ServerHost = 'updates.example.com'
 $UploadUser = 'uploader'
-$RemoteUpload = '/srv/ue-dt-distribution/incoming/upload-001'
+$RemoteUpload = '/dt/store/incoming/upload-001'
 
 & $Launcher release-metadata --zip "$UploadDir\Windows.zip" --project-id demo --display-name 'DT Simulator' --version 1.2.0 --environment prod --channel stable --platform windows-x64 --payload-root Windows --entry-point Demo.exe --output "$UploadDir\release.json" | Out-Host
 Get-Content -LiteralPath "$UploadDir\release.json"
@@ -323,7 +327,7 @@ Linux ZIP 내부가 `Linux/Demo.sh`, `Linux/Demo/Binaries/Linux/Demo`라면 별�
 
 **쉬운 방법:** B2의 `upload` 한 명령이 B3까지 완료합니다. 같은 업로드를 아래 절차로 다시 보내지 않습니다.
 
-**직접 실행 대안:** WinSCP/SFTP에서 새 upload-001 폴더를 만들고, `Windows.zip.uploading`과 `release.json.uploading`으로 전송합니다. 둘 다 끝나면 각각 `Windows.zip`, `release.json`으로 이름을 바꿉니다. 계정에는 incoming만 접근하도록 관리자가 구성합니다.
+**직접 실행 대안:** WinSCP/SFTP에서 새 upload-001 폴더를 만들고, `Windows.zip.uploading`과 `release.json.uploading`으로 전송합니다. 둘 다 끝나면 각각 `Windows.zip`, `release.json`으로 이름을 바꿉니다.
 
 OpenSSH가 준비된 PC의 명령 예시:
 
@@ -344,12 +348,36 @@ if ($LASTEXITCODE -ne 0) { throw 'JSON 이름 변경 실패. 서버 폴더 상�
 
 **결과:** 서버 폴더 안에 ZIP과 JSON 두 파일. 디렉터리 이름만 `.uploading`으로 만드는 것이 아니라 **파일 이름**에 붙입니다. 별도의 세 번째 완료 파일은 필요 없습니다. 업로더의 새 폴더·파일을 서비스 계정이 읽을 수 있도록 서버 측 기본 그룹/ACL을 사전에 점검합니다.
 
+개발 PC에서 전송에 사용한 프로필과 업로드 ID를 지정합니다. 예시 ID `upload-001`은 성공 출력의 값 또는 직접 만든 incoming 폴더 이름으로 바꿉니다.
+
+```powershell
+& $Launcher upload status --profile .\upload.profile.json --upload-id upload-001 --wait | Out-Host
+```
+
+```bash
+./UeDtLauncher upload status --profile ./upload.profile.json --upload-id upload-001 --wait
+```
+
+`--wait`를 생략하면 한 번 조회합니다. 대기는 `--interval 5`와 `--timeout 1800`이 기본값이고 단위는 초입니다. 접근 가능한 상태 폴더에서 첫 파일이 아직 없으면 제한시간 동안 계속 조회합니다. SSH·권한 등 연속 조회 실패는 최대 3회 확인합니다. 긴 검사 중에도 서버가 상태를 갱신합니다. 기본 출력은 한국어이며 `--format json`은 상태 문서에 `queriedAtUtc`를 더합니다.
+
+| 종료 | 결과 |
+|---|---|
+| 0 | 한 번 조회 성공, 또는 대기 중 승인 대기·게시 처리 중·게시됨·현재 추천판에 도달 |
+| 1 | 단건 조회에서 상태 파일 미생성, 또는 SSH·읽기 권한·응답 검증 등 조회 실패 |
+| 2 | ID·프로필·경로·옵션 입력 오류 |
+| 3 | 대기 중 검사 실패 또는 거절 |
+| 4 | 대기 제한시간 초과. 관측한 상태가 있으면 마지막 상태를 출력 |
+
+서버 투영기는 설정된 데이터 루트의 `upload-status/`에 씁니다. 실서버 배치의 데이터 루트는 `/dt/store`입니다. 서버 관리자는 서비스 계정에 `/dt/store/upload-status/` 쓰기 권한을, 업로드 계정에 상태 JSON 읽기와 경로 통과 권한을 부여합니다. `UMask=0077` 서비스 템플릿을 사용하면 이 폴더의 기본 ACL에 업로드 계정 그룹의 읽기 권한을 지정해 원자적으로 교체된 새 파일에도 상속되게 합니다. 업로드 계정의 전송 권한은 `/dt/store/incoming/`으로 한정하고 DB·비공개 검사 사본·`releases/`·서명 키에 대한 접근을 차단합니다.
+
+프로필의 `remoteStatus`를 생략하면 `remoteIncoming`과 같은 부모의 `upload-status`를 사용합니다. 실서버 예시에서 `remoteIncoming=/dt/store/incoming`이면 `/dt/store/upload-status`를 읽습니다. SSH에서 경로가 다르게 보이는 환경은 프로필의 `remoteStatus` 또는 명령의 `--remote-status`에 SSH에서 보이는 절대 경로를 지정합니다.
+
 ### B4~B5. 검사 결과 보고 승인 — Linux 서버 운영자
 
 **쉬운 방법:** 서버 운영자는 터미널에서 다음 명령으로 번호 안내를 엽니다. 1접수 현황 → 2상세 또는 3승인 목록의 번호(전체 ID도 가능) → 비공개 snapshot 프로젝트·버전·플랫폼·ZIP 크기·오류 확인 순서입니다. 3승인은 화면의 버전, 4거절·5재시도는 작업 ID 앞8자를 재입력합니다. 목록 표시 후나 확인 후 대상이 바뀌면 적용하지 않습니다. 불일치/EOF는 무변경입니다.
 
 ```bash
-sudo -u uedt-distribution /opt/ue-dt-distribution/UeDtLauncher.DistributionServer console --config /etc/ue-dt-distribution/server.json
+sudo -u uedt-distribution /dt/publish/server-linux-x64/UeDtLauncher.DistributionServer console --config /dt/config/server.json
 ```
 
 정상 결과는 해당 ID의 `published`입니다. 승인만으로 추천은 바뀌지 않습니다. 리디렉션 입력은 거부하며 변경 없이 종료합니다. 각 동작만 유지보수 lease를 잡으므로 메뉴/확인 입력 대기 동안 세션 전체 잠금을 보유하지 않습니다.
@@ -370,19 +398,19 @@ sudo -u uedt-distribution /opt/ue-dt-distribution/UeDtLauncher.DistributionServe
 `serve` 서비스는 폴더를 주기적으로 확인합니다. 자동 검사를 기다리거나, 수동 접수를 요청합니다.
 
 ```bash
-sudo -u uedt-distribution /opt/ue-dt-distribution/UeDtLauncher.DistributionServer ingest /srv/ue-dt-distribution/incoming/upload-001 --config /etc/ue-dt-distribution/server.json
-sudo -u uedt-distribution /opt/ue-dt-distribution/UeDtLauncher.DistributionServer list --config /etc/ue-dt-distribution/server.json
-sudo -u uedt-distribution /opt/ue-dt-distribution/UeDtLauncher.DistributionServer inspect JOB_ID --config /etc/ue-dt-distribution/server.json
+sudo -u uedt-distribution /dt/publish/server-linux-x64/UeDtLauncher.DistributionServer ingest /dt/store/incoming/upload-001 --config /dt/config/server.json
+sudo -u uedt-distribution /dt/publish/server-linux-x64/UeDtLauncher.DistributionServer list --config /dt/config/server.json
+sudo -u uedt-distribution /dt/publish/server-linux-x64/UeDtLauncher.DistributionServer inspect JOB_ID --config /dt/config/server.json
 ```
 
 `JOB_ID`를 실제 값으로 치환합니다. `inspect`는 작업 상태·진행·`snapshot` 경로를 보여줍니다. 상태가 pending인 작업의 **snapshot 경로 안에 있는 release.json**을 읽어 프로젝트·버전·OS·환경·실행 경로를 확인합니다. 업로드자가 수정할 수 있는 incoming 원본 대신 승인에 실제 사용되는 비공개 사본을 확인하는 것입니다.
 
 ```bash
 # 아래 값을 inspect에 출력된 실제 snapshot 절대 경로로 치환
-SNAPSHOT='/srv/ue-dt-distribution/processing/실제-snapshot-폴더'
+SNAPSHOT='/dt/store/processing/실제-snapshot-폴더'
 sudo -u uedt-distribution cat "$SNAPSHOT/release.json"
 # 내용이 맞고 승인 가능한 배포인 것을 확인한 뒤 실행
-sudo -u uedt-distribution /opt/ue-dt-distribution/UeDtLauncher.DistributionServer approve JOB_ID --config /etc/ue-dt-distribution/server.json
+sudo -u uedt-distribution /dt/publish/server-linux-x64/UeDtLauncher.DistributionServer approve JOB_ID --config /dt/config/server.json
 ```
 
 **pending은 아직 공개가 아닙니다.** 업로드 프로그램을 서버에서 실행하지 않습니다.
@@ -390,7 +418,7 @@ sudo -u uedt-distribution /opt/ue-dt-distribution/UeDtLauncher.DistributionServe
 정상 승인 후 자동 생성되는 위치:
 
 ```text
-/srv/ue-dt-distribution/releases/demo/prod/stable/1.2.0/windows-x64/
+/dt/store/releases/demo/prod/stable/1.2.0/windows-x64/
   manifest.json
   manifest.json.sig
   files/
@@ -411,8 +439,8 @@ sudo -u uedt-distribution /opt/ue-dt-distribution/UeDtLauncher.DistributionServe
 **직접 실행:**
 
 ```bash
-./UeDtLauncher.DistributionServer promotion inspect --project-id demo --environment prod --channel stable --platform windows-x64 --config /etc/ue-dt-distribution/server.json
-./UeDtLauncher.DistributionServer promote --project-id demo --environment prod --channel stable --platform windows-x64 --version 1.2.0 --expected-revision N --reason '개발자 검증 통과' --config /etc/ue-dt-distribution/server.json
+./UeDtLauncher.DistributionServer promotion inspect --project-id demo --environment prod --channel stable --platform windows-x64 --config /dt/config/server.json
+./UeDtLauncher.DistributionServer promote --project-id demo --environment prod --channel stable --platform windows-x64 --version 1.2.0 --expected-revision N --reason '개발자 검증 통과' --config /dt/config/server.json
 ```
 
 N은 inspect 결과로 치환합니다. 승격은 자동 설치나 실행 전환이 아니며, 사용자는 다음 상태 확인 후 주 버튼으로 작업합니다. [기존 DB 이전·권한별 추천](distribution-workflow.md)
