@@ -51,6 +51,10 @@ public sealed partial class MainWindow : Window
             SetStatus("설치 폴더를 확인할 수 없습니다. 상태를 먼저 확인해 주세요.");
         }
     }
+    private static Task<PortableMaintenanceResult> RunPortableMaintenanceAsync(
+        LauncherConfig config, bool backups, Action<string> log) =>
+        Task.Run(() => backups ? PortableMaintenance.PruneBackupsWithResult(config, log) : PortableMaintenance.ClearStagingWithResult(config, log));
+
     private async Task RunMaintenanceAsync(bool backups)
     {
         if (_running) return;
@@ -65,7 +69,7 @@ public sealed partial class MainWindow : Window
             var config = await RunConfig(false, false); context.Pin(config);
             if (context.Selection is not null) VersionedReleasePaths.Bind(config, context.Selection);
             var messages = new List<string>();
-            var result = await Task.Run(() => backups ? PortableMaintenance.PruneBackupsWithResult(config, m => messages.Add(m)) : PortableMaintenance.ClearStagingWithResult(config, m => messages.Add(m)));
+            var result = await _runPortableMaintenance(config, backups, messages.Add);
             foreach (var message in messages) AppendLog(message, true);
             if (result.FailedCount > 0 || !result.ResumeRecordsPreserved)
             {

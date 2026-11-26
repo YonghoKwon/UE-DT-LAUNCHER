@@ -1,10 +1,10 @@
+using System.ComponentModel;
 using System.Reflection;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
-using Avalonia.Threading;
 using UeDtLauncher.Gui;
 using Xunit;
 
@@ -22,15 +22,42 @@ public class MaintenancePresentationTests
         Directory.CreateDirectory(config.StagingDir);File.WriteAllText(Path.Combine(config.StagingDir,"owned.partial"),"partial");
         var model=new LauncherDashboardViewModel(LauncherEdition.Developer){Config=config,Catalog=new(){Projects=[new(){ProjectId="demo"}],Releases=[new(){ProjectId="demo",Environment="prod",Channel="stable",Platform=platform,Version="1.0.0",IsLatest=true}]},GeneralState=GeneralLauncherState.Ready};
         var failConfig=true;var backend=new Backend{Fail=failCheck};
+        var releaseCleanup = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cleanupCalls = 0;
+        async Task<PortableMaintenanceResult> RunCleanup(LauncherConfig selected, bool backups, Action<string> log)
+        {
+            Assert.False(backups);
+            Assert.Equal(selection, selected.SelectedRelease);
+            cleanupCalls++;
+            await releaseCleanup.Task;
+            return PortableMaintenance.ClearStagingWithResult(selected, log);
+        }
         var window=new MainWindow(new(Path.Combine(root,"config.json"),LauncherConfigSource.Explicit,false),model,new(),false,backend,
-            runtimeConfigLoader:_=>failConfig?throw new IOException("owned config unavailable"):Task.FromResult(config));window.Show();
+            runtimeConfigLoader:_=>failConfig?throw new IOException("owned config unavailable"):Task.FromResult(config),
+            runPortableMaintenance: RunCleanup);window.Show();
         try
         {
             await (Task)typeof(MainWindow).GetMethod("RunMaintenanceAsync",BindingFlags.NonPublic|BindingFlags.Instance)!.Invoke(window,new object[]{false})!;
             var presentation=(LauncherOperationPresentation)typeof(MainWindow).GetField("_presentation",BindingFlags.NonPublic|BindingFlags.Instance)!.GetValue(window)!;
             Assert.NotNull(presentation.ErrorCode);failConfig=false;
-            window.GetLogicalDescendants().OfType<Button>().Single(b=>AutomationProperties.GetAutomationId(b)=="retry-operation").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            await backend.Completed.Task.WaitAsync(TimeSpan.FromSeconds(5));Dispatcher.UIThread.RunJobs();
+            var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            void OnRunningChanged(object? sender, PropertyChangedEventArgs args)
+            {
+                if (args.PropertyName == nameof(LauncherDashboardViewModel.Running) && !model.Running)
+                    completed.TrySetResult();
+            }
+            model.PropertyChanged += OnRunningChanged;
+            try
+            {
+                window.GetLogicalDescendants().OfType<Button>().Single(b=>AutomationProperties.GetAutomationId(b)=="retry-operation").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.True(model.Running);
+                Assert.Equal(1, cleanupCalls);
+                Assert.Equal(0, backend.Checks);
+                Assert.True(Directory.Exists(config.StagingDir));
+                releaseCleanup.SetResult();
+                await completed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            finally { model.PropertyChanged -= OnRunningChanged; }
             Assert.False(Directory.Exists(config.StagingDir));Assert.Equal(1,backend.Checks);Assert.Equal(0,backend.Mutations);
             if(failCheck){Assert.Contains("정리 완료",presentation.Title);Assert.Equal(LauncherUiOperation.Check,presentation.Retry?.Operation);}
             else {Assert.Null(presentation.ErrorCode);Assert.Null(presentation.SupportId);Assert.Null(presentation.Retry);Assert.Contains("정리 완료",presentation.Title);}
@@ -39,10 +66,10 @@ public class MaintenancePresentationTests
     }
     private sealed class Backend:ILauncherUiBackend
     {
-        public bool Fail;public int Checks,Mutations;public TaskCompletionSource Completed=new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool Fail;public int Checks,Mutations;
         public Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext c,LauncherConfig config,Action<LauncherProgress> progress,CancellationToken token=default)
         {
-            Checks++;Completed.TrySetResult();if(Fail)throw new IOException("owned status unavailable");
+            Checks++;if(Fail)throw new IOException("owned status unavailable");
             return Task.FromResult(new LauncherUiOperationResult(config,c.Selection,new(false,null,c.Selection?.Version,true,0,0,false),new(RuntimeState.Quiescent,"stopped","")));
         }
         public Task<LauncherUiOperationResult> ExecuteAsync(LauncherUiOperationContext c,LauncherConfig config,bool repair,bool launch,Action<LauncherProgress> progress,FileLogger? logger,CancellationToken token=default)

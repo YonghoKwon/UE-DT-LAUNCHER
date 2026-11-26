@@ -43,6 +43,7 @@ public sealed partial class MainWindow : Window
     private Exception? _configurationError;
     private readonly ILauncherUiBackend _uiBackend;
     private readonly Func<string, Task<LauncherConfig>> _runtimeConfigLoader;
+    private readonly Func<LauncherConfig, bool, Action<string>, Task<PortableMaintenanceResult>> _runPortableMaintenance;
     private readonly Func<string, CancellationToken, Task<LauncherConfig>> _readOnlyRuntimeConfigLoader;
     private readonly Func<LauncherConfig, RollbackPreview, Task<LauncherRestoreResult>> _restorePreview;
     private readonly Func<LauncherConfig, Task<RollbackPreview?>> _managedRollbackPreview;
@@ -100,10 +101,12 @@ public sealed partial class MainWindow : Window
         Func<LauncherConfig, RollbackPreview, Task<LauncherRestoreResult>>? restorePreview = null,
         Func<LauncherConfig, Task<RollbackPreview?>>? managedRollbackPreview = null,
         string? preferencesPath = null,
-        Func<Task<ManagedAgentResponse>>? agentStatusProbe = null)
+        Func<Task<ManagedAgentResponse>>? agentStatusProbe = null,
+        Func<LauncherConfig, bool, Action<string>, Task<PortableMaintenanceResult>>? runPortableMaintenance = null)
     {
         _uiBackend = backend ?? new LauncherUiBackend();
         _runtimeConfigLoader = runtimeConfigLoader ?? (path => LauncherPaths.LoadResolvedAsync(path));
+        _runPortableMaintenance = runPortableMaintenance ?? RunPortableMaintenanceAsync;
         _readOnlyRuntimeConfigLoader = runtimeConfigLoader is null
             ? (path, token) => LauncherPaths.LoadResolvedAsync(path, token, readOnly: true)
             : (path, _) => runtimeConfigLoader(path);
