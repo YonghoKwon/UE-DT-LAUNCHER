@@ -124,9 +124,9 @@ public sealed class IntakeAuthorityTests : IDisposable
         store.Save(Job());
         ThrottledPackageProgress oldProgress;
         using (store.LockJob("fixture"))
-        using (Claim(store, "waiting"))
+        using (var originalClaim = Claim(store, "waiting"))
         {
-            oldProgress = store.Progress("fixture");
+            oldProgress = store.Progress("fixture", originalClaim.ClaimId);
             oldProgress.Report(new("old", 1, 5, 9));
             Assert.Equal("old", store.Get("fixture").Phase);
         }
@@ -144,7 +144,7 @@ public sealed class IntakeAuthorityTests : IDisposable
         using var owner = store.LockJob("fixture");
         using var claim = Claim(store, "waiting");
         var newGeneration = store.Authority.ReadSnapshot().Generation;
-        var progress = store.Progress("fixture");
+        var progress = store.Progress("fixture", claim.ClaimId);
         progress.Report(new("current", 2, 5, 8));
         oldProgress.Report(new("still-stale", 4, 5, 6));
         Assert.Equal(oldBytes, File.ReadAllBytes(oldFile));
@@ -154,6 +154,46 @@ public sealed class IntakeAuthorityTests : IDisposable
         File.WriteAllText(newFile, "malformed");
         Assert.Equal("validating", store.Get("fixture").State);
         Assert.Null(store.Get("fixture").Phase);
+    }
+
+    [Fact]
+    public void ProgressRecoversAfterTemporarySnapshotReadFailure()
+    {
+        var store = Open();
+        store.Save(Job());
+        using var owner = store.LockJob("fixture");
+        using var claim = Claim(store, "waiting");
+        var generation = store.Authority.ReadSnapshot().Generation;
+        var readFailures = 0;
+        AuthorityStore.AfterReadHead.Value = _ =>
+        {
+            readFailures++;
+            throw new IOException("Temporary progress snapshot read failure.");
+        };
+
+        ThrottledPackageProgress progress;
+        try
+        {
+            progress = store.Progress("fixture", claim.ClaimId);
+            Assert.Equal(0, readFailures);
+            progress.Report(new("snapshot-copy", 1, 5, 9));
+        }
+        finally { AuthorityStore.AfterReadHead.Value = null; }
+
+        Assert.True(readFailures > 0);
+        Assert.Empty(Directory.EnumerateFiles(store.Authority.ProgressPath));
+        Assert.Null(store.Get("fixture").Phase);
+
+        // A new phase reports immediately, regardless of the byte-update throttle.
+        progress.Report(new("extract", 2, 5, 8));
+
+        var current = store.Get("fixture");
+        Assert.Equal("validating", current.State);
+        Assert.Equal("extract", current.Phase);
+        Assert.Equal(2, current.ProcessedBytes);
+        Assert.Equal(Path.Combine(store.Authority.ProgressPath, $"fixture.{claim.ClaimId:N}.json"),
+            Assert.Single(Directory.EnumerateFiles(store.Authority.ProgressPath)));
+        Assert.Equal(generation, store.Authority.ReadSnapshot().Generation);
     }
 
     [Fact]

@@ -119,17 +119,12 @@ public sealed partial class IntakeStore
         [property: JsonRequired] long EstimatedAdditionalDiskBytes,
         [property: JsonRequired] string? UpdatedAt);
 
-    internal ThrottledPackageProgress Progress(string id, IProgress<PackageWorkProgress>? observer = null)
+    internal ThrottledPackageProgress Progress(string id, Guid claimId, IProgress<PackageWorkProgress>? observer = null)
     {
-        Guid? claimId = null;
-        try { claimId = IntakeJobs.Read(Authority.ReadSnapshot()).Jobs.Find(job => job.Id == id)?.ClaimId; }
-        catch (Exception error) when (IsAdvisoryProgressError(error)) { }
-
         return new(value =>
         {
-            if (claimId is { } claim)
-                WriteProgressIfWriterAvailable(new(id, claim, value.Phase, value.ProcessedBytes, value.TotalBytes,
-                    value.EstimatedAdditionalDiskBytes, DateTimeOffset.UtcNow.ToString("O")));
+            WriteProgressIfWriterAvailable(new(id, claimId, value.Phase, value.ProcessedBytes, value.TotalBytes,
+                value.EstimatedAdditionalDiskBytes, DateTimeOffset.UtcNow.ToString("O")));
             observer?.Report(value);
         });
     }
