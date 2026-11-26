@@ -6,6 +6,7 @@ if (args.Length < 2) return 2;
 
 try
 {
+    if (await PlatformChecks.RunCommand(args) is { } platformExit) return platformExit;
     if (args[0] == "crash-init")
         AuthorityDisk.Boundary.Value = PauseAt(Enum.Parse<AuthorityBoundary>(args[2]));
     var store = AuthorityStore.Open(args[1]);

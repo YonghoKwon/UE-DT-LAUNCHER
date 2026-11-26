@@ -1,0 +1,288 @@
+"""Run the 01S7 Linux filesystem matrix in disposable Docker Desktop resources."""
+
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+import time
+import uuid
+
+
+HERE = Path(__file__).resolve().parent
+HARNESS = "/opt/checks/harness/UeDtLauncher.AuthorityHarness"
+ENTRYPOINT = "/opt/checks/rocky-platform.sh"
+RESTART_CASES = ("GenerationRename", "HeadRename", "AuditAppend")
+
+
+class Run:
+    def __init__(self, publish, output, final):
+        self.publish = publish.resolve(strict=True)
+        self.output = output.resolve()
+        self.output.mkdir(parents=True)
+        self.final = final
+        self.id = uuid.uuid4().hex
+        self.project = f"uedt-prod-{self.id}"
+        self.image = f"uedt-authority-platform:{self.id}"
+        self.label = f"uedt.run={self.id}"
+        self.compose = self.output / "compose.json"
+        self.results = {}
+
+    def log(self, name, message):
+        with (self.output / f"{name}.log").open("a", encoding="utf-8") as sink:
+            sink.write(message + "\n")
+
+    def command(self, log, *args, expected=0, timeout=300):
+        self.log(log, f"$ {subprocess.list2cmdline(args)}")
+        result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, encoding="utf-8", errors="replace", timeout=timeout)
+        self.log(log, result.stdout + f"[exit {result.returncode}]")
+        if result.returncode != expected:
+            raise RuntimeError(f"{args[:3]} returned {result.returncode}, expected {expected}; see {log}.log")
+        return result.stdout
+
+    def docker(self, log, *args, **kwargs):
+        return self.command(log, "docker", *args, **kwargs)
+
+    def dc(self, log, *args, **kwargs):
+        return self.docker(log, "compose", "-p", self.project, "-f", str(self.compose), *args, **kwargs)
+
+    def collect(self, phase):
+        state = {}
+        checks = {
+            "containers": ("ps", "-a", "--no-trunc", "--format", "{{.ID}} {{.Names}}"),
+            "networks": ("network", "ls", "--no-trunc", "--format", "{{.ID}} {{.Name}}"),
+            "volumes": ("volume", "ls", "--format", "{{.Name}}"),
+            "images": ("image", "ls", "-a", "--no-trunc", "--digests", "--format",
+                       "{{.ID}} {{.Repository}}:{{.Tag}} {{.Digest}}"),
+        }
+        for name, args in checks.items():
+            state[name] = sorted(self.docker(f"{phase}-resources", *args).splitlines())
+        self.docker(f"{phase}-resources", "system", "df")
+        for name, args in {
+            "loops": ("losetup", "-a"),
+            "loop-devices": ("sh", "-c", "ls -d /sys/block/loop*"),
+        }.items():
+            values = self.command(f"{phase}-resources", "wsl", "-d", "docker-desktop", "--", *args)
+            state[name] = sorted(values.splitlines())
+        (self.output / f"{phase}-resources.json").write_text(json.dumps(state, indent=2), encoding="utf-8")
+        return state
+
+    def prepare(self):
+        context = self.docker("setup", "context", "show").strip()
+        if context != "desktop-linux":
+            raise RuntimeError(f"This local test requires the Docker Desktop Linux context; got {context}.")
+        exe = self.publish / Path(HARNESS).name
+        with exe.open("rb") as binary:
+            self.log("setup", f"Linux harness SHA-256 {hashlib.file_digest(binary, 'sha256').hexdigest()}")
+        with tempfile.TemporaryDirectory(prefix="build-", dir=self.output) as folder:
+            folder = Path(folder)
+            shutil.copytree(self.publish, folder / "harness")
+            for source, name in (("rocky-platform.sh", "rocky-platform.sh"),
+                                 ("rocky-platform.Dockerfile", "Dockerfile")):
+                content = (HERE / source).read_bytes().replace(b"\r\n", b"\n")
+                (folder / name).write_bytes(content)
+            self.docker("setup", "build", "--platform", "linux/amd64", "--progress=plain",
+                        "--build-arg", f"RUN_ID={self.id}", "-t", self.image, str(folder), timeout=720)
+        self.docker("setup", "image", "inspect", self.image,
+                    "--format", "{{.Id}} {{.Os}}/{{.Architecture}} {{json .Config.Labels}}")
+
+    def configure(self):
+        def service(fs, volume):
+            return {
+                "image": self.image, "pull_policy": "never",
+                "labels": {"uedt.run": self.id}, "network_mode": "none",
+                "environment": {"UEDT_RUN": self.id},
+                "command": [ENTRYPOINT, fs],
+                "volumes": [volume], "tmpfs": ["/unsupported"],
+            }
+        ext4 = service("ext4", "ext4:/store")
+        xfs = service("xfs", "disk:/disk")
+        xfs["privileged"] = True
+        definition = {"services": {"ext4": ext4, "xfs": xfs}, "volumes": {
+            name: {"labels": {"uedt.run": self.id}} for name in ("ext4", "disk")
+        }}
+        self.compose.write_text(json.dumps(definition, indent=2), encoding="utf-8")
+
+    def inside(self, fs, log, *args, **kwargs):
+        return self.dc(log, "exec", "-T", fs, *args, **kwargs)
+
+    def mount(self, fs, root, log):
+        deadline = time.monotonic() + 25
+        while True:
+            try:
+                options = self.inside(fs, log, "findmnt", "-n", "-o", "TARGET,SOURCE,FSTYPE,OPTIONS",
+                                      "--mountpoint", root).strip()
+                if len(options.split()) < 4 or options.split()[2] != fs:
+                    raise RuntimeError(f"{root}: expected {fs}; got {options}")
+                return options
+            except RuntimeError:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(1)
+
+    def suite(self, fs, root):
+        profile = ("final",) if self.final else ()
+        self.inside(fs, f"{fs}-suite", HARNESS, "platform-suite", f"{root}/suite", *profile, timeout=900)
+
+    def restart(self, fs, root, boundary, index, container):
+        log = f"{fs}-restart-{index}"
+        target = f"{root}/restart-{index}"
+        self.inside(fs, log, HARNESS, "platform-seed", target)
+        args = ["docker", "compose", "-p", self.project, "-f", str(self.compose),
+                "exec", "-T", fs, HARNESS, "crash", target, boundary, "mixed"]
+        self.log(log, f"$ {subprocess.list2cmdline(args)}")
+        # A separate Docker exec has the writer's stdout. Poll its file with a deadline
+        # so the restart is issued only after the existing 01S1 seam is reached.
+        writer_log = self.output / f"{log}-writer.log"
+        with writer_log.open("wb") as sink:
+            writer = subprocess.Popen(args, stdout=sink, stderr=subprocess.STDOUT)
+            try:
+                deadline = time.monotonic() + 45
+                while b"BOUNDARY" not in writer_log.read_bytes().splitlines():
+                    if writer.poll() is not None or time.monotonic() >= deadline:
+                        raise RuntimeError(f"{fs} writer did not reach {boundary}; see {writer_log.name}")
+                    time.sleep(0.1)
+                before = self.docker(log, "inspect", "--format", "{{.State.StartedAt}}", container).strip()
+                self.docker(log, "restart", "--timeout", "0", container)
+                exit_code = writer.wait(timeout=30)
+                self.log(log, f"Writer reached {boundary}; interrupted Docker exec exit {exit_code}")
+                if exit_code == 0:
+                    raise RuntimeError("Interrupted writer returned success.")
+                after = self.docker(log, "inspect", "--format", "{{.State.StartedAt}}", container).strip()
+                if before == after:
+                    raise RuntimeError("Container start timestamp did not change.")
+                self.mount(fs, root, log)
+                self.inside(fs, log, HARNESS, "platform-verify", target, boundary)
+            finally:
+                # The following resource teardown removes any owned in-container writer
+                # left by a failed restart. Here we close only this CLI child.
+                if writer.poll() is None:
+                    writer.kill()
+                    writer.wait(timeout=10)
+
+    def run_fs(self, fs):
+        log = f"{fs}-mount"
+        root = "/store" if fs == "ext4" else "/xfs"
+        result = {"mount": "NOT_RUN", "suite": "NOT_RUN", "restart": [], "filesystem": "NOT_RUN"}
+        self.results[fs] = result
+        try:
+            self.dc(log, "up", "-d", "--no-deps", fs)
+            container = self.dc(log, "ps", "-q", fs).strip()
+            if not container:
+                raise RuntimeError("No running test container.")
+            self.docker(log, "inspect", container, "--format",
+                        "{{.Id}} {{.Image}} {{.HostConfig.Privileged}} {{json .NetworkSettings.Ports}} {{json .Mounts}}")
+            result["mount"] = self.mount(fs, root, log)
+            self.inside(fs, log, "cat", "/etc/redhat-release")
+            self.inside(fs, log, "uname", "-r")
+            self.inside(fs, log, "stat", "-f", "-c", "%t %T", root)
+            self.inside(fs, log, "rpm", "-q", "libicu", "openssl-libs", "util-linux", "xfsprogs")
+            try:
+                self.suite(fs, root)
+                result["suite"] = "PASS"
+            except (RuntimeError, subprocess.TimeoutExpired) as error:
+                result["suite"] = "FAIL"
+                self.log(log, str(error))
+            if not self.final:
+                for index, boundary in enumerate(RESTART_CASES, 1):
+                    try:
+                        self.restart(fs, root, boundary, index, container)
+                        status = "PASS"
+                    except (RuntimeError, subprocess.TimeoutExpired) as error:
+                        status = "FAIL"
+                        self.log(log, str(error))
+                    result["restart"].append({"seam": boundary, "status": status})
+            try:
+                self.inside(fs, log, HARNESS, "probe", f"{root}/filesystem-probe")
+                self.inside(fs, log, "findmnt", "-n", "-o", "FSTYPE,OPTIONS", "--mountpoint", "/unsupported")
+                refused = self.inside(fs, log, HARNESS, "probe", "/unsupported/probe", expected=3)
+                if "UnsupportedFileSystem:" not in refused or "0x01021994" not in refused:
+                    raise RuntimeError(f"Expected a statfs tmpfs refusal; got {refused.strip()}.")
+                self.inside(fs, log, "test", "!", "-e", "/unsupported/probe")
+                result["filesystem"] = "PASS"
+            except (RuntimeError, subprocess.TimeoutExpired) as error:
+                result["filesystem"] = "FAIL"
+                self.log(log, str(error))
+        except (RuntimeError, subprocess.TimeoutExpired) as error:
+            self.log(log, str(error))
+        finally:
+            try:
+                self.dc(log, "logs", "--no-color", fs)
+            except RuntimeError as error:
+                self.log(log, str(error))
+
+    def cleanup_xfs(self):
+        try:
+            self.inside("xfs", "cleanup", ENTRYPOINT, "cleanup")
+        except RuntimeError:
+            self.dc("cleanup", "stop", "-t", "0", "xfs")
+            self.dc("cleanup", "run", "--rm", "--no-deps", "-T", "xfs", ENTRYPOINT, "cleanup")
+
+    def run(self):
+        if self.docker("setup", "context", "show").strip() != "desktop-linux":
+            raise RuntimeError("Expected Docker Desktop Linux on this PC.")
+        before = self.collect("before")
+        xfs_attempted = False
+        configured = False
+        cleanup_errors = []
+        try:
+            self.prepare()
+            self.configure()
+            configured = True
+            self.run_fs("ext4")
+            xfs_attempted = True
+            self.run_fs("xfs")
+        except (RuntimeError, subprocess.TimeoutExpired) as error:
+            self.results["error"] = str(error)
+        finally:
+            if xfs_attempted:
+                self.try_cleanup(cleanup_errors, self.cleanup_xfs)
+            if configured:
+                self.try_cleanup(cleanup_errors, lambda: self.dc("cleanup", "down", "-v"))
+            images = self.docker("cleanup", "image", "ls", "-q", "--filter", f"label={self.label}")
+            if images.strip():
+                self.try_cleanup(cleanup_errors, lambda: self.docker("cleanup", "image", "rm", self.image))
+            for kind, listing in (("containers", ("ps", "-a")), ("networks", ("network", "ls")),
+                                  ("volumes", ("volume", "ls")), ("images", ("image", "ls"))):
+                remaining = self.docker("cleanup", *listing, "-q", "--filter", f"label={self.label}")
+                if remaining.strip():
+                    cleanup_errors.append(f"Owned {kind} remain: {remaining.strip()}")
+            after = self.collect("after")
+            diff = {name: {"removed": sorted(set(before[name]) - set(after[name])),
+                           "added": sorted(set(after[name]) - set(before[name]))}
+                    for name in before if before[name] != after[name]}
+            self.results["cleanup"] = {"errors": cleanup_errors, "diff": diff,
+                                       "xfsAttempted": xfs_attempted,
+                                       "status": "PASS" if not cleanup_errors and not diff else "FAIL"}
+            self.results["runId"] = self.id
+            (self.output / "summary.json").write_text(json.dumps(self.results, indent=2), encoding="utf-8")
+            print(json.dumps(self.results, indent=2))
+        return int(
+            self.results["cleanup"]["status"] != "PASS" or
+            any(fs not in self.results or self.results[fs]["suite"] != "PASS" or
+                self.results[fs]["filesystem"] != "PASS" or
+                (not self.final and [case["status"] for case in self.results[fs]["restart"]] != ["PASS"] * 3)
+                for fs in ("ext4", "xfs"))
+        )
+
+    @staticmethod
+    def try_cleanup(errors, action):
+        try:
+            action()
+        except (RuntimeError, subprocess.TimeoutExpired) as error:
+            errors.append(str(error))
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--publish", type=Path, required=True, help="self-contained linux-x64 harness directory")
+    parser.add_argument("--output", type=Path, required=True, help="new directory for run logs")
+    parser.add_argument("--final", action="store_true", help="one process crash per seam, skip container restarts")
+    args = parser.parse_args()
+    if os.name != "nt":
+        parser.error("Run from Windows against its local Docker Desktop WSL engine.")
+    raise SystemExit(Run(args.publish, args.output, args.final).run())
