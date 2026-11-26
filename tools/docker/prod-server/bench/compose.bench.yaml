@@ -1,0 +1,16 @@
+services:
+  nginx:
+    volumes:
+      - ${UEDT_BENCH_NGINX:?set bench nginx config}:/etc/nginx/nginx.conf:ro
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${UEDT_BENCH_SUBNET:?set bench subnet}
+
+volumes:
+  bench-static:
+    labels:
+      uedt.run: ${UEDT_RUN_ID}
+      uedt.owner: ${UEDT_OWNER_TOKEN}
