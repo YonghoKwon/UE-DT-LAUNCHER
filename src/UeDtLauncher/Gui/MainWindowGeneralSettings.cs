@@ -14,6 +14,7 @@ public sealed partial class MainWindow
 
     private Window ShowGeneralSettings()
     {
+        var openedWith = _preferences;
         var connection = new StackPanel { Spacing = LauncherVisualTokens.SpaceSm };
         void ShowConnection()
         {
@@ -174,7 +175,7 @@ public sealed partial class MainWindow
             button.IsEnabled = false;
             try
             {
-                await SaveDisplayPreferencesAsync(Math.Max(0, scale.SelectedIndex), contrast.IsChecked == true);
+                await SaveDisplayPreferencesAsync(openedWith, Math.Max(0, scale.SelectedIndex), contrast.IsChecked == true);
                 dialog!.Close();
                 Build();
                 RefreshOpenDialogs();
@@ -236,10 +237,12 @@ public sealed partial class MainWindow
         _presentation.ErrorCode = _presentation.SupportId = null;
         _presentation.Retry = null;
         ApplyDisplayConfig(display);
-        if (_configurationError is null)
+        var appliedConfig = _config;
+        if (_configurationError is null) _viewModel.GeneralState = GeneralLauncherState.Checking;
+        Build();
+        await RebindUserLoggerAsync();
+        if (_configurationError is null && ReferenceEquals(_config, appliedConfig))
         {
-            _viewModel.GeneralState = GeneralLauncherState.Checking;
-            Build();
             if (await RefreshCatalog(false, suppressDialog: true) && HasProject)
                 await RefreshInstallStatusAsync(suppressDialog: true);
             if (_allowAutomaticChecks && _config.IsManagedDeployment && IsVisible)
@@ -248,6 +251,5 @@ public sealed partial class MainWindow
                 _agentStatusTimer.Start();
             }
         }
-        else Build();
     }
 }

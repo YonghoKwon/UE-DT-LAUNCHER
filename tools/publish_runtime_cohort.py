@@ -41,7 +41,8 @@ def main():
         for role,project,relative in roles:
             record['phase']=role;atomic(root/'publication-status.json',record);output=root/role
             result=subprocess.run(['dotnet','publish',str(snapshot/relative/(project+'.csproj')),'-c','Release','-r',args.rid,'--self-contained','true',
-                '-p:PublishSingleFile=true','-p:IncludeNativeLibrariesForSelfExtract=true','-p:LauncherEdition='+('Developer' if role=='developer' else 'General'),'-o',str(output)],
+                '-p:PublishSingleFile=true','-p:IncludeNativeLibrariesForSelfExtract=true','-p:SourceRevisionId='+head,
+                '-p:LauncherEdition='+('Developer' if role=='developer' else 'General'),'-o',str(output)],
                 cwd=snapshot,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=300)
             (root/(role+'-publish.log')).write_text(result.stdout+result.stderr,encoding='utf-8')
             if result.returncode:raise RuntimeError('Publication failed; private build log retained')
@@ -53,6 +54,7 @@ def main():
             if role in ('launcher','developer') and (os.name=='nt')==(args.rid=='win-x64'):
                 info=json.loads(subprocess.check_output([str(executable),'--build-info'],text=True,encoding='utf-8'))
                 if info['edition']!=artifact['edition']:raise ValueError('Compiled edition mismatch')
+                if info['version'].partition('+')[2]!=head:raise ValueError('Compiled source revision mismatch')
                 artifact['buildInfo']=info
         shutil.copy2(binaries['launcher']['path'],root/'developer'/('UeDtLauncher'+suffix))
         support={}

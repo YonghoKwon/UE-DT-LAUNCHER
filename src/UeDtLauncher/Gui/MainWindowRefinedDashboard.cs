@@ -40,6 +40,8 @@ public sealed partial class MainWindow : Window
     private readonly Func<string, bool, DoctorTarget?, CancellationToken, Task<DoctorReport>> _doctor;
     private bool _windowMetricsInitialized;
     private readonly bool _allowAutomaticChecks;
+    private readonly string? _preferencesPath;
+    internal Task StartupCompletion { get; private set; } = Task.CompletedTask;
     private EventHandler<Avalonia.Platform.PlatformColorValues>? _colorValuesChanged;
     private int _layoutBucket = -1;
     private int _nextTabIndex;
@@ -85,7 +87,8 @@ public sealed partial class MainWindow : Window
         Func<string, bool, DoctorTarget?, CancellationToken, Task<DoctorReport>>? doctor = null,
         Func<string, Task<LauncherConfig>>? runtimeConfigLoader = null,
         Func<LauncherConfig, RollbackPreview, Task<LauncherRestoreResult>>? restorePreview = null,
-        Func<LauncherConfig, Task<RollbackPreview?>>? managedRollbackPreview = null)
+        Func<LauncherConfig, Task<RollbackPreview?>>? managedRollbackPreview = null,
+        string? preferencesPath = null)
     {
         _uiBackend = backend ?? new LauncherUiBackend();
         _runtimeConfigLoader = runtimeConfigLoader ?? (path => LauncherPaths.LoadResolvedAsync(path));
@@ -97,11 +100,11 @@ public sealed partial class MainWindow : Window
         _doctor = doctor ?? ((path, online, target, token) => LauncherDoctor.RunAsync(path, online, token, target: target));
         _startupOptions = startupOptions;
         _allowAutomaticChecks = startServices;
+        _preferencesPath = preferencesPath;
         if (model is not null) _viewModel = model;
-        _preferences = preferences ?? (startServices ? LauncherUiPreferences.Load() : new());
+        _preferences = preferences ?? (startServices ? LauncherUiPreferences.Load(preferencesPath) : new());
         InitializeComponent();
         if (model is null) LoadConfig(); else SelectProject();
-        if (startServices) { try { _fileLogger = new FileLogger(UserLogDirectory()); } catch { _fileLogger = null; } }
         _showStartupSkeleton = startServices && _configurationError is null;
         Build();
         if (startServices && PlatformSettings is not null)
@@ -119,12 +122,7 @@ public sealed partial class MainWindow : Window
             _projectVisualCache.Clear();
             _brandLogo?.Dispose();
         };
-        if (startServices) Opened += async (_, _) =>
-        {
-            RecordDisplayDiagnostic();
-            await InitializeStartupAsync();
-            await ShowFirstRunGuideAsync();
-        };
+        if (startServices) Opened += async (_, _) => await (StartupCompletion = StartAsync());
         SizeChanged += (_, args) =>
         {
             UpdateActionDetailsLimit(); RecordDisplayDiagnostic();
@@ -135,6 +133,13 @@ public sealed partial class MainWindow : Window
                 Build();
             }
         };
+    }
+
+    private async Task StartAsync()
+    {
+        await RebindUserLoggerAsync();
+        await InitializeStartupAsync();
+        await ShowFirstRunGuideAsync();
     }
 
     private async Task InitializeStartupAsync()

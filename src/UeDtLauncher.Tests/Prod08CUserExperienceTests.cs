@@ -1,8 +1,11 @@
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input;
 using Avalonia.Input.Platform;
+using Avalonia.Input.Raw;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
 using Avalonia.Threading;
@@ -17,14 +20,17 @@ public sealed class Prod08CUserExperienceTests
     public async Task FirstLaunchShowsThreeStepsAndSavesPreferences()
     {
         using var fixture = new Fixture();
-        var window = fixture.Show(new(1.25, true));
+        await new LauncherUiPreferences(1.25, true).SaveAsync(fixture.PreferencesPath);
+        await fixture.WriteConfigAsync();
+        var window = fixture.Start();
         try
         {
-            var guide = Assert.IsType<Window>(await window.ShowFirstRunGuideAsync(fixture.PreferencesPath));
+            await window.StartupCompletion;
+            var guide = Assert.Single(window.OwnedWindows);
             Assert.Contains("DT Launcher", guide.Title);
             foreach (var text in new[] { "설치", "업데이트", "지원 정보 복사", "설치 위치" })
                 Assert.Contains(text, Text(guide));
-            Click(Find<Button>(guide, "guide-start"));
+            Activate(guide, "guide-start");
             Assert.False(guide.IsVisible);
             var preferences = LauncherUiPreferences.Load(fixture.PreferencesPath);
             Assert.True(preferences.HasSeenFirstRunGuide);
@@ -39,8 +45,9 @@ public sealed class Prod08CUserExperienceTests
     {
         using var fixture = new Fixture();
         await new LauncherUiPreferences { HasSeenFirstRunGuide = true }.SaveAsync(fixture.PreferencesPath);
-        var window = fixture.Show(LauncherUiPreferences.Load(fixture.PreferencesPath));
-        try { Assert.Null(await window.ShowFirstRunGuideAsync(fixture.PreferencesPath)); }
+        await fixture.WriteConfigAsync();
+        var window = fixture.Start();
+        try { await window.StartupCompletion; Assert.Empty(window.OwnedWindows); }
         finally { window.Close(); }
     }
 
@@ -49,17 +56,18 @@ public sealed class Prod08CUserExperienceTests
     {
         using var fixture = new Fixture();
         await File.WriteAllTextAsync(fixture.PreferencesPath, "{ broken");
-        var window = fixture.Show(LauncherUiPreferences.Load(fixture.PreferencesPath), managed: true);
+        var window = fixture.Start();
         try
         {
-            var guide = Assert.IsType<Window>(await window.ShowFirstRunGuideAsync(fixture.PreferencesPath));
+            await window.StartupCompletion;
+            var guide = Assert.Single(window.OwnedWindows);
             Assert.DoesNotContain("설치 위치", Text(guide));
             guide.Close();
             Assert.True(LauncherUiPreferences.Load(fixture.PreferencesPath).HasSeenFirstRunGuide);
         }
         finally { window.Close(); }
-        var second = fixture.Show(LauncherUiPreferences.Load(fixture.PreferencesPath));
-        try { Assert.Null(await second.ShowFirstRunGuideAsync(fixture.PreferencesPath)); }
+        var second = fixture.Start();
+        try { await second.StartupCompletion; Assert.Empty(second.OwnedWindows); }
         finally { second.Close(); }
     }
 
@@ -70,13 +78,14 @@ public sealed class Prod08CUserExperienceTests
         await new LauncherUiPreferences { HasSeenFirstRunGuide = true }.SaveAsync(fixture.PreferencesPath);
         var before = await File.ReadAllTextAsync(fixture.PreferencesPath);
         var window = fixture.Show(LauncherUiPreferences.Load(fixture.PreferencesPath));
-        var dialog = window.ShowEnterpriseSettings(false);
+        Activate(window, "settings");
+        var dialog = Assert.Single(window.OwnedWindows);
         try
         {
-            Click(Find<Button>(dialog, "settings-first-run-guide"));
+            Activate(dialog, "settings-first-run-guide");
             var guide = Assert.Single(dialog.OwnedWindows);
             Assert.True(guide.IsVisible);
-            Click(Find<Button>(guide, "guide-start"));
+            Activate(guide, "guide-start");
             Assert.Equal(before, await File.ReadAllTextAsync(fixture.PreferencesPath));
             Assert.True(dialog.IsVisible);
         }
@@ -99,10 +108,14 @@ public sealed class Prod08CUserExperienceTests
             var tabs = Find<TabControl>(dialog, "settings-tabs");
             Assert.Equal(new[] { "일반", "정보", "화면", "문제 해결" }, tabs.Items.Cast<TabItem>().Select(t => t.Header));
             var allText = new List<string> { Text(window) };
-            for (var tab = 0; tab < tabs.ItemCount; tab++)
+            foreach (var tab in new[] { 2, 1, 0, 1, 2, 3 })
             {
-                tabs.SelectedIndex = tab;
-                Dispatcher.UIThread.RunJobs();
+                if (tabs.SelectedIndex != tab)
+                {
+                    FocusWithTab(dialog, "settings-tab-" + new[] { "general", "info", "display", "troubleshooting" }[tabs.SelectedIndex]);
+                    Press(dialog, tab < tabs.SelectedIndex ? PhysicalKey.ArrowLeft : PhysicalKey.ArrowRight);
+                }
+                Assert.Equal(tab, tabs.SelectedIndex);
                 allText.Add(Text(dialog));
                 if (tab == 1)
                 {
@@ -133,6 +146,75 @@ public sealed class Prod08CUserExperienceTests
             else Assert.Contains("https://portable.example:8443", tree);
         }
         finally { dialog.Close(); window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public async Task ConcurrentStartupsGrantOnlyOneGuide()
+    {
+        using var fixture = new Fixture();
+        await fixture.WriteConfigAsync();
+        var first = fixture.CreateStartupWindow();
+        var second = fixture.CreateStartupWindow();
+        first.Show();
+        second.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            await Task.WhenAll(first.StartupCompletion, second.StartupCompletion);
+            Assert.Single(first.OwnedWindows.Concat(second.OwnedWindows));
+            Assert.True(LauncherUiPreferences.Load(fixture.PreferencesPath).HasSeenFirstRunGuide);
+        }
+        finally { first.Close(); second.Close(); }
+    }
+
+    [AvaloniaFact]
+    public async Task StaleSettingsDialogsMergeOnlyFieldsTheUserChanged()
+    {
+        using var fixture = new Fixture();
+        var first = fixture.Show(new());
+        var second = fixture.Show(new());
+        try
+        {
+            var scaleDialog = first.ShowEnterpriseSettings(false);
+            var contrastDialog = second.ShowEnterpriseSettings(false);
+            var (_, claimed) = await LauncherUiPreferences.UpdateAsync(fixture.PreferencesPath,
+                latest => latest with { HasSeenFirstRunGuide = true });
+            Assert.True(claimed);
+            Find<ComboBox>(scaleDialog, "text-scale").SelectedIndex = 2;
+            Click(Find<Button>(scaleDialog, "dialog-confirm"));
+            await WaitFor(() => !scaleDialog.IsVisible);
+            Find<CheckBox>(contrastDialog, "high-contrast").IsChecked = true;
+            Click(Find<Button>(contrastDialog, "dialog-confirm"));
+            await WaitFor(() => !contrastDialog.IsVisible);
+            Assert.Equal(new LauncherUiPreferences(1.5, true) { HasSeenFirstRunGuide = true },
+                LauncherUiPreferences.Load(fixture.PreferencesPath));
+        }
+        finally { first.Close(); second.Close(); }
+    }
+
+    [AvaloniaFact]
+    public async Task ReloadChangesTheLiveLoggerToTheNewPortableLogDirectory()
+    {
+        using var fixture = new Fixture();
+        await new LauncherUiPreferences { HasSeenFirstRunGuide = true }.SaveAsync(fixture.PreferencesPath);
+        await fixture.WriteConfigAsync();
+        var window = fixture.Start();
+        try
+        {
+            await window.StartupCompletion;
+            var oldLog = Assert.Single(Directory.GetFiles(fixture.LogPath, "*.log"));
+            var oldContent = await File.ReadAllTextAsync(oldLog);
+            var newDirectory = Path.Combine(fixture.Root, "new-logs");
+            await fixture.WriteConfigAsync(newDirectory);
+            var dialog = window.ShowEnterpriseSettings(false);
+            FocusWithTab(dialog, "settings-tab-display");
+            Press(dialog, PhysicalKey.ArrowRight);
+            Activate(dialog, "settings-reload");
+            await WaitFor(() => fixture.CheckCount == 2);
+            Assert.Contains("[UiDisplay]", await File.ReadAllTextAsync(Assert.Single(Directory.GetFiles(newDirectory, "*.log"))));
+            Assert.Equal(oldContent, await File.ReadAllTextAsync(oldLog));
+        }
+        finally { window.Close(); }
     }
 
     [AvaloniaFact]
@@ -218,6 +300,34 @@ public sealed class Prod08CUserExperienceTests
         Assert.Equal(new(value, false), Assert.Single(LauncherReleaseNotes.Format(value)));
     }
 
+    [Fact]
+    public void BidiControlsAreRemovedWithoutJoiningLines()
+    {
+        const string value = "# \u202E한글\u202C\r\n- \u061Cمرحبا\u2067\u2069\r\u200F다음\u200E\u206F";
+        Assert.Equal("한글\n• مرحبا\n다음", string.Concat(LauncherReleaseNotes.Format(value).Select(s => s.Text)));
+    }
+
+    [Fact]
+    public void Utf8BudgetPreservesAWholeUnicodeScalarAndBoundsBulletExpansion()
+    {
+        const string scalar = "😀";
+        var prefix = "- " + new string('x', LauncherReleaseNotes.MaxNoteBytes - 7);
+        var result = Assert.Single(LauncherReleaseNotes.Format(prefix + scalar + scalar + "end"));
+        Assert.Equal(prefix + scalar, result.Text);
+        Assert.Equal(LauncherReleaseNotes.MaxNoteBytes - 1, System.Text.Encoding.UTF8.GetByteCount(result.Text));
+    }
+
+    [Fact]
+    public void FormattingBudgetBoundsRunCountAndLeavesRemainingMarkersLiteral()
+    {
+        const string input = "# Heading\nbody\n";
+        var limit = LauncherReleaseNotes.MaxFormattedLines;
+        var result = LauncherReleaseNotes.Format(string.Concat(Enumerable.Repeat(input, limit + 2))).ToArray();
+        Assert.Equal(limit, result.Count(section => section.IsHeading));
+        Assert.True(result.Length <= 2 * limit + 1);
+        Assert.EndsWith(input + input, result[^1].Text);
+    }
+
     [AvaloniaFact]
     public void OlderReleaseNotesCanExpandAndStayOnTheAuthorizedTrack()
     {
@@ -254,6 +364,28 @@ public sealed class Prod08CUserExperienceTests
         Dispatcher.UIThread.RunJobs();
     }
 
+    private static void Press(Window window, PhysicalKey key)
+    {
+        window.KeyPressQwerty(key, RawInputModifiers.None);
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    private static void FocusWithTab(Window window, string id)
+    {
+        for (var attempt = 0; attempt < 40; attempt++)
+        {
+            if (window.FocusManager?.GetFocusedElement() is Control control && Id(control) == id) return;
+            Press(window, PhysicalKey.Tab);
+        }
+        Assert.Fail($"Tab could not reach {id}.");
+    }
+
+    private static void Activate(Window window, string id)
+    {
+        FocusWithTab(window, id);
+        Press(window, PhysicalKey.Enter);
+    }
+
     private static async Task WaitFor(Func<bool> completed)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -272,8 +404,31 @@ public sealed class Prod08CUserExperienceTests
         public string Root { get; } = Path.Combine(Path.GetTempPath(), "uedt-prod08c-ui-" + Guid.NewGuid().ToString("N"));
         public string PreferencesPath => Path.Combine(Root, "ui-preferences.json");
         public string LogPath => Path.Combine(Root, "logs");
+        private string ConfigPath => Path.Combine(Root, "launcher.json");
+        public int CheckCount { get; private set; }
 
         public Fixture() => Directory.CreateDirectory(Root);
+
+        public Task WriteConfigAsync(string? logPath = null) => JsonFiles.WriteAsync(ConfigPath, new LauncherConfig
+        {
+            ProjectId = "demo",
+            InstallDir = Path.Combine(Root, "app"),
+            LogDir = logPath ?? LogPath,
+            Projects = [new() { ProjectId = "demo", DisplayName = "제철소 DT" }]
+        });
+
+        public MainWindow Start()
+        {
+            var window = CreateStartupWindow();
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            return window;
+        }
+
+        public MainWindow CreateStartupWindow() =>
+            new(new(ConfigPath, LauncherConfigSource.Explicit, false), null, null, true,
+                backend: new CheckBackend(this), catalogLoader: (_, _, _) => Task.FromResult(new CatalogSnapshot()),
+                runtimeConfigLoader: path => JsonFiles.ReadAsync<LauncherConfig>(path), preferencesPath: PreferencesPath);
 
         public MainWindow Show(LauncherUiPreferences preferences, bool managed = false, bool catalog = false)
         {
@@ -305,7 +460,8 @@ public sealed class Prod08CUserExperienceTests
                         Release("0.7.0", "다른 플랫폼", platform: OperatingSystem.IsWindows() ? "linux-x64" : "windows-x64")
                     ]
                 };
-            var window = new MainWindow(new(Path.Combine(Root, "launcher.json"), LauncherConfigSource.Explicit, false), model, preferences, false);
+            var window = new MainWindow(new(ConfigPath, LauncherConfigSource.Explicit, false), model, preferences, false,
+                preferencesPath: PreferencesPath);
             window.Show();
             Dispatcher.UIThread.RunJobs();
             return window;
@@ -319,5 +475,20 @@ public sealed class Prod08CUserExperienceTests
             };
 
         public void Dispose() => Directory.Delete(Root, recursive: true);
+
+        private sealed class CheckBackend(Fixture fixture) : ILauncherUiBackend
+        {
+            public Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext context, LauncherConfig config,
+                Action<LauncherProgress> progress, CancellationToken token = default)
+            {
+                fixture.CheckCount++;
+                return Task.FromResult(new LauncherUiOperationResult(config, null,
+                    new(false, null, "1.0.0", true, 0, 0, false), new(RuntimeState.Quiescent, "stopped", "stopped")));
+            }
+
+            public Task<LauncherUiOperationResult> ExecuteAsync(LauncherUiOperationContext context, LauncherConfig config,
+                bool repair, bool launch, Action<LauncherProgress> progress, FileLogger? logger, CancellationToken token = default) =>
+                throw new InvalidOperationException("Settings reload must only check.");
+        }
     }
 }

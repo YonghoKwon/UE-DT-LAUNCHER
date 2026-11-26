@@ -4,25 +4,19 @@ namespace UeDtLauncher.Gui;
 
 public sealed partial class MainWindow
 {
-    private readonly SemaphoreSlim _preferenceWrites = new(1);
-    private bool _firstRunGuideShown;
-
-    internal async Task<Window?> ShowFirstRunGuideAsync(string? preferencesPath = null)
+    private async Task ShowFirstRunGuideAsync()
     {
-        if (IsDeveloper || !IsVisible || _firstRunGuideShown || _preferences.HasSeenFirstRunGuide)
-            return null;
-
-        var dialog = ShowFirstRunGuide(this);
-        _firstRunGuideShown = true;
+        if (IsDeveloper || !IsVisible) return;
         try
         {
-            await SavePreferencesAsync(value => value with { HasSeenFirstRunGuide = true }, preferencesPath);
+            var (_, claimed) = await LauncherUiPreferences.UpdateAsync(_preferencesPath,
+                latest => latest with { HasSeenFirstRunGuide = true });
+            if (claimed && IsVisible) ShowFirstRunGuide(this);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
             AppendLog("첫 실행 안내를 본 기록을 저장하지 못했습니다.", true);
         }
-        return dialog;
     }
 
     private Window ShowFirstRunGuide(Window owner)
@@ -48,23 +42,14 @@ public sealed partial class MainWindow
             Children = { Txt(title, LauncherVisualTokens.FontSection, true), Txt(description, LauncherVisualTokens.FontBody, false) }
         });
 
-    private Task SaveDisplayPreferencesAsync(int scaleIndex, bool highContrast) =>
-        SavePreferencesAsync(value => value with
-        {
-            TextScale = LauncherUiPreferences.SupportedScales[scaleIndex],
-            HighContrast = highContrast
-        });
-
-    private async Task SavePreferencesAsync(Func<LauncherUiPreferences, LauncherUiPreferences> update, string? path = null)
+    private async Task SaveDisplayPreferencesAsync(LauncherUiPreferences openedWith, int scaleIndex, bool highContrast)
     {
-        await _preferenceWrites.WaitAsync();
-        try
+        var scale = LauncherUiPreferences.SupportedScales[scaleIndex];
+        var (value, _) = await LauncherUiPreferences.UpdateAsync(_preferencesPath, latest => latest with
         {
-            var value = update(_preferences);
-            // The writer flushes the temporary file to disk before replacing the preferences.
-            await Task.Run(() => value.SaveAsync(path));
-            _preferences = value;
-        }
-        finally { _preferenceWrites.Release(); }
+            TextScale = scale != openedWith.TextScale ? scale : latest.TextScale,
+            HighContrast = highContrast != openedWith.HighContrast ? highContrast : latest.HighContrast
+        });
+        _preferences = value;
     }
 }

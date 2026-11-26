@@ -87,6 +87,25 @@ public sealed partial class MainWindow : Window
         ? ManagedClientContext.UserLogRoot(ConfigPath)
         : LauncherPaths.ResolveConfigRelative(ConfigPath, _config.LogDir);
 
+    private async Task RebindUserLoggerAsync()
+    {
+        _fileLogger = null;
+        if (!_allowAutomaticChecks || _configurationError is not null) return;
+        var config = _config;
+        try
+        {
+            var path = UserLogDirectory();
+            var logger = await Task.Run(() => new FileLogger(path));
+            if (ReferenceEquals(_config, config))
+            {
+                _fileLogger = logger;
+                _lastDisplayDiagnostic = null;
+                RecordDisplayDiagnostic();
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { }
+    }
+
     private async void ExportLogsZip() => await ExportLogsZipAsync();
 
     private async Task<bool> ExportLogsZipAsync()

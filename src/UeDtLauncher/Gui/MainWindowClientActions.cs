@@ -25,6 +25,7 @@ public sealed partial class MainWindow : Window
             _agentStatusTimer.Stop(); _selectedRuntimeConfig = null; _viewModel.ProjectStatus = null; _catalog = new();
             _presentation.ErrorCode = null; _presentation.SupportId = null; _presentation.Retry = null;
             LoadConfig(); Build();
+            await RebindUserLoggerAsync();
             if (_configurationError is not null) return;
             if (_allowAutomaticChecks && _config.IsManagedDeployment) _agentStatusTimer.Start();
             _startupInitialized = false; await InitializeStartupAsync(); return;

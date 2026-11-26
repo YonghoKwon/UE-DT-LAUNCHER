@@ -62,7 +62,7 @@ dotnet publish src/UeDtLauncher.DistributionServer -c Release -r linux-x64 --sel
 
 - Linux 클라이언트/Agent는 `-r linux-x64`로 생성합니다. 네이티브 의존성이 있으므로 출력 폴더 전체를 배치합니다.
 - 기본 빌드는 `LauncherEdition=General`입니다. 개발자는 `dotnet publish src/UeDtLauncher -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:LauncherEdition=Developer`로 생성하고 `--build-info`로 에디션을 확인합니다. Developer 배포에는 공통 runtime-host인 일반 실행 파일도 포함해야 합니다.
-- `tools/publish_runtime_cohort.py --output <새폴더> --rid win-x64`는 두 EXE·Agent·서버와 두 클라이언트 ZIP을 함께 생성합니다. 기본은 HEAD의 커밋된 소스 snapshot이며, `--source-ref <커밋>`을 지정하면 제품 입력/역할별 파일 hash·에디션·SDK와 성공 여부를 `cohort.json`에 기록합니다. 시험 합성 앱은 별도 폴더에만 게시하며 배포 ZIP에 넣지 않습니다.
+- `tools/publish_runtime_cohort.py --output <새폴더> --rid win-x64`는 두 EXE·Agent·서버와 두 클라이언트 ZIP을 함께 생성합니다. 기본 소스는 HEAD이며 `--source-ref <커밋>`으로 바꿀 수 있습니다. 선택한 커밋을 게시본에 내장하고 실행 가능한 런처의 `--build-info`와 대조합니다. `cohort.json`에 소스 커밋·입력/파일 hash·에디션·SDK와 성공 여부를 기록합니다. 합성 시험 앱은 별도 폴더에 게시합니다.
 - 문서 구조·링크는 `python3 tools/check-documentation.py`, 개선 대장 집계는 `python3 tools/check-improvement-ledger.py`로 검사합니다. 개발 규칙은 [AGENTS](AGENTS.md)를 따릅니다.
 
 ## 처음 준비할 것

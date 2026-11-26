@@ -98,6 +98,7 @@ public sealed partial class MainWindow
 
     private Window ShowDeveloperSettings()
     {
+        var openedWith = _preferences;
         var scale=Identify(new ComboBox {ItemsSource=new[]{"100%","125%","150%","200%"},SelectedIndex=Array.IndexOf(LauncherUiPreferences.SupportedScales,_preferences.TextScale),MinHeight=40,FontSize=14*_preferences.TextScale},"text-scale","글자 크기");
         var contrast=Identify(new CheckBox {Content="앱 고대비 사용",IsChecked=_preferences.HighContrast,Foreground=Fg(),FontSize=14*_preferences.TextScale},"high-contrast","앱 고대비 사용");
         var body=new StackPanel {Spacing=16,Children={Txt("화면 접근성",18,true),Muted("글자 크기",14),scale,contrast,Muted("운영체제에서 고대비를 요청하면 앱 설정과 관계없이 고대비로 표시합니다.",13),
@@ -112,7 +113,7 @@ public sealed partial class MainWindow
         {
             var index=Math.Clamp(scale.SelectedIndex,0,3);
             if(sender is Button source)source.IsEnabled=false;
-            try {await SaveDisplayPreferencesAsync(index,contrast.IsChecked==true);dialog!.Close();Build();RefreshOpenDialogs();RecordDisplayDiagnostic();}
+            try {await SaveDisplayPreferencesAsync(openedWith,index,contrast.IsChecked==true);dialog!.Close();Build();RefreshOpenDialogs();RecordDisplayDiagnostic();}
             catch(Exception ex){MarkError(ex,"화면 설정 저장 실패");}
             finally {if(sender is Button sourceButton)sourceButton.IsEnabled=true;}
         },40),"dialog-confirm","화면 설정 적용");
