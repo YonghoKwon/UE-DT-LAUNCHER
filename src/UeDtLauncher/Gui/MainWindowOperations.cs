@@ -5,6 +5,7 @@ public sealed partial class MainWindow
 {
     private CancellationTokenSource? _operationCancellation;
     private OperationStatus? _resumeOperation;
+    private RecommendationChange? _resumeRecommendation;
     private bool? _retainedPartialDownload;
     private bool _pauseAvailable;
     private long _uiProgressGeneration;
@@ -26,9 +27,10 @@ public sealed partial class MainWindow
         RecordSelectedCardStatus();
         Build();
     }
-    private void RecordCancelledOperation(OperationStatus? operation, bool? retainedPartial = null)
+    private void RecordCancelledOperation(OperationStatus? operation, bool? retainedPartial = null, RecommendationChange? recommendation = null)
     {
         _resumeOperation=operation;
+        _resumeRecommendation=operation?.Selection == recommendation?.Recommended ? recommendation : null;
         _retainedPartialDownload=retainedPartial;
         _viewModel.GeneralState=GeneralLauncherState.RecoverableError;
         _presentation.Complete(CanResumeSelected()
@@ -52,11 +54,14 @@ public sealed partial class MainWindow
     {
         if(_running || !CanResumeSelected())return;
         var previous=_resumeOperation!;_running=true;
+        var interrupted = _resumeRecommendation;
         BeginOperation(LauncherUiOperation.Check);
         using var cancellation=new CancellationTokenSource();
         try
         {
             var context=CaptureUiOperation(previous.Selection);var config=await RunConfig(false,false);config.UiResumeOperation=previous;
+            interrupted ??= CheckedRecommendationFor(context);
+            if (!await CanMutateRecommendationAsync(context, interrupted, cancellation.Token)) return;
             BeginOperation(LauncherUiOperation.Update);StartCancellableUiOperation(cancellation);
             var result=await _uiBackend.ExecuteAsync(context,config,previous.Command=="repair",false,CreateUiProgress(),_fileLogger,cancellation.Token);
             _resumeOperation=null;
@@ -64,8 +69,8 @@ public sealed partial class MainWindow
             if(result.Completion==LauncherUiCompletion.CommittedRefreshRequired){CommittedUiRefreshRequired(failure:result.FollowUpFailure);return;}
             if(ApplyUiResult(context,result)){_presentation.Complete("다운로드 재개 및 검증 완료");Build();}
         }
-        catch(LauncherUiCancelledException cancelled){RecordCancelledOperation(cancelled.Operation,cancelled.RetainedPartialDownload);}
-        catch(OperationCanceledException){RecordCancelledOperation(previous);}
+        catch(LauncherUiCancelledException cancelled){RecordCancelledOperation(cancelled.Operation,cancelled.RetainedPartialDownload,interrupted);}
+        catch(OperationCanceledException){RecordCancelledOperation(previous,recommendation:interrupted);}
         catch(Exception error){MarkError(error,"작업 재개 실패");}
         finally{FinishUiOperation();}
     }
@@ -91,7 +96,7 @@ public sealed partial class MainWindow
     }
     private void InvalidateDisplayedInstallation()
     {
-        _selectedRuntimeConfig=null;_viewModel.ProjectStatus=null;_readOnlyRecoveryFollowUp=false;
+        _selectedRuntimeConfig=null;_viewModel.ProjectStatus=null;_readOnlyRecoveryFollowUp=false;_checkedRecommendation=null;
         _viewModel.GeneralState=GeneralLauncherState.Checking;
         _installState="확인 필요";_installDetail="배포 선택이 변경되었습니다. 설치 상태를 확인하고 있습니다.";
         _presentation.Retry=null;

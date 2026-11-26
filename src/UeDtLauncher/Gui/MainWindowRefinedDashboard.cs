@@ -143,6 +143,7 @@ public sealed partial class MainWindow : Window
         await RebindUserLoggerAsync();
         await InitializeStartupAsync();
         await ShowFirstRunGuideAsync();
+        OfferRecommendationChange();
     }
 
     private async Task InitializeStartupAsync()

@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Threading;
 
 namespace UeDtLauncher.Gui;
 
@@ -11,7 +12,8 @@ public sealed partial class MainWindow
         {
             var (_, claimed) = await LauncherUiPreferences.UpdateAsync(_preferencesPath,
                 latest => latest with { HasSeenFirstRunGuide = true });
-            if (claimed && IsVisible) ShowFirstRunGuide(this);
+            if (claimed && IsVisible)
+                ShowFirstRunGuide(this).Closed += (_, _) => Dispatcher.UIThread.Post(OfferRecommendationChange);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {

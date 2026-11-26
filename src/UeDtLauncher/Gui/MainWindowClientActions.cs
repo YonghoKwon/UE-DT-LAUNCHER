@@ -33,9 +33,9 @@ public sealed partial class MainWindow : Window
         if (!IsDeveloper && _viewModel.GeneralState == GeneralLauncherState.UpdateAvailable)
         {
             if (SelectedInstallationDamaged) { await TroubleshootAsync(); return; }
-            if (LowerRecommendation() is { } recommendation && _explainedRecommendation != recommendation)
+            if (LowerRecommendation() is { } recommendation && !RecommendationExplained(recommendation))
             {
-                _explainedRecommendation = recommendation;
+                _explainedRecommendation = recommendation.Recommended;
                 Build();
                 return;
             }
@@ -180,13 +180,16 @@ public sealed partial class MainWindow : Window
         if (_readOnlyRecoveryFollowUp) { await RefreshInstallStatusAsync(); return; }
         _running = true; SetBusy(true);
         using var operationCancellation = new CancellationTokenSource();
+        RecommendationChange? recommendation = null;
         try
         {
             var context = CaptureUiOperation(expectedSelection);
             if (IsDeveloper && launch && !await ConfirmDevLaunch(context)) return;
+            recommendation = CheckedRecommendationFor(context);
             BeginOperation(launch ? LauncherUiOperation.Launch : repair ? LauncherUiOperation.Repair : LauncherUiOperation.Update);
             Progress(0); ResetSpeedTracking(); StartCancellableUiOperation(operationCancellation);
             var config = await RunConfig(repair, launch);
+            if (!await CanMutateRecommendationAsync(context, null, operationCancellation.Token)) return;
             var result = await _uiBackend.ExecuteAsync(context, config, repair, launch, CreateUiProgress(), _fileLogger, operationCancellation.Token);
             _resumeOperation = null;
             if (_presentation.Committing || result.Completion == LauncherUiCompletion.CommittedLaunchSkipped) ShowInstallationNotice(result);
@@ -194,7 +197,7 @@ public sealed partial class MainWindow : Window
             _presentation.Complete(result.Completion == LauncherUiCompletion.CommittedLaunchSkipped ? "설치 완료 · 프로그램 실행은 생략했습니다." : launch ? "실행 준비 완료" : repair ? "파일 복구 완료" : "업데이트 확인 완료");
             if (ApplyUiResult(context, result)) Build();
         }
-        catch (LauncherUiCancelledException cancelled) { RecordCancelledOperation(cancelled.Operation,cancelled.RetainedPartialDownload); }
+        catch (LauncherUiCancelledException cancelled) { RecordCancelledOperation(cancelled.Operation,cancelled.RetainedPartialDownload,recommendation); }
         catch (OperationCanceledException) { RecordCancelledOperation(null); }
         catch (Exception ex) { MarkError(ex); }
         finally { FinishUiOperation(); }
@@ -207,15 +210,26 @@ public sealed partial class MainWindow : Window
         if (_catalog.SelectionPolicy == CatalogRecommendation.ExplicitPolicy && _config.VersionPolicy != "exact" && SelectedCatalogRelease() is null)
         { AwaitPromotion(); return; }
         _running = true; SetBusy(true);
+        _checkedRecommendation = null;
         try
         {
             var context = CaptureUiOperation();
             BeginOperation(LauncherUiOperation.Check); _viewModel.GeneralState = GeneralLauncherState.Checking; Progress(0); Build();
             var result = await _uiBackend.CheckAsync(context, await RunConfig(false, false), CreateUiProgress());
-            if (ApplyUiResult(context, result)) { _presentation.Complete(_installState); Build(); }
+            ValidateUiResult(context, result);
+            var change = !IsDeveloper
+                ? RecommendationChange.Find(context.VersionPolicy, SelectedCatalogRelease(), result.Status)
+                : null;
+            var priorRuntime = change is not null && result.Runtime?.State == RuntimeState.Quiescent
+                ? await ObservePreviousRecommendationRuntimeAsync(_selectedProject, context, change)
+                : null;
+            if (ApplyUiResult(context, result) && (change is null || !ApplyPreviousRuntimeBlock(priorRuntime)))
+            { _presentation.Complete(_installState); Build(); }
+            _checkedRecommendation = change;
         }
         catch (Exception ex) { MarkError(ex, "상태 확인 실패", showDialog: !suppressDialog); }
         finally { FinishUiOperation(); }
+        if (!_showStartupSkeleton && _checkedRecommendation is not null) OfferRecommendationChange();
     }
 
     private async Task TroubleshootAsync()

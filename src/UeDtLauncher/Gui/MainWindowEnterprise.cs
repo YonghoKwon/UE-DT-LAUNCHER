@@ -356,7 +356,9 @@ public sealed partial class MainWindow
                     ? "작업 기록에서 결과를 확인한 뒤 상태를 다시 확인해 주세요."
                     : IsDeveloper ? _installDetail : GeneralStateDetail(),LauncherVisualTokens.FontBody),
                 "project-state-guidance","프로그램 상태 안내"));
-        if (!IsDeveloper && LowerRecommendation() is { } recommendation && _explainedRecommendation == recommendation)
+        if (ShowRecommendationBadge)
+            stack.Children.Add(RecommendationBadge("recommendation-badge"));
+        if (!IsDeveloper && LowerRecommendation() is { } recommendation && _explainedRecommendation == recommendation.Recommended)
             stack.Children.Add(Muted("현재 권장 버전을 설치할 수 있습니다. 이전 설치는 보존됩니다.", LauncherVisualTokens.FontBody));
         if (!IsDeveloper)
         {
