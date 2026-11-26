@@ -21,6 +21,7 @@ public sealed partial class MainWindow
     private TextBlock? _stageLabel;
     private TextBlock? _announcer;
     private ListBox? _enterpriseProjects;
+    private Control? _projectSearchEmpty;
     private ScrollViewer? _enterpriseScroll;
     private Bitmap? _brandLogo;
     private bool _building;
@@ -33,18 +34,32 @@ public sealed partial class MainWindow
     private bool _helpExpanded;
     private int _detailsTabIndex;
     private bool HighContrast => _preferences.HighContrast || PlatformSettings?.GetColorValues().ContrastPreference == ColorContrastPreference.High;
-    private IBrush PageBrush => HighContrast ? Brushes.Black : LauncherVisualTokens.Background(IsDeveloper);
-    private IBrush SurfaceBrush => HighContrast ? Brushes.Black : LauncherVisualTokens.Surface(IsDeveloper);
+    private IBrush PageBrush => HighContrast ? Brushes.Black : LauncherVisualTokens.Brush(LauncherVisualTokens.PageColor(IsDeveloper, false));
+    private IBrush SurfaceBrush => HighContrast ? Brushes.Black : LauncherVisualTokens.Brush(LauncherVisualTokens.SurfaceColor(IsDeveloper, false));
     private bool HasProject => _viewModel.ProjectsForProfile().Any(p => p.ProjectId == _selectedProject.ProjectId);
 
     private T Identify<T>(T control, string id, string name) where T : Control
     {
         AutomationProperties.SetAutomationId(control,id); AutomationProperties.SetName(control,name); control.TabIndex=SemanticTabIndex(id); return control;
     }
-    private Button EnterpriseButton(string text,string id,EventHandler<Avalonia.Interactivity.RoutedEventArgs> action,bool primary=false,bool tracked=true)
+    private Button EnterpriseButton(string text,string id,EventHandler<Avalonia.Interactivity.RoutedEventArgs> action,bool primary=false,bool tracked=true,LauncherIconKind? icon=null)
     {
         var button=primary?PrimaryButton(text,action,48):SecondaryButton(text,action,40);
+        if (icon is { } kind && button.Content is TextBlock label &&
+            (CurrentLayoutWidth() >= 800 || _preferences.TextScale <= 1.5))
+        {
+            button.Content = null;
+            button.Content = IconLabel(kind, label, LauncherVisualTokens.SpaceLg);
+        }
         Identify(button,id,text); if(tracked) Track(button); return button;
+    }
+
+    private static Control IconLabel(LauncherIconKind kind, TextBlock label, double size)
+    {
+        var row = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = LauncherVisualTokens.SpaceSm };
+        row.Children.Add(LauncherIconFactory.Create(kind, size, label.Foreground!));
+        row.Children.Add(At(label, 1));
+        return row;
     }
     private T ScaleHeader<T>(T control) where T : TemplatedControl
     {
@@ -52,12 +67,6 @@ public sealed partial class MainWindow
         control.FontSize=LauncherVisualTokens.FontBody*_preferences.TextScale;
         return control;
     }
-    private Control EnterpriseCard(Control content,double padding=16) => new Border
-    {
-        Child=content, Padding=new Thickness(padding), Background=SurfaceBrush,
-        BorderBrush=HighContrast?Brushes.White:LauncherVisualTokens.Border(IsDeveloper), BorderThickness=new Thickness(1),
-        CornerRadius=new CornerRadius(LauncherVisualTokens.RadiusCard)
-    };
     private void BuildEnterprise()
     {
         if(_building) return;
@@ -74,6 +83,7 @@ public sealed partial class MainWindow
             var offset=_enterpriseScroll?.Offset ?? default;
             _configDraft=_configPathBox?.Text ?? _configDraft ?? _startupOptions.ConfigPath;
             _configPathBox=null;
+            _enterpriseProjects=null; _projectSearchEmpty=null;
             _actionButtons.Clear(); _selectionControls.Clear(); _nextTabIndex=0;
             Title=IsDeveloper?"POSCO DX · DT Launcher — 개발자":"POSCO DX · DT Launcher";
             RequestedThemeVariant=IsDeveloper||HighContrast?Avalonia.Styling.ThemeVariant.Dark:Avalonia.Styling.ThemeVariant.Light;
@@ -91,23 +101,36 @@ public sealed partial class MainWindow
             var sidebar=wide && (IsDeveloper || projects.Count>1);
             Background=PageBrush;
             Classes.Set("high-contrast",HighContrast);
+            Resources["LauncherProjectSelectionBrush"] = LauncherVisualTokens.Brush(
+                LauncherVisualTokens.ProjectSelectionColor(IsDeveloper, HighContrast));
             if(!IsDeveloper)_logBox=null;
-            var root=new Grid { RowDefinitions=new("Auto,*,Auto"), RowSpacing=12, Background=PageBrush, Margin=new Thickness(width<800?12:20) };
+            var root=new Grid { RowDefinitions=new("Auto,*,Auto"), RowSpacing=LauncherVisualTokens.SpaceMd, Background=PageBrush, Margin=new Thickness(width<800?LauncherVisualTokens.SpaceMd:LauncherVisualTokens.SpaceXl) };
             root.Children.Add(EnterpriseHeader());
             var work=new Grid { ColumnDefinitions=new(sidebar?"248,*":"*"),ColumnSpacing=20 };
             if(sidebar)work.Children.Add(EnterpriseProjectList());
-            var content=new StackPanel { Spacing=16 };
+            var content=new StackPanel { Spacing=LauncherVisualTokens.SpaceLg };
             if(_viewModel.GeneralState==GeneralLauncherState.ConfigurationRequired)
             {
                 var example="UeDtLauncher.exe sample-config --mode managed-client --project-id <프로젝트ID> --output launcher.config.json";
                 var command=Identify(new TextBox{Text=example,IsReadOnly=true,TextWrapping=TextWrapping.Wrap,FontSize=14*_preferences.TextScale,MinHeight=72},"configuration-example","관리형 화면 설정 생성 명령 예시");
-                content.Children.Add(Identify(EnterpriseCard(new StackPanel{Spacing=12,Children={Txt("화면 설정 준비",18,true),Muted("관리자에게 프로젝트 ID와 업데이트 서비스 준비 상태를 확인해 주세요. 실행 파일 옆에 화면 설정을 생성한 뒤 다시 확인하세요. 아래 명령의 프로젝트ID를 실제 등록값으로 바꿉니다.",14),command}}),"configuration-help","화면 설정 생성 안내"));
+                content.Children.Add(Identify(Card(new StackPanel{Spacing=12,Children={Txt("화면 설정 준비",18,true),Muted("관리자에게 프로젝트 ID와 업데이트 서비스 준비 상태를 확인해 주세요. 실행 파일 옆에 화면 설정을 생성한 뒤 다시 확인하세요. 아래 명령의 프로젝트ID를 실제 등록값으로 바꿉니다.",14),command}}),"configuration-help","화면 설정 생성 안내"));
             }
             if(!sidebar && projects.Count>1) content.Children.Add(CompactProjectSelector());
             if(IsDeveloper) content.Children.Add(EnterpriseFilters());
-            if(!HasProject)
+            if (_showStartupSkeleton)
             {
-                content.Children.Add(EnterpriseCard(new StackPanel {Spacing=12,Children={Txt("사용 가능한 프로젝트가 없습니다",24,true),Muted("이 PC에 허용된 배포를 확인하거나 관리자에게 문의해 주세요.",14),EnterpriseButton("배포 다시 확인","empty-refresh",async (_,_)=>await RefreshSelectionStatusAsync())}}));
+                content.Children.Add(StartupSkeleton());
+            }
+            else if(!HasProject)
+            {
+                var unavailable = projects.Count != 0 || _configurationError is not null || _presentation.ErrorCode is not null;
+                content.Children.Add(EmptyState(
+                    "deployment-empty", LauncherIconKind.Package,
+                    "사용 가능한 프로젝트가 없습니다",
+                    unavailable
+                        ? "이 PC에 허용된 배포를 확인하거나 관리자에게 문의해 주세요."
+                        : "아직 공개된 버전이 없습니다. 담당자가 공개하면 표시됩니다.",
+                    EnterpriseButton("배포 다시 확인","empty-refresh",async (_,_)=>await RefreshSelectionStatusAsync(),icon:LauncherIconKind.Refresh)));
             }
             else
             {
@@ -134,11 +157,11 @@ public sealed partial class MainWindow
                 }
                 else
                 {
-                    var help=ScaleHeader(new Expander {Header="릴리스 설명 및 도움말",IsExpanded=_helpExpanded,Content=new StackPanel {Spacing=12,Children={Txt(_releaseNotes,14,false),Muted("프로그램이 실행 중이면 정상 종료 후 다시 확인해 주세요. 창을 닫아도 실행 중인 프로그램은 종료되지 않습니다.",14)}}});
+                    var help=ScaleHeader(new Expander {Header="릴리스 설명 및 도움말",IsExpanded=_helpExpanded,Content=new StackPanel {Spacing=LauncherVisualTokens.SpaceMd,Children={Txt(_releaseNotes,LauncherVisualTokens.FontBody,false),Muted("프로그램이 실행 중이면 정상 종료 후 다시 확인해 주세요. 창을 닫아도 실행 중인 프로그램은 종료되지 않습니다.",LauncherVisualTokens.FontBody)}}});
                     KeyboardNavigation.SetTabNavigation(help,KeyboardNavigationMode.Local);
                     Identify(help,"release-help","릴리스 설명 및 도움말");
                     help.PropertyChanged+=(_,e)=>{if(e.Property==Expander.IsExpandedProperty)_helpExpanded=help.IsExpanded;};
-                    content.Children.Add(EnterpriseCard(help));
+                    content.Children.Add(Card(help));
                 }
             }
             _enterpriseScroll=Identify(new ScrollViewer {Content=content,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled},"workspace-scroll","프로젝트 작업 공간");
@@ -163,19 +186,28 @@ public sealed partial class MainWindow
         var grid=new Grid {ColumnDefinitions=new("Auto,*,Auto"),ColumnSpacing=14};
         var logo=Identify(new Image {Source=_brandLogo,Width=128,Height=36,Stretch=Stretch.Uniform},"brand-logo","포스코DX");
         grid.Children.Add(new Border {Background=Brushes.White,Padding=new Thickness(12,8),CornerRadius=new CornerRadius(6),Child=logo});
-        grid.Children.Add(At(new StackPanel {Spacing=2,VerticalAlignment=VerticalAlignment.Center,Children={Txt("DT Launcher",20,true),Muted(IsDeveloper?"개발자 배포 작업 공간":"디지털 트윈 프로그램",12)}},1));
-        _serviceLabel=Identify(Muted(_agentState,12),"service-status","업데이트 서비스 상태");
+        grid.Children.Add(At(new StackPanel {Spacing=LauncherVisualTokens.SpaceXs,VerticalAlignment=VerticalAlignment.Center,Children={Txt("DT Launcher",LauncherVisualTokens.FontSection,true),Muted(IsDeveloper?"개발자 배포 작업 공간":"디지털 트윈 프로그램",LauncherVisualTokens.FontCaption)}},1));
+        _serviceLabel=Identify(Muted(_agentState,LauncherVisualTokens.FontCaption),"service-status","업데이트 서비스 상태");
         var right=new StackPanel {Orientation=Orientation.Horizontal,Spacing=12,VerticalAlignment=VerticalAlignment.Center};
         if(CurrentLayoutWidth()>=800)right.Children.Add(_serviceLabel);
-        var settings=EnterpriseButton("설정","settings",(_,_)=>SettingsDialog(IsDeveloper),tracked:false);right.Children.Add(settings);grid.Children.Add(At(right,2));
+        var settings=EnterpriseButton("설정","settings",(_,_)=>SettingsDialog(IsDeveloper),tracked:false,icon:LauncherIconKind.Settings);right.Children.Add(settings);grid.Children.Add(At(right,2));
         return grid;
     }
     private Control EnterpriseProjectList()
     {
-        var grid=new Grid {RowDefinitions=new("Auto,Auto,*"),RowSpacing=12};
-        var heading=new Grid {ColumnDefinitions=new("*,Auto")};heading.Children.Add(Txt("프로젝트",18,true));
-        heading.Children.Add(At(EnterpriseButton("새로고침","catalog-refresh",async (_,_)=>await RefreshSelectionStatusAsync(true)),1));grid.Children.Add(heading);
-        var search=Identify(new TextBox {Text=_search,Watermark="프로젝트 검색",MinHeight=40,FontSize=14*_preferences.TextScale},"project-search","프로젝트 검색");
+        var grid=new Grid {RowDefinitions=new("Auto,Auto,*"),RowSpacing=LauncherVisualTokens.SpaceMd};
+        var heading=new Grid {ColumnDefinitions=new("*,Auto")};heading.Children.Add(Txt("프로젝트",LauncherVisualTokens.FontSection,true));
+        heading.Children.Add(At(EnterpriseButton("새로고침","catalog-refresh",async (_,_)=>await RefreshSelectionStatusAsync(true),icon:LauncherIconKind.Refresh),1));grid.Children.Add(heading);
+        var search=Identify(new TextBox {Text=_search,Watermark="프로젝트 검색",MinHeight=40,FontSize=LauncherVisualTokens.FontBody*_preferences.TextScale},"project-search","프로젝트 검색");
+        var clearSearch = EnterpriseButton("검색어 지우기", "clear-project-search", (_, _) =>
+        {
+            search.Text = string.Empty;
+            search.Focus();
+        }, icon: LauncherIconKind.Clear);
+        var empty = EmptyState("project-search-empty", LauncherIconKind.Search, "검색 결과가 없습니다",
+            "프로젝트 이름을 다시 입력하거나 검색어를 지워 전체 목록을 확인하세요.", clearSearch);
+        empty.VerticalAlignment = VerticalAlignment.Top;
+        _projectSearchEmpty = empty;
         search.TextChanged+=(_,_)=>{_search=search.Text??"";RenderEnterpriseProjects();};grid.Children.Add(AtRow(search,1));
         _enterpriseProjects=Identify(new ListBox {Background=Brushes.Transparent,BorderThickness=new Thickness(0),SelectionMode=SelectionMode.Single},"project-list","프로젝트 선택");
         RenderEnterpriseProjects();
@@ -185,19 +217,77 @@ public sealed partial class MainWindow
             if(_selectedProject.ProjectId==project.ProjectId)return;
             _selectedProject=project;_config.ProjectId=project.ProjectId;SelectionChanged();Build();
         };
-        _selectionControls.Add(_enterpriseProjects);grid.Children.Add(AtRow(_enterpriseProjects,2));return grid;
+        _selectionControls.Add(_enterpriseProjects);
+        grid.Children.Add(AtRow(new Grid { Children = { _enterpriseProjects, empty } }, 2));
+        return grid;
     }
     private void RenderEnterpriseProjects()
     {
-        if(_enterpriseProjects is null)return;
+        if(_enterpriseProjects is null || _projectSearchEmpty is not { } empty)return;
         var previous=_building; _building=true;
         try
         {
-            var items=VisibleProjects().Select(p=>Identify(new ListBoxItem {Tag=p,Padding=new Thickness(12),Margin=new Thickness(0,0,0,8),Content=new StackPanel {Spacing=6,Children={Label(p.DisplayName,15,p.ProjectId==_selectedProject.ProjectId?Brushes.White:Fg(),true),Label(p.ProjectId,12,p.ProjectId==_selectedProject.ProjectId?Brushes.White:MutedBrush())}}},"project-"+p.ProjectId,p.DisplayName)).ToList();
+            var items = VisibleProjects().Select(project =>
+            {
+                var selected = project.ProjectId == _selectedProject.ProjectId;
+                return Identify(new ListBoxItem
+                {
+                    Tag = project,
+                    Classes = { "launcher-project" },
+                    Padding = new Thickness(LauncherVisualTokens.SpaceMd),
+                    Margin = new Thickness(0, 0, 0, LauncherVisualTokens.SpaceSm),
+                    Content = new StackPanel
+                    {
+                        Spacing = LauncherVisualTokens.SpaceXs,
+                        Children =
+                        {
+                            Label(project.DisplayName, LauncherVisualTokens.FontBody, selected ? Brushes.White : Fg(), true),
+                            Label(project.ProjectId, LauncherVisualTokens.FontCaption, selected ? Brushes.White : MutedBrush())
+                        }
+                    }
+                }, "project-" + project.ProjectId, project.DisplayName);
+            }).ToList();
             _enterpriseProjects.ItemsSource=items;
             _enterpriseProjects.SelectedItem=items.FirstOrDefault(i=>((ProjectUiConfig)i.Tag!).ProjectId==_selectedProject.ProjectId);
+            empty.IsVisible = items.Count == 0 && !string.IsNullOrWhiteSpace(_search) && _viewModel.ProjectsForProfile().Any();
+            _enterpriseProjects.IsVisible = !empty.IsVisible;
         }
         finally {_building=previous;}
+    }
+
+    private Control EmptyState(string id, LauncherIconKind icon, string title, string detail, Button action)
+    {
+        var actions = Identify(new WrapPanel { Children = { action } }, id + "-actions", "다음 행동");
+        var content = new StackPanel
+        {
+            Spacing = LauncherVisualTokens.SpaceMd,
+            Children =
+            {
+                IconLabel(icon, Txt(title, LauncherVisualTokens.FontSection, true), LauncherVisualTokens.FontSection),
+                Muted(detail, LauncherVisualTokens.FontBody),
+                actions
+            }
+        };
+        return Identify(Card(content), id, title);
+    }
+
+    private Control StartupSkeleton()
+    {
+        var brush = LauncherVisualTokens.Brush(LauncherVisualTokens.SkeletonColor(IsDeveloper, HighContrast));
+        var blocks = new StackPanel { Spacing = LauncherVisualTokens.SpaceSm };
+        AutomationProperties.SetAccessibilityView(blocks, AccessibilityView.Raw);
+        foreach (var (width, height) in new[] { (168d, 20d), (112d, 12d), (144d, 12d) })
+        {
+            blocks.Children.Add(new Border
+            {
+                Width = width * _preferences.TextScale,
+                Height = height * _preferences.TextScale,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                CornerRadius = new CornerRadius(LauncherVisualTokens.RadiusControl),
+                Background = brush
+            });
+        }
+        return Identify(Card(blocks), "startup-skeleton", "프로그램 상태 확인 중");
     }
     private Control EnterpriseFilters()
     {
@@ -205,63 +295,87 @@ public sealed partial class MainWindow
         foreach(var control in new[]{ComboLine("환경",_config.Environment,["prod","dev"],v=>{_config.Environment=v;SelectionChanged();}),ComboLine("채널",_config.Channel,["stable","beta","dev"],v=>{_config.Channel=v;SelectionChanged();}),ComboLine("버전 정책",_config.VersionPolicy,["latest","exact"],v=>{_config.VersionPolicy=v;SelectionChanged();})})
         {control.Width=220;control.Margin=new Thickness(0,0,12,8);wrap.Children.Add(control);}
         if(_config.VersionPolicy=="exact"){var exact=ExactVersionLine();exact.Width=240;exact.Margin=new Thickness(0,0,0,8);wrap.Children.Add(exact);}
-        return EnterpriseCard(wrap,12);
+        return Card(wrap,12);
     }
     private Control EnterpriseOverview()
     {
         var narrow=CurrentLayoutWidth()<800||_preferences.TextScale>1.5;
-        var grid=new Grid {ColumnDefinitions=new(narrow?"*":"*,164"),ColumnSpacing=20};
-        var stack=new StackPanel {Spacing=10};stack.Children.Add(Txt(_selectedProject.DisplayName,24,true));
-        var status=new Grid {ColumnDefinitions=new("Auto,*"),ColumnSpacing=8};
-        var icon=LauncherIconFactory.Create(_viewModel.GeneralState==GeneralLauncherState.Ready?LauncherIconKind.Check:_viewModel.GeneralState==GeneralLauncherState.RecoverableError?LauncherIconKind.Warning:LauncherIconKind.Shield,20,Fg());
-        AutomationProperties.SetAccessibilityView(icon,AccessibilityView.Raw);status.Children.Add(icon);status.Children.Add(At(Txt(_installState,16,true),1));
-        stack.Children.Add(status);stack.Children.Add(Muted(_installDetail,14));
-        var versions=new WrapPanel {Orientation=Orientation.Horizontal};
-        versions.Children.Add(new StackPanel {Margin=new Thickness(0,0,32,0),Children={Muted(!IsDeveloper && _viewModel.ProjectStatus is {IsInstalled:false,PreviousInstallation:not null}?"기존 설치 버전":"설치 버전",12),Txt(ReadInstalledVersion()??"미설치",16,true)}});
-        versions.Children.Add(new StackPanel {Children={Muted(IsDeveloper?"선택 배포 버전":"최신 배포 버전",12),Txt(LatestCatalogVersion()??"확인 필요",16,true)}});
-        stack.Children.Add(versions);grid.Children.Add(stack);
-        if(!narrow&&!HighContrast)
+        var grid=new Grid {ColumnDefinitions=new(narrow?"*,88":"*,164"),ColumnSpacing=LauncherVisualTokens.SpaceLg};
+        var stack=new StackPanel {Spacing=LauncherVisualTokens.SpaceMd};
+        stack.Children.Add(Txt(_selectedProject.DisplayName,LauncherVisualTokens.FontProject,true));
+        var (tone, icon) = _viewModel.GeneralState switch
         {
-            var visual=ProjectHeroVisual(ProjectVisualResolver.Resolve(_selectedProject,ConfigPath,ProjectVisualKind.Hero)); visual.Height=108;
-            AutomationProperties.SetAccessibilityView(visual,AccessibilityView.Raw);grid.Children.Add(At(visual,1));
-        }
-        return EnterpriseCard(grid,20);
+            GeneralLauncherState.Ready => (LauncherStatusTone.Normal, LauncherIconKind.Check),
+            GeneralLauncherState.UpdateAvailable or GeneralLauncherState.RuntimeBlocked or GeneralLauncherState.AwaitingPromotion =>
+                (LauncherStatusTone.Caution, LauncherIconKind.Warning),
+            GeneralLauncherState.RecoverableError or GeneralLauncherState.ConfigurationRequired =>
+                (LauncherStatusTone.Error, LauncherIconKind.Error),
+            GeneralLauncherState.NotInstalled => (LauncherStatusTone.Progress, LauncherIconKind.Package),
+            _ => (LauncherStatusTone.Progress, LauncherIconKind.Refresh)
+        };
+        var status = Identify(Txt(_installState, LauncherVisualTokens.FontBody, true), "project-install-status", _installState);
+        status.Foreground = StatusBrush(tone);
+        stack.Children.Add(IconLabel(icon, status, LauncherVisualTokens.FontSection));
+        stack.Children.Add(Muted(_installDetail,LauncherVisualTokens.FontBody));
+        var versions=new WrapPanel {Orientation=Orientation.Horizontal};
+        versions.Children.Add(new StackPanel {Margin=new Thickness(0,0,LauncherVisualTokens.Space2Xl,0),Children={Muted(!IsDeveloper && _viewModel.ProjectStatus is {IsInstalled:false,PreviousInstallation:not null}?"기존 설치 버전":"설치 버전",LauncherVisualTokens.FontCaption),Txt(ReadInstalledVersion()??"미설치",LauncherVisualTokens.FontBody,true)}});
+        versions.Children.Add(new StackPanel {Children={Muted(IsDeveloper?"선택 배포 버전":"최신 배포 버전",LauncherVisualTokens.FontCaption),Txt(LatestCatalogVersion()??"확인 필요",LauncherVisualTokens.FontBody,true)}});
+        stack.Children.Add(versions);grid.Children.Add(stack);
+        var visual = narrow || HighContrast
+            ? BrandedFallback(ProjectVisualResolver.Fallback(_selectedProject), hero: !narrow)
+            : ProjectHeroVisual(ProjectVisualResolver.Resolve(_selectedProject, ConfigPath, ProjectVisualKind.Hero));
+        visual.Height = narrow ? 72 : 108;
+        visual.VerticalAlignment = VerticalAlignment.Top;
+        AutomationProperties.SetAccessibilityView(visual, AccessibilityView.Raw);
+        grid.Children.Add(At(visual, 1));
+        return Card(grid,LauncherVisualTokens.SpaceLg);
     }
     private Control EnterpriseMaintenance()
     {
         var wrap=new WrapPanel {Orientation=Orientation.Horizontal};
-        var buttons=new[]{EnterpriseButton("검증/복구","repair",async (_,_)=>await RunAsync(true,false)),EnterpriseButton("백업 복원","rollback",async (_,_)=>await RollbackLatestAsync()),
-            EnterpriseButton("임시 파일 정리","cache-clear",async(_,_)=>await RunMaintenanceAsync(false)),EnterpriseButton("백업 정리","backup-cleanup",async(_,_)=>await RunMaintenanceAsync(true)),
-            EnterpriseButton("설치 폴더","open-folder",(_,_)=>OpenInstallFolder(),tracked:false),EnterpriseButton("로그 ZIP","export-logs",(_,_)=>ExportLogsZip(),tracked:false)};
+        var buttons=new[]{EnterpriseButton("검증/복구","repair",async (_,_)=>await RunAsync(true,false),icon:LauncherIconKind.Wrench),EnterpriseButton("백업 복원","rollback",async (_,_)=>await RollbackLatestAsync(),icon:LauncherIconKind.Refresh),
+            EnterpriseButton("임시 파일 정리","cache-clear",async(_,_)=>await RunMaintenanceAsync(false),icon:LauncherIconKind.Clear),EnterpriseButton("백업 정리","backup-cleanup",async(_,_)=>await RunMaintenanceAsync(true),icon:LauncherIconKind.Clear),
+            EnterpriseButton("설치 폴더","open-folder",(_,_)=>OpenInstallFolder(),tracked:false,icon:LauncherIconKind.Folder),EnterpriseButton("로그 ZIP","export-logs",(_,_)=>ExportLogsZip(),tracked:false,icon:LauncherIconKind.Log)};
         foreach(var b in buttons){b.Margin=new Thickness(0,8,8,0);wrap.Children.Add(b);}return wrap;
     }
     private Control EnterpriseLogs()
     {
-        _logBox=Identify(new TextBox {Text=_presentation.LogText,IsReadOnly=true,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,MinHeight=180,MaxHeight=360,FontSize=12*_preferences.TextScale,FontFamily=new FontFamily("Cascadia Mono,Consolas"),Foreground=Fg(),Background=SurfaceBrush},"operation-log","작업 기록");
-        return EnterpriseCard(new StackPanel {Spacing=12,Children={Txt("작업 기록",18,true),_logBox}});
+        _logBox=Identify(new TextBox {Text=_presentation.LogText,IsReadOnly=true,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,MinHeight=180,MaxHeight=360,FontSize=LauncherVisualTokens.FontCaption*_preferences.TextScale,FontFamily=new FontFamily("Cascadia Mono,Consolas"),Foreground=Fg(),Background=SurfaceBrush},"operation-log","작업 기록");
+        return Card(new StackPanel {Spacing=LauncherVisualTokens.SpaceMd,Children={Txt("작업 기록",LauncherVisualTokens.FontSection,true),_logBox}});
     }
     private Control EnterpriseActionBar()
     {
-        var panel=new StackPanel {Spacing=12};var actions=new WrapPanel {Orientation=Orientation.Horizontal};
-        var primary=EnterpriseButton(_configurationError is not null?"설정 다시 확인":_readOnlyRecoveryFollowUp?"상태 다시 확인":IsDeveloper?"실행":_viewModel.PrimaryActionText,"primary-action",async (_,_)=>{if(IsDeveloper && _configurationError is null)await RunAsync(false,true);else await ExecutePrimaryActionAsync();},true);
+        var panel=new StackPanel {Spacing=LauncherVisualTokens.SpaceMd};var actions=new WrapPanel {Orientation=Orientation.Horizontal};
+        var primaryIcon = _configurationError is not null || _readOnlyRecoveryFollowUp
+            ? LauncherIconKind.Refresh
+            : IsDeveloper ? LauncherIconKind.Play
+            : _viewModel.PrimaryAction switch
+            {
+                PrimaryActionKind.Launch => LauncherIconKind.Play,
+                PrimaryActionKind.InstallAndLaunch or PrimaryActionKind.UpdateAndLaunch => LauncherIconKind.Download,
+                _ => LauncherIconKind.Refresh
+            };
+        var primary=EnterpriseButton(_configurationError is not null?"설정 다시 확인":_readOnlyRecoveryFollowUp?"상태 다시 확인":IsDeveloper?"실행":_viewModel.PrimaryActionText,"primary-action",async (_,_)=>{if(IsDeveloper && _configurationError is null)await RunAsync(false,true);else await ExecutePrimaryActionAsync();},true,icon:primaryIcon);
         primary.Tag="general-primary-action"; primary.IsEnabled=HasProject&&_viewModel.PrimaryAction!=PrimaryActionKind.Disabled&&!_running;
         if(IsDeveloper)primary.IsEnabled=HasProject&&!_running;
         primary.HotKey=new KeyGesture(Key.F5);actions.Children.Add(primary);
-        if(IsDeveloper)actions.Children.Add(EnterpriseButton("업데이트","update",async (_,_)=>await RunAsync(false,false)));
-        var check=EnterpriseButton(_readOnlyRecoveryFollowUp?"상태 다시 확인":_viewModel.GeneralState==GeneralLauncherState.RecoverableError?"문제 해결":"상태 확인","status-check",async (_,_)=>await ExecuteStatusActionAsync());
+        if(IsDeveloper)actions.Children.Add(EnterpriseButton("업데이트","update",async (_,_)=>await RunAsync(false,false),icon:LauncherIconKind.Download));
+        var check=EnterpriseButton(_readOnlyRecoveryFollowUp?"상태 다시 확인":_viewModel.GeneralState==GeneralLauncherState.RecoverableError?"문제 해결":"상태 확인","status-check",async (_,_)=>await ExecuteStatusActionAsync(),icon:LauncherIconKind.Check);
         check.HotKey=new KeyGesture(Key.F6);actions.Children.Add(check);
         if(_running && _operationCancellation is not null)
         {
-            var cancel=EnterpriseButton(_operationCancellation.IsCancellationRequested?"취소 요청 중":"작업 취소","cancel-operation",(_,_)=>RequestOperationCancellation(),tracked:false);
+            var cancel=EnterpriseButton(_operationCancellation.IsCancellationRequested?"취소 요청 중":"작업 취소","cancel-operation",(_,_)=>RequestOperationCancellation(),tracked:false,icon:LauncherIconKind.Stop);
             cancel.IsEnabled=!_operationCancellation.IsCancellationRequested;actions.Children.Add(cancel);
         }
-        if(!_running && CanResumeSelected())actions.Children.Add(EnterpriseButton("다운로드 재개","resume-operation",async(_,_)=>await ResumeUiOperationAsync()));
-        if(_viewModel.GeneralState!=GeneralLauncherState.RuntimeBlocked && _presentation.ErrorCode is not null && _presentation.Retry is not null)actions.Children.Add(EnterpriseButton("다시 시도","retry-operation",async (_,_)=>await RetryCurrentAsync()));
-        foreach(var item in actions.Children)item.Margin=new Thickness(0,0,8,0);
+        if(!_running && CanResumeSelected())actions.Children.Add(EnterpriseButton("다운로드 재개","resume-operation",async(_,_)=>await ResumeUiOperationAsync(),icon:LauncherIconKind.Download));
+        if(_viewModel.GeneralState!=GeneralLauncherState.RuntimeBlocked && _presentation.ErrorCode is not null && _presentation.Retry is not null)actions.Children.Add(EnterpriseButton("다시 시도","retry-operation",async (_,_)=>await RetryCurrentAsync(),icon:LauncherIconKind.Refresh));
+        foreach(var item in actions.Children)item.Margin=new Thickness(0,0,LauncherVisualTokens.SpaceSm,0);
         panel.Children.Add(actions);
-        _statusText=Identify(Txt(_presentation.Title,14,true),"operation-status","작업 상태");
-        _percentText=Muted("",12);_stageLabel=Muted("",12);
-        _progress=Identify(new ProgressBar {Minimum=0,Maximum=100,Height=6},"operation-progress","작업 진행률");
+        _statusText=Identify(Txt(_presentation.Title,LauncherVisualTokens.FontBody,true),"operation-status","작업 상태");
+        _percentText=Muted("",LauncherVisualTokens.FontSecondary);_stageLabel=Muted("",LauncherVisualTokens.FontSecondary);
+        _progress=Identify(new ProgressBar {Minimum=0,Maximum=100,Height=6,
+            Background=LauncherVisualTokens.Brush(LauncherVisualTokens.MutedSurfaceColor(IsDeveloper, HighContrast)),
+            Foreground=StatusBrush(LauncherStatusTone.Progress)},"operation-progress","작업 진행률");
         if(_announcer?.Parent is Panel oldParent)oldParent.Children.Remove(_announcer);
         _announcer ??= Identify(new TextBlock {Height=1,Opacity=0,IsHitTestVisible=false},"operation-announcement","작업 상태 알림");
         AutomationProperties.SetLiveSetting(_announcer,AutomationLiveSetting.Polite);
@@ -272,7 +386,7 @@ public sealed partial class MainWindow
         if(_presentation.SupportId is not null)detailsPanel.Children.Add(Muted("지원 ID: "+_presentation.SupportId,12));
         _actionDetails=Identify(new ScrollViewer {Content=detailsPanel,Focusable=true,IsTabStop=true,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled},"action-details","작업 상세 안내");
         panel.Children.Add(_actionDetails);
-        return EnterpriseCard(panel,12);
+        return Card(panel,12);
     }
     private void UpdateActionDetailsLimit()
     {

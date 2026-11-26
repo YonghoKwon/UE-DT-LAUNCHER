@@ -30,6 +30,7 @@ public sealed partial class MainWindow : Window
     private string _agentState { get => _viewModel.AgentState; set => _viewModel.AgentState = value; }
     private bool _agentStatusRefreshing;
     private bool _startupInitialized;
+    private bool _showStartupSkeleton;
     private Exception? _configurationError;
     private readonly ILauncherUiBackend _uiBackend;
     private readonly Func<string, Task<LauncherConfig>> _runtimeConfigLoader;
@@ -101,6 +102,7 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         if (model is null) LoadConfig(); else SelectProject();
         if (startServices) { try { _fileLogger = new FileLogger(_config.IsManagedDeployment ? ManagedClientContext.UserLogRoot(ConfigPath) : LauncherPaths.ResolveConfigRelative(ConfigPath, _config.LogDir)); } catch { _fileLogger = null; } }
+        _showStartupSkeleton = startServices && _configurationError is null;
         Build();
         if (startServices && PlatformSettings is not null)
         {
@@ -137,23 +139,40 @@ public sealed partial class MainWindow : Window
         if (!File.Exists(ConfigPath) || _configurationError is not null)
         {
             _viewModel.GeneralState = GeneralLauncherState.ConfigurationRequired;
+            HideStartupSkeleton();
             return;
         }
 
         _viewModel.GeneralState = GeneralLauncherState.Checking;
-        var serviceAvailable = await RefreshAgentStatusAsync();
-        if (_config.IsManagedDeployment && !serviceAvailable)
+        if (!_showStartupSkeleton)
         {
-            _installState = "확인 필요";
-            _installDetail = "업데이트 서비스에 연결한 뒤 다시 확인해 주세요.";
-            _viewModel.GeneralState = GeneralLauncherState.RecoverableError;
-            _presentation.Title = "업데이트 서비스 연결이 필요합니다"; _presentation.Percent = null;
-            _presentation.ErrorCode = "service-unavailable";
-            _presentation.SupportId = Guid.NewGuid().ToString("N");
+            _showStartupSkeleton = true;
             Build();
-            return;
         }
-        if (await RefreshCatalog(false, suppressDialog: true) && HasProject) await RefreshInstallStatusAsync(suppressDialog: true);
+        try
+        {
+            var serviceAvailable = await RefreshAgentStatusAsync();
+            if (_config.IsManagedDeployment && !serviceAvailable)
+            {
+                _installState = "확인 필요";
+                _installDetail = "업데이트 서비스에 연결한 뒤 다시 확인해 주세요.";
+                _viewModel.GeneralState = GeneralLauncherState.RecoverableError;
+                _presentation.Title = "업데이트 서비스 연결이 필요합니다"; _presentation.Percent = null;
+                _presentation.ErrorCode = "service-unavailable";
+                _presentation.SupportId = Guid.NewGuid().ToString("N");
+                return;
+            }
+            if (await RefreshCatalog(false, suppressDialog: true) && HasProject)
+                await RefreshInstallStatusAsync(suppressDialog: true);
+        }
+        finally { HideStartupSkeleton(); }
+    }
+
+    private void HideStartupSkeleton()
+    {
+        if (!_showStartupSkeleton) return;
+        _showStartupSkeleton = false;
+        if (IsVisible) Build();
     }
 
     private void LoadConfig()
@@ -219,7 +238,7 @@ public sealed partial class MainWindow : Window
 
     private void SelectProject()
     {
-        var projects = VisibleProjects().ToList();
+        var projects = _viewModel.ProjectsForProfile().ToList();
         _selectedProject = projects.FirstOrDefault(p => string.Equals(p.ProjectId, _config.ProjectId, StringComparison.OrdinalIgnoreCase))
             ?? projects.FirstOrDefault()
             ?? new ProjectUiConfig { ProjectId = "", DisplayName = "사용 가능한 프로젝트가 없습니다" };

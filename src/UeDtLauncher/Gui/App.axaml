@@ -34,8 +34,8 @@
       <Setter Property="BorderBrush" Value="#FFFF00" />
       <Setter Property="BorderThickness" Value="3" />
     </Style>
-    <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
-      <Setter Property="Background" Value="#05507D" />
+    <Style Selector="ListBoxItem.launcher-project:selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource LauncherProjectSelectionBrush}" />
     </Style>
   </Application.Styles>
 </Application>

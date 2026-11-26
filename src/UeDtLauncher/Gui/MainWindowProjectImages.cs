@@ -80,54 +80,24 @@ public sealed partial class MainWindow : Window
 
     private Border BrandedFallback(ProjectVisualAsset asset, bool hero)
     {
-        var accents = new[]
-        {
-            LauncherVisualTokens.Accent,
-            LauncherVisualTokens.PoscoLightBlue,
-            LauncherVisualTokens.BrandNavyDeep
-        };
-        var accent = accents[Math.Clamp(asset.FallbackVariant, 0, accents.Length - 1)];
-        var grid = new Grid { ClipToBounds = true };
-        grid.Children.Add(new Border
-        {
-            Background = new LinearGradientBrush
-            {
-                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                GradientStops =
-                {
-                    new GradientStop(LauncherVisualTokens.BrandNavyDeep, 0),
-                    new GradientStop(LauncherVisualTokens.BrandNavy, 0.55),
-                    new GradientStop(accent, 1)
-                }
-            }
-        });
-        grid.Children.Add(new Border
-        {
-            Width = hero ? 360 : 44,
-            Height = hero ? 360 : 44,
-            CornerRadius = new CornerRadius(hero ? 180 : 22),
-            HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, hero ? 70 : -10, 0),
-            Background = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255))
-        });
-        grid.Children.Add(new TextBlock
-        {
-            Text = asset.Initials,
-            FontSize = hero ? 32 : 18,
-            FontWeight = FontWeight.Bold,
-            Foreground = new SolidColorBrush(Color.FromArgb(hero ? (byte)55 : (byte)220, 255, 255, 255)),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0)
-        });
-        return new Border
+        var initials = Label(asset.Initials,
+            hero ? LauncherVisualTokens.FontProject : LauncherVisualTokens.FontSection, Brushes.White, true);
+        initials.TextWrapping = TextWrapping.NoWrap;
+        initials.HorizontalAlignment = HorizontalAlignment.Center;
+        initials.VerticalAlignment = VerticalAlignment.Center;
+        AutomationProperties.SetAutomationId(initials, "project-name-initials");
+
+        var tile = new Border
         {
             CornerRadius = new CornerRadius(hero ? LauncherVisualTokens.RadiusHero : LauncherVisualTokens.RadiusControl),
+            Background = LauncherVisualTokens.Brush(LauncherVisualTokens.ProjectTileColor(asset.FallbackVariant, HighContrast)),
+            BorderBrush = LauncherVisualTokens.Brush(LauncherVisualTokens.BorderColor(IsDeveloper, HighContrast)),
+            BorderThickness = new Thickness(1),
             ClipToBounds = true,
-            Child = grid
+            Child = initials
         };
+        AutomationProperties.SetAccessibilityView(tile, AccessibilityView.Raw);
+        return tile;
     }
 
     private Bitmap? CachedProjectBitmap(ProjectVisualAsset asset)
