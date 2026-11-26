@@ -3,6 +3,7 @@ namespace UeDtLauncher.Gui;
 
 public sealed record LauncherUiPreferences(double TextScale = 1, bool HighContrast = false)
 {
+    public bool HasSeenFirstRunGuide { get; init; }
     public static readonly double[] SupportedScales = [1, 1.25, 1.5, 2];
     internal const string DirectoryOverride = "UE_DT_UI_PREFERENCES_DIR";
     private const string FileName = "ui-preferences.json";
