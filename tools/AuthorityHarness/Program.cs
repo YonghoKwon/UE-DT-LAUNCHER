@@ -9,6 +9,7 @@ if (args.Length < 2) return 2;
 try
 {
     if (args[0] is "intake-crash" or "intake-reopen") return RunIntake(args);
+    if (args[0] == "intake-claim-barrier") return await RunIntakeClaimBarrier(args);
     if (await PlatformChecks.RunCommand(args) is { } platformExit) return platformExit;
     if (args[0] == "crash-init")
         AuthorityDisk.Boundary.Value = PauseAt(Enum.Parse<AuthorityBoundary>(args[2]));
@@ -106,6 +107,15 @@ static async Task<int> RunCatalogCommand(string[] args)
     return 0;
 }
 
+static async Task<int> RunIntakeClaimBarrier(string[] args)
+{
+    var store = new IntakeStore(new() { Root = args[1] });
+    // Hashing starts after the durable claim and private ZIP copy. The actual intake still
+    // owns the OS job lock and has a scratch directory when the harness pauses it.
+    await store.IngestAsync(args[2], observer: new IntakeClaimBarrier());
+    throw new InvalidOperationException("Intake exited before reporting the claimed copy phase.");
+}
+
 static int RunIntake(string[] args)
 {
     var store = new IntakeStore(new() { Root = args[1] });
@@ -171,4 +181,16 @@ static CommitPlan MakeCrashPlan(AuthoritySnapshot snapshot, string kind)
     if (kind == "area") changed.Add(AuthorityArea.Sequence,
         JsonSerializer.SerializeToElement(new { schemaVersion = 1, highWater = 42 }));
     return new(changed, kind == "area" ? [] : [new(DateTimeOffset.UnixEpoch, "crash-commit", kind)]);
+}
+
+
+file sealed class IntakeClaimBarrier : IProgress<PackageWorkProgress>
+{
+    public void Report(PackageWorkProgress value)
+    {
+        if (value.Phase != "hash") return;
+        Console.WriteLine("CLAIMED");
+        Console.Out.Flush();
+        Thread.Sleep(Timeout.Infinite);
+    }
 }

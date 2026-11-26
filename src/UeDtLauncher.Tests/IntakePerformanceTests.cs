@@ -6,10 +6,11 @@ using Microsoft.Data.Sqlite;
 using UeDtLauncher.Distribution;
 using UeDtLauncher.Distribution.Authority;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace UeDtLauncher.Tests;
 
-public sealed class IntakePerformanceTests : IDisposable
+public sealed class IntakePerformanceTests(ITestOutputHelper testOutput) : IDisposable
 {
     private readonly string root = Path.Combine(Path.GetTempPath(), "intake-perf-" + Guid.NewGuid().ToString("N"));
 
@@ -226,27 +227,36 @@ public sealed class IntakePerformanceTests : IDisposable
         }
         await SidecarPackageValidator.GenerateAsync(zip, Path.Combine(upload, "release.json"),
             new() { ProjectId = "crash", Version = "1.0.0", EntryPoint = "game.exe" });
-        var config = Path.Combine(root, "server.json"); await JsonFiles.WriteAsync(config, store.Settings);
-        var start = new ProcessStartInfo("dotnet") { UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true, CreateNoWindow = true };
-        foreach (var argument in new[] { typeof(IntakeStore).Assembly.Location, "ingest", upload, "--config", config }) start.ArgumentList.Add(argument);
-        using var child = Process.Start(start)!;
-        var error = child.StandardError.ReadToEndAsync(); var output = child.StandardOutput.ReadToEndAsync();
-        var claimed = false;
+        using var child = AuthorityStoreFixture.Start(root, "intake-claim-barrier", upload);
+        var started = Stopwatch.GetTimestamp();
+        string scratch;
         try
         {
-            var started = Stopwatch.GetTimestamp();
-            while (!child.HasExited && Stopwatch.GetElapsedTime(started) < TimeSpan.FromSeconds(15))
-            {
-                if (IntakeJobs.Read(store.Authority.ReadSnapshot()).ActiveWork.Count > 0)
-                { claimed = true; child.Kill(true); break; }
-                await Task.Delay(5);
-            }
+            var marker = await child.Process.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(15));
+            var snapshot = store.Authority.ReadSnapshot();
+            var jobs = IntakeJobs.Read(snapshot);
+            var claimed = marker == "CLAIMED" && jobs.ActiveWork.Count > 0;
+            testOutput.WriteLine($"Durable claim: elapsedMs={Stopwatch.GetElapsedTime(started).TotalMilliseconds:F1}, " +
+                $"generation={snapshot.Generation}, activeWork={jobs.ActiveWork.Count}, childExited={child.Process.HasExited}");
             Assert.True(claimed, "Child process must be killed after its durable work claim.");
+            var work = Assert.Single(jobs.ActiveWork);
+            scratch = IntakeJobs.Resolve(root, work.Scratch!);
+            Assert.True(File.Exists(Path.Combine(scratch, "game.zip")));
+            Assert.Equal("validating", Assert.Single(jobs.Jobs, job => job.Id == work.Job).State);
+            child.Process.Kill(entireProcessTree: true);
         }
-        finally { if (!child.HasExited) child.Kill(true); await child.WaitForExitAsync(); await error; await output; }
+        finally
+        {
+            if (!child.Process.HasExited) child.Process.Kill(entireProcessTree: true);
+            await child.Process.WaitForExitAsync();
+            var stopped = await child.Finish();
+            testOutput.WriteLine($"Owned intake child exit code={stopped.ExitCode}");
+            if (stopped.Error.Length != 0) testOutput.WriteLine(stopped.Error);
+        }
         var reopened = new IntakeStore(store.Settings);
         Assert.Empty(new ApprovedPublisher(reopened).List());
         StorageMaintenance.Cleanup(reopened, true);
+        Assert.False(Directory.Exists(scratch));
         var recovered = await reopened.IngestAsync(upload);
         Assert.Equal("pending", recovered.State);
         Assert.Empty(new ApprovedPublisher(reopened).List());
