@@ -129,6 +129,15 @@ public class DeveloperDashboardTests
         var window = fixture.Window;
         Assert.Equal(1366, window.ClientSize.Width);
         Assert.Equal(768, window.ClientSize.Height);
+        var initialWorkspace = Find<ScrollViewer>(window, "workspace-scroll");
+        Assert.Equal(0, initialWorkspace.Offset.Y);
+        foreach (var panelId in new[] { "developer-release-filters", "release-info", "developer-installation" })
+        {
+            var panel = Find<Border>(window, panelId);
+            var origin = panel.TranslatePoint(new Point(0, 0), initialWorkspace)!.Value;
+            Assert.InRange(origin.Y, 0, initialWorkspace.Viewport.Height);
+            Assert.InRange(origin.Y + panel.Bounds.Height, 0, initialWorkspace.Viewport.Height + 1);
+        }
         var list = Find<ListBox>(window, "developer-version-list");
         Assert.Equal(20, list.Items.Count);
         var first = Assert.IsType<ListBoxItem>(list.SelectedItem);

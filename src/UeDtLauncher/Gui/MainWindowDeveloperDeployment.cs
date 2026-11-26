@@ -11,6 +11,7 @@ namespace UeDtLauncher.Gui;
 public sealed partial class MainWindow
 {
     private bool _developerNotesExpanded;
+    private ContentControl? _developerServiceVersion;
 
     private Control EnterpriseFilters()
     {
@@ -161,7 +162,7 @@ public sealed partial class MainWindow
         return panels;
     }
 
-    private Control DeveloperVersionList()
+    private Control DeveloperVersionList(string? focusId)
     {
         var allowed = MatchingReleases().ToArray();
         var selected = SelectedCatalogRelease();
@@ -176,6 +177,8 @@ public sealed partial class MainWindow
             var items = allowed.Select(DeveloperVersionItem).ToArray();
             var list = Identify(new ListBox
             {
+                // Initial selection must not scroll the containing workspace down to this list.
+                AutoScrollToSelectedItem = false,
                 ItemsSource = items,
                 SelectedIndex = Array.IndexOf(allowed, selected),
                 MaxHeight = 230,
@@ -195,7 +198,7 @@ public sealed partial class MainWindow
                 SelectionChanged();
                 Build();
             };
-            if (list.SelectedItem is { } item)
+            if (focusId?.StartsWith("developer-version-", StringComparison.Ordinal) == true && list.SelectedItem is { } item)
                 list.Loaded += (_, _) => list.ScrollIntoView(item);
             body.Children.Add(list);
         }
@@ -225,15 +228,27 @@ public sealed partial class MainWindow
         }, "developer-version-" + release.Version, $"{release.Version}, {DeveloperRecommendationLabel(release)}");
     }
 
-    private Control DeveloperBuildInformation() =>
-        Identify(Card(new StackPanel
+    private Control DeveloperBuildInformation()
+    {
+        _developerServiceVersion = new ContentControl();
+        RefreshDeveloperServiceVersion();
+        return Identify(Card(new StackPanel
         {
             Spacing = LauncherVisualTokens.SpaceSm,
             Children =
             {
                 Txt("정보", LauncherVisualTokens.FontSection, true),
                 KeyValue("런처 빌드", LauncherDisplayVersion),
-                KeyValue("운영체제", CurrentPlatform)
+                KeyValue("운영체제", CurrentPlatform),
+                _developerServiceVersion
             }
         }), "developer-build-info", "런처 정보");
+    }
+
+    private void RefreshDeveloperServiceVersion()
+    {
+        if (_developerServiceVersion is null) return;
+        _developerServiceVersion.Content = _serviceVersion is { } version ? KeyValue("서비스 버전", version) : null;
+        _developerServiceVersion.IsVisible = _serviceVersion is not null;
+    }
 }

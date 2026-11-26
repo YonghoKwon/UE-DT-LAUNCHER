@@ -108,6 +108,7 @@ public sealed partial class MainWindow
                 LauncherVisualTokens.ProjectSelectionColor(IsDeveloper, HighContrast));
             _logBox = null;
             _developerHistoryText = null;
+            _developerServiceVersion = null;
             var root=new Grid { RowDefinitions=new("Auto,*,Auto"), RowSpacing=LauncherVisualTokens.SpaceMd, Background=PageBrush, Margin=new Thickness(width<800?LauncherVisualTokens.SpaceMd:LauncherVisualTokens.SpaceXl) };
             root.Children.Add(EnterpriseHeader());
             var work=new Grid { ColumnDefinitions=new(sidebar?"248,*":"*"),ColumnSpacing=20 };
@@ -150,6 +151,7 @@ public sealed partial class MainWindow
             }
             else
             {
+                if (IsDeveloper) content.Children.Add(DeveloperSelectionPanels());
                 content.Children.Add(EnterpriseOverview());
                 if(IsDeveloper)
                 {
@@ -158,7 +160,7 @@ public sealed partial class MainWindow
                     KeyboardNavigation.SetTabNavigation(more,KeyboardNavigationMode.Local);
                     more.PropertyChanged+=(_,e)=>{if(e.Property==Expander.IsExpandedProperty)_maintenanceExpanded=more.IsExpanded;};
                     Identify(more,"maintenance","유지보수 및 진단"); content.Children.Add(more);
-                    content.Children.Add(DeveloperVersionList());
+                    content.Children.Add(DeveloperVersionList(focusId));
                     var details=DeveloperBuildInformation(); var logs=EnterpriseLogs();
                     if(wide)
                     {
@@ -166,7 +168,7 @@ public sealed partial class MainWindow
                     }
                     else
                     {
-                        var tabs=Identify(new TabControl {ItemsSource=new[]{ScaleHeader(new TabItem {Header="배포 정보",Content=details}),ScaleHeader(new TabItem {Header="작업 기록",Content=logs})},SelectedIndex=_detailsTabIndex},"details-tabs","배포 정보와 작업 기록");
+                        var tabs=Identify(new TabControl {ItemsSource=new[]{ScaleHeader(new TabItem {Header="정보",Content=details}),ScaleHeader(new TabItem {Header="작업 기록",Content=logs})},SelectedIndex=_detailsTabIndex},"details-tabs","정보와 작업 기록");
                         KeyboardNavigation.SetTabNavigation(tabs,KeyboardNavigationMode.Local);
                         tabs.SelectionChanged+=(_,_)=>{if(!_building)_detailsTabIndex=Math.Max(0,tabs.SelectedIndex);};
                         content.Children.Add(tabs);
@@ -375,8 +377,7 @@ public sealed partial class MainWindow
         visual.VerticalAlignment = VerticalAlignment.Top;
         AutomationProperties.SetAccessibilityView(visual, AccessibilityView.Raw);
         grid.Children.Add(At(visual, 1));
-        var overview = Card(grid,LauncherVisualTokens.SpaceLg);
-        return IsDeveloper ? new StackPanel { Spacing = LauncherVisualTokens.SpaceMd, Children = { overview, DeveloperSelectionPanels() } } : overview;
+        return Card(grid,LauncherVisualTokens.SpaceLg);
     }
     private Control EnterpriseMaintenance()
     {
