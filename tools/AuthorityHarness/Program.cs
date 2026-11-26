@@ -58,7 +58,7 @@ try
         case "catalog-approve":
         case "catalog-promote":
         case "catalog-serve":
-            return await RunCatalogCommand(store, args);
+            return await RunCatalogCommand(args);
         default:
             return 2;
     }
@@ -77,11 +77,10 @@ catch (Exception error)
 
 static void Print<T>(T value) => Console.WriteLine(JsonSerializer.Serialize(value, AuthorityDocuments.Json));
 
-static async Task<int> RunCatalogCommand(AuthorityStore authority, string[] args)
+static async Task<int> RunCatalogCommand(string[] args)
 {
     var settings = await JsonFiles.ReadAsync<DistributionSettings>(args[2]);
     var intake = new IntakeStore(settings);
-    CatalogAuthority.Bind(intake, authority);
     if (args[0] == "catalog-serve")
     {
         await DistributionHttp.RunAsync(intake);
@@ -100,7 +99,7 @@ static async Task<int> RunCatalogCommand(AuthorityStore authority, string[] args
     {
         var boundary = Enum.Parse<AuthorityBoundary>(args[4]);
         var occurrence = boundary is AuthorityBoundary.GenerationWrite or AuthorityBoundary.GenerationFlush
-            or AuthorityBoundary.GenerationRename or AuthorityBoundary.GenerationDirectoryFlush ? 2 : 1;
+            or AuthorityBoundary.GenerationRename or AuthorityBoundary.GenerationDirectoryFlush ? 3 : 1;
         CatalogAuthority.PublicationBoundary.Value = PauseAt(boundary, occurrence);
     }
     Print(await new ApprovedPublisher(intake).ApproveAsync(args[3]));

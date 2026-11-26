@@ -8,10 +8,15 @@ namespace UeDtLauncher.Distribution;
 
 internal sealed class CredentialAuthority(AuthorityStore store)
 {
-    // Temporary integration seam. Bind once before handing the IntakeStore to any credential caller.
+    // Live and read-only enrollment stores bind before handing off to a credential caller.
     private static readonly ConditionalWeakTable<IntakeStore, CredentialAuthority> Bindings = new();
+    internal static readonly AsyncLocal<AuthoritySnapshot?> RequestSnapshot = new();
 
-    internal static void Bind(IntakeStore intake, AuthorityStore authority) => Bindings.Add(intake, new(authority));
+    internal static void Bind(IntakeStore intake, AuthorityStore authority)
+    {
+        if (authority != intake.Authority) throw new ArgumentException("Credential authority must belong to the intake store.");
+        Bindings.Add(intake, new(authority));
+    }
 
     internal static CredentialAuthority? For(IntakeStore intake) => Bindings.TryGetValue(intake, out var authority) ? authority : null;
 
@@ -51,7 +56,7 @@ internal sealed class CredentialAuthority(AuthorityStore store)
     internal IReadOnlyList<RegisteredDeviceKey> ListDeviceKeys() => Read().DeviceKeys
         .OrderBy(key => key.KeyId, StringComparer.Ordinal).Select(key => key.Registration).ToArray();
 
-    internal void IssueToken(string hash, string client, string? expiry)
+    internal void IssueToken(string hash, string client, string? expiry, IDisposable? heldWriter = null)
     {
         var id = Guid.NewGuid().ToString("N");
         Change(document =>
@@ -60,7 +65,7 @@ internal sealed class CredentialAuthority(AuthorityStore store)
                 throw new InvalidDataException("Token identity already exists.");
             document.Tokens.Add(new(hash, id, client, false, expiry, false));
             return [Event("token-issued", id)];
-        });
+        }, (AuthorityStore.WriterLease?)heldWriter);
     }
 
     internal void RevokeClientTokens(string client) => Change(document =>
@@ -168,7 +173,10 @@ internal sealed class CredentialAuthority(AuthorityStore store)
         else store.CommitUnderHeldLock(writer, Plan);
     }
 
-    private AuthDocument Read() => Read(store.ReadSnapshot());
+    private AuthDocument Read() =>
+        Read(RequestSnapshot.Value is { } snapshot && snapshot.Store == store ? snapshot : store.ReadSnapshot());
+
+    internal static void Validate(AuthoritySnapshot snapshot) => _ = Read(snapshot);
 
     private static AuthDocument Read(AuthoritySnapshot snapshot)
     {
@@ -181,17 +189,24 @@ internal sealed class CredentialAuthority(AuthorityStore store)
             var ids = new HashSet<string>(StringComparer.Ordinal);
             var hashes = new HashSet<string>(StringComparer.Ordinal);
             foreach (var token in document.Tokens)
-                if (string.IsNullOrEmpty(token.Client) || string.IsNullOrEmpty(token.Id) ||
-                    string.IsNullOrEmpty(token.Hash) || !ids.Add(token.Id) || !hashes.Add(token.Hash))
+            {
+                if (token is null || string.IsNullOrEmpty(token.Client) || string.IsNullOrEmpty(token.Id) ||
+                    token.Hash is not { Length: 64 } || !token.Hash.All(Uri.IsHexDigit) ||
+                    !ids.Add(token.Id) || !hashes.Add(token.Hash))
                     throw new JsonException();
+                _ = CredentialLifecycle.Due(token.ExpiresAtUtc, DateTimeOffset.MinValue);
+            }
             var keys = new HashSet<string>(StringComparer.Ordinal);
             foreach (var key in document.DeviceKeys)
-                if (string.IsNullOrEmpty(key.ClientId) || string.IsNullOrEmpty(key.KeyId) ||
+            {
+                if (key is null || string.IsNullOrEmpty(key.ClientId) || string.IsNullOrEmpty(key.KeyId) ||
                     string.IsNullOrEmpty(key.PublicKeyPem) || !keys.Add(key.KeyId))
                     throw new JsonException();
+                _ = CredentialLifecycle.Due(key.ExpiresAtUtc, DateTimeOffset.MinValue);
+            }
             return document;
         }
-        catch (Exception error) when (error is JsonException or KeyNotFoundException or InvalidOperationException)
+        catch (Exception error) when (error is JsonException or KeyNotFoundException or InvalidOperationException or InvalidDataException or NullReferenceException)
         {
             throw new AuthorityStoreException("Invalid credential authority document.", error);
         }

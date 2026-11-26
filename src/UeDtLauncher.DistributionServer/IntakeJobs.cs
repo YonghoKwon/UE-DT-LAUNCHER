@@ -14,11 +14,16 @@ internal sealed record IntakeActiveWork(
     [property: JsonRequired] Guid ClaimId, [property: JsonRequired] string? Scratch,
     [property: JsonRequired] string? Snapshot, [property: JsonRequired] DateTimeOffset StartedAt);
 
+internal sealed record MaintenanceDeletion(
+    [property: JsonRequired] string Id, [property: JsonRequired] string Path,
+    [property: JsonRequired] string? Job, [property: JsonRequired] string TreeHash,
+    [property: JsonRequired] DateTimeOffset At);
+
 internal sealed record IntakeJobs(
     [property: JsonRequired] int SchemaVersion,
     [property: JsonRequired] List<StoredIntakeJob> Jobs,
     [property: JsonRequired] List<IntakeActiveWork> ActiveWork,
-    [property: JsonRequired] JsonElement MaintenanceDeletions)
+    [property: JsonRequired] List<MaintenanceDeletion> MaintenanceDeletions)
 {
     internal static StringComparer PathComparer => OperatingSystem.IsWindows()
         ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
@@ -27,7 +32,7 @@ internal sealed record IntakeJobs(
     {
         var jobs = snapshot.Get(AuthorityArea.Jobs).Deserialize<IntakeJobs>(AuthorityDocuments.Json);
         if (jobs is null || jobs.Jobs is null || jobs.ActiveWork is null ||
-            jobs.MaintenanceDeletions.ValueKind != JsonValueKind.Array)
+            jobs.MaintenanceDeletions is null)
             throw new InvalidDataException("Invalid intake jobs area.");
         return jobs;
     }

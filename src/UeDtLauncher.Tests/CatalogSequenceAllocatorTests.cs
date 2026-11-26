@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+using UeDtLauncher.Distribution.Authority;
 using UeDtLauncher.Distribution;
 using Xunit;
 
@@ -9,9 +9,8 @@ public sealed class CatalogSequenceAllocatorTests : IDisposable
     private readonly string root = Path.Combine(Path.GetTempPath(), "sequence-reservation-" + Guid.NewGuid().ToString("N"));
     private readonly IntakeStore store;
     public CatalogSequenceAllocatorTests() => store = new(new() { Root=root });
-    public void Dispose() { SqliteConnection.ClearAllPools(); Directory.Delete(root,true); }
-    private long HighWater()
-    { using var db=store.Open(); using var q=db.CreateCommand(); q.CommandText="SELECT value FROM sequence WHERE id=1"; return (long)q.ExecuteScalar()!; }
+    public void Dispose() { Directory.Delete(root,true); }
+    private long HighWater() => FileAuthorityFixtures.HighWater(store);
 
     [Fact]
     public async Task ConcurrentNumbersAreUniqueAndDurablyReservedBeforeUse()
@@ -27,11 +26,11 @@ public sealed class CatalogSequenceAllocatorTests : IDisposable
     [Fact]
     public async Task FailedCommitDoesNotIssueOrCacheAnUnreservedNumber()
     {
-        using(var db=store.Open())using(var q=db.CreateCommand())
-        { q.CommandText="CREATE TRIGGER fail_sequence BEFORE UPDATE ON sequence BEGIN SELECT RAISE(ABORT,'synthetic failure'); END";q.ExecuteNonQuery(); }
         var allocator = new CatalogSequenceAllocator(store);
-        await Assert.ThrowsAsync<SqliteException>(()=>allocator.NextAsync(default)); Assert.Equal(0,HighWater());
-        using(var db=store.Open())using(var q=db.CreateCommand()){q.CommandText="DROP TRIGGER fail_sequence";q.ExecuteNonQuery();}
+        AuthorityDisk.Boundary.Value = FileAuthorityFixtures.FailBeforeHead;
+        try { await Assert.ThrowsAsync<IOException>(() => allocator.NextAsync(default)); }
+        finally { AuthorityDisk.Boundary.Value = null; }
+        Assert.Equal(0, HighWater());
         Assert.Equal(1,await allocator.NextAsync(default));
     }
     [Fact]
@@ -50,9 +49,9 @@ public sealed class CatalogSequenceAllocatorTests : IDisposable
         var allocator = new CatalogSequenceAllocator(store);
         using var cancelled=new CancellationTokenSource();cancelled.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>allocator.NextAsync(cancelled.Token));Assert.Equal(0,HighWater());
-        using(var db=store.Open())using(var q=db.CreateCommand()){q.CommandText="UPDATE sequence SET value=$value";q.Parameters.AddWithValue("$value",long.MaxValue);q.ExecuteNonQuery();}
+        FileAuthorityFixtures.SetSequence(store, long.MaxValue);
         await Assert.ThrowsAsync<InvalidDataException>(()=>allocator.NextAsync(default));Assert.Equal(long.MaxValue,HighWater());
-        using(var db=store.Open())using(var q=db.CreateCommand()){q.CommandText="UPDATE sequence SET value=1.5";q.ExecuteNonQuery();}
+        FileAuthorityFixtures.SetSequence(store, 1.5);
         await Assert.ThrowsAsync<InvalidDataException>(()=>allocator.NextAsync(default));
     }
 }

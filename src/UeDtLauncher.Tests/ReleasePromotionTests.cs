@@ -1,6 +1,4 @@
-using Microsoft.Data.Sqlite;
 using System.Security.Cryptography;
-using System.Text.Json;
 using UeDtLauncher.Distribution;
 using UeDtLauncher.Distribution.Authority;
 using Xunit;
@@ -12,15 +10,12 @@ public sealed class ReleasePromotionTests : IDisposable
     private readonly string root = Path.Combine(Path.GetTempPath(), "promotion-tests-"+Guid.NewGuid().ToString("N"));
     private readonly IntakeStore store;
     public ReleasePromotionTests() => store = new(new() { Root = root });
-    public void Dispose() { SqliteConnection.ClearAllPools(); Directory.Delete(root, true); }
+    public void Dispose() { Directory.Delete(root, true); }
     private ReleaseSelection Selection(string version) => new("demo", "prod", "stable", "windows-x64", version);
     private void Publish(string version)
     {
         var m = new ReleaseSidecar { ProjectId = "demo", Version = version, Platform = "windows-x64", EntryPoint = "game.exe", PackageFile = "Windows.zip" };
-        using var db = store.Open(); using var q = db.CreateCommand();
-        q.CommandText = "INSERT INTO releases VALUES($id,$job,$dir,$meta)";
-        q.Parameters.AddWithValue("$id", m.ReleaseId); q.Parameters.AddWithValue("$job", version); q.Parameters.AddWithValue("$dir", root);
-        q.Parameters.AddWithValue("$meta", JsonSerializer.Serialize(m, JsonFiles.Options)); q.ExecuteNonQuery();
+        FileAuthorityFixtures.SeedRelease(store, m, version);
     }
     [Fact]
     public void ApprovalDoesNotPromoteAndManualRevisionIsDurable()
@@ -63,8 +58,7 @@ public sealed class ReleasePromotionTests : IDisposable
         try { Assert.Throws<IOException>(() => p.Promote(Selection("1.0.0"), 0, "test")); }
         finally { ReleasePromotions.BeforeCommit.Value = null; }
         Assert.Empty(p.Snapshot().Events);
-        using var db = store.Open(); using var q = db.CreateCommand(); q.CommandText = "SELECT COUNT(*) FROM audit WHERE action='release-promoted'";
-        Assert.Equal(0L, Convert.ToInt64(q.ExecuteScalar()));
+        Assert.Empty(FileAuthorityFixtures.Audit(store, "release-promoted"));
     }
     [Fact]
     public async Task ConcurrentExpectedRevisionHasOnlyOneWinner()
@@ -77,13 +71,15 @@ public sealed class ReleasePromotionTests : IDisposable
     [Fact]
     public void MigrationRejectsLegacyWithoutWriting()
     {
-        Publish("2.0.0"); Publish("1.0.0");
-        using (var db = store.Open()) { using var q = db.CreateCommand(); q.CommandText = "DROP TABLE promotions; DROP TABLE promotion_state; PRAGMA user_version=3"; q.ExecuteNonQuery(); }
-        SqliteConnection.ClearAllPools(); var before = Snapshot(root);
+        var legacy = Directory.CreateDirectory(Path.Combine(root, "legacy")).FullName;
+        File.WriteAllBytes(Path.Combine(legacy, "distribution.db"), "SQLite format 3\0"u8.ToArray());
+        var settings = new DistributionSettings { Root = legacy };
+        var before = Snapshot(legacy);
         Assert.Equal(AuthorityRootKind.LegacyDatabase,
-            Assert.Throws<AuthorityRootException>(() => ReleasePromotions.PreviewMigration(store.Settings)).Kind);
-        Assert.Throws<AuthorityRootException>(() => new ReleasePromotions(store).Migrate());
-        Assert.Equal(before, Snapshot(root));
+            Assert.Throws<AuthorityRootException>(() => ReleasePromotions.PreviewMigration(settings)).Kind);
+        Assert.Equal(AuthorityRootKind.LegacyDatabase,
+            Assert.Throws<AuthorityRootException>(() => new IntakeStore(settings)).Kind);
+        Assert.Equal(before, Snapshot(legacy));
     }
     [Fact]
     public void MigrationOnFileRootIsReadOnlyEvenWhenLive()

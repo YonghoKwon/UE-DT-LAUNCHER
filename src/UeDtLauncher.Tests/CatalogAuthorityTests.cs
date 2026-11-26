@@ -3,7 +3,6 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text.Json;
-using Microsoft.Data.Sqlite;
 using UeDtLauncher.Distribution;
 using UeDtLauncher.Distribution.Authority;
 using Xunit;
@@ -26,6 +25,7 @@ public sealed class CatalogAuthorityTests
         using var fixture = new CatalogFixture();
         var job = await fixture.Ingest("1.0.0", "first");
         var id = Selection("1.0.0").ReleaseId;
+        var before = fixture.Authority.ReadSnapshot().Generation;
         using (var child = Start(fixture.AuthorityRoot, "catalog-approve", fixture.Config, job.Id, boundary))
         {
             var line = await child.ReadLine();
@@ -40,16 +40,22 @@ public sealed class CatalogAuthorityTests
             var reopened = await fresh.Finish();
             Assert.True(reopened.ExitCode == 0, reopened.Error);
             using var data = JsonDocument.Parse(reopened.Output);
-            Assert.Equal(published ? 1 : 0, data.RootElement.GetProperty("generation").GetInt64());
+            Assert.Equal(before + (published ? 2 : 1), data.RootElement.GetProperty("generation").GetInt64());
             Assert.Equal(published ? 1 : 0, data.RootElement.GetProperty("areas").GetProperty("catalog")
                 .GetProperty("releases").GetArrayLength());
-            Assert.Equal(published ? 1 : 0, data.RootElement.GetProperty("events").GetArrayLength());
+            var jobs = data.RootElement.GetProperty("areas").GetProperty("jobs");
+            var persistedJob = Assert.Single(jobs.GetProperty("jobs").EnumerateArray());
+            Assert.Equal(published ? "published" : "publishing", persistedJob.GetProperty("state").GetString());
+            Assert.Equal(published ? 0 : 1, jobs.GetProperty("activeWork").GetArrayLength());
+            Assert.Equal(published, persistedJob.GetProperty("claimId").ValueKind == JsonValueKind.Null);
+            Assert.Equal(published ? 1 : 0, data.RootElement.GetProperty("events").EnumerateArray()
+                .Count(entry => entry.GetProperty("action").GetString() == "published"));
         }
         var final = Path.Combine(fixture.Intake.Root, "releases", id);
         var receipt = Path.Combine(final, "publication.json");
         Assert.True(File.Exists(receipt));
         var installedSignature = File.ReadAllBytes(Path.Combine(final, "manifest.json.sig"));
-        Assert.Equal("publishing", fixture.Intake.Get(job.Id).State);
+        Assert.Equal(published ? "published" : "publishing", fixture.Intake.Get(job.Id).State);
         var completed = await fixture.Publisher.ApproveAsync(job.Id);
         Assert.Equal(final.Replace('/', Path.DirectorySeparatorChar), completed.Directory);
         Assert.Equal(id, fixture.Publisher.FindByJob(job.Id)?.ReleaseId);
@@ -58,7 +64,7 @@ public sealed class CatalogAuthorityTests
         Assert.Equal("published", publishedJob.Phase);
         Assert.Equal(completed.Metadata.PackageSize, publishedJob.ProcessedBytes);
         Assert.Equal(completed.Metadata.PackageSize, publishedJob.TotalBytes);
-        Assert.False(fixture.Intake.Authority.HasAudit(fixture.Intake.Authority.ReadSnapshot(), "published", job.Id));
+        Assert.True(fixture.Intake.Authority.HasAudit(fixture.Intake.Authority.ReadSnapshot(), "published", job.Id));
         Assert.Equal(installedSignature, File.ReadAllBytes(Path.Combine(final, "manifest.json.sig")));
         await fixture.Publisher.ApproveAsync(job.Id);
         var winner = Assert.Single(fixture.Audit("published"));
@@ -108,11 +114,11 @@ public sealed class CatalogAuthorityTests
         var path = Path.Combine(fixture.Intake.Root, "releases", Selection("1.0.0").ReleaseId, relative);
         if (added) await File.WriteAllTextAsync(path, "unlisted fixture file");
         else File.Delete(path);
-        var head = File.ReadAllBytes(fixture.Authority.DataPath("HEAD"));
+        var catalogBefore = fixture.CatalogIdentity();
 
         var error = await Assert.ThrowsAsync<InvalidDataException>(() => fixture.Publisher.ApproveAsync(job.Id));
         Assert.Contains("inventory differs", error.Message);
-        Assert.Equal(head, File.ReadAllBytes(fixture.Authority.DataPath("HEAD")));
+        Assert.Equal(catalogBefore, fixture.CatalogIdentity());
         Assert.Null(fixture.Publisher.FindByJob(job.Id));
         Assert.Empty(fixture.Audit("published"));
     }
@@ -224,7 +230,6 @@ public sealed class CatalogAuthorityTests
         Assert.Equal(384, fixture.HighWater());
 
         var reopened = new IntakeStore(fixture.Intake.Settings);
-        CatalogAuthority.Bind(reopened, AuthorityStore.Open(fixture.AuthorityRoot));
         Assert.Equal(385, await new CatalogSequenceAllocator(reopened).NextAsync(default));
         fixture.Authority.Commit(_ => new(new Dictionary<AuthorityArea, JsonElement>
         {
@@ -252,7 +257,7 @@ public sealed class CatalogAuthorityTests
         Action<long>? pauseReader = null;
         await using var app = DistributionHttp.CreateApplicationCore(fixture.Intake, new()
         {
-            AfterCatalogHeadRead = generation => Interlocked.Exchange(ref pauseReader, null)?.Invoke(generation)
+            AfterCatalogSnapshotRead = generation => Interlocked.Exchange(ref pauseReader, null)?.Invoke(generation)
         });
         await app.StartAsync();
         using var http = new HttpClient { BaseAddress = new Uri(app.Urls.Single()), Timeout = TimeSpan.FromSeconds(30) };
@@ -289,7 +294,13 @@ public sealed class CatalogAuthorityTests
         });
         while (observations.Count < 999) observations.Add(await GetCatalog());
         await toggles;
-        observations.Add(await GetCatalog());
+        observations.Add(await ReadAcross(() =>
+        {
+            new DistributionTokens(fixture.Intake).Revoke("fixture");
+            return Task.CompletedTask;
+        }));
+        using (var revoked = await http.GetAsync("/api/v1/catalog?selectionPolicy=explicit-promotion-v1"))
+            Assert.Equal(System.Net.HttpStatusCode.Unauthorized, revoked.StatusCode);
         Assert.All(observations.Skip(4), value =>
         {
             Assert.Equal(new[] { "1.0.0", "2.0.0" }, Assert.Single(value.Projects).Releases.Select(r => r.Version));
@@ -359,10 +370,9 @@ public sealed class CatalogAuthorityTests
         internal CatalogFixture()
         {
             AuthorityRoot = Path.Combine(fixture.Root, "files");
-            Authority = AuthorityStore.Open(AuthorityRoot);
             var settings = new DistributionSettings
             {
-                Root = Path.Combine(fixture.Root, "intake"),
+                Root = AuthorityRoot,
                 ListenUrl = "http://127.0.0.1:0",
                 PolicyPath = Path.Combine(fixture.Root, "policy.json"),
                 SigningKeyPath = Path.Combine(fixture.Root, "sign.pem")
@@ -373,7 +383,7 @@ public sealed class CatalogAuthorityTests
             Config = Path.Combine(fixture.Root, "settings.json");
             File.WriteAllText(Config, JsonSerializer.Serialize(settings, JsonFiles.Options));
             Intake = new(settings);
-            CatalogAuthority.Bind(Intake, Authority);
+            Authority = Intake.Authority;
             Publisher = new(Intake);
         }
 
@@ -397,11 +407,16 @@ public sealed class CatalogAuthorityTests
 
         internal async Task<PublishedRelease> Publish(string version) => await Publisher.ApproveAsync((await Ingest(version, version)).Id);
         internal StoredAuthorityEvent[] Audit(string action) => Authority.ReadAudit(Authority.ReadSnapshot()).Where(e => e.Action == action).ToArray();
+        internal (string Path, string Sha256) CatalogIdentity()
+        {
+            var head = Authority.ReadSnapshot().Head;
+            return (head.Files["catalog"], head.Sha256["catalog"]);
+        }
+
         internal long HighWater() => Authority.ReadSnapshot().Get(AuthorityArea.Sequence).GetProperty("highWater").GetInt64();
 
         public void Dispose()
         {
-            SqliteConnection.ClearAllPools();
             fixture.Dispose();
         }
     }

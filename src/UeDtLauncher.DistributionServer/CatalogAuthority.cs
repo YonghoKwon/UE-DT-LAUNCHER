@@ -7,7 +7,7 @@ namespace UeDtLauncher.Distribution;
 
 internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
 {
-    // Transitional injection for isolated verification. S5 will supply the shared IntakeStore authority.
+    // Bound to the same authority used by intake and credential operations.
     private static readonly ConditionalWeakTable<IntakeStore, CatalogAuthority> Bindings = new();
     private static readonly StringComparer PathComparer = OperatingSystem.IsWindows()
         ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
@@ -19,38 +19,47 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
 
     internal AuthorityStore Store => store;
 
-    internal static void Bind(IntakeStore intake, AuthorityStore authority) =>
+    internal static void Bind(IntakeStore intake, AuthorityStore authority)
+    {
+        if (authority != intake.Authority) throw new ArgumentException("Catalog authority must belong to the intake store.");
         Bindings.Add(intake, new(authority, intake.Root));
+    }
 
     internal static CatalogAuthority? For(IntakeStore intake) => Bindings.TryGetValue(intake, out var authority) ? authority : null;
 
     internal static PromotionMigration InspectExisting(string root)
     {
         var snapshot = AuthorityStore.InspectExisting(root);
-        var catalog = new CatalogAuthority(snapshot.Store, Path.GetFullPath(root));
+        ValidateRoot(snapshot, Path.GetFullPath(root));
+        return new(true, false, []);
+    }
+
+    internal static void ValidateRoot(AuthoritySnapshot snapshot, string root)
+    {
         try
         {
-            _ = catalog.Snapshot(snapshot);
+            _ = new CatalogAuthority(snapshot.Store, root).Snapshot(snapshot);
             _ = CatalogSequenceAllocator.ReadHighWater(snapshot);
+            _ = IntakeJobs.Read(snapshot);
+            CredentialAuthority.Validate(snapshot);
         }
         catch (Exception error) when (error is IOException or InvalidDataException or JsonException or UnauthorizedAccessException)
         {
-            throw new AuthorityRootException(AuthorityRootKind.Damaged, "The file catalog or release metadata is invalid.", error);
+            throw new AuthorityRootException(AuthorityRootKind.Damaged, "The file authority documents are invalid.", error);
         }
-        return new(true, false, []);
     }
 
     internal PromotionSnapshot Snapshot() => Snapshot(store.ReadSnapshot());
 
-    private PromotionSnapshot Snapshot(AuthoritySnapshot snapshot)
+    internal PromotionSnapshot Snapshot(AuthoritySnapshot snapshot)
     {
         var catalog = ReadCatalog(snapshot);
-        return new(catalog.PromotionReady, catalog.Releases.Select(LoadRelease).ToArray(), catalog.Promotions.ToArray());
+        return new PromotionSnapshot(catalog.PromotionReady, catalog.Releases.Select(LoadRelease).ToArray(), catalog.Promotions.ToArray());
     }
 
-    internal PublishedRelease? Find(string value, bool byJob = false)
+    internal PublishedRelease? Find(string value, bool byJob = false, AuthoritySnapshot? snapshot = null)
     {
-        var catalog = ReadCatalog(store.ReadSnapshot());
+        var catalog = ReadCatalog(snapshot ?? store.ReadSnapshot());
         var entry = catalog.Releases.Find(row => (byJob ? row.Job : row.Id) == value);
         return entry is null ? null : LoadRelease(entry);
     }
@@ -88,9 +97,10 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
         return result!;
     }
 
-    internal PublishedRelease Publish(string jobId, ReleaseSidecar metadata, byte[] bytes, Action activate)
+    internal PublishedRelease Publish(string jobId, ReleaseSidecar metadata, byte[] bytes, IntakeWorkClaim claim, Action activate)
     {
         PublishedRelease? result = null;
+        var conflict = false;
         CommitPublication(snapshot =>
         {
             var catalog = ReadCatalog(snapshot);
@@ -98,9 +108,13 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
             if (existing is not null)
             {
                 if (existing.Job != jobId || existing.Id != metadata.ReleaseId)
-                    throw new PublicationIdConflictException();
-                result = LoadRelease(existing);
-                return CommitPlan.Audit();
+                {
+                    conflict = true;
+                    var conflictedJobs = IntakeJobs.Read(snapshot);
+                    claim.RejectConflictingPublication(conflictedJobs);
+                    return conflictedJobs.Plan(new AuthorityEvent(DateTimeOffset.UtcNow, "failed", jobId));
+                }
+                throw new InvalidDataException("Publication catalog and job state differ.");
             }
             if (catalog.Releases.Exists(row => row.Job == jobId))
                 throw new InvalidDataException("The job already owns a different release.");
@@ -111,6 +125,12 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
             var entry = new CatalogRelease(metadata.ReleaseId, jobId, relative, AuthorityDocuments.Hash(bytes), CatalogFields.From(metadata));
             var change = Change(catalog with { Releases = [.. catalog.Releases, entry] },
                 new(DateTimeOffset.UtcNow, "published", jobId));
+            var jobs = IntakeJobs.Read(snapshot);
+            claim.CompletePublication(jobs);
+            var areas = new Dictionary<AuthorityArea, JsonElement>(change.Areas)
+            {
+                [AuthorityArea.Jobs] = jobs.Plan().Areas[AuthorityArea.Jobs]
+            };
             var path = MetadataPath(entry.Id);
             var directory = ResolveChecked(payloadRoot, relative);
             activate();
@@ -127,8 +147,9 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
                 AuthorityDisk.SyncFileSystem(store.ReleaseMetadataPath);
             }
             result = new(entry.Id, entry.Job, directory, metadata);
-            return change;
+            return change with { Areas = areas };
         });
+        if (conflict) throw new PublicationIdConflictException();
         return result!;
     }
 

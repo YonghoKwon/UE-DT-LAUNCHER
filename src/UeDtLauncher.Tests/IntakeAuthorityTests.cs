@@ -255,19 +255,22 @@ public sealed class IntakeAuthorityTests : IDisposable
         }
         var before = Inventory();
         var error = Assert.Throws<AuthorityRootException>(() => Open());
-        Assert.Equal(mixed ? AuthorityRootKind.Damaged : AuthorityRootKind.LegacyDatabase, error.Kind);
+        Assert.Equal(AuthorityRootKind.LegacyDatabase, error.Kind);
         Assert.Equal(before, Inventory());
     }
 
     [Fact]
-    public void TransitionalOpenAllowsOnlyTheExpectedSqliteFilesWithAValidHead()
+    public void CurrentOpenRejectsMixedDatabaseFilesEvenWithAValidHead()
     {
         var store = Open();
         store.Save(Job());
         Assert.Equal(Job(), Open().Get("fixture"));
-        Assert.True(File.Exists(Path.Combine(Root, "distribution.db")));
-        Assert.Equal(AuthorityRootKind.LegacyDatabase, Assert.Throws<AuthorityRootException>(() => fixture.Open()).Kind);
-        ClearDatabasePool();
+        Assert.Empty(Directory.EnumerateFiles(Root, "*.db*"));
+        File.WriteAllText(Path.Combine(Root, "distribution.db"), "fixture");
+        var withDatabase = Inventory();
+        Assert.Equal(AuthorityRootKind.LegacyDatabase, Assert.Throws<AuthorityRootException>(() => Open()).Kind);
+        Assert.Equal(withDatabase, Inventory());
+        File.Delete(Path.Combine(Root, "distribution.db"));
         File.WriteAllText(Path.Combine(Root, "unexpected.db-wal"), "fixture");
         var before = Inventory();
         Assert.Equal(AuthorityRootKind.LegacyDatabase, Assert.Throws<AuthorityRootException>(() => Open()).Kind);

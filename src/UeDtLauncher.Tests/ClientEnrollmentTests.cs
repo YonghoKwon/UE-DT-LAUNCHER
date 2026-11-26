@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
+using UeDtLauncher.Distribution.Authority;
 using UeDtLauncher.Distribution;
 using Xunit;
 
@@ -167,13 +168,17 @@ public sealed class ClientEnrollmentTests
         Assert.Equal(1, run.Code);
         Assert.Equal(3, fixture.Keys.List().Count);
         Assert.Equal(before, File.ReadAllBytes(fixture.Settings.PolicyPath));
-        var database = Fixture.ReadBytes(Path.Combine(fixture.Settings.Root, "distribution.db"));
+        var authority = AuthorityStore.InspectExisting(fixture.Settings.Root);
+        var auth = File.ReadAllBytes(authority.Store.DataPath("HEAD"));
+        Assert.Equal(1, authority.Generation);
+        Assert.Equal(3, authority.Store.ReadAudit(authority).Count(entry => entry.Action == "device-key-added"));
         var recovery = await fixture.RunAsync();
         Assert.Equal(0, recovery.Code);
         using var result = JsonDocument.Parse(recovery.Output);
         Assert.Equal(0, result.RootElement.GetProperty("keysToAdd").GetInt32());
         Assert.Equal(3, result.RootElement.GetProperty("policiesToAdd").GetInt32());
-        Assert.Equal(database, Fixture.ReadBytes(Path.Combine(fixture.Settings.Root, "distribution.db")));
+        Assert.Equal(auth, File.ReadAllBytes(authority.Store.DataPath("HEAD")));
+        Assert.Empty(Directory.EnumerateFiles(fixture.Settings.Root, "*.db*", SearchOption.AllDirectories));
         Assert.Equal(3, (await new FileAccessPolicyProvider(fixture.Settings.PolicyPath).LoadAsync(default)).Clients.Count);
         Assert.Empty(Directory.EnumerateFiles(fixture.Root, "*.tmp"));
     }

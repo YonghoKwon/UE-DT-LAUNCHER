@@ -41,19 +41,23 @@ internal sealed class AuthorityStore
         projection = new(this);
     }
 
-    internal static AuthorityStore Open(string root, AuthorityLayout? layout = null) =>
-        OpenCore(new(root, layout ?? AuthorityLayout.Default));
+    internal static AuthorityStore Open(string root, AuthorityLayout? layout = null,
+        Action<AuthoritySnapshot>? validate = null) =>
+        OpenCore(new(root, layout ?? AuthorityLayout.Default), validate);
 
     // Transitional storage during PROD-01S2–S5. Remove with SQLite in PROD-01S6.
     internal static AuthorityStore OpenAlongsideSqlite(string root) =>
         OpenCore(new(root, AuthorityLayout.Default, coexistWithSqlite: true));
 
-    private static AuthorityStore OpenCore(AuthorityStore store)
+    private static AuthorityStore OpenCore(AuthorityStore store, Action<AuthoritySnapshot>? validate = null)
     {
         // Validation precedes creation of even the maintenance/writer locks.
-        if (!store.CheckRoot(validateHistory: true)) store.Initialize();
+        if (!store.CheckRoot(validateHistory: true, out var previous)) store.Initialize();
+        else validate?.Invoke(previous!);
         using var writer = store.AcquireWriter(exclusiveMaintenance: false);
-        if (!store.CheckRoot()) throw new AuthorityRootException(AuthorityRootKind.Damaged, "Authority HEAD is missing.");
+        if (!store.CheckRoot(validateHistory: false, out var current))
+            throw new AuthorityRootException(AuthorityRootKind.Damaged, "Authority HEAD is missing.");
+        if (previous?.Head.HeadSha256 != current!.Head.HeadSha256) validate?.Invoke(current);
         store.OpenMaintenanceError = store.Recover(writer);
         return store;
     }
@@ -79,12 +83,12 @@ internal sealed class AuthorityStore
     }
 
     // CLI inspection must reject old, mixed, and damaged roots without creating any file or lock.
-    internal static AuthoritySnapshot InspectExisting(string root)
+    internal static AuthoritySnapshot InspectExisting(string root, bool validateHistory = true)
     {
         var store = new AuthorityStore(root, AuthorityLayout.Default);
-        if (!store.CheckRoot(validateHistory: true))
-            throw new AuthorityRootException(AuthorityRootKind.Damaged, "Authority HEAD is missing.");
-        return store.ReadSnapshot();
+        return store.CheckRoot(validateHistory, out var snapshot)
+            ? snapshot!
+            : throw new AuthorityRootException(AuthorityRootKind.Damaged, "Authority HEAD is missing.");
     }
 
     internal AuthoritySnapshot ReadSnapshot() => inspectionLease is null
@@ -93,6 +97,7 @@ internal sealed class AuthorityStore
 
     private AuthoritySnapshot ReadSnapshotCore()
     {
+        using var measurement = DistributionPerformance.MeasureAuthorityRead();
         for (var attempt = 0; ; attempt++)
         {
             try { return LoadSnapshot(); }
@@ -118,9 +123,17 @@ internal sealed class AuthorityStore
         return CommitUnderHeldLock(writer, makePlan);
     }
 
+    internal AuthorityCommitResult CommitOffline(DistributionMaintenanceLease maintenance, Func<AuthoritySnapshot, CommitPlan> makePlan) =>
+        maintenance.UseExclusive(Root, () =>
+        {
+            using var writer = new WriterLease(this, OpenWriterFile(Root), null);
+            return CommitUnderHeldLock(writer, makePlan);
+        });
+
     internal AuthorityCommitResult CommitUnderHeldLock(WriterLease writer, Func<AuthoritySnapshot, CommitPlan> makePlan) =>
         writer.Use<AuthorityCommitResult>(this, () =>
         {
+            using var measurement = DistributionPerformance.MeasureAuthorityCommit();
             var snapshot = ReadSnapshot();
             PrepareCleanup(snapshot);
             var plan = makePlan(snapshot);
@@ -174,7 +187,7 @@ internal sealed class AuthorityStore
         var relative = AuthorityDocuments.RelativeFile(layout.EventsDirectory, generation);
         try
         {
-            var bytes = ReadFile(DataPath(relative));
+            var bytes = ReadCommittedFile(relative);
             if (generation == snapshot.Generation)
                 VerifyHash(bytes, snapshot.Head.Sha256[AuthorityDocuments.Events]);
             return DecodeBatch(bytes, generation);
@@ -194,7 +207,7 @@ internal sealed class AuthorityStore
 
     private AuthoritySnapshot LoadSnapshot()
     {
-        var bytes = ReadFile(DataPath("HEAD"));
+        var bytes = ReadCommittedFile("HEAD");
         var head = AuthorityDocuments.Decode<AuthorityHead>(bytes);
         AuthorityDocuments.Validate(head, layout);
         if (!bytes.AsSpan().SequenceEqual(AuthorityDocuments.Encode(head)))
@@ -206,11 +219,11 @@ internal sealed class AuthorityStore
             var name = AuthorityDocuments.Name(area);
             var relative = head.Files[name];
             var digest = head.Sha256[name];
-            var content = ReadFile(DataPath(relative));
+            var content = ReadCommittedFile(relative);
             VerifyHash(content, digest);
             areas.Add(area, cache.Parse(relative, digest, content));
         }
-        var events = ReadFile(DataPath(head.Files[AuthorityDocuments.Events]));
+        var events = ReadCommittedFile(head.Files[AuthorityDocuments.Events]);
         VerifyHash(events, head.Sha256[AuthorityDocuments.Events]);
         DecodeBatch(events, head.Generation);
         return new(this, AuthorityDocuments.Freeze(head), areas);
@@ -228,6 +241,16 @@ internal sealed class AuthorityStore
     {
         if (AuthorityDocuments.Hash(bytes) != digest)
             throw new InvalidDataException("Authority generation checksum is invalid.");
+    }
+
+    private byte[] ReadCommittedFile(string relative)
+    {
+        var path = SafePath.ResolveInside(DirectoryPath, relative);
+        // A single attribute lookup checks each component. File.Exists followed by GetAttributes
+        // performs the same probe twice and suppresses access errors on the first probe.
+        for (var component = path; component.Length > DirectoryPath.Length; component = Path.GetDirectoryName(component)!)
+            RejectLink(component);
+        return ReadFile(path);
     }
 
     private static byte[] ReadFile(string path)
@@ -261,7 +284,7 @@ internal sealed class AuthorityStore
             var hasAuthority = Attributes(DirectoryPath) is not null;
             foreach (var file in names)
                 if (file.Equals("distribution.db", StringComparison.OrdinalIgnoreCase) ||
-                    coexistWithSqlite && (file.Equals("distribution.db-shm", StringComparison.OrdinalIgnoreCase) ||
+                    (file.Equals("distribution.db-shm", StringComparison.OrdinalIgnoreCase) ||
                         file.Equals("distribution.db-journal", StringComparison.OrdinalIgnoreCase)) ||
                     file.EndsWith(".db-wal", StringComparison.OrdinalIgnoreCase) ||
                     file.StartsWith("distribution.pre-v6-", StringComparison.OrdinalIgnoreCase) &&
@@ -499,7 +522,7 @@ internal sealed class AuthorityStore
         catch (Exception error) when (IsReadError(error)) { return error; }
     }
 
-    internal sealed class WriterLease(AuthorityStore owner, FileStream writer, IDisposable maintenance) : IDisposable
+    internal sealed class WriterLease(AuthorityStore owner, FileStream writer, IDisposable? maintenance) : IDisposable
     {
         private readonly object gate = new();
         private bool disposed;
@@ -525,7 +548,7 @@ internal sealed class AuthorityStore
                 if (inUse) throw new InvalidOperationException("Cannot release an active authority writer lease.");
                 disposed = true;
                 try { writer.Dispose(); }
-                finally { maintenance.Dispose(); }
+                finally { maintenance?.Dispose(); }
             }
         }
     }

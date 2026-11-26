@@ -161,7 +161,7 @@ public sealed class DistributionTokens(IntakeStore store, TimeProvider? clock = 
         var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
         if (CredentialAuthority.For(store) is { } authority)
         {
-            authority.IssueToken(Hash(token), client, CredentialLifecycle.Expiry(expiresAt));
+            authority.IssueToken(Hash(token), client, CredentialLifecycle.Expiry(expiresAt), gate);
             return token;
         }
         using var database = store.DatabaseWrite();

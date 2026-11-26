@@ -455,7 +455,7 @@ sudo -u uedt-distribution /dt/publish/server-linux-x64/UeDtLauncher.Distribution
 ./UeDtLauncher.DistributionServer promote --project-id demo --environment prod --channel stable --platform windows-x64 --version 1.2.0 --expected-revision N --reason '개발자 검증 통과' --config /dt/config/server.json
 ```
 
-N은 inspect 결과로 치환합니다. 승격은 자동 설치나 실행 전환이 아니며, 사용자는 다음 상태 확인 후 주 버튼으로 작업합니다. [권한별 추천과 SQLite 호환 범위](distribution-workflow.md)
+N은 inspect 결과로 치환합니다. 승격은 자동 설치나 실행 전환이 아니며, 사용자는 다음 상태 확인 후 주 버튼으로 작업합니다. [권한별 추천과 파일 저장소 초기화](distribution-workflow.md)
 
 ## C. 사용자 PC: 상태 확인 → 설치 → 실행
 

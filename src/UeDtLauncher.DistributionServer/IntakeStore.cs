@@ -40,7 +40,7 @@ public sealed partial class IntakeStore
         var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(settings.Root));
         if (File.Exists(SafePath.ResolveInsideChecked(root, "restore-staged.json")))
             throw new InvalidDataException("Staged restored root rejects enrollment.");
-        return new(settings, AuthorityStore.ReadAlongsideSqlite(root).Store);
+        return new(settings, AuthorityStore.InspectExisting(root, validateHistory: false).Store);
     }
 
     private IntakeStore(DistributionSettings settings, AuthorityStore authority)
@@ -61,15 +61,16 @@ public sealed partial class IntakeStore
         Root = settings.Root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(settings.Root));
         if (File.Exists(Path.Combine(Root, "restore-staged.json")))
             throw new InvalidDataException("Staged restored root rejects live operations.");
-        Authority = AuthorityStore.OpenAlongsideSqlite(Root);
+        Authority = AuthorityStore.Open(Root, validate: snapshot => CatalogAuthority.ValidateRoot(snapshot, Root));
+        CredentialAuthority.Bind(this, Authority);
+        CatalogAuthority.Bind(this, Authority);
         DatabaseGate = DistributionDatabaseCoordinator.ForRoot(Root);
         using (Authority.Lock())
             foreach (var directory in new[] { "incoming", "processing", "releases", "archive", ".job-locks" })
                 Directory.CreateDirectory(Path.Combine(Root, directory));
-        InitializeRemainingDatabase(Root);
     }
 
-    // Existing schema backup still applies to resources left in SQLite until PROD-01S6.
+    // Legacy SQLite implementation is retained until PROD-01S6. File roots never call it.
     internal static void InitializeRemainingDatabase(string root)
     {
         using var initialization = DistributionMaintenanceLease.Acquire(root, false);
@@ -139,7 +140,8 @@ public sealed partial class IntakeStore
             """;
         command.ExecuteNonQuery(); transaction.Commit();
     }
-    public SqliteConnection Open() => OpenDatabase(Root);
+    public SqliteConnection Open() =>
+        throw new InvalidOperationException("SQLite cannot be opened from a file authority intake store.");
 
     private static SqliteConnection OpenDatabase(string root)
     {

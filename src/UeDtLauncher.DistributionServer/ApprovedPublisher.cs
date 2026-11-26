@@ -48,17 +48,14 @@ public sealed class ApprovedPublisher(IntakeStore store)
         var snapshot = job.Snapshot ?? throw new InvalidDataException("Missing private snapshot.");
         var metadataBytes = await SidecarPackageValidator.ReadDocumentAsync(Path.Combine(snapshot, "release.json"), token);
         var metadata = SidecarPackageValidator.Parse(metadataBytes);
+        if (authority is not null && metadata.DisplayName is null)
+            throw new InvalidDataException("Catalog release display name is missing.");
         var existing = Find(metadata.ReleaseId);
         if (existing is not null)
         {
             if (existing.JobId != id) throw PublicationConflict(id);
             if (authority is not null)
-            {
-                CompleteAuthorityJob(job.Id, job.State);
-                var size = existing.Metadata.PackageSize;
-                store.Progress(id, observer).Report(new("published", size, size, 0));
-                return existing;
-            }
+                throw new InvalidDataException("Publication catalog and job state differ.");
             using var gate = store.Lock();
             if (!store.ChangeState(id, job.State, "published", writer: gate)) throw new InvalidOperationException("Job state changed.");
             return existing;
@@ -139,11 +136,11 @@ public sealed class ApprovedPublisher(IntakeStore store)
             PublishedRelease published;
             try
             {
-                published = authority.Publish(id, metadata, metadataBytes, Activate);
+                published = authority.Publish(id, metadata, metadataBytes, work, Activate);
+                work.MarkPublished();
             }
-            catch (PublicationIdConflictException) { throw PublicationConflict(id); }
-            CompleteAuthorityJob(id, "publishing");
-            progress.Report(new("published", metadata.PackageSize, metadata.PackageSize, 0));
+            catch (PublicationIdConflictException) { throw new IOException(PublicationConflictMessage); }
+            observer?.Report(new("published", metadata.PackageSize, metadata.PackageSize, 0));
             return published;
         }
 
@@ -179,7 +176,6 @@ public sealed class ApprovedPublisher(IntakeStore store)
         void Activate()
         {
             token.ThrowIfCancellationRequested();
-            if (store.Get(id).State != "publishing") throw new InvalidOperationException("Job state changed before activation.");
             Directory.CreateDirectory(Path.GetDirectoryName(final)!);
             if (Directory.Exists(final))
             {
@@ -189,20 +185,13 @@ public sealed class ApprovedPublisher(IntakeStore store)
         }
     }
 
-    // Transitional reconciliation. The file catalog and audit have committed. S5 replaces this
-    // update with the jobs area's published transition in the same CommitPlan.
-    private void CompleteAuthorityJob(string id, string expected)
-    {
-        if (!store.ChangeState(id, expected, "published", recordAudit: false))
-            throw new InvalidOperationException("Job state changed after publication.");
-    }
+    internal const string PublicationConflictMessage = "Release version already belongs to another publication; use a new version.";
 
     private IOException PublicationConflict(string id, IDisposable? writer = null)
     {
-        const string message = "Release version already belongs to another publication; use a new version.";
         // A known losing publisher is not a recoverable activation journal. Keep retry available.
-        store.ChangeState(id, "publishing", "failed", message: message, writer: writer);
-        return new IOException(message);
+        store.ChangeState(id, "publishing", "failed", message: PublicationConflictMessage, writer: writer);
+        return new IOException(PublicationConflictMessage);
     }
 
     public string Sign(string payload)

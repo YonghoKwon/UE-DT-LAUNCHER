@@ -1,4 +1,3 @@
-using Microsoft.Data.Sqlite;
 using System.Security.Cryptography;
 using UeDtLauncher.Distribution;
 using UeDtLauncher.Distribution.Authority;
@@ -19,7 +18,7 @@ public sealed class DistributionBackupTests : IDisposable
         settings = new() { Root = Path.Combine(root, "server"), SigningKeyPath = Path.Combine(root, "private.pem"), PolicyPath = Path.Combine(root, "policy.json"), AuthenticationMode = "request-signature-v1" };
         store = new(settings); File.WriteAllText(Path.Combine(settings.Root, "incoming", "private-upload.txt"), "payload");
     }
-    public void Dispose() { SqliteConnection.ClearAllPools(); Directory.Delete(root, true); }
+    public void Dispose() { Directory.Delete(root, true); }
     [Fact]
     public void MaintenanceExcludesLiveOperationsWithoutStoppingThem()
     {
@@ -66,10 +65,10 @@ public sealed class DistributionBackupTests : IDisposable
         var targetSettings = new DistributionSettings { Root = target, SigningKeyPath = settings.SigningKeyPath, PolicyPath = settings.PolicyPath, AuthenticationMode = settings.AuthenticationMode };
         Assert.Throws<InvalidDataException>(() => DistributionHttp.CreateApplication(new(targetSettings)));
         tokens.RevokeId(id);
-        using (var db = store.Open()) { using var q = db.CreateCommand(); q.CommandText = "UPDATE sequence SET value=1000"; q.ExecuteNonQuery(); }
+        FileAuthorityFixtures.SetSequence(store, 1000L);
         await DistributionBackup.ActivateAsync(target, settings, true);
         var restored = new IntakeStore(targetSettings); Assert.Null(new DistributionTokens(restored).Authenticate(token));
-        using var check = restored.Open(); using var sequence = check.CreateCommand(); sequence.CommandText = "SELECT value FROM sequence"; Assert.Equal(1000L, sequence.ExecuteScalar());
+        Assert.Equal(1000L, FileAuthorityFixtures.HighWater(restored));
         Assert.False(File.Exists(Path.Combine(target, "restore-staged.json")));
     }
     [Theory]
@@ -95,7 +94,7 @@ public sealed class DistributionBackupTests : IDisposable
         finally { DistributionBackup.Boundary.Value = null; }
         Assert.True(File.Exists(Path.Combine(target, "restore-staged.json")));
         Assert.Throws<InvalidDataException>(() => new IntakeStore(new() { Root = target }));
-        var staged = AuthorityStore.ReadAlongsideSqlite(target, validateHistory: true);
+        var staged = AuthorityStore.InspectExisting(target);
         var expected = headPublished ? new[] { "waiting", "pending" } : ["waiting"];
         Assert.Equal(expected[^1], Assert.Single(IntakeJobs.Read(staged).Jobs).State);
         Assert.Equal(expected, staged.Store.ReadAudit(staged).Select(entry => entry.Action));
@@ -120,9 +119,9 @@ public sealed class DistributionBackupTests : IDisposable
     }
     [Theory]
     [InlineData("authority-snapshot")]
-    [InlineData("authority-rebased")]
+    [InlineData("restored-releases-verified")]
     [InlineData("policy-written")]
-    [InlineData("database-replaced")]
+    [InlineData("restored-authority-verified")]
     [InlineData("before-public-fence")]
     public async Task ActivationFailureLeavesFenceAndRetryRechecksLatestAuthority(string boundary)
     {
@@ -137,11 +136,11 @@ public sealed class DistributionBackupTests : IDisposable
         Assert.Throws<InvalidDataException>(()=>new IntakeStore(new(){Root=target}));
         Assert.Equal(original,await Hashing.Sha256FileAsync(Path.Combine(settings.Root,"incoming/private-upload.txt")));
         credential.RevokeId(id);
-        using(var db=store.Open())using(var command=db.CreateCommand()){command.CommandText="UPDATE sequence SET value=1201";command.ExecuteNonQuery();}
+        FileAuthorityFixtures.SetSequence(store, 1201L);
         await DistributionBackup.ActivateAsync(target,settings,true);
         var restored=new IntakeStore(new(){Root=target,PolicyPath=Path.Combine(target,"restored-policy.json"),SigningKeyPath=settings.SigningKeyPath,AuthenticationMode=settings.AuthenticationMode});
         Assert.Null(new DistributionTokens(restored).Authenticate(token));
-        using var check=restored.Open();using var sequence=check.CreateCommand();sequence.CommandText="SELECT value FROM sequence";Assert.Equal(1201L,sequence.ExecuteScalar());
+        Assert.Equal(1201L, FileAuthorityFixtures.HighWater(restored));
         Assert.False(File.Exists(Path.Combine(target,"restore-staged.json")));
     }
     [Fact]

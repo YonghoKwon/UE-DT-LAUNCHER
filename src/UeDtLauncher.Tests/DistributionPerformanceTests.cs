@@ -5,7 +5,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.Data.Sqlite;
 using UeDtLauncher.Distribution;
 using UeDtLauncher.Distribution.Authority;
 using Xunit;
@@ -299,8 +298,9 @@ public sealed class DistributionPerformanceTests
         Assert.Equal(144, sequences.Count);
         Assert.Equal(sequences.Count, sequences.Distinct().Count());
         Assert.True(progressCount >= 8 * 4);
-        Assert.Equal(8, server.Store.List().Count);
-        Assert.All(server.Store.List(), job => Assert.Equal("published", job.State));
+        var uploadsInTest = server.Store.List().Where(job => uploads.Contains(job.Source)).ToArray();
+        Assert.Equal(8, uploadsInTest.Length);
+        Assert.All(uploadsInTest, job => Assert.Equal("published", job.State));
         Assert.Equal(10, new ApprovedPublisher(server.Store).List().Count);
         Assert.Empty(IntakeJobs.Read(server.Store.Authority.ReadSnapshot()).ActiveWork);
     }
@@ -371,13 +371,11 @@ public sealed class DistributionPerformanceTests
         using var wrongIp = await server.GetAsync(prefix + "manifest.json", "a", ip: "10.0.0.1");
         Assert.Equal(HttpStatusCode.Forbidden, wrongIp.StatusCode);
 
-        // A corrupt unrelated DB row would fail a full List(); file paths must use exact parameterized lookup.
-        using (var db = server.Store.Open())
-        using (var command = db.CreateCommand())
-        {
-            command.CommandText = "INSERT INTO releases VALUES('unrelated','unused','unused','{')";
-            command.ExecuteNonQuery();
-        }
+        // An unrelated metadata failure breaks a full catalog read but file authorization needs the exact release.
+        var unrelated = Metadata("3.0.0");
+        FileAuthorityFixtures.SeedRelease(server.Store, unrelated, "unrelated");
+        var unrelatedPath = Path.Combine(server.Store.Authority.ReleaseMetadataPath, unrelated.ReleaseId + ".json");
+        File.WriteAllText(unrelatedPath, "{");
         using var exact = await server.GetAsync(prefix + "manifest.json", "a");
         Assert.Equal(HttpStatusCode.OK, exact.StatusCode);
         var modified = File.GetLastWriteTimeUtc(server.Store.Settings.PolicyPath);
@@ -479,7 +477,7 @@ public sealed class DistributionPerformanceTests
     {
         public string Path { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "distribution-perf-" + Guid.NewGuid().ToString("N"));
         public TemporaryDirectory() => Directory.CreateDirectory(Path);
-        public void Dispose() { SqliteConnection.ClearAllPools(); Directory.Delete(Path, true); }
+        public void Dispose() { Directory.Delete(Path, true); }
     }
     private sealed class ServerFixture : IAsyncDisposable
     {
@@ -521,13 +519,7 @@ public sealed class DistributionPerformanceTests
                 await JsonFiles.WriteAsync(Path.Combine(releaseDirectory, "manifest.json"), Manifest(version));
                 await File.WriteAllTextAsync(Path.Combine(releaseDirectory, "manifest.json.sig"), "signature");
                 await File.WriteAllTextAsync(Path.Combine(releaseDirectory, "files", "game.bin"), "abcdefghij", new UTF8Encoding(false));
-                using var db = store.Open(); using var command = db.CreateCommand();
-                command.CommandText = "INSERT INTO releases VALUES($id,$job,$directory,$metadata)";
-                command.Parameters.AddWithValue("$id", metadata.ReleaseId);
-                command.Parameters.AddWithValue("$job", version);
-                command.Parameters.AddWithValue("$directory", releaseDirectory);
-                command.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(metadata, JsonFiles.Options));
-                command.ExecuteNonQuery();
+                FileAuthorityFixtures.SeedRelease(store, metadata, version);
             }
             var promotion = new ReleasePromotions(store);
             var first = promotion.Promote(new("demo", "prod", "stable", "windows-x64", "2.0.0"), 0, "test fixture");

@@ -8,6 +8,7 @@ internal sealed class IntakeWorkClaim : IDisposable
     private readonly IntakeStore store;
     private readonly string jobId;
     private readonly Guid owner = Guid.NewGuid();
+    private bool published;
 
     public IntakeWorkClaim(IntakeStore store, IntakeJob job, string state, string scratch, string? snapshot,
         params string[] expectedStates)
@@ -29,10 +30,38 @@ internal sealed class IntakeWorkClaim : IDisposable
         });
     }
 
-    public void Dispose() => store.Authority.Commit(snapshot =>
+    internal void CompletePublication(IntakeJobs jobs)
     {
-        var jobs = IntakeJobs.Read(snapshot);
-        return jobs.ActiveWork.RemoveAll(work => work.Job == jobId && work.Owner == owner) == 0
-            ? CommitPlan.Audit() : jobs.Plan();
-    });
+        var index = PublishingIndex(jobs);
+        jobs.Jobs[index] = jobs.Jobs[index] with { State = "published", ClaimId = null };
+        jobs.ActiveWork.RemoveAll(work => work.Job == jobId && work.Owner == owner);
+    }
+
+    internal void RejectConflictingPublication(IntakeJobs jobs)
+    {
+        var index = PublishingIndex(jobs);
+        jobs.Jobs[index] = jobs.Jobs[index] with { State = "failed", Message = ApprovedPublisher.PublicationConflictMessage };
+    }
+
+    private int PublishingIndex(IntakeJobs jobs)
+    {
+        var index = jobs.Jobs.FindIndex(job => job.Id == jobId && job.State == "publishing");
+        if (index < 0 || !jobs.ActiveWork.Exists(work =>
+            work.Job == jobId && work.Owner == owner && work.ClaimId == jobs.Jobs[index].ClaimId))
+            throw new InvalidOperationException("Publication claim no longer owns the job.");
+        return index;
+    }
+
+    internal void MarkPublished() => published = true;
+
+    public void Dispose()
+    {
+        if (published) return;
+        store.Authority.Commit(snapshot =>
+        {
+            var jobs = IntakeJobs.Read(snapshot);
+            return jobs.ActiveWork.RemoveAll(work => work.Job == jobId && work.Owner == owner) == 0
+                ? CommitPlan.Audit() : jobs.Plan();
+        });
+    }
 }

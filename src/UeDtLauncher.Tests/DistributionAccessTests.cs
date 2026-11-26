@@ -1,6 +1,7 @@
 using System.Net;
 using UeDtLauncher.Distribution;
 using Microsoft.Data.Sqlite;
+using UeDtLauncher.Distribution.Authority;
 using Xunit;
 
 namespace UeDtLauncher.Tests;
@@ -31,11 +32,15 @@ public class DistributionAccessTests
             Assert.Equal("pc", tokens.Authenticate(token));
             Assert.Null(tokens.Authenticate(token + "bad"));
             tokens.Revoke("pc"); Assert.Null(tokens.Authenticate(token));
-            using var db = store.Open(); using var command = db.CreateCommand(); command.CommandText = "SELECT hash FROM tokens";
-            Assert.NotEqual(token, command.ExecuteScalar());
+            var tokenEntry = store.Authority.ReadSnapshot().Get(AuthorityArea.Auth).GetProperty("tokens")[0];
+            Assert.NotEqual(token, tokenEntry.GetProperty("hash").GetString());
+            Assert.Empty(Directory.EnumerateFiles(store.Root, "*.db*"));
+            using var legacy = new SqliteConnection("Data Source=:memory:");
+            legacy.Open();
+            using var command = legacy.CreateCommand();
             command.CommandText = "SELECT sqlite_version()";
             Assert.True(Version.Parse((string)command.ExecuteScalar()!) >= new Version(3, 50, 2));
         }
-        finally { SqliteConnection.ClearAllPools(); Directory.Delete(root, true); }
+        finally { Directory.Delete(root, true); }
     }
 }

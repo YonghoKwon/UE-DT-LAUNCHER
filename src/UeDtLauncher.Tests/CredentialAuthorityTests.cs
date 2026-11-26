@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Text.Json;
-using Microsoft.Data.Sqlite;
 using UeDtLauncher.Distribution;
 using UeDtLauncher.Distribution.Authority;
 using Xunit;
@@ -10,7 +9,6 @@ namespace UeDtLauncher.Tests;
 public sealed class CredentialAuthorityTests : IDisposable
 {
     private readonly AuthorityStoreFixture fixture = new();
-    private readonly string legacyRoot = Directory.CreateTempSubdirectory("uedt-auth-legacy-").FullName;
     private readonly AuthorityStore authority;
     private readonly IntakeStore intake;
     private readonly TestClock clock = new();
@@ -19,9 +17,8 @@ public sealed class CredentialAuthorityTests : IDisposable
 
     public CredentialAuthorityTests()
     {
-        authority = fixture.Open();
-        intake = new(new() { Root = legacyRoot });
-        CredentialAuthority.Bind(intake, authority);
+        intake = new(new() { Root = fixture.Root });
+        authority = intake.Authority;
         tokens = new(intake, clock);
         keys = new(intake, clock);
     }
@@ -121,7 +118,6 @@ public sealed class CredentialAuthorityTests : IDisposable
         Assert.Equal(id, audit.Job);
         clock.Now = clock.Now.AddDays(-1);
         var reopened = new IntakeStore(intake.Settings);
-        CredentialAuthority.Bind(reopened, fixture.Open());
         if (deviceKey) Assert.True(new DistributionDeviceKeys(reopened, clock).Find(id)!.Expired);
         else Assert.Null(new DistributionTokens(reopened, clock).Authenticate(token));
         Assert.Equal(current.Generation, authority.ReadSnapshot().Generation);
@@ -203,7 +199,6 @@ public sealed class CredentialAuthorityTests : IDisposable
         Assert.Equal(published ? 3 : 0, reopened.ReadAudit(snapshot).Count());
         if (!published) Assert.Equal(before, HeadBytes());
         var retry = new IntakeStore(intake.Settings);
-        CredentialAuthority.Bind(retry, reopened);
         new DistributionDeviceKeys(retry).AddMany(registrations);
         Assert.Equal(1, reopened.ReadSnapshot().Generation);
         Assert.Equal(3, reopened.ReadAudit(reopened.ReadSnapshot()).Count());
@@ -224,11 +219,9 @@ public sealed class CredentialAuthorityTests : IDisposable
         Assert.Equal(key.PublicKeyPem, document.GetProperty("deviceKeys")[0].GetProperty("publicKeyPem").GetString());
         var hash = document.GetProperty("tokens")[0].GetProperty("hash").GetString();
         Assert.Equal(Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(token))), hash);
-        using var db = intake.Open();
-        using var query = db.CreateCommand();
-        query.CommandText = "SELECT (SELECT COUNT(*) FROM tokens) + (SELECT COUNT(*) FROM device_keys) + (SELECT COUNT(*) FROM audit)";
-        Assert.Equal(0L, query.ExecuteScalar());
-        Assert.Equal(AuthorityRootKind.LegacyDatabase, Assert.Throws<AuthorityRootException>(() => AuthorityStore.Open(legacyRoot)).Kind);
+        Assert.Empty(Directory.EnumerateFiles(intake.Root, "*.db*", SearchOption.AllDirectories));
+        Assert.Equal(new[] { "token-issued", "device-key-added" },
+            authority.ReadAudit(snapshot).Select(entry => entry.Action));
     }
 
     [Fact]
@@ -280,8 +273,6 @@ public sealed class CredentialAuthorityTests : IDisposable
     public void Dispose()
     {
         fixture.Dispose();
-        SqliteConnection.ClearAllPools();
-        Directory.Delete(legacyRoot, recursive: true);
     }
 
     private byte[] HeadBytes() => File.ReadAllBytes(authority.DataPath("HEAD"));

@@ -1,6 +1,5 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
-using Microsoft.Data.Sqlite;
 using UeDtLauncher.Distribution;
 using Xunit;
 
@@ -302,8 +301,7 @@ public sealed class OperationsConsoleTests : IDisposable
         var before = Directory.GetFileSystemEntries(store.Root).Order().ToArray();
         long AuditCount()
         {
-            using var db = store.Open(); using var command = db.CreateCommand(); command.CommandText = "SELECT COUNT(*) FROM audit";
-            return Convert.ToInt64(command.ExecuteScalar()) + store.Authority.ReadAudit(store.Authority.ReadSnapshot()).LongCount();
+            return store.Authority.ReadAudit(store.Authority.ReadSnapshot()).LongCount();
         }
         var audit = AuditCount();
         using (var exclusivePayload = new FileStream(payload, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
@@ -403,5 +401,5 @@ public sealed class OperationsConsoleTests : IDisposable
         Assert.Empty(Directory.GetFiles(store.Root, "retention-*.json"));
     }
 
-    public void Dispose() { SqliteConnection.ClearAllPools(); Directory.Delete(root, true); }
+    public void Dispose() { Directory.Delete(root, true); }
 }

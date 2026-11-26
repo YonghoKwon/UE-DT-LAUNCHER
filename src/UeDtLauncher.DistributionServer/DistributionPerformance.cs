@@ -13,7 +13,8 @@ public static class DistributionPerformance
     private static readonly Histogram<double> SequenceWaitDuration = Meter.CreateHistogram<double>("distribution.sequence.wait", "ms");
     private static readonly Counter<long> Busy = Meter.CreateCounter<long>("distribution.database.busy");
     private static long databaseOperations, databaseTicks, requests, requestTicks, sequenceWaitTicks, databaseBusy, policyCompilations, policyReuses, assetHits, assetMisses;
-    private static long authenticationOperations, authenticationTicks;
+    private static long authenticationOperations, authenticationTicks, authorityUnavailable, policyUnavailable;
+    private static long authorityReads, authorityReadTicks, authorityCommits, authorityCommitTicks;
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string,long> phases=new(StringComparer.Ordinal);
     public static IDisposable MeasurePhase(string phase)
     {
@@ -50,6 +51,21 @@ public static class DistributionPerformance
         Interlocked.Increment(ref databaseBusy);
         Busy.Add(1);
     }
+    internal static IDisposable MeasureAuthorityRead() => new Measurement(elapsed =>
+    {
+        Interlocked.Increment(ref authorityReads);
+        Interlocked.Add(ref authorityReadTicks, elapsed.Ticks);
+    });
+
+    internal static IDisposable MeasureAuthorityCommit() => new Measurement(elapsed =>
+    {
+        Interlocked.Increment(ref authorityCommits);
+        Interlocked.Add(ref authorityCommitTicks, elapsed.Ticks);
+    });
+
+    internal static void RecordAuthorityUnavailable() => Interlocked.Increment(ref authorityUnavailable);
+    internal static void RecordPolicyUnavailable() => Interlocked.Increment(ref policyUnavailable);
+
     public static void RecordPolicyCompilation() => Interlocked.Increment(ref policyCompilations);
     public static void RecordPolicyReuse() => Interlocked.Increment(ref policyReuses);
     public static void RecordAssetHit() => Interlocked.Increment(ref assetHits);
@@ -64,6 +80,12 @@ public static class DistributionPerformance
         databaseBusyErrors = Interlocked.Read(ref databaseBusy),
         authenticationOperations = Interlocked.Read(ref authenticationOperations),
         authenticationElapsedMs = TimeSpan.FromTicks(Interlocked.Read(ref authenticationTicks)).TotalMilliseconds,
+        authorityReads = Interlocked.Read(ref authorityReads),
+        authorityReadElapsedMs = TimeSpan.FromTicks(Interlocked.Read(ref authorityReadTicks)).TotalMilliseconds,
+        authorityCommitAttempts = Interlocked.Read(ref authorityCommits),
+        authorityCommitElapsedMs = TimeSpan.FromTicks(Interlocked.Read(ref authorityCommitTicks)).TotalMilliseconds,
+        authorityUnavailable = Interlocked.Read(ref authorityUnavailable),
+        policyUnavailable = Interlocked.Read(ref policyUnavailable),
         policyCompilations = Interlocked.Read(ref policyCompilations), policyReuses = Interlocked.Read(ref policyReuses),
         assetCacheHits = Interlocked.Read(ref assetHits), assetCacheMisses = Interlocked.Read(ref assetMisses)
         ,phaseElapsedMs=phases.ToDictionary(pair=>pair.Key,pair=>TimeSpan.FromTicks(pair.Value).TotalMilliseconds)

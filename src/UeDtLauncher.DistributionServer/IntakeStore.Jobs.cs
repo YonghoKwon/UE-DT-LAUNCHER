@@ -6,19 +6,29 @@ namespace UeDtLauncher.Distribution;
 
 public sealed partial class IntakeStore
 {
-    public List<IntakeJob> List() =>
-        IntakeJobs.Read(Authority.ReadSnapshot()).Jobs.Select(Present).ToList();
+    public List<IntakeJob> List() => List(Authority.ReadSnapshot());
+
+    internal List<IntakeJob> List(AuthoritySnapshot snapshot) =>
+        IntakeJobs.Read(snapshot).Jobs.Select(job => Present(job, snapshot)).ToList();
 
     public IntakeJob? Find(string id)
     {
-        var job = IntakeJobs.Read(Authority.ReadSnapshot()).Jobs.Find(job => job.Id == id);
-        return job is null ? null : Present(job);
+        var snapshot = Authority.ReadSnapshot();
+        var job = IntakeJobs.Read(snapshot).Jobs.Find(job => job.Id == id);
+        return job is null ? null : Present(job, snapshot);
     }
 
     public IntakeJob Get(string id) => Find(id) ?? throw new InvalidOperationException("Job not found.");
 
-    private IntakeJob Present(StoredIntakeJob job)
+    private IntakeJob Present(StoredIntakeJob job, AuthoritySnapshot snapshot)
     {
+        if (job.State == "published" && CatalogAuthority.For(this)?.Find(job.Id, byJob: true, snapshot: snapshot) is { } release)
+        {
+            var size = release.Metadata.PackageSize;
+            return new(job.Id, IntakeJobs.Resolve(Root, job.Source), job.State,
+                IntakeJobs.ResolveOptional(Root, job.Snapshot), job.Message, "published", size, size);
+        }
+
         var progress = ReadProgress(job);
         return new(job.Id, IntakeJobs.Resolve(Root, job.Source), job.State,
             IntakeJobs.ResolveOptional(Root, job.Snapshot), job.Message,

@@ -54,28 +54,21 @@ public sealed class IntakePerformanceTests : IDisposable
     }
 
     [Fact]
-    public void LegacyDatabaseIsBackedUpBeforeSchemaChange()
+    public void LegacyDatabaseIsRejectedWithoutSchemaChange()
     {
         Directory.CreateDirectory(root);
-        using (var db = new SqliteConnection("Data Source=" + Path.Combine(root, "distribution.db")))
+        using (var db = new SqliteConnection("Data Source=" + Path.Combine(root, "distribution.db") + ";Pooling=False"))
         {
             db.Open(); using var command = db.CreateCommand();
             command.CommandText = "CREATE TABLE jobs(id TEXT PRIMARY KEY,source TEXT NOT NULL,state TEXT NOT NULL,snapshot TEXT,message TEXT); INSERT INTO jobs VALUES('old','source','waiting',NULL,NULL)";
             command.ExecuteNonQuery();
         }
-        IntakeStore.InitializeRemainingDatabase(root);
-        using (var upgraded = DistributionBackup.Open(root, true))
-        using (var row = upgraded.CreateCommand())
-        {
-            row.CommandText = "SELECT state FROM jobs WHERE id='old'";
-            Assert.Equal("waiting", row.ExecuteScalar());
-        }
-        var backup = Assert.Single(Directory.GetFiles(root, "distribution.pre-v*.db"));
-        using var original = new SqliteConnection("Data Source=" + backup); original.Open();
-        using var query = original.CreateCommand(); query.CommandText = "PRAGMA user_version";
-        Assert.Equal(0L, query.ExecuteScalar());
-        query.CommandText = "SELECT COUNT(*) FROM pragma_table_info('jobs')";
-        Assert.Equal(5L, query.ExecuteScalar());
+        var databasePath = Path.Combine(root, "distribution.db");
+        var bytes = File.ReadAllBytes(databasePath);
+        Assert.Equal(AuthorityRootKind.LegacyDatabase,
+            Assert.Throws<AuthorityRootException>(() => new IntakeStore(new() { Root = root })).Kind);
+        Assert.Equal(databasePath, Assert.Single(Directory.EnumerateFileSystemEntries(root)));
+        Assert.Equal(bytes, File.ReadAllBytes(databasePath));
     }
 
     [Fact]
@@ -260,32 +253,25 @@ public sealed class IntakePerformanceTests : IDisposable
     }
 
     [Fact]
-    public async Task ActivationBeforeDatabaseCommitIsAdoptedOnlyByTheSameJob()
+    public async Task ActivationBeforeHeadCommitIsAdoptedOnlyByTheSameJob()
     {
         var store = new IntakeStore(new() { Root = root, SigningKeyPath = Path.Combine(root, "key.pem") });
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256); File.WriteAllText(store.Settings.SigningKeyPath, key.ExportECPrivateKeyPem());
         var job = await store.IngestAsync(await Package(store));
-        var first = await new ApprovedPublisher(store).ApproveAsync(job.Id);
-        using (var db = store.Open())
-        using (var command = db.CreateCommand())
-        {
-            command.CommandText = "DELETE FROM releases"; command.ExecuteNonQuery();
-        }
-        store.Authority.Commit(snapshot =>
-        {
-            var jobs = IntakeJobs.Read(snapshot);
-            jobs.Jobs[0] = Assert.Single(jobs.Jobs) with { State = "publishing" };
-            return jobs.Plan();
-        });
+        CatalogAuthority.PublicationBoundary.Value = FileAuthorityFixtures.FailBeforeHead;
+        try { await Assert.ThrowsAsync<IOException>(() => new ApprovedPublisher(store).ApproveAsync(job.Id)); }
+        finally { CatalogAuthority.PublicationBoundary.Value = null; }
+        Assert.Empty(new ApprovedPublisher(store).List());
         var reopened = new IntakeStore(store.Settings);
         var recovered = await new ApprovedPublisher(reopened).ApproveAsync(job.Id);
-        Assert.Equal(first.ReleaseId, recovered.ReleaseId);
+        var captured = await SidecarPackageValidator.ReadAsync(Path.Combine(job.Snapshot!, "release.json"));
+        Assert.Equal(captured.ReleaseId, recovered.ReleaseId);
         Assert.Equal("published", reopened.Get(job.Id).State);
         Assert.Single(new ApprovedPublisher(reopened).List());
     }
 
     [Fact]
-    public async Task ApprovalRetryCompletesFileAuthorityAfterReleaseDatabaseCommit()
+    public async Task ApprovalRetryCompletesFileAuthorityAfterReleaseActivation()
     {
         var store = new IntakeStore(new() { Root = root, SigningKeyPath = Path.Combine(root, "key.pem") });
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
@@ -307,11 +293,13 @@ public sealed class IntakePerformanceTests : IDisposable
         var error = await Assert.ThrowsAsync<IOException>(() => publisher.ApproveAsync(job.Id, observer: observer));
         Assert.Equal("owned X4 boundary", error.Message);
         Assert.Equal("publishing", store.Get(job.Id).State);
-        var release = Assert.Single(publisher.List());
+        Assert.Empty(publisher.List());
+        var metadata = await SidecarPackageValidator.ReadAsync(Path.Combine(job.Snapshot!, "release.json"));
+        Assert.True(File.Exists(Path.Combine(root, "releases", metadata.ReleaseId, "publication.json")));
         Assert.DoesNotContain(store.Authority.ReadAudit(store.Authority.ReadSnapshot()), entry => entry.Action == "published");
 
         var reopened = new IntakeStore(store.Settings);
-        Assert.Equal(release.ReleaseId, (await new ApprovedPublisher(reopened).ApproveAsync(job.Id)).ReleaseId);
+        Assert.Equal(metadata.ReleaseId, (await new ApprovedPublisher(reopened).ApproveAsync(job.Id)).ReleaseId);
         Assert.Equal("published", reopened.Get(job.Id).State);
         Assert.Single(reopened.Authority.ReadAudit(reopened.Authority.ReadSnapshot()), entry => entry.Action == "published");
     }
