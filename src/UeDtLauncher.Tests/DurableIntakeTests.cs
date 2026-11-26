@@ -1,5 +1,4 @@
 using System.IO.Compression;
-using Microsoft.Data.Sqlite;
 using UeDtLauncher.Distribution;
 using Xunit;
 
@@ -76,5 +75,5 @@ public sealed class DurableIntakeTests : IDisposable
         Assert.True(File.Exists(Path.Combine(released.Directory, "manifest.json.sig")));
         Assert.Single(publisher.List());
     }
-    public void Dispose() { SqliteConnection.ClearAllPools(); if (Directory.Exists(root)) Directory.Delete(root, true); }
+    public void Dispose() { if (Directory.Exists(root)) Directory.Delete(root, true); }
 }

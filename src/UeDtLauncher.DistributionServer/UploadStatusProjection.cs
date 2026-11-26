@@ -18,7 +18,7 @@ internal sealed class UploadStatusProjection(IntakeStore store, Action<Exception
             var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
             var snapshot = store.Authority.ReadSnapshot();
             var jobs = store.List(snapshot).ToLookup(job => job.Source, comparer);
-            var published = new Lazy<ProjectionPublications>(() => new(CatalogAuthority.For(store)!.Snapshot(snapshot)));
+            var published = new Lazy<ProjectionPublications>(() => new(store.Catalog.Snapshot(snapshot)));
             var incoming = SafePath.ResolveInsideChecked(store.Root, "incoming");
             foreach (var source in Directory.EnumerateDirectories(incoming))
             {

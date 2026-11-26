@@ -1,4 +1,3 @@
-using Microsoft.Data.Sqlite;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Channels;
@@ -30,10 +29,9 @@ public sealed partial class IntakeStore
     private readonly Func<string, long>? availableBytes;
     private string? scanCursor;
     internal AuthorityStore Authority { get; }
+    internal CredentialAuthority Credentials { get; }
+    internal CatalogAuthority Catalog { get; }
     public DistributionSettings Settings { get; }
-    internal ReaderWriterLockSlim DatabaseGate { get; }
-    internal IDisposable DatabaseRead() => DistributionDatabaseCoordinator.Read(DatabaseGate);
-    internal IDisposable DatabaseWrite() => DistributionDatabaseCoordinator.Write(DatabaseGate);
     public string Root { get; }
     internal static IntakeStore OpenForEnrollmentValidation(DistributionSettings settings)
     {
@@ -49,8 +47,8 @@ public sealed partial class IntakeStore
         Settings = settings;
         Root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(settings.Root));
         Authority = authority;
-        DatabaseGate = DistributionDatabaseCoordinator.ForRoot(Root);
-        CredentialAuthority.Bind(this, Authority);
+        Credentials = new(Authority);
+        Catalog = new(Authority, Root);
     }
 
     public IntakeStore(DistributionSettings settings, Func<string, long>? availableBytes = null)
@@ -62,95 +60,13 @@ public sealed partial class IntakeStore
         if (File.Exists(Path.Combine(Root, "restore-staged.json")))
             throw new InvalidDataException("Staged restored root rejects live operations.");
         Authority = AuthorityStore.Open(Root, validate: snapshot => CatalogAuthority.ValidateRoot(snapshot, Root));
-        CredentialAuthority.Bind(this, Authority);
-        CatalogAuthority.Bind(this, Authority);
-        DatabaseGate = DistributionDatabaseCoordinator.ForRoot(Root);
+        Credentials = new(Authority);
+        Catalog = new(Authority, Root);
         using (Authority.Lock())
             foreach (var directory in new[] { "incoming", "processing", "releases", "archive", ".job-locks" })
                 Directory.CreateDirectory(Path.Combine(Root, directory));
     }
 
-    // Legacy SQLite implementation is retained until PROD-01S6. File roots never call it.
-    internal static void InitializeRemainingDatabase(string root)
-    {
-        using var initialization = DistributionMaintenanceLease.Acquire(root, false);
-        using var gate = AuthorityStore.OpenWriterFile(root);
-        var existed = File.Exists(Path.Combine(root, "distribution.db"));
-        using var database = DistributionDatabaseCoordinator.Write(DistributionDatabaseCoordinator.ForRoot(root));
-        using var db = OpenDatabase(root);
-        using var command = db.CreateCommand();
-        command.CommandText = "PRAGMA user_version";
-        var version = Convert.ToInt32(command.ExecuteScalar());
-        if (version > 6) throw new InvalidDataException("Distribution database schema is newer than this server.");
-        if (version == 6) return;
-        initialization.Dispose();
-        using var maintenance = DistributionMaintenanceLease.Acquire(root, true);
-        using var offline = new AuthenticationProcessLease(root);
-        // SQLite's backup API captures a consistent image, including committed WAL pages, before any schema change.
-        if (existed)
-        {
-            using var backup = new SqliteConnection(new SqliteConnectionStringBuilder
-            { DataSource = Path.Combine(root, "distribution.pre-v6-" + DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmssfffffff") + ".db"), Pooling = false }.ToString());
-            backup.Open(); db.BackupDatabase(backup);
-        }
-        using var transaction = db.BeginTransaction(); command.Transaction = transaction;
-        if (version < 1)
-        {
-            command.CommandText = """
-            CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,source TEXT NOT NULL,state TEXT NOT NULL,snapshot TEXT,message TEXT);
-            CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,at TEXT NOT NULL,action TEXT NOT NULL,job TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS tokens(hash TEXT PRIMARY KEY,client TEXT NOT NULL,revoked INTEGER NOT NULL DEFAULT 0);
-            CREATE TABLE IF NOT EXISTS releases(id TEXT PRIMARY KEY,job TEXT NOT NULL,directory TEXT NOT NULL,metadata TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS sequence(id INTEGER PRIMARY KEY CHECK(id=1),value INTEGER);
-            INSERT OR IGNORE INTO sequence VALUES(1,0);
-            ALTER TABLE jobs ADD COLUMN phase TEXT;
-            ALTER TABLE jobs ADD COLUMN processed_bytes INTEGER NOT NULL DEFAULT 0;
-            ALTER TABLE jobs ADD COLUMN total_bytes INTEGER NOT NULL DEFAULT 0;
-            ALTER TABLE jobs ADD COLUMN estimated_disk_bytes INTEGER NOT NULL DEFAULT 0;
-            ALTER TABLE jobs ADD COLUMN progress_at TEXT;
-            """;
-            command.ExecuteNonQuery();
-        }
-        command.CommandText = """
-            CREATE TABLE IF NOT EXISTS active_work(job TEXT PRIMARY KEY,owner TEXT NOT NULL,scratch TEXT,snapshot TEXT,started_at TEXT NOT NULL);
-            CREATE INDEX IF NOT EXISTS releases_job_idx ON releases(job);
-            CREATE TABLE IF NOT EXISTS device_keys(key_id TEXT PRIMARY KEY,client TEXT NOT NULL,public_pem TEXT NOT NULL,revoked INTEGER NOT NULL DEFAULT 0);
-            CREATE TABLE IF NOT EXISTS promotion_state(id INTEGER PRIMARY KEY CHECK(id=1),ready INTEGER NOT NULL);
-            INSERT OR IGNORE INTO promotion_state SELECT 1,CASE WHEN COUNT(*)=0 THEN 1 ELSE 0 END FROM releases;
-            CREATE TABLE IF NOT EXISTS promotions(id INTEGER PRIMARY KEY AUTOINCREMENT,track TEXT NOT NULL,release_id TEXT NOT NULL,previous_release TEXT,actor TEXT NOT NULL,at TEXT NOT NULL,reason TEXT NOT NULL,kind TEXT NOT NULL);
-            CREATE INDEX IF NOT EXISTS promotions_track_idx ON promotions(track,id);
-            """;
-        command.ExecuteNonQuery();
-        void AddColumn(string table, string name, string declaration)
-        {
-            command.CommandText = "PRAGMA table_info(" + table + ")";
-            bool exists;
-            using (var columns = command.ExecuteReader())
-            { exists = false; while (columns.Read()) if (columns.GetString(1) == name) exists = true; }
-            if (exists) return;
-            command.CommandText = "ALTER TABLE " + table + " ADD COLUMN " + name + " " + declaration; command.ExecuteNonQuery();
-        }
-        AddColumn("tokens", "management_id", "TEXT"); AddColumn("tokens", "expires_at", "TEXT"); AddColumn("tokens", "expired", "INTEGER NOT NULL DEFAULT 0");
-        AddColumn("device_keys", "expires_at", "TEXT"); AddColumn("device_keys", "expired", "INTEGER NOT NULL DEFAULT 0");
-        command.CommandText = """
-            UPDATE tokens SET management_id='legacy-' || substr(hash,1,24) WHERE management_id IS NULL;
-            CREATE UNIQUE INDEX IF NOT EXISTS tokens_management_id_idx ON tokens(management_id);
-            CREATE TABLE IF NOT EXISTS maintenance_deletions(id TEXT PRIMARY KEY,path TEXT NOT NULL,job TEXT,tree_hash TEXT NOT NULL,at TEXT NOT NULL);
-            PRAGMA user_version=6;
-            """;
-        command.ExecuteNonQuery(); transaction.Commit();
-    }
-    public SqliteConnection Open() =>
-        throw new InvalidOperationException("SQLite cannot be opened from a file authority intake store.");
-
-    private static SqliteConnection OpenDatabase(string root)
-    {
-        using var measurement = DistributionPerformance.MeasureDatabase("open");
-        var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Path.Combine(root, "distribution.db") }.ToString());
-        try { db.Open(); }
-        catch (SqliteException ex) { db.Dispose(); DistributionPerformance.RecordDatabaseBusy(ex.SqliteErrorCode); throw; }
-        return db;
-    }
     public async Task<IntakeJob> IngestAsync(string directory, CancellationToken token = default,
         IProgress<PackageWorkProgress>? observer = null)
     {

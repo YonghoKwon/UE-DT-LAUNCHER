@@ -161,7 +161,7 @@ public static class DistributionHttp
                     var query = context.Request.Query;
                     if (query.Count > 1 || (query.Count == 1 && (query["selectionPolicy"].Count != 1 || query["selectionPolicy"].ToString() != PromotionCatalog.SelectionPolicy)))
                     { context.Response.StatusCode = 400; return; }
-                    var snapshot = ReadReleaseAuthority(() => CatalogAuthority.For(store)!.Snapshot(authority));
+                    var snapshot = ReadReleaseAuthority(() => store.Catalog.Snapshot(authority));
                     context.Items["promotion-snapshot"] = snapshot;
                     context.Items["allowed"] = snapshot.Releases.Where(r => client.AllowsRelease(r.Metadata)).ToList();
                     if (!ConsumeProof()) return;
@@ -175,7 +175,7 @@ public static class DistributionHttp
                 }
                 PublishedRelease? release = null;
                 if (TryGetReleaseId(path, out var releaseId))
-                    release = ReadReleaseAuthority(() => CatalogAuthority.For(store)!.Find(releaseId, snapshot: authority));
+                    release = ReadReleaseAuthority(() => store.Catalog.Find(releaseId, snapshot: authority));
                 if (release is null || !client.AllowsRelease(release.Metadata))
                 {
                     try { store.Audit("download-denied", clientId); }

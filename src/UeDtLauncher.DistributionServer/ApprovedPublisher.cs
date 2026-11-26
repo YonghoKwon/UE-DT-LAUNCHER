@@ -9,39 +9,15 @@ public sealed record PublishedRelease(string ReleaseId, string JobId, string Dir
 
 public sealed class ApprovedPublisher(IntakeStore store)
 {
-    public List<PublishedRelease> List()
-    {
-        if (CatalogAuthority.For(store) is { } authority) return authority.Snapshot().Releases.ToList();
-        using var measurement = DistributionPerformance.MeasureDatabase("releases-list");
-        using var database = store.DatabaseRead();
-        using var db = store.Open(); using var command = db.CreateCommand();
-        command.CommandText = "SELECT id,job,directory,metadata FROM releases ORDER BY rowid";
-        using var reader = command.ExecuteReader(); var items = new List<PublishedRelease>();
-        while (reader.Read()) items.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2),
-            JsonSerializer.Deserialize<ReleaseSidecar>(reader.GetString(3), JsonFiles.Options)!));
-        return items;
-    }
-    public PublishedRelease? Find(string releaseId) => FindOne("id", releaseId);
-    public PublishedRelease? FindByJob(string jobId) => FindOne("job", jobId);
-    private PublishedRelease? FindOne(string column, string value)
-    {
-        if (CatalogAuthority.For(store) is { } authority) return authority.Find(value, byJob: column == "job");
-        using var measurement = DistributionPerformance.MeasureDatabase("release-find");
-        using var database = store.DatabaseRead();
-        using var db = store.Open(); using var command = db.CreateCommand();
-        command.CommandText = "SELECT id,job,directory,metadata FROM releases WHERE " + column + "=$value";
-        command.Parameters.AddWithValue("$value", value);
-        using var reader = command.ExecuteReader();
-        return reader.Read() ? new(reader.GetString(0), reader.GetString(1), reader.GetString(2),
-            JsonSerializer.Deserialize<ReleaseSidecar>(reader.GetString(3), JsonFiles.Options)!) : null;
-    }
+    public List<PublishedRelease> List() => store.Catalog.Snapshot().Releases.ToList();
+    public PublishedRelease? Find(string releaseId) => store.Catalog.Find(releaseId);
+    public PublishedRelease? FindByJob(string jobId) => store.Catalog.Find(jobId, byJob: true);
 
     public async Task<PublishedRelease> ApproveAsync(string id, CancellationToken token = default,
         IProgress<PackageWorkProgress>? observer = null)
     {
         using var operation = DistributionMaintenanceLease.Acquire(store.Root, false);
         using var jobLock = store.LockJob(id);
-        var authority = CatalogAuthority.For(store);
         var job = store.Get(id);
         if (job.State == "published") return FindByJob(id) ?? throw new InvalidDataException("Published release record missing.");
         if (job.State is not ("pending" or "publishing")) throw new InvalidOperationException("Job is not awaiting approval.");
@@ -52,11 +28,7 @@ public sealed class ApprovedPublisher(IntakeStore store)
         if (existing is not null)
         {
             if (existing.JobId != id) throw PublicationConflict(id);
-            if (authority is not null)
-                throw new InvalidDataException("Publication catalog and job state differ.");
-            using var gate = store.Lock();
-            if (!store.ChangeState(id, job.State, "published", writer: gate)) throw new InvalidOperationException("Job state changed.");
-            return existing;
+            throw new InvalidDataException("Publication catalog and job state differ.");
         }
         // A publishing journal is committed before touching release directories. Repeating approval recovers it.
         var build = Path.Combine(store.Root, "processing", "publish-" + id + "-" + Guid.NewGuid().ToString("N"));
@@ -116,60 +88,28 @@ public sealed class ApprovedPublisher(IntakeStore store)
         }
         progress.Report(new("activate", metadata.PackageSize, metadata.PackageSize, 0));
         token.ThrowIfCancellationRequested();
-        if (authority is not null)
+        if (OperatingSystem.IsWindows())
         {
-            if (OperatingSystem.IsWindows())
+            // Flush staged or receipt-verified files outside the global writer lease.
+            var durableRoot = recovered ? final : staged;
+            foreach (var file in manifest.Files.Select(file => "files/" + file.Path)
+                         .Concat(["manifest.json", "manifest.json.sig", "publication.json"]))
             {
-                // Flush staged or receipt-verified files outside the global writer lease.
-                var durableRoot = recovered ? final : staged;
-                foreach (var file in manifest.Files.Select(file => "files/" + file.Path)
-                             .Concat(["manifest.json", "manifest.json.sig", "publication.json"]))
-                {
-                    token.ThrowIfCancellationRequested();
-                    using var handle = new FileStream(SafePath.ResolveInsideChecked(durableRoot, file), FileMode.Open,
-                        FileAccess.Write, FileShare.Read);
-                    handle.Flush(true);
-                }
+                token.ThrowIfCancellationRequested();
+                using var handle = new FileStream(SafePath.ResolveInsideChecked(durableRoot, file), FileMode.Open,
+                    FileAccess.Write, FileShare.Read);
+                handle.Flush(true);
             }
-            PublishedRelease published;
-            try
-            {
-                published = authority.Publish(id, metadata, metadataBytes, work, Activate);
-                work.MarkPublished();
-            }
-            catch (PublicationIdConflictException) { throw new IOException(PublicationConflictMessage); }
-            observer?.Report(new("published", metadata.PackageSize, metadata.PackageSize, 0));
-            return published;
         }
-
-        using (var gate = store.Lock())
+        PublishedRelease published;
+        try
         {
-            // Two jobs can build the same ReleaseId in parallel, but only one may activate it.
-            existing = Find(metadata.ReleaseId);
-            if (existing is not null)
-            {
-                if (existing.JobId != id) throw PublicationConflict(id, gate);
-                if (!store.ChangeState(id, "publishing", "published", writer: gate)) throw new InvalidOperationException("Job state changed.");
-                return existing;
-            }
-            Activate();
-
-            using (var database = store.DatabaseWrite())
-            using (var db = store.Open())
-            using (var transaction = db.BeginTransaction())
-            using (var command = db.CreateCommand())
-            {
-                command.Transaction = transaction;
-                command.CommandText = "INSERT INTO releases(id,job,directory,metadata) VALUES($id,$job,$dir,$metadata)";
-                command.Parameters.AddWithValue("$id", metadata.ReleaseId); command.Parameters.AddWithValue("$job", id);
-                command.Parameters.AddWithValue("$dir", final); command.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(metadata, JsonFiles.Options));
-                command.ExecuteNonQuery(); transaction.Commit();
-            }
-            // Until PROD-01S5 integrates X4, a committed release can be reconciled by the existing approval retry.
-            if (!store.ChangeState(id, "publishing", "published", writer: gate)) throw new InvalidOperationException("Job state changed.");
+            published = store.Catalog.Publish(id, metadata, metadataBytes, work, Activate);
+            work.MarkPublished();
         }
-        progress.Report(new("published", metadata.PackageSize, metadata.PackageSize, 0));
-        return new(metadata.ReleaseId, id, final, metadata);
+        catch (PublicationIdConflictException) { throw new IOException(PublicationConflictMessage); }
+        observer?.Report(new("published", metadata.PackageSize, metadata.PackageSize, 0));
+        return published;
 
         void Activate()
         {
@@ -185,10 +125,10 @@ public sealed class ApprovedPublisher(IntakeStore store)
 
     internal const string PublicationConflictMessage = "Release version already belongs to another publication; use a new version.";
 
-    private IOException PublicationConflict(string id, IDisposable? writer = null)
+    private IOException PublicationConflict(string id)
     {
         // A known losing publisher is not a recoverable activation journal. Keep retry available.
-        store.ChangeState(id, "publishing", "failed", message: PublicationConflictMessage, writer: writer);
+        store.ChangeState(id, "publishing", "failed", message: PublicationConflictMessage);
         return new IOException(PublicationConflictMessage);
     }
 

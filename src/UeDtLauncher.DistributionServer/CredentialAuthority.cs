@@ -1,55 +1,18 @@
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Microsoft.Data.Sqlite;
 using UeDtLauncher.Distribution.Authority;
 
 namespace UeDtLauncher.Distribution;
 
 internal sealed class CredentialAuthority(AuthorityStore store)
 {
-    // Live and read-only enrollment stores bind before handing off to a credential caller.
-    private static readonly ConditionalWeakTable<IntakeStore, CredentialAuthority> Bindings = new();
     internal static readonly AsyncLocal<AuthoritySnapshot?> RequestSnapshot = new();
 
-    internal static void Bind(IntakeStore intake, AuthorityStore authority)
-    {
-        if (authority != intake.Authority) throw new ArgumentException("Credential authority must belong to the intake store.");
-        Bindings.Add(intake, new(authority));
-    }
+    internal CredentialMetadata? FindToken(string hash) =>
+        Read().Tokens.Find(token => token.Hash == hash)?.Metadata;
 
-    internal static CredentialAuthority? For(IntakeStore intake) => Bindings.TryGetValue(intake, out var authority) ? authority : null;
-
-    internal static CredentialMetadata? FindToken(IntakeStore intake, string hash)
-    {
-        if (For(intake) is { } authority)
-            return authority.Read().Tokens.Find(token => token.Hash == hash)?.Metadata;
-
-        using var measurement = DistributionPerformance.MeasureDatabase("token-authenticate");
-        using var database = intake.DatabaseRead();
-        using var db = intake.Open();
-        using var command = db.CreateCommand();
-        command.CommandText = "SELECT management_id,client,revoked,expires_at,expired FROM tokens WHERE hash=$hash";
-        command.Parameters.AddWithValue("$hash", hash);
-        using var reader = command.ExecuteReader();
-        return reader.Read()
-            ? new(reader.GetString(0), reader.GetString(1), reader.GetBoolean(2), reader.IsDBNull(3) ? null : reader.GetString(3), reader.GetBoolean(4))
-            : null;
-    }
-
-    internal static RegisteredDeviceKey? FindDeviceKey(IntakeStore intake, string keyId, Func<SqliteDataReader, RegisteredDeviceKey> read)
-    {
-        if (For(intake) is { } authority)
-            return authority.Read().DeviceKeys.Find(key => key.KeyId == keyId)?.Registration;
-
-        using var database = intake.DatabaseRead();
-        using var db = intake.Open();
-        using var command = db.CreateCommand();
-        command.CommandText = "SELECT key_id,client,public_pem,revoked,expires_at,expired FROM device_keys WHERE key_id=$key";
-        command.Parameters.AddWithValue("$key", keyId);
-        using var reader = command.ExecuteReader();
-        return reader.Read() ? read(reader) : null;
-    }
+    internal RegisteredDeviceKey? FindDeviceKey(string keyId) =>
+        Read().DeviceKeys.Find(key => key.KeyId == keyId)?.Registration;
 
     internal IReadOnlyList<CredentialMetadata> ListTokens() => Read().Tokens.Select(token => token.Metadata).ToArray();
 

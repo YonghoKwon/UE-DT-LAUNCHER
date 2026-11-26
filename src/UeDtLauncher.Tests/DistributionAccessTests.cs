@@ -1,6 +1,5 @@
 using System.Net;
 using UeDtLauncher.Distribution;
-using Microsoft.Data.Sqlite;
 using UeDtLauncher.Distribution.Authority;
 using Xunit;
 
@@ -35,11 +34,9 @@ public class DistributionAccessTests
             var tokenEntry = store.Authority.ReadSnapshot().Get(AuthorityArea.Auth).GetProperty("tokens")[0];
             Assert.NotEqual(token, tokenEntry.GetProperty("hash").GetString());
             Assert.Empty(Directory.EnumerateFiles(store.Root, "*.db*"));
-            using var legacy = new SqliteConnection("Data Source=:memory:");
-            legacy.Open();
-            using var command = legacy.CreateCommand();
-            command.CommandText = "SELECT sqlite_version()";
-            Assert.True(Version.Parse((string)command.ExecuteScalar()!) >= new Version(3, 50, 2));
+            Assert.True(tokenEntry.GetProperty("revoked").GetBoolean());
+            Assert.Contains(store.Authority.ReadAudit(store.Authority.ReadSnapshot()),
+                item => item.Action == "tokens-revoked");
         }
         finally { Directory.Delete(root, true); }
     }

@@ -2,7 +2,6 @@ using System.IO.Compression;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.Data.Sqlite;
 using UeDtLauncher.Distribution;
 using UeDtLauncher.Distribution.Authority;
 using Xunit;
@@ -55,15 +54,10 @@ public sealed class IntakePerformanceTests(ITestOutputHelper testOutput) : IDisp
     }
 
     [Fact]
-    public void LegacyDatabaseIsRejectedWithoutSchemaChange()
+    public void LegacyDatabaseIsRejectedWithoutChanges()
     {
         Directory.CreateDirectory(root);
-        using (var db = new SqliteConnection("Data Source=" + Path.Combine(root, "distribution.db") + ";Pooling=False"))
-        {
-            db.Open(); using var command = db.CreateCommand();
-            command.CommandText = "CREATE TABLE jobs(id TEXT PRIMARY KEY,source TEXT NOT NULL,state TEXT NOT NULL,snapshot TEXT,message TEXT); INSERT INTO jobs VALUES('old','source','waiting',NULL,NULL)";
-            command.ExecuteNonQuery();
-        }
+        File.WriteAllText(Path.Combine(root, "distribution.db"), "legacy marker");
         var databasePath = Path.Combine(root, "distribution.db");
         var bytes = File.ReadAllBytes(databasePath);
         Assert.Equal(AuthorityRootKind.LegacyDatabase,
@@ -363,5 +357,5 @@ public sealed class IntakePerformanceTests(ITestOutputHelper testOutput) : IDisp
         public void Advance() => timestamp += 1000;
     }
 
-    public void Dispose() { SqliteConnection.ClearAllPools(); if (Directory.Exists(root)) Directory.Delete(root, true); }
+    public void Dispose() { if (Directory.Exists(root)) Directory.Delete(root, true); }
 }

@@ -13,7 +13,6 @@ internal sealed class AuthorityStore
     private readonly AuthorityAreaCache cache = new();
     private readonly AuthorityAuditProjection projection;
     private readonly AuthorityLayout layout;
-    private readonly bool coexistWithSqlite;
     private readonly DistributionMaintenanceLease? inspectionLease;
     private readonly string[] generationDirectories;
     private readonly string[] dataDirectories;
@@ -23,12 +22,10 @@ internal sealed class AuthorityStore
     internal string ProgressPath => DataPath(layout.ProgressDirectory);
     internal Exception? OpenMaintenanceError { get; private set; }
 
-    private AuthorityStore(string root, AuthorityLayout layout, DistributionMaintenanceLease? inspectionLease = null,
-        bool coexistWithSqlite = false)
+    private AuthorityStore(string root, AuthorityLayout layout, DistributionMaintenanceLease? inspectionLease = null)
     {
         Root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
         this.inspectionLease = inspectionLease;
-        this.coexistWithSqlite = coexistWithSqlite;
         this.layout = layout with
         {
             ExistingDistributionMarkers = layout.ExistingDistributionMarkers?.ToArray()
@@ -45,10 +42,6 @@ internal sealed class AuthorityStore
         Action<AuthoritySnapshot>? validate = null) =>
         OpenCore(new(root, layout ?? AuthorityLayout.Default), validate);
 
-    // Transitional storage during PROD-01S2–S5. Remove with SQLite in PROD-01S6.
-    internal static AuthorityStore OpenAlongsideSqlite(string root) =>
-        OpenCore(new(root, AuthorityLayout.Default, coexistWithSqlite: true));
-
     private static AuthorityStore OpenCore(AuthorityStore store, Action<AuthoritySnapshot>? validate = null)
     {
         // Validation precedes creation of even the maintenance/writer locks.
@@ -60,14 +53,6 @@ internal sealed class AuthorityStore
         if (previous?.Head.HeadSha256 != current!.Head.HeadSha256) validate?.Invoke(current);
         store.OpenMaintenanceError = store.Recover(writer);
         return store;
-    }
-
-    internal static AuthoritySnapshot ReadAlongsideSqlite(string root, bool validateHistory = false)
-    {
-        var store = new AuthorityStore(root, AuthorityLayout.Default, coexistWithSqlite: true);
-        return store.CheckRoot(validateHistory, out var snapshot)
-            ? snapshot!
-            : throw new AuthorityRootException(AuthorityRootKind.Damaged, "Authority HEAD is missing.");
     }
 
     internal static AuthorityStore OpenReadOnly(string root, DistributionMaintenanceLease exclusiveLease, AuthorityLayout? layout = null)
@@ -297,14 +282,7 @@ internal sealed class AuthorityStore
                     file.EndsWith(".db-wal", StringComparison.OrdinalIgnoreCase) ||
                     file.StartsWith("distribution.pre-v6-", StringComparison.OrdinalIgnoreCase) &&
                     file.EndsWith(".db", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!coexistWithSqlite || !hasAuthority || !IsTransitionalDatabaseFile(file))
-                        throw new AuthorityRootException(AuthorityRootKind.LegacyDatabase, "Legacy distribution database detected.");
-                    var databasePath = Path.Combine(Root, file);
-                    RejectLink(databasePath);
-                    if (Directory.Exists(databasePath))
-                        throw new AuthorityRootException(AuthorityRootKind.LegacyDatabase, "Invalid transitional database file.");
-                }
+                    throw new AuthorityRootException(AuthorityRootKind.LegacyDatabase, "Legacy distribution database detected.");
 
             if (!hasAuthority)
             {
@@ -343,16 +321,6 @@ internal sealed class AuthorityStore
         {
             throw new AuthorityRootException(AuthorityRootKind.Damaged, "Distribution authority root is damaged or inaccessible.", error);
         }
-    }
-
-    private static bool IsTransitionalDatabaseFile(string name)
-    {
-        if (name is "distribution.db" or "distribution.db-wal" or "distribution.db-shm" or "distribution.db-journal")
-            return true;
-        const string prefix = "distribution.pre-v6-";
-        return name.Length == prefix.Length + 21 + 3 && name.StartsWith(prefix, StringComparison.Ordinal) &&
-            name.EndsWith(".db", StringComparison.Ordinal) &&
-            name.AsSpan(prefix.Length, 21).IndexOfAnyExceptInRange('0', '9') < 0;
     }
 
     private static FileAttributes? Attributes(string path)
@@ -418,9 +386,10 @@ internal sealed class AuthorityStore
         catch { maintenance.Dispose(); throw; }
     }
 
-    internal static FileStream OpenWriterFile(string root)
+    private static FileStream OpenWriterFile(string root)
     {
         var path = SafePath.ResolveInsideChecked(root, ".writer.lock");
+        using var wait = DistributionPerformance.MeasurePhase("authority-writer-wait");
         var started = Stopwatch.GetTimestamp();
         while (true)
         {

@@ -1,4 +1,3 @@
-using Microsoft.Data.Sqlite;
 using System.Security.Cryptography;
 using System.Text.Json;
 using UeDtLauncher.Distribution.Authority;
@@ -230,26 +229,6 @@ public static class DistributionBackup
             throw new InvalidDataException("Audit projection contains data beyond committed events.");
     }
 
-    private static void RebaseReleaseDirectories(SqliteConnection db, string original, string target)
-    {
-        using var tx = db.BeginTransaction();
-        using var q = db.CreateCommand(); q.Transaction = tx; q.CommandText = "SELECT rowid,directory FROM releases";
-        var rows = new List<(long Id, string Path)>();
-        using (var r = q.ExecuteReader()) while (r.Read()) rows.Add((r.GetInt64(0), r.GetString(1)));
-        foreach (var row in rows)
-        {
-            var old = Path.GetFullPath(row.Path);
-            if (!Inside(original, old)) throw new InvalidDataException("Backup DB references a path outside its original server root.");
-            q.CommandText = "UPDATE releases SET directory=$path WHERE rowid=$id"; q.Parameters.Clear();
-            q.Parameters.AddWithValue("$path", SafePath.ResolveInsideChecked(target, Path.GetRelativePath(original, old)));
-            q.Parameters.AddWithValue("$id", row.Id); q.ExecuteNonQuery();
-        }
-        tx.Commit();
-    }
-    internal static SqliteConnection Open(string root, bool readOnly)
-    {
-        var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Path.Combine(root, "distribution.db"), Mode = readOnly ? SqliteOpenMode.ReadOnly : SqliteOpenMode.ReadWrite, Pooling = false }.ToString()); db.Open(); return db;
-    }
     public static async Task<object> StageAsync(string backup, string target, DistributionSettings current)
     {
         var manifest = await VerifyAsync(backup); target = Path.GetFullPath(target);

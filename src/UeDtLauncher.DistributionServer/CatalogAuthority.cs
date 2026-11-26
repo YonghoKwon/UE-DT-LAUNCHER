@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using UeDtLauncher.Distribution.Authority;
@@ -7,8 +6,6 @@ namespace UeDtLauncher.Distribution;
 
 internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
 {
-    // Bound to the same authority used by intake and credential operations.
-    private static readonly ConditionalWeakTable<IntakeStore, CatalogAuthority> Bindings = new();
     private static readonly StringComparer PathComparer = OperatingSystem.IsWindows()
         ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
     private const int MaxMetadataBytes = 1024 * 1024;
@@ -16,16 +13,6 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
     private readonly AuthorityParsedCache<ReleaseSidecar> metadataCache = new(SidecarPackageValidator.Parse);
     private readonly object catalogCacheGate = new();
     private ((string Path, string Digest) Key, CatalogDocument Document)? cachedCatalog;
-
-    internal AuthorityStore Store => store;
-
-    internal static void Bind(IntakeStore intake, AuthorityStore authority)
-    {
-        if (authority != intake.Authority) throw new ArgumentException("Catalog authority must belong to the intake store.");
-        Bindings.Add(intake, new(authority, intake.Root));
-    }
-
-    internal static CatalogAuthority? For(IntakeStore intake) => Bindings.TryGetValue(intake, out var authority) ? authority : null;
 
     internal static PromotionMigration InspectExisting(string root)
     {
