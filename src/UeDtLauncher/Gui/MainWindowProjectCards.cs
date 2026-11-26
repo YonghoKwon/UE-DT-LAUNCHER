@@ -107,6 +107,8 @@ public sealed partial class MainWindow
 
     private async Task<Bitmap?> LoadProjectCardImageAsync(ProjectUiConfig project)
     {
+        if (string.IsNullOrWhiteSpace(project.ThumbnailPath)) return null;
+
         var configPath = ConfigPath;
         var asset = await Task.Run(() => ProjectVisualResolver.Resolve(project, configPath, ProjectVisualKind.Thumbnail));
         if (asset.ResolvedPath is not { } path || _projectCardLifetime.IsCancellationRequested) return null;
