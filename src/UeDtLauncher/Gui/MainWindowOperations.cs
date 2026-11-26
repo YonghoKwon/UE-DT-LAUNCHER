@@ -5,12 +5,16 @@ public sealed partial class MainWindow
 {
     private CancellationTokenSource? _operationCancellation;
     private OperationStatus? _resumeOperation;
+    private bool? _retainedPartialDownload;
+    private bool _pauseAvailable;
     private long _uiProgressGeneration;
     private bool _readOnlyRecoveryFollowUp;
 
     private void StartCancellableUiOperation(CancellationTokenSource cancellation)
     {
         _operationCancellation=cancellation;
+        _pauseAvailable=false;
+        ResetSpeedTracking();
         _viewModel.GeneralState=GeneralLauncherState.Working;
         Build();
     }
@@ -21,13 +25,20 @@ public sealed partial class MainWindow
         _running=false;
         Build();
     }
-    private void RecordCancelledOperation(OperationStatus? operation)
+    private void RecordCancelledOperation(OperationStatus? operation, bool? retainedPartial = null)
     {
         _resumeOperation=operation;
+        _retainedPartialDownload=retainedPartial;
         _viewModel.GeneralState=GeneralLauncherState.RecoverableError;
         _presentation.Complete(CanResumeSelected()
-            ? "작업 취소 완료 · 다시 확인하거나 다운로드를 이어받으세요."
-            : "작업 취소 완료 · 다시 확인해 주세요.");
+            ? retainedPartial == true && !IsDeveloper
+                ? "다운로드를 멈췄습니다. 계속을 누르면 받은 곳부터 이어 받습니다."
+                : retainedPartial == false && !IsDeveloper
+                    ? "작업을 취소했습니다. 다시 시도하면 받던 파일을 처음부터 받습니다."
+                    : "작업 취소 완료 · 다시 확인하거나 같은 작업을 다시 시도해 주세요."
+            : retainedPartial == false && !IsDeveloper
+                ? "작업을 취소했습니다. 다시 시도하면 받던 파일을 처음부터 받습니다."
+                : "작업 취소 완료 · 다시 확인해 주세요.", showCompletion: false);
     }
     private bool CanResumeSelected()
     {try{return !_readOnlyRecoveryFollowUp && _viewModel.GeneralState!=GeneralLauncherState.RuntimeBlocked && LauncherUiOperations.CanResume(_resumeOperation,CurrentReleaseSelection());}catch{return false;}}
@@ -43,10 +54,11 @@ public sealed partial class MainWindow
             BeginOperation(LauncherUiOperation.Update);StartCancellableUiOperation(cancellation);
             var result=await _uiBackend.ExecuteAsync(context,config,previous.Command=="repair",false,CreateUiProgress(),_fileLogger,cancellation.Token);
             _resumeOperation=null;
+            if (_presentation.Committing) ShowInstallationNotice(result);
             if(result.Completion==LauncherUiCompletion.CommittedRefreshRequired){CommittedUiRefreshRequired(failure:result.FollowUpFailure);return;}
             if(ApplyUiResult(context,result)){_presentation.Complete("다운로드 재개 및 검증 완료");Build();}
         }
-        catch(LauncherUiCancelledException cancelled){RecordCancelledOperation(cancelled.Operation);}
+        catch(LauncherUiCancelledException cancelled){RecordCancelledOperation(cancelled.Operation,cancelled.RetainedPartialDownload);}
         catch(OperationCanceledException){RecordCancelledOperation(previous);}
         catch(Exception error){MarkError(error,"작업 재개 실패");}
         finally{FinishUiOperation();}
@@ -92,7 +104,7 @@ public sealed partial class MainWindow
     }
     private void RequestOperationCancellation()
     {
-        if (_operationCancellation is null || _operationCancellation.IsCancellationRequested) return;
+        if (_operationCancellation is null || _operationCancellation.IsCancellationRequested || (!IsDeveloper && _presentation.Committing)) return;
         SetStatus("취소 요청 중 · 파일 작업과 안전한 복구가 끝날 때까지 기다려 주세요.");
         _operationCancellation.Cancel(); Build();
     }
@@ -126,6 +138,7 @@ public sealed partial class MainWindow
     {
         ValidateUiResult(context,result);
         _selectedRuntimeConfig=result.Config;_viewModel.ApplyProjectStatus(result.Status);
+        if (!SelectedInstallationDamaged) _damageDiagnostic = null;
         _installState=_viewModel.GeneralState switch
         {GeneralLauncherState.NotInstalled=>"설치 필요",GeneralLauncherState.UpdateAvailable=>"업데이트 가능",_=>"최신 상태"};
         _installDetail=result.Status switch
@@ -138,7 +151,7 @@ public sealed partial class MainWindow
         if(!_viewModel.ApplyRuntimeObservation(result.Runtime))
         {
             if(result.Runtime?.State==RuntimeState.Running)
-            {_presentation.Retry=null;if(result.Config.ManagedIntegrationWarning is { } warning){_installDetail+=" "+warning;AppendLog(warning,true);}_presentation.Complete("프로그램 실행 중");Build();}
+            {_presentation.Retry=null;if(result.Config.ManagedIntegrationWarning is { } warning){_installDetail+=" "+warning;AppendLog(warning,true);}_presentation.Complete("프로그램 실행 중", showCompletion: result.Completion != LauncherUiCompletion.Checked);Build();}
             else MarkError(new RuntimeBlockedException(LauncherDashboardViewModel.RequireRuntimeObservation(result.Runtime)),"실행 상태 확인",showDialog:false);
             return false;
         }

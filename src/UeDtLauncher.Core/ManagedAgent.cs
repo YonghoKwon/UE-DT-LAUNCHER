@@ -105,6 +105,8 @@ public sealed class ManagedAgentResponse
     public OperationStatus? Operation { get; set; }
     public bool? InstallationCommitted { get; set; }
     public ManagedClientPresentation? ClientPresentation { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? RetainedPartialDownload { get; set; }
 }
 
 public sealed record ManagedAssetChunk(long Offset, long TotalBytes, string Sha256, string Extension, byte[] Data);
@@ -115,10 +117,11 @@ public sealed record ManagedAgentProgress(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? TotalBytes = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? FileIndex = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? FileCount = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LauncherPerformanceMetrics? Performance = null)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LauncherPerformanceMetrics? Performance = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? PauseAvailable = null)
 {
     internal LauncherProgress ToLauncherProgress() => new(Stage, Message, Percent,
-        BytesDownloaded, TotalBytes, FileIndex, FileCount, Performance);
+        BytesDownloaded, TotalBytes, FileIndex, FileCount, Performance, PauseAvailable);
 }
 
 public sealed record ManagedProjectStatus(

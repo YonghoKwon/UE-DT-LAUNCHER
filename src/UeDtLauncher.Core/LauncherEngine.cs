@@ -404,7 +404,8 @@ public sealed class LauncherEngine : IDisposable
                 if (previousInstallations is null || !await previousInstallations.TryCopyAsync(file, stagingPath, HashMatchesAsync, _performance, token))
                 {
                     var downloadUri = ResolveDownloadUri(remote, file);
-                    await DownloadWithRetryAsync(downloadUri, stagingPath, file, bytes => progress.Report(index, bytes), token);
+                    await DownloadWithRetryAsync(downloadUri, stagingPath, file,
+                        (bytes, retainedPartial) => progress.Report(index, bytes, retainedPartial: retainedPartial), token);
                 }
                 if (_resume is not null) await _resume.StoreAsync(file, stagingPath, token);
                 progress.Report(index, file.Size, completed: true);
@@ -426,13 +427,31 @@ public sealed class LauncherEngine : IDisposable
         return resolved;
     }
 
-    private async Task DownloadWithRetryAsync(Uri uri, string targetPath, ManifestFile file, Action<long>? onBytes, CancellationToken cancellationToken)
+    private int _retainedPartialDownload;
+    internal bool RetainedPartialDownload => Volatile.Read(ref _retainedPartialDownload) != 0;
+
+    private async Task DownloadWithRetryAsync(Uri uri, string targetPath, ManifestFile file, Action<long, bool>? onBytes, CancellationToken cancellationToken)
     {
-        Exception? lastError = null;
         // A private randomized scratch file cannot alias another manifest entry such as app.download.
         // The same scratch path is retained across retries so Range resume still works.
         using var cacheReservation=_resume?.ReservePartial(file);
         var tempPath = cacheReservation?.Path ?? targetPath + ".download-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            await TransferWithRetryAsync(uri, targetPath, file, tempPath,
+                onBytes is null ? null : bytes => onBytes(bytes, cacheReservation is not null && bytes > 0 && bytes < file.Size), cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            if (cacheReservation is not null && HasPartialDownload(cacheReservation.Path, file.Size))
+                Interlocked.Exchange(ref _retainedPartialDownload, 1);
+            throw;
+        }
+    }
+
+    private async Task TransferWithRetryAsync(Uri uri, string targetPath, ManifestFile file, string tempPath, Action<long>? onBytes, CancellationToken cancellationToken)
+    {
+        Exception? lastError = null;
         var maxAttempts = Math.Max(1, _config.MaxRetryCount);
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
@@ -464,6 +483,13 @@ public sealed class LauncherEngine : IDisposable
         }
 
         throw new InvalidOperationException($"Download failed: {file.Path}", lastError);
+    }
+
+    private static bool HasPartialDownload(string path, long expectedSize)
+    {
+        try { return new FileInfo(path).Length is > 0 and var length && length < expectedSize; }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
     }
 
     internal static bool IsTransientDownloadError(Exception ex)

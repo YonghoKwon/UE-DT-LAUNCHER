@@ -38,22 +38,25 @@ internal sealed class DownloadProgressAggregator
     private readonly object _gate = new();
     private readonly long[] _highWater;
     private readonly bool[] _completed;
+    private readonly bool[] _retainedPartial;
     private readonly IReadOnlyList<ManifestFile> _files;
     private readonly Action<LauncherProgress> _report;
     private readonly long _total;
     private readonly Func<long> _timestamp;
     private long _logicalBytes, _lastReport;
     private int _completedCount;
+    private int _retainedPartialCount;
 
     internal DownloadProgressAggregator(IReadOnlyList<ManifestFile> files, Action<LauncherProgress> report, Func<long>? timestamp = null)
     {
         _files = files; _report = report;
         _timestamp = timestamp ?? Stopwatch.GetTimestamp; _lastReport = _timestamp();
         _highWater = new long[files.Count]; _completed = new bool[files.Count];
+        _retainedPartial = new bool[files.Count];
         _total = files.Sum(file => Math.Max(0, file.Size));
     }
 
-    internal void Report(int index, long bytes, bool completed = false)
+    internal void Report(int index, long bytes, bool completed = false, bool retainedPartial = false)
     {
         lock (_gate)
         {
@@ -61,12 +64,19 @@ internal sealed class DownloadProgressAggregator
             // A retried request or a restarted Range transfer never counts logical bytes twice.
             if (value > _highWater[index]) { _logicalBytes += value - _highWater[index]; _highWater[index] = value; }
             if (completed && !_completed[index]) { _completed[index] = true; _completedCount++; }
+            var wasAvailable = _retainedPartialCount > 0;
+            if (_retainedPartial[index] != retainedPartial)
+            {
+                _retainedPartial[index] = retainedPartial;
+                _retainedPartialCount += retainedPartial ? 1 : -1;
+            }
+            var available = _retainedPartialCount > 0;
             var now = _timestamp();
-            if (_completedCount != _files.Count && Stopwatch.GetElapsedTime(_lastReport, now).TotalMilliseconds < 200) return;
+            if (wasAvailable == available && _completedCount != _files.Count && Stopwatch.GetElapsedTime(_lastReport, now).TotalMilliseconds < 200) return;
             _lastReport = now;
             var percent = _total <= 0 ? 65 : 35 + Math.Clamp(_logicalBytes / (double)_total, 0, 1) * 30;
             _report(new LauncherProgress("DownloadProgress", _files[index].Path, percent,
-                _logicalBytes, _total, _completedCount, _files.Count));
+                _logicalBytes, _total, _completedCount, _files.Count, PauseAvailable: available));
         }
     }
 }
