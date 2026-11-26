@@ -1,0 +1,12 @@
+Port 22
+HostKey /dt/tools/ssh_host_ed25519_key
+AuthorizedKeysFile /dt/tools/uploader.pub
+AllowUsers uploader
+AuthenticationMethods publickey
+PermitRootLogin no
+PasswordAuthentication no
+ChallengeResponseAuthentication no
+DisableForwarding yes
+PermitTTY no
+UsePAM no
+Subsystem sftp internal-sftp
