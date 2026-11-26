@@ -30,7 +30,11 @@ public sealed class CatalogReleaseOption
 
 public static class CatalogSnapshotService
 {
-    public static async Task<CatalogSnapshot> LoadAsync(LauncherConfig config, string currentPlatform, CancellationToken cancellationToken = default)
+    public static Task<CatalogSnapshot> LoadAsync(LauncherConfig config, string currentPlatform, CancellationToken cancellationToken = default) =>
+        LoadAsync(config, currentPlatform, cancellationToken, includeImages: true);
+
+    internal static async Task<CatalogSnapshot> LoadAsync(LauncherConfig config, string currentPlatform,
+        CancellationToken cancellationToken, bool includeImages)
     {
         if (!config.IsManagedDeployment && string.IsNullOrWhiteSpace(config.CatalogUrl))
         {
@@ -66,8 +70,8 @@ public static class CatalogSnapshotService
 
             allowedProjects.Add(new CatalogProjectOption
             {
-                HeroPath = await LoadImageAsync(project.ProjectId, "hero", project.Hero, config, cancellationToken),
-                ThumbnailPath = await LoadImageAsync(project.ProjectId, "thumbnail", project.Thumbnail, config, cancellationToken),
+                HeroPath = includeImages ? await LoadImageAsync(project.ProjectId, "hero", project.Hero, config, cancellationToken) : null,
+                ThumbnailPath = includeImages ? await LoadImageAsync(project.ProjectId, "thumbnail", project.Thumbnail, config, cancellationToken) : null,
                 ProjectId = project.ProjectId,
                 DisplayName = string.IsNullOrWhiteSpace(project.DisplayName) ? project.ProjectId : project.DisplayName,
                 ReleaseCount = releases.Count

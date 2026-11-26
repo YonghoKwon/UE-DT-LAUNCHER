@@ -27,7 +27,7 @@ public sealed partial class MainWindow : Window
             LoadConfig(); Build();
             await RebindUserLoggerAsync();
             if (_configurationError is not null) return;
-            if (_allowAutomaticChecks && _config.IsManagedDeployment) _agentStatusTimer.Start();
+            StartStatusPolling();
             _startupInitialized = false; await InitializeStartupAsync(); return;
         }
         if (!IsDeveloper && _viewModel.GeneralState == GeneralLauncherState.UpdateAvailable)
@@ -139,15 +139,17 @@ public sealed partial class MainWindow : Window
         RunProjectConfig(_selectedProject, DisplaySelectionContext(), repair, launch);
 
     private async Task<LauncherConfig> RunProjectConfig(ProjectUiConfig project, LauncherUiOperationContext context,
-        bool repair = false, bool launch = false)
+        bool repair = false, bool launch = false, bool readOnly = false, CancellationToken token = default)
     {
         var runtimePath = ConfigPath;
         var installPath = UsesDistributionServer ? null : project.InstallPath;
-        var c = _config.IsManagedDeployment ? ManagedClientContext.Create(_config) : await _runtimeConfigLoader(runtimePath);
+        var c = _config.IsManagedDeployment ? ManagedClientContext.Create(_config)
+            : readOnly ? await _readOnlyRuntimeConfigLoader(runtimePath, token) : await _runtimeConfigLoader(runtimePath);
         c.ProjectId = context.ProjectId; c.Environment = context.Environment; c.Channel = context.Channel; c.TargetPlatform = context.Platform; c.VersionPolicy = context.VersionPolicy; c.RequestedVersion = context.RequestedVersion; c.RepairMode = repair; c.LaunchAfterUpdate = launch;
         c.ClientProfile = _viewModel.EffectiveProfile;
         c.SelfUpdate = null;
         if (!c.IsManagedDeployment) LauncherPaths.ResolveInPlace(c, runtimePath, installPath);
+        else if (!readOnly) await WaitForManagedTrayQueryAsync(token);
         return c;
     }
 
@@ -195,7 +197,8 @@ public sealed partial class MainWindow : Window
             recommendation = CheckedRecommendationFor(context);
             BeginOperation(operation);
             Progress(0); ResetSpeedTracking(); StartCancellableUiOperation(operationCancellation);
-            var config = await RunConfig(repair, launch);
+            var config = await RunProjectConfig(_selectedProject, DisplaySelectionContext(), repair, launch,
+                token: operationCancellation.Token);
             if (!await CanMutateRecommendationAsync(context, null, operationCancellation.Token))
             {
                 history?.Finish(LauncherHistoryResult.Waiting);

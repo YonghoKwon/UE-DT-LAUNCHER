@@ -26,7 +26,16 @@ public sealed partial class MainWindow : Window
     private string _installState { get => _viewModel.InstallState; set => _viewModel.InstallState = value; }
     private string _installDetail { get => _viewModel.InstallDetail; set => _viewModel.InstallDetail = value; }
     private string _releaseNotes { get => _viewModel.ReleaseNotes; set => _viewModel.ReleaseNotes = value; }
-    private bool _running { get => _viewModel.Running; set => _viewModel.Running = value; }
+    private bool _running
+    {
+        get => _viewModel.Running;
+        set
+        {
+            _viewModel.Running = value;
+            if (value) _trayCheck?.Cancel();
+            else DispatchPendingTrayCheck();
+        }
+    }
     private string _agentState { get => _viewModel.AgentState; set => _viewModel.AgentState = value; }
     private bool _agentStatusRefreshing;
     private bool _startupInitialized;
@@ -34,10 +43,12 @@ public sealed partial class MainWindow : Window
     private Exception? _configurationError;
     private readonly ILauncherUiBackend _uiBackend;
     private readonly Func<string, Task<LauncherConfig>> _runtimeConfigLoader;
+    private readonly Func<string, CancellationToken, Task<LauncherConfig>> _readOnlyRuntimeConfigLoader;
     private readonly Func<LauncherConfig, RollbackPreview, Task<LauncherRestoreResult>> _restorePreview;
     private readonly Func<LauncherConfig, Task<RollbackPreview?>> _managedRollbackPreview;
     private readonly Func<LauncherConfig, string, CancellationToken, Task<CatalogSnapshot>> _catalogLoader;
     private readonly Func<string, bool, DoctorTarget?, CancellationToken, Task<DoctorReport>> _doctor;
+    private readonly Func<Task<ManagedAgentResponse>> _agentStatusProbe;
     private bool _windowMetricsInitialized;
     private readonly bool _allowAutomaticChecks;
     private readonly string? _preferencesPath;
@@ -88,16 +99,21 @@ public sealed partial class MainWindow : Window
         Func<string, Task<LauncherConfig>>? runtimeConfigLoader = null,
         Func<LauncherConfig, RollbackPreview, Task<LauncherRestoreResult>>? restorePreview = null,
         Func<LauncherConfig, Task<RollbackPreview?>>? managedRollbackPreview = null,
-        string? preferencesPath = null)
+        string? preferencesPath = null,
+        Func<Task<ManagedAgentResponse>>? agentStatusProbe = null)
     {
         _uiBackend = backend ?? new LauncherUiBackend();
         _runtimeConfigLoader = runtimeConfigLoader ?? (path => LauncherPaths.LoadResolvedAsync(path));
+        _readOnlyRuntimeConfigLoader = runtimeConfigLoader is null
+            ? (path, token) => LauncherPaths.LoadResolvedAsync(path, token, readOnly: true)
+            : (path, _) => runtimeConfigLoader(path);
         _managedRollbackPreview = managedRollbackPreview ?? PreviewManagedRollbackAsync;
         _restorePreview = restorePreview ?? ((config, preview) => config.IsManagedDeployment
             ? RestoreManagedPreviewAsync(config, preview)
             : Task.Run(async () => { await RollbackPreviewService.RestoreExpectedAsync(config, preview.BackupId, preview.MetadataFingerprint); return new LauncherRestoreResult(LauncherRestoreDisposition.Applied); }));
         _catalogLoader = catalogLoader ?? CatalogSnapshotService.LoadAsync;
         _doctor = doctor ?? ((path, online, target, token) => LauncherDoctor.RunAsync(path, online, token, target: target));
+        _agentStatusProbe = agentStatusProbe ?? (() => new ManagedAgentClient().SendAsync("status", timeout: TimeSpan.FromSeconds(2)));
         _startupOptions = startupOptions;
         _allowAutomaticChecks = startServices;
         _preferencesPath = preferencesPath;
@@ -106,7 +122,8 @@ public sealed partial class MainWindow : Window
         _preferences = preferences ?? (startServices ? LauncherUiPreferences.Load(preferencesPath) : new());
         InitializeComponent();
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        if (model is null) LoadConfig(); else SelectProject();
+        if (model is null) LoadConfig();
+        else { ResetTrayStatus(); SelectProject(); }
         _showStartupSkeleton = startServices && _configurationError is null;
         Build();
         if (startServices && PlatformSettings is not null)
@@ -114,10 +131,14 @@ public sealed partial class MainWindow : Window
             _colorValuesChanged = (_, _) => Dispatcher.UIThread.Post(() => { Build(); RefreshOpenDialogs(); RecordDisplayDiagnostic(); });
             PlatformSettings.ColorValuesChanged += _colorValuesChanged;
         }
-        _agentStatusTimer.Tick += async (_, _) => await RefreshAgentStatusAsync();
-        if (startServices && _config.IsManagedDeployment && _configurationError is null) _agentStatusTimer.Start();
+        _agentStatusTimer.Tick += async (_, _) => await PollStatusAsync();
+        StartStatusPolling();
         Closed += (_, _) =>
         {
+            _windowClosed = true;
+            _trayLifetime.Cancel();
+            _trayLifetime.Dispose();
+            _trayNotice?.Close();
             _projectCardLifetime.Cancel();
             _agentStatusTimer.Stop();
             if (_colorValuesChanged is not null && PlatformSettings is not null) PlatformSettings.ColorValuesChanged -= _colorValuesChanged;
@@ -125,7 +146,14 @@ public sealed partial class MainWindow : Window
             _projectVisualCache.Clear();
             _brandLogo?.Dispose();
         };
-        if (startServices) Opened += async (_, _) => await (StartupCompletion = StartAsync());
+        if (startServices) Opened += (_, _) =>
+        {
+            if (!_startupStarted)
+            {
+                _startupStarted = true;
+                StartupCompletion = StartAsync();
+            }
+        };
         SizeChanged += (_, args) =>
         {
             UpdateActionDetailsLimit(); RecordDisplayDiagnostic();
@@ -141,7 +169,9 @@ public sealed partial class MainWindow : Window
     private async Task StartAsync()
     {
         await RebindUserLoggerAsync();
+        if (_windowClosed) return;
         await InitializeStartupAsync();
+        if (_windowClosed) return;
         await ShowFirstRunGuideAsync();
         OfferRecommendationChange();
     }
@@ -215,6 +245,7 @@ public sealed partial class MainWindow : Window
     private void ApplyDisplayConfig((LauncherConfig Config, Exception? Error) display)
     {
         (_config, _configurationError) = display;
+        ResetTrayStatus();
         ResetProjectCards();
         if (_configurationError is { } failure)
         {

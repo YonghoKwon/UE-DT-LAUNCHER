@@ -70,6 +70,100 @@ public class LauncherOperationControlTests
         finally{foreach(var dialog in (Avalonia.Application.Current?.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime)?.Windows.ToArray()??[])if(dialog!=window)dialog.Close();window.Close();}
     }
 
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CloseToTrayPreservesDownloadAndPendingCancellation(bool managed)
+    {
+        using var fixture = new Fixture(managed, false, tray: true);
+        var window = fixture.Window;
+        window.Show();
+        try
+        {
+            var operation = Invoke(window, "RunAsync", true, false, null);
+            await fixture.Backend.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            fixture.Backend.Progress!(new("Download", "synthetic transfer", 10));
+            Dispatcher.UIThread.RunJobs();
+            window.Close();
+            Assert.False(window.IsVisible);
+            Assert.True(fixture.Model.Running);
+            Assert.False(fixture.Backend.Token.IsCancellationRequested);
+            Assert.False(operation.IsCompleted);
+            window.OpenFromTray();
+            Button(window, "cancel-operation")!.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
+            window.Close();
+            Assert.False(window.IsVisible);
+            Assert.True(fixture.Model.Running);
+            Assert.True(fixture.Backend.Token.IsCancellationRequested);
+            Assert.False(operation.IsCompleted);
+            window.OpenFromTray();
+            Assert.False(Button(window, "cancel-operation")!.IsEnabled);
+            Assert.Contains("취소 요청 중", Presentation(window).Title);
+            fixture.Backend.Terminal.SetException(new LauncherUiCancelledException(fixture.Record(true)));
+            await operation;
+            Assert.False(fixture.Model.Running);
+            Assert.NotNull(Button(window, "resume-operation"));
+        }
+        finally { await window.ExitFromTrayAsync(); }
+    }
+
+    [AvaloniaTheory][InlineData(false)][InlineData(true)]
+    public async Task ForegroundLaunchDoesNotWaitForTheRestOfATrayScan(bool managed)
+    {
+        using var fixture = new Fixture(managed, false, tray: true);
+        var window = fixture.Window;
+        var readStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var drain = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reads = new List<string>();
+        fixture.Backend.Read = async (context, config, token) =>
+        {
+            reads.Add(context.ProjectId);
+            readStarted.TrySetResult();
+            await drain.Task.WaitAsync(token);
+            context.Pin(config);
+            config.SelectedRelease = context.Selection;
+            return new(config, context.Selection, new(true, "1.0.0", "1.0.0", false, 0, 0, false), null);
+        };
+        fixture.TrayCatalog = new()
+        {
+            Projects = [new() { ProjectId = "demo", DisplayName = "demo" }, new() { ProjectId = "later", DisplayName = "later" }],
+            Releases =
+            [
+                new() { ProjectId = "demo", Environment = "prod", Channel = "stable", Platform = fixture.Selection.Platform, Version = "1.0.0", IsLatest = true },
+                new() { ProjectId = "later", Environment = "prod", Channel = "stable", Platform = fixture.Selection.Platform, Version = "1.0.0", IsLatest = true }
+            ]
+        };
+        window.Show();
+        Task scan = Task.CompletedTask;
+        try
+        {
+            scan = managed ? window.CheckTrayUpdatesAsync() : window.PollStatusAsync();
+            await readStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.False(fixture.Model.Running);
+            Assert.True(Button(window, "primary-action")!.IsEnabled);
+
+            var foreground = Invoke(window, "RunAsync", false, true, null);
+            if (managed)
+            {
+                Assert.False(fixture.Backend.Started.Task.IsCompleted);
+                drain.SetResult();
+            }
+            await fixture.Backend.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(fixture.Backend.Launch);
+            Assert.Equal(["demo"], reads);
+            await scan.WaitAsync(TimeSpan.FromSeconds(5));
+            fixture.Backend.Terminal.TrySetResult(fixture.Result());
+            await foreground.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            drain.TrySetResult();
+            fixture.Backend.Terminal.TrySetResult(fixture.Result());
+            await window.ExitFromTrayAsync();
+            await scan.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
     [AvaloniaTheory][InlineData(false)][InlineData(true)]
     public async Task NormalRunningBlocksMutationWithoutCreatingAnError(bool managed)
     {
@@ -110,22 +204,26 @@ public class LauncherOperationControlTests
         public TaskCompletionSource Started=new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource<LauncherUiOperationResult> Terminal=new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Action<LauncherProgress>? Progress;public CancellationToken Token;public bool Launch;
+        public Func<LauncherUiOperationContext, LauncherConfig, CancellationToken, Task<LauncherUiOperationResult>>? Read;
         public Task<LauncherUiOperationResult> ExecuteAsync(LauncherUiOperationContext context,LauncherConfig config,bool repair,bool launch,Action<LauncherProgress> progress,FileLogger? logger,CancellationToken token=default)
         {Progress=progress;Token=token;Launch=launch;Started.TrySetResult();return Terminal.Task;}
-        public Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext context,LauncherConfig config,Action<LauncherProgress> progress,CancellationToken token=default)=>throw new InvalidOperationException("Unexpected query");
+        public Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext context,LauncherConfig config,Action<LauncherProgress> progress,CancellationToken token=default)=>
+            (Read ?? throw new InvalidOperationException("Unexpected query"))(context, config, token);
     }
     private sealed class Fixture:IDisposable
     {
         public string Root=Path.Combine(Path.GetTempPath(),"uedt-controls-"+Guid.NewGuid().ToString("N"));
         public ReleaseSelection Selection=new("demo","prod","stable",OperatingSystem.IsWindows()?"windows-x64":"linux-x64","1.0.0");
         public LauncherConfig Config;public LauncherDashboardViewModel Model;public Backend Backend=new();public MainWindow Window;
-        public Fixture(bool managed,bool developer)
+        public CatalogSnapshot? TrayCatalog;
+        public Fixture(bool managed,bool developer,bool tray=false)
         {
             Directory.CreateDirectory(Root);
             Config=new(){DeploymentMode=managed?"managed-agent":"portable",ProjectId="demo",DistributionServerUrl="https://fixture.invalid",Environment="prod",Channel="stable",TargetPlatform=Selection.Platform,VersionPolicy="exact",RequestedVersion="1.0.0",InstallDir=Path.Combine(Root,"apps"),StateRootDir=Path.Combine(Root,"state"),LogDir=Path.Combine(Root,"logs"),Projects=[new(){ProjectId="demo",DisplayName="synthetic"}]};
             var path=Path.Combine(Root,"config.json");File.WriteAllText(path,JsonSerializer.Serialize(Config,JsonFiles.Options));
             Model=new(developer?LauncherEdition.Developer:LauncherEdition.General){Config=Config,GeneralState=GeneralLauncherState.Ready,Catalog=new(){Projects=[new(){ProjectId="demo",DisplayName="synthetic"}],Releases=[new(){ProjectId="demo",Environment="prod",Channel="stable",Platform=Selection.Platform,Version="1.0.0",IsLatest=true}]}};
-            Window=new(new(path,LauncherConfigSource.Explicit,false),Model,new(),false,Backend,runtimeConfigLoader:_=>LauncherPaths.LoadResolvedAsync(path));
+            Window=new(new(path,LauncherConfigSource.Explicit,false),Model,new(){HasSeenTrayNotice=tray},false,Backend,runtimeConfigLoader:_=>LauncherPaths.LoadResolvedAsync(path));
+            if(tray)Window.EnableTray((_,_,_)=>Task.FromResult(TrayCatalog ?? throw new InvalidOperationException("Unexpected tray check")));
         }
         public OperationStatus Record(bool digest)=>new(1,Guid.NewGuid().ToString("N"),"owner","session",Selection,"Cancelled",true,DateTimeOffset.UtcNow.ToString("O"),digest?new string('a',64):null);
         public LauncherUiOperationResult Result(LauncherUiCompletion completion=LauncherUiCompletion.Completed)
