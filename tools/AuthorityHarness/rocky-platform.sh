@@ -13,7 +13,10 @@ mkdir -p "$mountpoint"
 
 owned_loop() {
     local devices
-    devices=$(losetup --associated "$disk" --noheadings --output NAME)
+    if ! devices=$(losetup --associated "$disk" --noheadings --output NAME); then
+        echo "Cannot verify loop associations for $disk" >&2
+        return 1
+    fi
     if [[ "$devices" == *$'\n'* ]]; then
         echo "Multiple associations for the test disk: $devices" >&2
         return 1
@@ -22,15 +25,19 @@ owned_loop() {
 }
 
 cleanup() {
-    local device
-    device=$(owned_loop)
+    local device remaining
+    device=$(owned_loop) || return 1
     if mountpoint -q "$mountpoint"; then
         [[ -n "$device" && $(findmnt -n -o SOURCE --mountpoint "$mountpoint") == "$device" ]]
         umount "$mountpoint"
     fi
     if [[ -n "$device" ]]; then
-        losetup -d "$device"
-        [[ -z $(owned_loop) ]]
+        losetup -d "$device" || return 1
+        remaining=$(owned_loop) || return 1
+        if [[ -n "$remaining" ]]; then
+            echo "Loop device $remaining still uses $disk" >&2
+            return 1
+        fi
     fi
     rm -f -- "$disk"
     test ! -e "$disk"

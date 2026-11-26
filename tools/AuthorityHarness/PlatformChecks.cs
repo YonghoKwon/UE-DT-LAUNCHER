@@ -41,7 +41,11 @@ internal static class PlatformChecks
             case "platform-lease":
                 return HoldLease(root, args[2] == "exclusive");
             case "platform-write":
-                Write(root, int.Parse(args[2]), waitForStart: true);
+                var store = Open(root);
+                Signal("READY");
+                Require(Console.ReadLine() == "START", "Missing writer start instruction.");
+                var (first, last) = Write(store, int.Parse(args[2]));
+                Print(new { first, last });
                 return 0;
             case "platform-seed":
                 Seed(root);
@@ -156,16 +160,16 @@ internal static class PlatformChecks
         using var holder = Start("platform-hold", root);
         await holder.Expect("READY");
         var last = AuthorityStore.PriorGenerationsToKeep + 1;
-        Write(root, last);
+        Write(store, last);
         var presentWhileOpen = File.Exists(old);
         holder.Send("READ");
         await holder.Expect("UNCHANGED");
         holder.Send("EXIT");
         await holder.Success();
         var presentAfterClose = File.Exists(old);
-        Write(root, 1);
+        var (_, cleanupCommit) = Write(store, 1);
         var presentAfterNextCommit = File.Exists(old);
-        Print(new { expiredAt = last, presentWhileOpen, continuedRead = true, presentAfterClose, presentAfterNextCommit });
+        Print(new { expiredAt = last, presentWhileOpen, continuedRead = true, presentAfterClose, cleanupCommit, presentAfterNextCommit });
         Require(presentWhileOpen == OperatingSystem.IsWindows() && presentAfterClose == presentWhileOpen &&
             !presentAfterNextCommit, "Old generation visibility did not follow the platform retention contract.");
     }
@@ -276,7 +280,7 @@ internal static class PlatformChecks
     private static void Seed(string root)
     {
         Require(!Path.Exists(root), "Crash fixture path already exists.");
-        Write(root, 1);
+        Write(Open(root), 1);
     }
 
     private static object VerifyRestart(string root, string boundary)
@@ -317,14 +321,8 @@ internal static class PlatformChecks
         return events;
     }
 
-    private static void Write(string root, int count, bool waitForStart = false)
+    private static (long First, long Last) Write(AuthorityStore store, int count)
     {
-        var store = Open(root);
-        if (waitForStart)
-        {
-            Signal("READY");
-            Require(Console.ReadLine() == "START", "Missing writer start instruction.");
-        }
         var initial = store.ReadSnapshot().Generation;
         for (var i = 1; i <= count; i++)
         {
@@ -338,7 +336,7 @@ internal static class PlatformChecks
             if (commit.MaintenanceError is { } error) throw error;
             Require(commit.Changed && commit.Generation == expected, "Writer skipped a generation.");
         }
-        if (waitForStart) Print(new { first = initial + 1, last = initial + count });
+        return (initial + 1, initial + count);
     }
 
     private static JsonElement SetCounter(JsonElement area, long counter)
