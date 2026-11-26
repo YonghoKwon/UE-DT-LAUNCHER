@@ -79,8 +79,19 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
         return 256 + releaseBytes + eventBytes <= HttpSetMaxEstimatedBytes;
     }
 
-    internal void ValidateRequestAssetPath(PublishedRelease release) =>
+    internal void ValidateRequestReleasePath(PublishedRelease release) =>
         _ = ResolveChecked(payloadRoot, "releases/" + release.ReleaseId);
+
+    internal PublishedRelease? FindForRequest(string releaseId, AuthoritySnapshot snapshot)
+    {
+        const string area = "catalog";
+        var key = (snapshot.Head.Files[area], snapshot.Head.Sha256[area]);
+        if (Volatile.Read(ref httpSet) is not { } cached || cached.Key != key)
+            return Find(releaseId, snapshot: snapshot);
+        var match = cached.View.Releases.FirstOrDefault(release => release.ReleaseId == releaseId);
+        if (match is not null) ValidateRequestReleasePath(match);
+        return match;
+    }
 
     internal void InvalidateRequestSnapshot()
     {

@@ -152,8 +152,9 @@ public sealed partial class IntakeStore
         var workers = Enumerable.Range(0, Settings.IntakeWorkers).Select(_ => ConsumeAsync()).ToArray();
         try
         {
-            var finished = List().Where(j => j.State is "pending" or "published" or "rejected" or "failed" or "publishing")
-                .Select(j => j.Source).ToHashSet(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+            var finished = IntakeJobs.Read(Authority.ReadSnapshot()).Jobs
+                .Where(job => job.State is "pending" or "published" or "rejected" or "failed" or "publishing")
+                .Select(job => IntakeJobs.Resolve(Root, job.Source)).ToHashSet(IntakeJobs.PathComparer);
             var previousCursor = scanCursor;
             var afterCursor = previousCursor is null;
             var full = false;

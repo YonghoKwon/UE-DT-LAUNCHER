@@ -19,6 +19,7 @@ public sealed class CatalogSequenceAllocatorTests : IDisposable
         var values = await Task.WhenAll(Enumerable.Range(0,300).Select(_=>Task.Run(()=>allocator.NextAsync(default))));
         Assert.Equal(300, values.Distinct().Count());
         Assert.Equal(Enumerable.Range(1,300).Select(i=>(long)i),values.Order());
+        Assert.Equal(5, store.Authority.ReadSnapshot().Generation);
         Assert.True(HighWater()>=values.Max()); Assert.InRange(HighWater()-values.Max(),0,63);
         var restarted = new CatalogSequenceAllocator(new(store.Settings));
         Assert.True(await restarted.NextAsync(default)>values.Max());
@@ -43,6 +44,27 @@ public sealed class CatalogSequenceAllocatorTests : IDisposable
         var restarted = new CatalogSequenceAllocator(new(store.Settings));
         Assert.Equal(129,await restarted.NextAsync(default));
     }
+    [Fact]
+    public async Task KilledAllocatorBurnsBothReservedAndPartlyIssuedBlocks()
+    {
+        using (var committed = AuthorityStoreFixture.Start(root, "sequence-crash", "commit"))
+        {
+            Assert.Equal("COMMITTED", await committed.ReadLine());
+            committed.Process.Kill();
+            Assert.NotEqual(0, (await committed.Finish()).ExitCode);
+        }
+        Assert.Equal(64, HighWater());
+        using (var issued = AuthorityStoreFixture.Start(root, "sequence-crash", "issue"))
+        {
+            Assert.Equal("65", await issued.ReadLine());
+            issued.Process.Kill();
+            Assert.NotEqual(0, (await issued.Finish()).ExitCode);
+        }
+        Assert.Equal(128, HighWater());
+        Assert.Equal(129, await new CatalogSequenceAllocator(new IntakeStore(store.Settings)).NextAsync(default));
+        Assert.Equal(192, HighWater());
+    }
+
     [Fact]
     public async Task CancellationAndOverflowNeverResetTheSequence()
     {

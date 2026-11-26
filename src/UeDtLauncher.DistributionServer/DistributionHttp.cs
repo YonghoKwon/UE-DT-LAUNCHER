@@ -53,7 +53,7 @@ public static class DistributionHttp
         var publisher = new ApprovedPublisher(store);
         var tokens = new DistributionTokens(store,hooks?.Clock);
         var deviceKeys = new DistributionDeviceKeys(store,hooks?.Clock);
-        var assets = new PublishedAssetCache(store.Catalog.ValidateRequestAssetPath);
+        var assets = new PublishedAssetCache(store.Catalog.ValidateRequestReleasePath);
         var limits = new DistributionRequestLimits(store.Settings,hooks?.Clock);
         var sequences = new CatalogSequenceAllocator(store);
         IAccessPolicyProvider provider = new FileAccessPolicyProvider(store.Settings.PolicyPath);
@@ -94,7 +94,9 @@ public static class DistributionHttp
             try
             {
                 using var authMeasurement = DistributionPerformance.MeasureAuthentication();
-                authority = store.Authority.ReadRequestSnapshot(!signedRequests || context.Request.Path != "/internal/authorize");
+                authority = store.Authority.ReadRequestSnapshot(
+                    !signedRequests || context.Request.Path != "/internal/authorize",
+                    verifyCatalogBytes: context.Request.Path == "/api/v1/catalog");
                 if (context.Request.Path == "/api/v1/catalog") hooks?.AfterCatalogSnapshotRead?.Invoke(authority.Generation);
                 CredentialAuthority.RequestSnapshot.Value = authority;
                 if (signedRequests)
@@ -175,7 +177,7 @@ public static class DistributionHttp
                 }
                 PublishedRelease? release = null;
                 if (TryGetReleaseId(path, out var releaseId))
-                    release = ReadReleaseAuthority(() => store.Catalog.Find(releaseId, snapshot: authority));
+                    release = ReadReleaseAuthority(() => store.Catalog.FindForRequest(releaseId, authority));
                 if (release is null || !client.AllowsRelease(release.Metadata))
                 {
                     try { store.Audit("download-denied", clientId); }

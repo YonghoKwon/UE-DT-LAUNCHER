@@ -10,6 +10,18 @@ try
 {
     if (args[0] is "intake-crash" or "intake-reopen") return RunIntake(args);
     if (args[0] == "intake-claim-barrier") return await RunIntakeClaimBarrier(args);
+    if (args[0] == "sequence-crash")
+    {
+        var intake = new IntakeStore(new() { Root = args[1] });
+        var allocator = new CatalogSequenceAllocator(intake, afterReservationCommit: args[2] == "commit" ? () =>
+        {
+            Console.WriteLine("COMMITTED");
+            Console.ReadLine();
+        } : null);
+        Console.WriteLine(await allocator.NextAsync(default));
+        Console.ReadLine();
+        return 0;
+    }
     if (await PlatformChecks.RunCommand(args) is { } platformExit) return platformExit;
     if (args[0] == "crash-init")
         AuthorityDisk.Boundary.Value = PauseAt(Enum.Parse<AuthorityBoundary>(args[2]));

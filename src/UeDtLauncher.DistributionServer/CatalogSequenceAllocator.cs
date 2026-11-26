@@ -34,17 +34,14 @@ internal sealed class CatalogSequenceAllocator(IntakeStore store, int blockSize 
     private long ReserveAuthority(AuthorityStore authority)
     {
         long upper = 0;
-        authority.Commit(snapshot =>
+        authority.CommitSequence(snapshot =>
         {
             var highWater = ReadHighWater(snapshot);
             if (highWater > long.MaxValue - blockSize)
                 throw new InvalidDataException("Catalog sequence is missing, invalid or exhausted.");
             upper = highWater + blockSize;
-            return new(new Dictionary<AuthorityArea, JsonElement>
-            {
-                [AuthorityArea.Sequence] = JsonSerializer.SerializeToElement(new SequenceDocument(AuthorityDocuments.Schema, upper),
-                    AuthorityDocuments.Json)
-            }, []);
+            return JsonSerializer.SerializeToElement(new SequenceDocument(AuthorityDocuments.Schema, upper),
+                AuthorityDocuments.Json);
         });
         return upper;
     }

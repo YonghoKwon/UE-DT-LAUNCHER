@@ -15,9 +15,10 @@ internal sealed class UploadStatusProjection(IntakeStore store, Action<Exception
             // slower projection cannot overwrite a newer observation from another process.
             var lockPath = SafePath.ResolveInsideChecked(directory, ".projection.lock");
             using var writer = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            using var measurement = DistributionPerformance.MeasurePhase("upload-status-projection");
             var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
             var snapshot = store.Authority.ReadSnapshot();
-            var jobs = store.List(snapshot).ToLookup(job => job.Source, comparer);
+            var jobs = IntakeJobs.Read(snapshot).Jobs.ToLookup(job => IntakeJobs.Resolve(store.Root, job.Source), comparer);
             var published = new Lazy<ProjectionPublications>(() => new(store.Catalog.Snapshot(snapshot)));
             var incoming = SafePath.ResolveInsideChecked(store.Root, "incoming");
             foreach (var source in Directory.EnumerateDirectories(incoming))

@@ -179,7 +179,9 @@ publish/bin/obj, 테스트 로그·권위 저장소·인증서·토큰, 패키�
 ### 성능 계측
 
 - phase 계측의 일부 시간은 겹친다. 권위 읽기·커밋과 내부 writer 잠금 대기 등 합산 집계를 요청 latency 합계로 해석하지 않는다. 프로토콜/후보를 혼합하지 않으며 느려진 결과도 기록한다. 이번 PERF-03 미달과 unadopted signer pool을 실제 개선으로 보고하지 않는다.
-- HTTP Catalog는 HEAD의 catalog 경로·digest에 결속된 release-meta 집합을 처음 사용할 때 전수 검증한다. 성공한 집합 하나만 최대 릴리스 1,024개·승격 1,024개 및 추정 4 MiB까지 보관한다. 요청마다 HEAD·자격 파일과 사용하는 catalog 색인의 원문을 확인하고 권한과 서명을 처리한다. jobs·sequence·events는 HTTP에서 새 HEAD를 선택할 때 확인하고 운영 읽기는 전체를 확인한다. 개별 다운로드는 해당 release-meta와 파일 경로를 검사한다.
+- HTTP는 요청마다 HEAD 원문을 읽어 해당 경로·digest의 권위 영역을 선택하고 권한·서명을 처리한다. Catalog 응답은 색인 파일 원문을 확인한다. 자격 영역과 개별 다운로드의 색인은 검증된 경로·digest가 유지되면 파싱 결과를 재사용하고 파일 존재·링크를 점검한다. 새 참조는 원문 검증 뒤에 사용한다. 영역별 재사용 상한은 원문 16 MiB다.
+- HTTP Catalog와 다운로드는 catalog 경로·digest에 결속해 처음 사용할 때 전수 검증한 release-meta 집합을 공유한다. 집합 하나를 최대 릴리스 1,024개·승격 1,024개 및 추정 4 MiB까지 보관한다. 다운로드는 선택한 릴리스·파일 경로를 다시 검사한다. jobs·sequence·events는 HTTP에서 새 HEAD를 선택할 때 확인하며 운영·백업·복구 읽기는 전체 원문을 확인한다.
+- 순번 전용 커밋은 동일한 writer lease, 세대·HEAD flush, 이벤트와 감사 절차를 사용한다. release-meta 고아 정리는 게시와 시작 시 복구에서 수행한다.
 
 ## UI 규칙
 

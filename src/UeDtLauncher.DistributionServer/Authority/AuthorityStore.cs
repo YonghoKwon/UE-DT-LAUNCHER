@@ -20,6 +20,8 @@ internal sealed class AuthorityStore
     private AuthorityHead? validatedRequestGeneration;
     private (byte[] Bytes, AuthorityHead Head)? cachedHead;
     private readonly object headGate = new();
+    private RequestArea? requestAuth;
+    private RequestArea? requestCatalog;
     private string Root { get; }
     internal string DirectoryPath { get; }
     internal string ReleaseMetadataPath => DataPath(layout.ReleaseMetadataDirectory);
@@ -84,15 +86,15 @@ internal sealed class AuthorityStore
         ? ReadSnapshotCore(request: false, includeCatalog: true)
         : inspectionLease.UseExclusive(Root, () => ReadSnapshotCore(request: false, includeCatalog: true));
 
-    internal AuthoritySnapshot ReadRequestSnapshot(bool includeCatalog) =>
-        ReadSnapshotCore(request: true, includeCatalog);
+    internal AuthoritySnapshot ReadRequestSnapshot(bool includeCatalog, bool verifyCatalogBytes = true) =>
+        ReadSnapshotCore(request: true, includeCatalog, verifyCatalogBytes);
 
-    private AuthoritySnapshot ReadSnapshotCore(bool request, bool includeCatalog)
+    private AuthoritySnapshot ReadSnapshotCore(bool request, bool includeCatalog, bool verifyCatalogBytes = true)
     {
         using var measurement = DistributionPerformance.MeasureAuthorityRead();
         for (var attempt = 0; ; attempt++)
         {
-            try { return LoadSnapshot(request, includeCatalog); }
+            try { return LoadSnapshot(request, includeCatalog, verifyCatalogBytes); }
             catch (Exception error) when (IsReadError(error))
             {
                 if (attempt == ReadRetries)
@@ -123,6 +125,14 @@ internal sealed class AuthorityStore
         return CommitUnderHeldLock(writer, makePlan);
     }
 
+    internal AuthorityCommitResult CommitSequence(Func<AuthoritySnapshot, JsonElement> reserve)
+    {
+        using var writer = Lock();
+        return CommitUnderHeldLock(writer, snapshot => new(
+            new Dictionary<AuthorityArea, JsonElement> { [AuthorityArea.Sequence] = reserve(snapshot) }, []),
+            sweepReleaseMetadata: false);
+    }
+
     internal AuthorityCommitResult CommitOffline(DistributionMaintenanceLease maintenance, Func<AuthoritySnapshot, CommitPlan> makePlan) =>
         maintenance.UseExclusive(Root, () =>
         {
@@ -130,12 +140,13 @@ internal sealed class AuthorityStore
             return CommitUnderHeldLock(writer, makePlan);
         });
 
-    internal AuthorityCommitResult CommitUnderHeldLock(WriterLease writer, Func<AuthoritySnapshot, CommitPlan> makePlan) =>
+    internal AuthorityCommitResult CommitUnderHeldLock(WriterLease writer, Func<AuthoritySnapshot, CommitPlan> makePlan,
+        bool sweepReleaseMetadata = true) =>
         writer.Use<AuthorityCommitResult>(this, () =>
         {
             using var measurement = DistributionPerformance.MeasureAuthorityCommit();
             var snapshot = ReadSnapshot();
-            PrepareCleanup(snapshot);
+            PrepareCleanup(snapshot, sweepReleaseMetadata);
             var plan = makePlan(snapshot);
             if (plan.Areas.Count == 0 && plan.Events.Count == 0)
                 return new(snapshot.Generation, false, RunMaintenance(snapshot));
@@ -205,15 +216,18 @@ internal sealed class AuthorityStore
         if (snapshot.Store != this) throw new ArgumentException("Snapshot belongs to another authority store.", nameof(snapshot));
     }
 
-    private AuthoritySnapshot LoadSnapshot(bool request, bool includeCatalog)
+    private AuthoritySnapshot LoadSnapshot(bool request, bool includeCatalog, bool verifyCatalogBytes)
     {
         var head = ReadHead();
         AfterReadHead.Value?.Invoke(head.Generation);
         if (request)
         {
-            // Credential and serving-index bytes are current request inputs.
-            var requested = new Dictionary<AuthorityArea, JsonElement> { [AuthorityArea.Auth] = ReadArea(head, AuthorityArea.Auth) };
-            if (includeCatalog) requested.Add(AuthorityArea.Catalog, ReadArea(head, AuthorityArea.Catalog));
+            var requested = new Dictionary<AuthorityArea, JsonElement>
+            {
+                [AuthorityArea.Auth] = ReadRequestArea(head, AuthorityArea.Auth, ref requestAuth, verifyBytes: false)
+            };
+            if (includeCatalog)
+                requested.Add(AuthorityArea.Catalog, ReadRequestArea(head, AuthorityArea.Catalog, ref requestCatalog, verifyCatalogBytes));
             ValidateRequestGeneration(head, includeCatalog);
             return new(this, head, requested);
         }
@@ -242,14 +256,40 @@ internal sealed class AuthorityStore
     }
 
     private JsonElement ReadArea(AuthorityHead head, AuthorityArea area)
+        => ReadArea(head, area, out _);
+
+    private JsonElement ReadArea(AuthorityHead head, AuthorityArea area, out int size)
     {
         var name = AuthorityDocuments.Name(area);
         var relative = head.Files[name];
         var digest = head.Sha256[name];
         var content = ReadCommittedFile(relative);
+        size = content.Length;
         VerifyHash(content, digest);
         return cache.Parse(relative, digest, content);
     }
+
+    private JsonElement ReadRequestArea(AuthorityHead head, AuthorityArea area, ref RequestArea? slot, bool verifyBytes)
+    {
+        var name = AuthorityDocuments.Name(area);
+        var key = (head.Files[name], head.Sha256[name]);
+        try
+        {
+            if (!verifyBytes && Volatile.Read(ref slot) is { } current && current.Key == key)
+            {
+                // Only the authenticated HEAD reference identifies the verified content.
+                // Continue checking that the selected file exists and its path is regular.
+                _ = ResolveCommittedFile(key.Item1, requireFile: true);
+                return current.Document;
+            }
+            var document = ReadArea(head, area, out var size);
+            Volatile.Write(ref slot, size <= AuthorityAreaCache.ByteLimit ? new RequestArea(key, document) : null);
+            return document;
+        }
+        catch { Volatile.Write(ref slot, null); throw; }
+    }
+
+    private sealed record RequestArea((string Path, string Digest) Key, JsonElement Document);
 
     private void ValidateRequestGeneration(AuthorityHead head, bool catalogRead)
     {
@@ -288,13 +328,23 @@ internal sealed class AuthorityStore
     }
 
     private byte[] ReadCommittedFile(string relative, int maxBytes = int.MaxValue)
+        => ReadFile(ResolveCommittedFile(relative, requireFile: false), maxBytes);
+
+    private string ResolveCommittedFile(string relative, bool requireFile)
     {
         var path = SafePath.ResolveInside(DirectoryPath, relative);
         // A single attribute lookup checks each component. File.Exists followed by GetAttributes
         // performs the same probe twice and suppresses access errors on the first probe.
         for (var component = path; component.Length > DirectoryPath.Length; component = Path.GetDirectoryName(component)!)
-            RejectLink(component);
-        return ReadFile(path, maxBytes);
+        {
+            var attributes = Attributes(component);
+            if ((attributes & FileAttributes.ReparsePoint) == FileAttributes.ReparsePoint)
+                throw new IOException("Authority storage refuses linked directories.");
+            if (requireFile && component == path &&
+                (attributes is null || (attributes & FileAttributes.Directory) != 0))
+                throw new FileNotFoundException("Referenced authority file is unavailable.", path);
+        }
+        return path;
     }
 
     private static byte[] ReadFile(string path, int maxBytes = int.MaxValue)
@@ -473,17 +523,17 @@ internal sealed class AuthorityStore
         }
     }
 
-    private void PrepareCleanup(AuthoritySnapshot snapshot)
+    private void PrepareCleanup(AuthoritySnapshot snapshot, bool sweepReleaseMetadata = true)
     {
         // A preceding writer may have died after rename but before flushing the directory.
         // Keep every old reference and orphan until the currently visible HEAD is durable.
         AuthorityDisk.FlushDirectory(Root);
         AuthorityDisk.Reach(AuthorityBoundary.BeforeCleanupDirectoryFlush);
         AuthorityDisk.FlushDirectory(DirectoryPath);
-        CleanOrphans(snapshot);
+        CleanOrphans(snapshot, sweepReleaseMetadata);
     }
 
-    private void CleanOrphans(AuthoritySnapshot snapshot)
+    private void CleanOrphans(AuthoritySnapshot snapshot, bool sweepReleaseMetadata)
     {
         foreach (var area in generationDirectories)
         {
@@ -495,7 +545,9 @@ internal sealed class AuthorityStore
         }
         foreach (var file in Directory.EnumerateFiles(DirectoryPath))
             if (IsTemporary(file)) AuthorityDisk.TryDelete(file);
-        CleanMetadataOrphans(snapshot);
+        // A sequence reservation does not publish release paths. Startup recovery and
+        // publication still sweep metadata before a new publication can use its path.
+        if (sweepReleaseMetadata) CleanMetadataOrphans(snapshot);
     }
 
     private void CleanMetadataOrphans(AuthoritySnapshot snapshot)

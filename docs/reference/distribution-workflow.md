@@ -158,7 +158,7 @@ UeDtLauncher agent update --project demo --environment dev --channel dev --versi
 
 백업/복원은 앞의 전용 CLI로 수행합니다. 미완료 retention을 먼저 정리하고, `backup create/verify`로 HEAD·참조 세대·전체 이벤트·release-meta·audit.jsonl·릴리스 파일의 inventory/hash와 정책을 확인합니다. private signing key는 별도 보호 백업이 필요합니다.
 
-HTTP Catalog는 HEAD가 선택한 catalog 경로와 해시로 릴리스 집합을 식별합니다. 새 집합의 메타데이터를 모두 검증한 후 요청에서 사용합니다. 하나의 검증된 집합을 릴리스·승격 각각 최대 1,024개, 추정 4 MiB까지 재사용합니다. 요청마다 자격·권한·서명과 사용하는 색인 원문을 확인합니다. 개별 다운로드와 운영 검사는 해당 메타데이터 파일과 경로를 직접 확인합니다.
+HTTP 서버는 요청마다 HEAD 원문을 읽고 권한과 서명을 확인합니다. 새 catalog 경로·해시의 메타데이터를 모두 검증한 뒤 Catalog와 개별 다운로드에 공유합니다. 집합 하나를 릴리스·승격 각각 최대 1,024개, 추정 4 MiB까지 재사용합니다. Catalog 응답은 색인 원문을 확인합니다. 자격 영역과 개별 다운로드의 색인은 HEAD 참조가 같으면 검증된 결과를 재사용하며 해당 세대 파일의 존재와 링크를 확인합니다. 다운로드는 선택한 릴리스 및 파일 경로를 확인합니다. 운영 검사·백업·복구는 권위 원문과 관련 메타데이터를 직접 검사합니다.
 
 `restore stage`의 새 비공개 root는 모든 live 명령이 차단됩니다. `activate`는 현재 생존 원본의 순번·승격·폐기/만료·정책, 필수 작업/릴리스 전체 파일과 서명된 Manifest를 확인합니다. 원본과 대상의 자격·순번 등 권위 문서를 서버 시작과 같은 규칙으로 확인합니다. 최신 HEAD와 참조 세대를 복사하고 검증한 뒤 staged fence를 마지막에 해제합니다. 의도된 삭제 이력이 없는 누락, 추가 파일, 손상 서명, 확인할 수 없는 과거 signing key는 차단합니다. 현재 자료를 포함한 새 backup으로 다시 stage하거나 관리자 점검을 수행하며 client trust를 삭제하지 않습니다. 원본 완전 유실 복구와 회사 RPO/RTO는 별도입니다.
 
