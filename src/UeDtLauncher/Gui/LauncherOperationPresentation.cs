@@ -13,6 +13,9 @@ public sealed class LauncherOperationPresentation
     public string? ErrorCode { get; set; }
     public string? SupportId { get; set; }
     public string CurrentStage { get; private set; } = "확인";
+    internal bool Committing { get; private set; }
+    internal bool ShowCompletion { get; private set; }
+    internal string? InstallationNotice { get; set; }
     public string Announcement => ErrorCode is not null || Percent == 100 || Kind == LauncherUiOperation.None
         ? Title : CurrentStage switch
         {
@@ -30,6 +33,8 @@ public sealed class LauncherOperationPresentation
     public void Begin(LauncherUiOperation operation)
     {
         Kind = operation; Percent = null; CurrentStage = "확인"; ErrorCode = SupportId = null;
+        ShowCompletion = Committing = false;
+        InstallationNotice = null;
         Title = operation == LauncherUiOperation.Rollback ? "백업 복원 중" : "작업을 확인하고 있습니다";
     }
     internal LauncherPresentationSnapshot Capture() => new(Title,Percent,Kind,ErrorCode,SupportId,CurrentStage,Retry);
@@ -40,7 +45,7 @@ public sealed class LauncherOperationPresentation
     }
     internal void BeginFollowUp(string title)
     {
-        Kind=LauncherUiOperation.Check;Percent=null;CurrentStage="재확인";
+        Kind=LauncherUiOperation.Check;Percent=null;CurrentStage="재확인";ShowCompletion=Committing=false;
         ErrorCode=SupportId=null;Title=title;
     }
     public void Stage(string stage)
@@ -50,8 +55,25 @@ public sealed class LauncherOperationPresentation
         else if (stage == "Launch") CurrentStage = "실행";
         else if (stage is "Download" or "DownloadProgress" or "Package" && CurrentStage == "확인") CurrentStage = "파일 준비";
         else if (stage is "Recovery" or "Repair") CurrentStage = "복구";
+        if (stage is "Apply" or "Backup") Committing = true;
     }
-    public void Complete(string title) { Title = title; Percent = 100; CurrentStage = "완료"; ErrorCode = SupportId = null; }
+    public void Complete(string title, bool showCompletion = true)
+    {
+        Title = title; Percent = 100; CurrentStage = "완료"; ErrorCode = SupportId = null;
+        Committing = false;
+        ShowCompletion = showCompletion && Kind is not (LauncherUiOperation.None or LauncherUiOperation.Check or LauncherUiOperation.Catalog);
+    }
+
+    internal string DownloadSteps => CurrentStage switch
+    {
+        "파일 준비" => "● 다운로드  ○ 검증  ○ 설치  ○ 완료",
+        "검증" => "✓ 다운로드  ● 검증  ○ 설치  ○ 완료",
+        "적용" or "실행" => "✓ 다운로드  ✓ 검증  ● 설치  ○ 완료",
+        "완료" => "✓ 다운로드  ✓ 검증  ✓ 설치  ● 완료",
+        _ => "○ 다운로드  ○ 검증  ○ 설치  ○ 완료"
+    };
+
+    internal void VerifyingDownloads() => CurrentStage = "검증";
     public void Append(string text)
     {
         Logs.Add(DiagnosticRedactor.Redact(text));

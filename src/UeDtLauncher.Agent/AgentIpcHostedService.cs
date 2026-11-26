@@ -366,7 +366,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
             {
                 if (progress.Count >= 256) progress.RemoveAt(0);
                 var item = new ManagedAgentProgress(value.Stage, DiagnosticRedactor.Redact(value.Message), value.Percent,
-                    value.BytesDownloaded, value.TotalBytes, value.FileIndex, value.FileCount, value.Performance);
+                    value.BytesDownloaded, value.TotalBytes, value.FileIndex, value.FileCount, value.Performance, value.PauseAvailable);
                 progress.Add(item);
                 progressSink?.Invoke(item);
             }
@@ -468,7 +468,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     catch (OperationCanceledException) when (operation.Token.IsCancellationRequested)
                     {
                         operation.Finish(runningEngine?.InstallationCommitted == true);
-                        return new() { CorrelationId = request.CorrelationId, Success = operation.Status.Phase == "Completed", Status = operation.Status.Phase, Operation = operation.Status, InstallationCommitted=runningEngine?.InstallationCommitted==true, SelectedRelease = config.SelectedRelease };
+                        return new() { CorrelationId = request.CorrelationId, Success = operation.Status.Phase == "Completed", Status = operation.Status.Phase, Operation = operation.Status, InstallationCommitted=runningEngine?.InstallationCommitted==true, SelectedRelease = config.SelectedRelease, RetainedPartialDownload = runningEngine?.RetainedPartialDownload ?? false };
                     }
                     catch
                     {

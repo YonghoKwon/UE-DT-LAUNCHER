@@ -404,7 +404,8 @@ public sealed class LauncherEngine : IDisposable
                 if (previousInstallations is null || !await previousInstallations.TryCopyAsync(file, stagingPath, HashMatchesAsync, _performance, token))
                 {
                     var downloadUri = ResolveDownloadUri(remote, file);
-                    await DownloadWithRetryAsync(downloadUri, stagingPath, file, bytes => progress.Report(index, bytes), token);
+                    await DownloadWithRetryAsync(downloadUri, stagingPath, file,
+                        (bytes, retainedPartial) => progress.Report(index, bytes, retainedPartial: retainedPartial), token);
                 }
                 if (_resume is not null) await _resume.StoreAsync(file, stagingPath, token);
                 progress.Report(index, file.Size, completed: true);
@@ -426,7 +427,10 @@ public sealed class LauncherEngine : IDisposable
         return resolved;
     }
 
-    private async Task DownloadWithRetryAsync(Uri uri, string targetPath, ManifestFile file, Action<long>? onBytes, CancellationToken cancellationToken)
+    private int _retainedPartialDownload;
+    internal bool RetainedPartialDownload => Volatile.Read(ref _retainedPartialDownload) != 0;
+
+    private async Task DownloadWithRetryAsync(Uri uri, string targetPath, ManifestFile file, Action<long, bool>? onBytes, CancellationToken cancellationToken)
     {
         Exception? lastError = null;
         // A private randomized scratch file cannot alias another manifest entry such as app.download.
@@ -438,13 +442,16 @@ public sealed class LauncherEngine : IDisposable
         {
             try
             {
-                await DownloadFileAsync(uri, targetPath, tempPath, file.Size, onBytes, cancellationToken);
+                await DownloadFileAsync(uri, targetPath, tempPath, file.Size,
+                    onBytes is null ? null : bytes => onBytes(bytes, cacheReservation is not null && bytes > 0 && bytes < file.Size), cancellationToken);
                 if (!await HashMatchesAsync(targetPath, file.Sha256, cancellationToken))
                     throw new IOException($"SHA-256 mismatch after download: {file.Path}");
                 return;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                if (cacheReservation is not null && HasPartialDownload(cacheReservation.Path, file.Size))
+                    Interlocked.Exchange(ref _retainedPartialDownload, 1);
                 throw;
             }
             catch (Exception ex)
@@ -464,6 +471,13 @@ public sealed class LauncherEngine : IDisposable
         }
 
         throw new InvalidOperationException($"Download failed: {file.Path}", lastError);
+    }
+
+    private static bool HasPartialDownload(string path, long expectedSize)
+    {
+        try { return new FileInfo(path).Length is > 0 and var length && length < expectedSize; }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
     }
 
     internal static bool IsTransientDownloadError(Exception ex)

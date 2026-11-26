@@ -9,11 +9,17 @@ public sealed record LauncherUiError(string Code,string Message,string SupportId
         {
             if(e is AgentOperationException a)id=a.CorrelationId;
             id ??= e.Data["CorrelationId"] as string;
+            if (code == "storage-failed" && (e is IOException or AgentOperationException) &&
+                (e.HResult == unchecked((int)0x80070070) || e.HResult == unchecked((int)0x80070027) ||
+                 e.Message.StartsWith("Not enough free disk space on ", StringComparison.Ordinal))) code = "disk-full";
         }
         var message=code switch
         {
             "rate-limited" or "stale-challenge" => LauncherGuidance.For(error).Message + " " + LauncherGuidance.For(error).NextAction,
-            "no-promoted-release" or "no-authorized-release" or "service-unavailable" or "server-unavailable" or "authentication-failed" or "access-denied" or "integrity-failed" or "runtime-data-unavailable" or "client-upgrade-required" or "diagnostic-response-invalid"=>LauncherGuidance.For(code).Message + " " + LauncherGuidance.For(code).NextAction,
+            "no-authorized-release" => "아직 공개된 버전이 없습니다. 담당자가 공개하면 표시됩니다.",
+            "server-unavailable" => "서버에 연결할 수 없습니다. 사내망 연결을 확인한 뒤 다시 확인을 누르세요.",
+            "disk-full" => "설치할 공간이 부족합니다. 드라이브를 정리한 뒤 다시 시도하세요.",
+            "no-promoted-release" or "service-unavailable" or "authentication-failed" or "access-denied" or "integrity-failed" or "runtime-data-unavailable" or "client-upgrade-required" or "diagnostic-response-invalid"=>LauncherGuidance.For(code).Message + " " + LauncherGuidance.For(code).NextAction,
             "file-access-denied"=>"파일 접근 권한을 확인해 주세요. 실행 중인 프로그램은 먼저 종료해 주세요.",
             "storage-failed"=>"파일을 처리할 수 없습니다. 저장 공간과 파일 사용 여부를 확인해 주세요.",
             "timeout"=>"연결 또는 작업 대기 시간이 초과됐습니다. 연결 상태를 확인한 뒤 같은 작업을 다시 시도해 주세요.",
@@ -28,6 +34,9 @@ public sealed record LauncherUiError(string Code,string Message,string SupportId
             "maintenance-partial"=>"일부 파일을 정리하지 못했습니다. 사용 중인 파일과 접근 권한을 확인한 뒤 정리를 다시 시도해 주세요.",
             _=>"작업을 완료하지 못했습니다. 다시 확인하거나 지원 ID와 함께 관리자에게 문의해 주세요."
         };
-        return new(code,message,id??Guid.NewGuid().ToString("N"),DiagnosticRedactor.Redact(error.ToString()));
+        return new(IsSupportTag(code) ? code : "unknown",message,IsSupportTag(id) ? id! : Guid.NewGuid().ToString("N"),DiagnosticRedactor.Redact(error.ToString()));
     }
+
+    private static bool IsSupportTag(string? value) => value is { Length: > 0 and <= 64 } &&
+        value.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
 }

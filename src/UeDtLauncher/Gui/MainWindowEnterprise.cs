@@ -32,6 +32,7 @@ public sealed partial class MainWindow
     private readonly DateTimeOffset _displaySessionStarted=DateTimeOffset.UtcNow;
     private bool _maintenanceExpanded;
     private bool _helpExpanded;
+    private TextBlock? _downloadCancellationGuidance;
     private int _detailsTabIndex;
     private bool HighContrast => _preferences.HighContrast || PlatformSettings?.GetColorValues().ContrastPreference == ColorContrastPreference.High;
     private IBrush PageBrush => HighContrast ? Brushes.Black : LauncherVisualTokens.Brush(LauncherVisualTokens.PageColor(IsDeveloper, false));
@@ -109,17 +110,19 @@ public sealed partial class MainWindow
             var work=new Grid { ColumnDefinitions=new(sidebar?"248,*":"*"),ColumnSpacing=20 };
             if(sidebar)work.Children.Add(EnterpriseProjectList());
             var content=new StackPanel { Spacing=LauncherVisualTokens.SpaceLg };
-            if(_viewModel.GeneralState==GeneralLauncherState.ConfigurationRequired)
+            if(_viewModel.GeneralState==GeneralLauncherState.ConfigurationRequired && (IsDeveloper || _configurationError is null))
             {
-                var example="UeDtLauncher.exe sample-config --mode managed-client --project-id <프로젝트ID> --output launcher.config.json";
-                var command=Identify(new TextBox{Text=example,IsReadOnly=true,TextWrapping=TextWrapping.Wrap,FontSize=14*_preferences.TextScale,MinHeight=72},"configuration-example","관리형 화면 설정 생성 명령 예시");
-                content.Children.Add(Identify(Card(new StackPanel{Spacing=12,Children={Txt("화면 설정 준비",18,true),Muted("관리자에게 프로젝트 ID와 업데이트 서비스 준비 상태를 확인해 주세요. 실행 파일 옆에 화면 설정을 생성한 뒤 다시 확인하세요. 아래 명령의 프로젝트ID를 실제 등록값으로 바꿉니다.",14),command}}),"configuration-help","화면 설정 생성 안내"));
+                content.Children.Add(Identify(Card(new StackPanel{Spacing=12,Children={Txt("화면 설정 준비",18,true),Muted("관리자에게 프로젝트 ID와 업데이트 서비스 준비 상태를 확인해 주세요. 실행 파일 옆에 화면 설정을 생성한 뒤 다시 확인하세요. 아래 명령의 프로젝트ID를 실제 등록값으로 바꿉니다.",14),ConfigurationExample()}}),"configuration-help","화면 설정 생성 안내"));
             }
             if(!sidebar && projects.Count>1) content.Children.Add(CompactProjectSelector());
             if(IsDeveloper) content.Children.Add(EnterpriseFilters());
-            if (_showStartupSkeleton)
+            if (_showStartupSkeleton || (!IsDeveloper && _running && _viewModel.GeneralState == GeneralLauncherState.Checking))
             {
                 content.Children.Add(StartupSkeleton());
+            }
+            else if(!IsDeveloper && _configurationError is not null)
+            {
+                content.Children.Add(Card(Txt(_installDetail,LauncherVisualTokens.FontBody,false)));
             }
             else if(!HasProject)
             {
@@ -127,10 +130,10 @@ public sealed partial class MainWindow
                 content.Children.Add(EmptyState(
                     "deployment-empty", LauncherIconKind.Package,
                     "사용 가능한 프로젝트가 없습니다",
-                    unavailable
+                    !IsDeveloper && _presentation.ErrorCode is not null ? _installDetail : unavailable
                         ? "이 PC에 허용된 배포를 확인하거나 관리자에게 문의해 주세요."
                         : "아직 공개된 버전이 없습니다. 담당자가 공개하면 표시됩니다.",
-                    EnterpriseButton("배포 다시 확인","empty-refresh",async (_,_)=>await RefreshSelectionStatusAsync(),icon:LauncherIconKind.Refresh)));
+                    EnterpriseButton("배포 다시 확인","empty-refresh",async (_,_)=>await RefreshSelectionStatusAsync(),primary:!IsDeveloper,icon:LauncherIconKind.Refresh)));
             }
             else
             {
@@ -164,6 +167,10 @@ public sealed partial class MainWindow
                     content.Children.Add(Card(help));
                 }
             }
+            if (!IsDeveloper && !_showStartupSkeleton && (_presentation.ErrorCode is not null ||
+                _viewModel.GeneralState == GeneralLauncherState.RuntimeBlocked ||
+                (_viewModel.GeneralState == GeneralLauncherState.UpdateAvailable && SelectedInstallationDamaged)))
+                content.Children.Add(GeneralErrorDetails());
             _enterpriseScroll=Identify(new ScrollViewer {Content=content,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled},"workspace-scroll","프로젝트 작업 공간");
             work.Children.Add(At(_enterpriseScroll,sidebar?1:0)); root.Children.Add(AtRow(work,1));
             root.Children.Add(AtRow(EnterpriseActionBar(),2));
@@ -316,7 +323,11 @@ public sealed partial class MainWindow
         var status = Identify(Txt(_installState, LauncherVisualTokens.FontBody, true), "project-install-status", _installState);
         status.Foreground = StatusBrush(tone);
         stack.Children.Add(IconLabel(icon, status, LauncherVisualTokens.FontSection));
-        stack.Children.Add(Muted(_installDetail,LauncherVisualTokens.FontBody));
+        if (IsDeveloper || _viewModel.GeneralState != GeneralLauncherState.Ready)
+            stack.Children.Add(Identify(Muted(IsDeveloper ? _installDetail : GeneralStateDetail(),LauncherVisualTokens.FontBody),
+                "project-state-guidance","프로그램 상태 안내"));
+        if (!IsDeveloper && RecommendationBelowInstalledRecord && _recommendationExpanded)
+            stack.Children.Add(Muted("관리자가 최근에 권장 버전을 변경했습니다. 다음 설치에서는 현재 권장 버전이 사용됩니다.", LauncherVisualTokens.FontBody));
         var versions=new WrapPanel {Orientation=Orientation.Horizontal};
         versions.Children.Add(new StackPanel {Margin=new Thickness(0,0,LauncherVisualTokens.Space2Xl,0),Children={Muted(!IsDeveloper && _viewModel.ProjectStatus is {IsInstalled:false,PreviousInstallation:not null}?"기존 설치 버전":"설치 버전",LauncherVisualTokens.FontCaption),Txt(ReadInstalledVersion()??"미설치",LauncherVisualTokens.FontBody,true)}});
         versions.Children.Add(new StackPanel {Children={Muted(IsDeveloper?"선택 배포 버전":"최신 배포 버전",LauncherVisualTokens.FontCaption),Txt(LatestCatalogVersion()??"확인 필요",LauncherVisualTokens.FontBody,true)}});
@@ -355,19 +366,23 @@ public sealed partial class MainWindow
                 PrimaryActionKind.InstallAndLaunch or PrimaryActionKind.UpdateAndLaunch => LauncherIconKind.Download,
                 _ => LauncherIconKind.Refresh
             };
-        var primary=EnterpriseButton(_configurationError is not null?"설정 다시 확인":_readOnlyRecoveryFollowUp?"상태 다시 확인":IsDeveloper?"실행":_viewModel.PrimaryActionText,"primary-action",async (_,_)=>{if(IsDeveloper && _configurationError is null)await RunAsync(false,true);else await ExecutePrimaryActionAsync();},true,icon:primaryIcon);
+        var primary=EnterpriseButton(_configurationError is not null?"설정 다시 확인":_readOnlyRecoveryFollowUp?"상태 다시 확인":IsDeveloper?"실행":GeneralActionText(),"primary-action",async (_,_)=>{if(IsDeveloper && _configurationError is null)await RunAsync(false,true);else await ExecutePrimaryActionAsync();},true,icon:primaryIcon);
         primary.Tag="general-primary-action"; primary.IsEnabled=HasProject&&_viewModel.PrimaryAction!=PrimaryActionKind.Disabled&&!_running;
         if(IsDeveloper)primary.IsEnabled=HasProject&&!_running;
-        primary.HotKey=new KeyGesture(Key.F5);actions.Children.Add(primary);
+        primary.HotKey=new KeyGesture(Key.F5);
+        primary.IsVisible = IsDeveloper || HasProject || _configurationError is not null || _showStartupSkeleton;
+        actions.Children.Add(primary);
         if(IsDeveloper)actions.Children.Add(EnterpriseButton("업데이트","update",async (_,_)=>await RunAsync(false,false),icon:LauncherIconKind.Download));
-        var check=EnterpriseButton(_readOnlyRecoveryFollowUp?"상태 다시 확인":_viewModel.GeneralState==GeneralLauncherState.RecoverableError?"문제 해결":"상태 확인","status-check",async (_,_)=>await ExecuteStatusActionAsync(),icon:LauncherIconKind.Check);
+        var check=EnterpriseButton(_readOnlyRecoveryFollowUp?"상태 다시 확인":_viewModel.GeneralState==GeneralLauncherState.RuntimeBlocked?"다시 확인":_viewModel.GeneralState==GeneralLauncherState.RecoverableError&&IsDeveloper?"문제 해결":"상태 확인","status-check",async (_,_)=>await ExecuteStatusActionAsync(),icon:LauncherIconKind.Check);
         check.HotKey=new KeyGesture(Key.F6);actions.Children.Add(check);
         if(_running && _operationCancellation is not null)
         {
             var cancel=EnterpriseButton(_operationCancellation.IsCancellationRequested?"취소 요청 중":"작업 취소","cancel-operation",(_,_)=>RequestOperationCancellation(),tracked:false,icon:LauncherIconKind.Stop);
-            cancel.IsEnabled=!_operationCancellation.IsCancellationRequested;actions.Children.Add(cancel);
+            cancel.IsEnabled=!_operationCancellation.IsCancellationRequested && (IsDeveloper || !_presentation.Committing);actions.Children.Add(cancel);
+            if (!IsDeveloper && _pauseAvailable && !_presentation.Committing && !_operationCancellation.IsCancellationRequested)
+                actions.Children.Add(EnterpriseButton("일시정지", "pause-operation", (_, _) => RequestOperationCancellation(), tracked: false, icon: LauncherIconKind.Stop));
         }
-        if(!_running && CanResumeSelected())actions.Children.Add(EnterpriseButton("다운로드 재개","resume-operation",async(_,_)=>await ResumeUiOperationAsync(),icon:LauncherIconKind.Download));
+        if(!_running && CanResumeSelected())actions.Children.Add(EnterpriseButton(IsDeveloper ? "다운로드 재개" : _retainedPartialDownload == true ? "계속" : "다시 시도","resume-operation",async(_,_)=>await ResumeUiOperationAsync(),icon:LauncherIconKind.Download));
         if(_viewModel.GeneralState!=GeneralLauncherState.RuntimeBlocked && _presentation.ErrorCode is not null && _presentation.Retry is not null)actions.Children.Add(EnterpriseButton("다시 시도","retry-operation",async (_,_)=>await RetryCurrentAsync(),icon:LauncherIconKind.Refresh));
         foreach(var item in actions.Children)item.Margin=new Thickness(0,0,LauncherVisualTokens.SpaceSm,0);
         panel.Children.Add(actions);
@@ -382,6 +397,18 @@ public sealed partial class MainWindow
         // Bound the title together with the details: two large-text lines must not
         // consume the remaining project workspace in a short window.
         var detailsPanel=new StackPanel {Spacing=8};detailsPanel.Children.Add(_statusText);var detail=new Grid {ColumnDefinitions=new("*,Auto")};detail.Children.Add(_stageLabel);detail.Children.Add(At(_percentText,1));detailsPanel.Children.Add(detail);detailsPanel.Children.Add(_progress);panel.Children.Add(_announcer);
+        if (!IsDeveloper && _presentation.InstallationNotice is { } notice)
+            detailsPanel.Children.Add(Identify(Txt(notice, LauncherVisualTokens.FontBody, true), "installation-completed", notice));
+        if (!IsDeveloper && _viewModel.GeneralState == GeneralLauncherState.Ready)
+            detailsPanel.Children.Add(Identify(Muted(GeneralStateDetail(), LauncherVisualTokens.FontBody), "project-state-guidance", "프로그램 상태 안내"));
+        if (!IsDeveloper && _running && _presentation.Committing)
+            detailsPanel.Children.Add(Identify(Muted("설치 마무리 중에는 멈출 수 없습니다.", 14), "commit-guidance", "설치 마무리 안내"));
+        _downloadCancellationGuidance = null;
+        if (!IsDeveloper && _running && _operationCancellation is not null && !_presentation.Committing)
+        {
+            _downloadCancellationGuidance = Identify(Muted("취소하면 다음 시도에서 다운로드를 처음부터 받을 수 있습니다.", 14), "cancel-guidance", "다운로드 취소 안내");
+            detailsPanel.Children.Add(_downloadCancellationGuidance);
+        }
         if(CurrentLayoutWidth()<800 && _serviceLabel is not null)detailsPanel.Children.Add(_serviceLabel);
         if(_presentation.SupportId is not null)detailsPanel.Children.Add(Muted("지원 ID: "+_presentation.SupportId,12));
         _actionDetails=Identify(new ScrollViewer {Content=detailsPanel,Focusable=true,IsTabStop=true,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled},"action-details","작업 상세 안내");
@@ -419,10 +446,21 @@ public sealed partial class MainWindow
     }
     private void RefreshPresentation()
     {
+        var active = _running && _presentation.Kind != LauncherUiOperation.None && _presentation.ErrorCode is null;
+        var showProgress = IsDeveloper || active || _presentation.ShowCompletion;
         if(_statusText is not null)_statusText.Text=_presentation.Title;
-        if(_percentText is not null)_percentText.Text=_presentation.Percent is { } p?$"{p:0}%":_running?"진행 중":"대기";
-        if(_progress is not null){_progress.IsIndeterminate=_presentation.Percent is null && _running;_progress.Value=_presentation.Percent??0;}
-        if(_stageLabel is not null)_stageLabel.Text="현재 단계 · "+_presentation.CurrentStage;
+        if (_downloadCancellationGuidance is not null)
+            _downloadCancellationGuidance.IsVisible = active && !_pauseAvailable && _presentation.CurrentStage == "파일 준비";
+        var percent = IsDeveloper || _presentation.ShowCompletion || _presentation.Percent is null
+            ? _presentation.Percent : Math.Min(99, _presentation.Percent.Value);
+        if(_percentText is not null){_percentText.IsVisible=showProgress;_percentText.Text=percent is { } p?$"{p:0}%":_running?"진행 중":"대기";}
+        if(_progress is not null){_progress.IsVisible=showProgress;_progress.IsIndeterminate=percent is null && _running;_progress.Value=percent??0;}
+        if(_stageLabel is not null)
+        {
+            _stageLabel.IsVisible=showProgress;
+            _stageLabel.Text=!IsDeveloper && _operationCancellation is not null && _presentation.Kind != LauncherUiOperation.Check
+                ? _presentation.DownloadSteps : "현재 단계 · "+_presentation.CurrentStage;
+        }
         if(_announcer is not null && _announcer.Text!=_presentation.Announcement)_announcer.Text=_presentation.Announcement;
     }
 }

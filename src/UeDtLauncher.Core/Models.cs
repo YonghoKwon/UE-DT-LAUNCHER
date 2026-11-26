@@ -248,4 +248,5 @@ public sealed record LauncherProgress(
     long? TotalBytes = null,
     int? FileIndex = null,
     int? FileCount = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LauncherPerformanceMetrics? Performance = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LauncherPerformanceMetrics? Performance = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? PauseAvailable = null);

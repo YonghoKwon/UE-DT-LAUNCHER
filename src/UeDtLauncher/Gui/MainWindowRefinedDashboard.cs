@@ -158,8 +158,7 @@ public sealed partial class MainWindow : Window
                 _installDetail = "업데이트 서비스에 연결한 뒤 다시 확인해 주세요.";
                 _viewModel.GeneralState = GeneralLauncherState.RecoverableError;
                 _presentation.Title = "업데이트 서비스 연결이 필요합니다"; _presentation.Percent = null;
-                _presentation.ErrorCode = "service-unavailable";
-                _presentation.SupportId = Guid.NewGuid().ToString("N");
+                SetErrorDetails(LauncherUiError.From(new AgentConnectionException(new IOException())));
                 return;
             }
             if (await RefreshCatalog(false, suppressDialog: true) && HasProject)
@@ -196,13 +195,14 @@ public sealed partial class MainWindow : Window
                 _configurationError = ex; var error = LauncherUiError.From(new ArgumentException("Invalid launcher configuration.", ex));
                 _installState = "설정 확인 필요"; _installDetail = error.Message;
                 _viewModel.GeneralState = GeneralLauncherState.ConfigurationRequired;
-                _presentation.Title = "런처 설정을 확인해 주세요."; _presentation.ErrorCode = "configuration-invalid"; _presentation.SupportId = error.SupportId;
+                _presentation.Title = "런처 설정을 확인해 주세요."; SetErrorDetails(error);
             }
         }
         else
         {
             _configurationError = new FileNotFoundException("Launcher display configuration is missing.");
-            _presentation.Title = "런처 설정을 확인해 주세요."; _presentation.ErrorCode = "configuration-invalid"; _presentation.SupportId = Guid.NewGuid().ToString("N");
+            _presentation.Title = "런처 설정을 확인해 주세요.";
+            SetErrorDetails(LauncherUiError.From(new AgentOperationException("not-configured", Guid.NewGuid().ToString("N"), "Launcher display configuration is missing.")));
             _installState = "설정 확인 필요";
             _installDetail = IsDeveloper
                 ? $"설정 파일이 없습니다: {ConfigPath}"

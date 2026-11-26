@@ -29,6 +29,11 @@ public sealed partial class MainWindow : Window
             if (_allowAutomaticChecks && _config.IsManagedDeployment) _agentStatusTimer.Start();
             _startupInitialized = false; await InitializeStartupAsync(); return;
         }
+        if (!IsDeveloper && _viewModel.GeneralState == GeneralLauncherState.UpdateAvailable)
+        {
+            if (SelectedInstallationDamaged) { await TroubleshootAsync(); return; }
+            if (RecommendationBelowInstalledRecord) { _recommendationExpanded = !_recommendationExpanded; Build(); return; }
+        }
         switch (_viewModel.PrimaryAction)
         {
             case PrimaryActionKind.InstallAndLaunch:
@@ -93,10 +98,11 @@ public sealed partial class MainWindow : Window
             _selectedRuntimeConfig = null; _viewModel.ProjectStatus = null; _resumeOperation = null;
             _selectedProject = new ProjectUiConfig { ProjectId = "unavailable", DisplayName = "사용 가능한 프로젝트가 없습니다" };
             _viewModel.GeneralState = GeneralLauncherState.RecoverableError;
-            _presentation.Title = "허용된 배포가 없습니다"; _presentation.Percent = null;
+            _presentation.Title = "이 PC에 허용된 배포가 없습니다"; _presentation.Percent = null;
             _installState = "허용된 배포 없음";
-            _installDetail = "이 PC에 허용된 배포가 없습니다. 관리자에게 문의해 주세요.";
-            _presentation.Complete("이 PC에 허용된 배포가 없습니다. 관리자에게 문의해 주세요.");
+            _installDetail = "아직 공개된 버전이 없습니다. 담당자가 공개하면 표시됩니다.";
+            if (IsDeveloper) _presentation.Complete("이 PC에 허용된 배포가 없습니다. 관리자에게 문의해 주세요.", showCompletion: false);
+            else SetErrorDetails(LauncherUiError.From(new AgentOperationException("no-authorized-release", Guid.NewGuid().ToString("N"), _installDetail)));
         }
     }
 
@@ -138,7 +144,7 @@ public sealed partial class MainWindow : Window
         _viewModel.GeneralState = GeneralLauncherState.AwaitingPromotion;
         _installState = "실행 버전 지정 대기"; _installDetail = "관리자가 실행 버전을 지정하지 않았습니다.";
         _presentation.ErrorCode = null; _presentation.SupportId = null; _presentation.Retry = null;
-        _presentation.Complete(_installDetail); Build();
+        _presentation.Complete(_installDetail, showCompletion: false); Build();
     }
 
     private async Task RunAsync(bool repair, bool launch, ReleaseSelection? expectedSelection = null)
@@ -156,11 +162,12 @@ public sealed partial class MainWindow : Window
             var config = await RunConfig(repair, launch);
             var result = await _uiBackend.ExecuteAsync(context, config, repair, launch, CreateUiProgress(), _fileLogger, operationCancellation.Token);
             _resumeOperation = null;
+            if (_presentation.Committing || result.Completion == LauncherUiCompletion.CommittedLaunchSkipped) ShowInstallationNotice(result);
             if (result.Completion == LauncherUiCompletion.CommittedRefreshRequired) { CommittedUiRefreshRequired(failure: result.FollowUpFailure); return; }
             _presentation.Complete(result.Completion == LauncherUiCompletion.CommittedLaunchSkipped ? "설치 완료 · 프로그램 실행은 생략했습니다." : launch ? "실행 준비 완료" : repair ? "파일 복구 완료" : "업데이트 확인 완료");
             if (ApplyUiResult(context, result)) Build();
         }
-        catch (LauncherUiCancelledException cancelled) { RecordCancelledOperation(cancelled.Operation); }
+        catch (LauncherUiCancelledException cancelled) { RecordCancelledOperation(cancelled.Operation,cancelled.RetainedPartialDownload); }
         catch (OperationCanceledException) { RecordCancelledOperation(null); }
         catch (Exception ex) { MarkError(ex); }
         finally { FinishUiOperation(); }
@@ -176,7 +183,7 @@ public sealed partial class MainWindow : Window
         try
         {
             var context = CaptureUiOperation();
-            BeginOperation(LauncherUiOperation.Check); _viewModel.GeneralState = GeneralLauncherState.Checking; Progress(0);
+            BeginOperation(LauncherUiOperation.Check); _viewModel.GeneralState = GeneralLauncherState.Checking; Progress(0); Build();
             var result = await _uiBackend.CheckAsync(context, await RunConfig(false, false), CreateUiProgress());
             if (ApplyUiResult(context, result)) { _presentation.Complete(_installState); Build(); }
         }
@@ -221,7 +228,7 @@ public sealed partial class MainWindow : Window
             }
             if (ApplyUiResult(context, checkedResult))
             {
-                _presentation.Complete(action == LauncherTroubleshootAction.OfferInstall ? "확인 완료 · 설치/업데이트가 필요합니다." : repairAttempted ? "파일 복구 완료" : "설치 상태 점검 완료");
+                _presentation.Complete(action == LauncherTroubleshootAction.OfferInstall ? "확인 완료 · 설치/업데이트가 필요합니다." : repairAttempted ? "파일 복구 완료" : "설치 상태 점검 완료", showCompletion: repairAttempted);
                 Build();
             }
         }
@@ -235,7 +242,7 @@ public sealed partial class MainWindow : Window
                 return;
             }
             var offer = LauncherDashboardViewModel.CanOfferRecoveryRollback(repairAttempted, checkedResult?.Status.HasBackup == true, ex);
-            if (ex is LauncherUiCancelledException cancelled) { RecordCancelledOperation(cancelled.Operation); return; }
+            if (ex is LauncherUiCancelledException cancelled) { RecordCancelledOperation(cancelled.Operation,cancelled.RetainedPartialDownload); return; }
             if (ex is OperationCanceledException) { RecordCancelledOperation(null); return; }
             if (offer && context is not null && config is not null)
             {

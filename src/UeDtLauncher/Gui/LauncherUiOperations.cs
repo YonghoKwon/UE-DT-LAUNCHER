@@ -47,8 +47,11 @@ internal sealed record LauncherRestoreResult(LauncherRestoreDisposition Disposit
         return new(response.InstallationCommitted==true && response.ProjectStatus is null?LauncherRestoreDisposition.InspectionRequired:LauncherRestoreDisposition.Applied);
     }
 }
-internal sealed class LauncherUiCancelledException(OperationStatus operation):OperationCanceledException("Launcher operation cancelled")
-{internal OperationStatus Operation {get;}=operation;}
+internal sealed class LauncherUiCancelledException(OperationStatus operation, bool? retainedPartialDownload = null):OperationCanceledException("Launcher operation cancelled")
+{
+    internal OperationStatus Operation {get;}=operation;
+    internal bool? RetainedPartialDownload {get;}=retainedPartialDownload;
+}
 
 internal interface ILauncherUiBackend
 {
@@ -116,7 +119,7 @@ internal static class LauncherUiOperations
             var client=new ManagedAgentClient();
             var response=await client.SendCancellableAsync(resumed is null?repair?"repair":"update":"operation-resume",context.ProjectId,
                 value=>progress(value.ToLauncherProgress()),selection:context.Selection,token:token,resumeOperationId:resumed?.Id);
-            if(response.Operation is {Phase:"Cancelled"} cancelled)throw new LauncherUiCancelledException(cancelled);
+            if(response.Operation is {Phase:"Cancelled"} cancelled)throw new LauncherUiCancelledException(cancelled,response.RetainedPartialDownload);
             response.ThrowIfFailed();BindManagedSelection(context,config,response);
             RuntimeObservation? runtime=null;
             var committed=response.InstallationCommitted==true || response.Operation?.Phase=="Completed";
@@ -152,7 +155,7 @@ internal static class LauncherUiOperations
             running=engine;
             try{await engine.RunAsync(operation.Token);operation.Finish(true);}
             catch(OperationCanceledException)when(engine.InstallationCommitted){operation.Finish(true);}
-            catch(OperationCanceledException){operation.Finish(false);throw new LauncherUiCancelledException(operation.Status);}
+            catch(OperationCanceledException){operation.Finish(false);throw new LauncherUiCancelledException(operation.Status,engine.RetainedPartialDownload);}
             catch(Exception error)when(engine.InstallationCommitted)
             {operation.Finish(true);return CommittedFailure(config,null,completionStage,error);}
             catch{operation.Finish(engine.InstallationCommitted,failed:true);throw;}
