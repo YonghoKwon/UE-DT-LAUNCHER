@@ -89,6 +89,54 @@ public sealed class RecommendationChangeTests
         Assert.Null(RecommendationChange.Find("latest", Catalog(v1.Version), status));
     }
 
+    [Theory]
+    [InlineData("general")]
+    [InlineData("developer")]
+    public async Task DamagedCandidateDoesNotHideRunningRelease(string profile)
+    {
+        using var fixture = new InstallationFixture();
+        var v1 = Selection with { Version = "1.0.0" };
+        var v3 = Selection with { Version = "3.0.0" };
+        await fixture.InstallAsync(v1, "2026-11-26T00:00:00Z");
+        await fixture.InstallAsync(Selection, "2026-11-26T01:00:00Z");
+        await fixture.InstallAsync(v3, "2026-11-26T03:00:00Z");
+        fixture.Config.AuthenticatedCatalog!.Projects.Single().Releases.Single(release => release.Version == v3.Version)
+            .AllowedClientProfiles = [profile];
+        await File.WriteAllTextAsync(fixture.Config.InstallStatePath, "{");
+        fixture.RecordSupervisedRun(Selection, completed: false);
+        Assert.Equal(RuntimeState.Running, RuntimeStore.Observe(fixture.Config).State);
+
+        VersionedReleasePaths.Bind(fixture.Config, v1);
+        var status = await ManagedProjectStatusInspector.InspectAsync(fixture.Config, fixture.Manifest(v1));
+        Assert.Equal(Selection, RecommendationChange.Find("latest", Catalog(v1.Version), status)?.Previous);
+    }
+
+    [Fact]
+    public async Task AbortedLaunchAfterSuccessfulRunDoesNotReviveAnOlderActivation()
+    {
+        using var fixture = new InstallationFixture();
+        var v1 = Selection with { Version = "1.0.0" };
+        await fixture.InstallAsync(v1, "2026-11-26T00:00:00Z");
+        await fixture.InstallAsync(Selection, "2026-11-26T01:00:00Z");
+        fixture.RecordSupervisedRun(v1);
+        var beforeAbort = await ManagedProjectStatusInspector.InspectAsync(fixture.Config, fixture.Manifest(v1));
+        Assert.Equal(v1, beforeAbort.RecommendationHistory?.LastActiveRelease);
+
+        var identity = RuntimeIdentities.Current();
+        var ticket = RuntimeStore.Begin(fixture.Config, identity, identity.Executable);
+        RuntimeStore.AbortBeforeStart(fixture.Config, ticket, identity);
+        Assert.Equal("launch-aborted", RuntimeStore.Read(fixture.Config)?.Origin);
+
+        var status = await ManagedProjectStatusInspector.InspectAsync(fixture.Config, fixture.Manifest(v1));
+        Assert.Null(Assert.IsType<RecommendationHistory>(status.RecommendationHistory).LastActiveRelease);
+        Assert.Null(RecommendationChange.Find("latest", Catalog(v1.Version), status));
+
+        fixture.RecordSupervisedRun(Selection, completed: false);
+        VersionedReleasePaths.Bind(fixture.Config, v1);
+        status = await ManagedProjectStatusInspector.InspectAsync(fixture.Config, fixture.Manifest(v1));
+        Assert.Equal(Selection, RecommendationChange.Find("latest", Catalog(v1.Version), status)?.Previous);
+    }
+
     private static readonly ReleaseSelection Selection = new("demo", "prod", "stable", "windows-x64", "2.0.0");
 
     private static CatalogReleaseOption Catalog(string version, bool latest = true) => new()
@@ -144,14 +192,14 @@ public sealed class RecommendationChangeTests
             RuntimeStore.Initialize(Config);
         }
 
-        internal void RecordSupervisedRun(ReleaseSelection selection)
+        internal void RecordSupervisedRun(ReleaseSelection selection, bool completed = true)
         {
             VersionedReleasePaths.Bind(Config, selection);
             var identity = RuntimeIdentities.Current();
             var ticket = RuntimeStore.Begin(Config, identity, identity.Executable);
             RuntimeStore.Attach(Config, ticket, identity, identity.Executable);
             RuntimeStore.Report(Config, ticket, identity, completed: false);
-            RuntimeStore.Report(Config, ticket, identity, completed: true);
+            if (completed) RuntimeStore.Report(Config, ticket, identity, completed: true);
             File.SetLastWriteTimeUtc(RuntimeStore.RecordPath(Config), new DateTime(2026, 11, 26, 2, 0, 0, DateTimeKind.Utc));
         }
 

@@ -39,9 +39,17 @@ internal static class PreviousInstallationStatus
                 token.ThrowIfCancellationRequested();
                 var selection = selected with { Version = release.Version };
                 if (selection == selected && !selectedInstalled) continue;
-                selection.Validate();
-                var candidate = await ReadCandidateAsync(config, selection, release, token);
-                if (candidate is not null) candidates.Add(candidate);
+                try
+                {
+                    selection.Validate();
+                    var candidate = await ReadCandidateAsync(config, selection, release, token);
+                    if (candidate is not null) candidates.Add(candidate);
+                }
+                catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or
+                    JsonException or InvalidOperationException or ArgumentException)
+                {
+                    // A damaged installation cannot invalidate evidence for other releases.
+                }
             }
 
             var previous = selectedInstalled ? null : candidates.OrderByDescending(candidate => candidate.InstalledAt)
@@ -50,14 +58,16 @@ internal static class PreviousInstallationStatus
 
             // Include the selected release in the ordering so an older use of a higher version
             // cannot trigger another notice after the recommended release has been activated.
+            // A running record takes priority so the GUI still rechecks it before changing versions.
             var current = candidates.Where(candidate => candidate.GeneralAllowed)
                 .Select(candidate => ReadActivation(config, candidate))
                 .OrderByDescending(activation => activation.Running)
+                .ThenBy(activation => activation.At.HasValue)
                 .ThenByDescending(activation => activation.At)
                 .ThenByDescending(activation => activation.Release == selected)
                 .ThenBy(activation => activation.Release.Version, StringComparer.Ordinal)
-                .Select(activation => activation.Release).FirstOrDefault();
-            return (previous, new(current));
+                .FirstOrDefault();
+            return (previous, new(current.At.HasValue ? current.Release : null));
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or
             JsonException or InvalidOperationException or ArgumentException)
@@ -97,7 +107,7 @@ internal static class PreviousInstallationStatus
             release.AllowedClientProfiles.Contains("general", StringComparer.OrdinalIgnoreCase));
     }
 
-    private static (ReleaseSelection Release, DateTimeOffset At, bool Running) ReadActivation(
+    private static (ReleaseSelection Release, DateTimeOffset? At, bool Running) ReadActivation(
         LauncherConfig config, Candidate candidate)
     {
         var selection = candidate.Installation.Release;
@@ -108,6 +118,9 @@ internal static class PreviousInstallationStatus
             var path = SafePath.ResolveInsideChecked(config.StateRootDir, selection.ReleaseId + "/runtime-state.json");
             var written = File.GetLastWriteTimeUtc(path);
             var runtime = RuntimeStore.Read(bound);
+            if (runtime is { State: RuntimeState.Quiescent, Origin: "launch-aborted" })
+                // The aborted attempt may have replaced the last successful run. Its recency is unknown.
+                return (selection, null, false);
             // Use the write time only alongside a validated start/completion record from the same snapshot.
             if (runtime is { State: RuntimeState.Running } or
                 { State: RuntimeState.Quiescent, Origin: "supervisor-completed" } &&
