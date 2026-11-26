@@ -1,7 +1,10 @@
-"""Identity-free numeric aggregate allowlist; phases overlap and are not native SQLite wait."""
+"""Identity-free numeric authority aggregates. Elapsed phases may overlap."""
 import math
-FIELDS={'requests','httpElapsedMs','databaseOperations','databaseElapsedMs','sequenceWaitMs','databaseBusyErrors','authenticationOperations','authenticationElapsedMs','policyCompilations','policyReuses','assetCacheHits','assetCacheMisses'}
-PHASES={'policy-read','database-wait','signing','catalog-build'}
+FIELDS={'requests','httpElapsedMs','sequenceWaitMs','authenticationOperations','authenticationElapsedMs',
+        'authorityReads','authorityReadRetries','authorityReadElapsedMs','authorityCommitAttempts',
+        'authorityCommitElapsedMs','authorityUnavailable','policyUnavailable','policyCompilations',
+        'policyReuses','assetCacheHits','assetCacheMisses'}
+PHASES={'policy-read','signing','catalog-build','authority-writer-wait'}
 def numeric(value):return isinstance(value,(int,float)) and not isinstance(value,bool) and math.isfinite(value) and value>=0
 def sanitize(value):
     if not isinstance(value,dict):return None

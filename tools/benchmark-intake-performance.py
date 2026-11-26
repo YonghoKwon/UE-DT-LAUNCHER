@@ -416,7 +416,7 @@ def save_report(root, report):
               "Seed approval/promotion, fixture copying, device-key setup and process startup are excluded.",
               "CPU/RSS use 20-ms samples of the server process only; API p95 includes failed requests and in-flight completions.",
               "The read-only observer checks HEAD and its jobs generation at 50-ms intervals. It separately counts retired-generation retries.",
-              "The file-authority observer has different costs from the previous SQLite observer. Compare timings taken with the same observer.",
+              "Compare timings taken with the same file-authority observer and fixture.",
               "Warmup results are retained but excluded above. Generated roots are retained; no existing installations are touched.",
               "No real UE, RHEL, WAN, cold-OS-cache or production SLA claim is made."]
     if not report.get("complete"):

@@ -109,6 +109,5 @@ def verify(root,config,server):
     if str(unlinked(server))!=binary.get('path') or digest(server)!=binary.get('sha256'):raise ValueError('Wrong server cohort')
     settings=json.loads(Path(config).read_text(encoding='utf-8-sig'))
     for field in ('root','policyPath','signingKeyPath'):inside(root,settings[field])
-    inside(root,Path(settings['root'])/'distribution.db')  # Historical fixtures.
     inside(root,Path(settings['root'])/'authority'/'HEAD')
     return settings

@@ -6,6 +6,7 @@ import json
 import statistics
 from pathlib import Path
 from evidence_contract import atomic
+from metric_contract import sanitize
 
 PROFILES = ('small', 'large', 'mixed')
 SCENARIOS = ('install', 'unchanged', 'next-version', 'repair')
@@ -27,7 +28,9 @@ def summarize(report):
             'startupFailures':row.get('startup_failures',0)} for row in report['api'] if row['clients'] in (1,10,30)}
     if len(api)!=3 or any(row['medianP95Ms'] is None or row['failedRequests']!=0 or row['startupFailures'] for row in api.values()):
         raise ValueError('Incomplete or failed API comparison')
-    return {'binarySha256':report['binarySha256'], 'client':clients, 'api':api}
+    metrics = (report.get('serverMetrics') or {}).get('gracefulShutdownAggregate')
+    return {'binarySha256':report['binarySha256'], 'client':clients, 'api':api,
+            'authorityAggregate':sanitize(metrics)}
 
 
 def compare(baseline, candidate):

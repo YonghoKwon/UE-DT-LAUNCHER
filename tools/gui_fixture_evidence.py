@@ -31,7 +31,7 @@ def verify_files(folder, manifest):
 def copy_server_support(source_executable, destination_executable):
     """Only known single-file publish runtime sidecars; never copy configs, keys or logs."""
     source=Path(source_executable).resolve();destination=Path(destination_executable).resolve()
-    allowed=('e_sqlite3.dll','libe_sqlite3.so','libe_sqlite3.dylib',source.stem+'.deps.json',source.stem+'.runtimeconfig.json')
+    allowed=(source.stem+'.deps.json',source.stem+'.runtimeconfig.json')
     copied={}
     for name in allowed:
         sidecar=source.parent/name

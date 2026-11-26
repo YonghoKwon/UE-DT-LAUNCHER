@@ -42,7 +42,7 @@ UeDtLauncher.DistributionServer client-enroll --from /dt/keys/enroll/ --grant ue
 
 | 순서 | 실행 위치 | 명령/작업 | 정상 결과 |
 |---:|---|---|---|
-| 1 | Linux 서버 관리자 | 기존 server.json의 `publicUrl`을 실제 사내 HTTP origin으로, `authenticationMode`를 `request-signature-v1`로 설정. `listenUrl`은 `http://127.0.0.1:18500` 유지 | 기존 root·서명키·policy 경로 보존. 변경 전 DB 백업, 구/신 서버 동시 실행 금지 |
+| 1 | Linux 서버 관리자 | 기존 server.json의 `publicUrl`을 실제 사내 HTTP origin으로, `authenticationMode`를 `request-signature-v1`로 설정. `listenUrl`은 `http://127.0.0.1:18500` 유지 | 기존 root·서명키·policy 경로 보존. 변경 전 권위와 payload의 오프라인 백업, 구/신 서버 동시 실행 금지 |
 | 2 | Linux 서버 관리자 | `packaging/linux/distribution-nginx-http-signature.conf`의 예시 IP를 실제 IP로 바꾸어 배치, `nginx -t` 후 운영 절차에 따라 반영 | 파일은 backend를 한 번만 통과. backend 원격 노출·공개 static alias 금지 |
 | 3 | Windows PC의 관리자 PowerShell | 아래 키 생성 명령 실행 | 개인키는 보호된 저장소, 내보낸 JSON에는 공개키만 존재 |
 | 4 | 관리자 간 신뢰된 경로 | `pc-001-public.json`을 배포 서버로 전달하고 공개키 fingerprint/출처 확인 | 개인키는 PC 밖으로 복사하지 않음 |
@@ -109,7 +109,7 @@ UeDtLauncher.DistributionServer client-key revoke --key-id pc-001-v1 --config /e
 ## 호환·검증 한계
 
 - 2026-11-12: CLI/doctor/GUI는 같은 오류 코드를 사용하고 기본 CLI 오류는 지원 ID·안전한 원인·조치를 출력한다. `--error-details`는 타입 체인만 추가한다. 리디렉션은 UTF-8이며 서명·해시·nonce·sequence·요청 결속·재발급1회 계약은 유지한다.
-- 개발 PC `upload`의 SSH 전송은 HTTP 요청 서명 API와 별개이다. 서버 콘솔은 로컬 기존 승인/승격/retention 경로를 사용하며 HTTP 쓰기 API·업로드 계정의 DB 조회를 추가하지 않는다. [최초 준비/반복 배포 순서](feature-workflow.md#b2-releasejson-만들기--개발-pc-powershell)
+- 개발 PC `upload`의 SSH 전송은 HTTP 요청 서명 API와 별개이다. 서버 콘솔은 로컬 기존 승인/승격/retention 경로를 사용하며 HTTP 쓰기 API·업로드 계정의 권위 파일 조회를 추가하지 않는다. [최초 준비/반복 배포 순서](feature-workflow.md#b2-releasejson-만들기--개발-pc-powershell)
 - release.json/Manifest/설치 경로/IPC v1 기존 필드는 유지한다. schema 3 설정은 구형 런처에 배포하지 않는다.
-- DB v3 이전 전 자동 백업. 되돌릴 때 DB만 몰래 교체하거나 구/신 버전을 동시에 돌리지 않는다. Catalog sequence 보존도 확인한다.
+- 되돌리기 전 오프라인 백업 세대, 최신 생존 source와 Catalog 순번 보존을 확인한다. 구형·혼합·손상 root는 변경 없이 거부되며 새 배치는 빈 root로 시작한다.
 - 실제 결과는 [검증 기록](archive/validation/intranet-auth-validation.md)에 구분한다. WSL/합성 테스트는 RHEL/Unreal/LocalService 운영 승인과 다르다.

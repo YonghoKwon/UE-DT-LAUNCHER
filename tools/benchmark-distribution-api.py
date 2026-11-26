@@ -7,14 +7,13 @@ with 20 alternating catalog/Range requests per connection. This is loopback HTTP
 not an HTTPS/nginx, WAN, company RHEL, or production-SLA measurement.
 
 The input config, policy, packages and manifests are never edited. The published
-server necessarily writes its fixture SQLite DB (a new bench token, sequences and
-normal startup migrations). Run only after the original benchmark process stops.
+server writes only private fixture authority (a bench credential and sequence reservations). Run only after the original benchmark process stops.
 """
 import argparse
 import base64
 from collections import Counter
 import concurrent.futures
-from contextlib import closing
+import hashlib
 import http.client
 import json
 import os
@@ -22,7 +21,6 @@ from pathlib import Path
 import re
 import signal
 import socket
-import sqlite3
 import statistics
 import subprocess
 import threading
@@ -30,7 +28,8 @@ import time
 from urllib.parse import quote, urlsplit
 from benchmark_intranet_auth import run_load
 from metric_contract import sanitize
-from fixture_contract import verify, claim
+from fixture_contract import verify, claim, inside
+from authority_fixture import read_authority_catalog
 from evidence_contract import provenance, atomic
 
 
@@ -101,23 +100,28 @@ def validate_fixture(config_path, server):
             not str(g.get("projectId", "")).startswith("bench-") or g.get("environment") != "prod"
             or g.get("channel") != "stable" or g.get("versions") != [] for g in grants):
         raise ValueError("Policy is not the original synthetic benchmark grant set")
-    database = contained(root / "distribution.db", root)
-    with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as db:
-        row = db.execute("SELECT id,directory,metadata FROM releases ORDER BY rowid LIMIT 1").fetchone()
-    if row is None:
-        raise ValueError("Synthetic fixture has no published release")
-    release_id, release_directory, metadata_json = row
+    _, _, catalog = read_authority_catalog(root)
+    if catalog.get("schemaVersion") != 1 or catalog.get("promotionReady") is not True or not catalog.get("releases"):
+        raise ValueError("Synthetic fixture has no valid published release")
+    release = catalog["releases"][0]
+    release_id = release["id"]
     parts = release_id.split("/")
     if (len(parts) != 5 or not all(SEGMENT.fullmatch(p) for p in parts)
             or not parts[0].startswith("bench-") or parts[1:3] != ["prod", "stable"]):
         raise ValueError("Published release is outside the synthetic benchmark namespace")
-    if len(metadata_json.encode("utf-8")) > 64 * 1024:
-        raise ValueError("Synthetic release metadata exceeds the benchmark cap")
-    metadata = json.loads(metadata_json)
-    if metadata.get("projectId") not in {g["projectId"] for g in grants}:
+    authority = root / "authority"
+    metadata_path = inside(authority, authority / "release-meta" / (release_id + ".json"))
+    with metadata_path.open("rb") as stream:
+        metadata_raw = stream.read(64 * 1024 + 1)
+    if len(metadata_raw) > 64 * 1024 or hashlib.sha256(metadata_raw).hexdigest() != release["metadataSha256"]:
+        raise ValueError("Synthetic release metadata exceeds the benchmark cap or differs from the authority")
+    metadata = json.loads(metadata_raw)
+    if metadata.get("projectId") != parts[0] or parts[0] not in {g["projectId"] for g in grants}:
         raise ValueError("Published fixture release is not granted to bench")
     releases_root = contained(root / "releases", root)
-    directory = contained(Path(release_directory), releases_root)
+    if release["directory"] != "releases/" + release_id:
+        raise ValueError("Published release directory differs from its identity")
+    directory = contained(inside(root, root / release["directory"]), releases_root)
     manifest_path = contained(directory / "manifest.json", directory)
     manifest = read_json(manifest_path)
     files = manifest.get("files")
@@ -139,7 +143,7 @@ def validate_fixture(config_path, server):
         expected = stream.read(range_size)
     return config, {
         "releaseId": release_id, "filePath": "/releases/" + quote(release_id, safe="/") + "/files/" + quote(relative, safe="/"),
-        "fileSize": size, "rangeSize": range_size, "rangeHeader": f"bytes=0-{range_size - 1}",
+        "relative": relative, "fileSize": size, "rangeSize": range_size, "rangeHeader": f"bytes=0-{range_size - 1}",
         "contentRange": f"bytes 0-{range_size - 1}/{size}", "expectedBytes": expected,
     }
 
@@ -283,12 +287,8 @@ def stop_server(server):
 
 def log_metrics(path):
     summary = None
-    busy_lines = 0
     with path.open("r", encoding="utf-8", errors="replace") as log:
         for line in log:
-            lower = line.lower()
-            if "database is locked" in lower or "sqlite error 5" in lower or "sqlite error 6" in lower:
-                busy_lines += 1
             marker = "DistributionPerformance "
             if marker in line:
                 try:
@@ -298,8 +298,7 @@ def log_metrics(path):
                     if accepted is not None:summary=accepted
                 except ValueError:
                     pass
-    return {"busyErrorLogLines": busy_lines, "gracefulShutdownAggregate": summary,
-            "nativeSqliteWaitMs": None}
+    return {"gracefulShutdownAggregate": summary}
 
 
 def markdown(report):
@@ -318,8 +317,8 @@ def markdown(report):
     lines += ["", "Baseline HTTP/transport errors are reported, not hidden or converted to successful latency samples.",
               "JSON contains status counts and success-only percentiles; duplicate catalog sequences count as errors. Signature shape is checked; cryptographic",
               "verification belongs to the primary launcher benchmark and automated server tests.",
-              "The input package/policy/config files are unchanged; normal server token/sequence/schema writes affect only the synthetic DB.",
-              "SQLite native busy duration is unavailable (null, not zero). Graceful aggregate is unavailable after Windows termination.",
+              "The input package/policy/config files are unchanged; normal server credential and sequence writes affect only the synthetic authority.",
+              "Graceful shutdown aggregates are unavailable after Windows termination.",
               "No company server, real UE, nginx/HTTPS, WAN, cold-cache or production-SLA claim is made."]
     return "\n".join(lines) + "\n"
 
@@ -369,7 +368,7 @@ def main():
                 counters = Counters(args.diagnostic_tool, server.pid, output)
             import shutil
             shutil.copy2(fixture / "public.pem", output / "public.pem")
-            payload = contained(Path(config["root"]) / "releases" / selection["releaseId"] / "files" / selection["filePath"].split("/files/", 1)[1], Path(config["root"]))
+            payload = contained(Path(config["root"]) / "releases" / selection["releaseId"] / "files" / selection["relative"], Path(config["root"]))
             with payload.open("rb") as stream:
                 expected = stream.read(3)
             def register(path):

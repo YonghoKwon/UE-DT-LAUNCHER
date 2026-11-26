@@ -278,7 +278,7 @@ def main():
               "settings": {"downloads": args.download_concurrency, "hashes": args.hash_concurrency,
                            "reuse": not args.no_reuse, "intakeWorkers": args.workers,
                            "corruptSourceRecord": args.corrupt_source_record},
-              "client": [], "api": [], "intake": [], "sqliteBusyWaitMs": None}
+              "client": [], "api": [], "intake": []}
     atomic(root / 'results.json', report)
     for profile in profiles:
         for version in ("1.0.0", "2.0.0"):
@@ -386,9 +386,6 @@ def main():
             except subprocess.TimeoutExpired:
                 server.kill()
                 server.wait()
-    server_log = (root / "server.log").read_text(encoding="utf-8", errors="replace")
-    report["sqliteBusyErrorLines"] = sum("database is locked" in line.lower() or "SQLite Error 5" in line
-                                        for line in server_log.splitlines())
     report['complete'] = True
     atomic(root / "results.json", report)
     lines = ["# Synthetic launcher benchmark", "", report["transport"], "", report["cacheCondition"],
@@ -402,7 +399,7 @@ def main():
         row = next(r for r in report["api"] if r["clients"] == clients)
         lines.append(f"| {clients} | {row['median_p95_ms']:.1f} | {row['failed_requests']} |")
     lines += ["", "CPU/RSS are 20ms process samples, not exact counters. Legacy phase times are log boundaries.",
-              "SQLite busy duration is unavailable on the baseline; null is not zero. Intake CLI includes process startup.",
+              "Intake CLI includes process startup.",
               "No real UE, RHEL, WAN, production SLA or cold-OS-cache claim is made."]
     (root / "results.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("Report: " + str(root / "results.json"), flush=True)

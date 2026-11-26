@@ -5,7 +5,7 @@ from gui_fixture_evidence import sha256,inside
 from evidence_contract import atomic
 
 REPO=Path(__file__).resolve().parents[1]
-SUPPORT=('e_sqlite3.dll','libe_sqlite3.so','libe_sqlite3.dylib','UeDtLauncher.DistributionServer.deps.json','UeDtLauncher.DistributionServer.runtimeconfig.json')
+SUPPORT=('UeDtLauncher.DistributionServer.deps.json','UeDtLauncher.DistributionServer.runtimeconfig.json')
 
 def extract_snapshot(archive,destination):
     with tarfile.open(archive) as data:
