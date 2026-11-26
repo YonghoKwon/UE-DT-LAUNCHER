@@ -205,7 +205,7 @@ public sealed partial class MainWindow
                 _config.VersionPolicy = "exact";
                 _config.RequestedVersion = release.Version;
                 _workspaceFocus = DeveloperVersionId(release);
-                SelectionChanged();
+                SelectionChanged(release);
                 Build();
             };
             body.Children.Add(list);
@@ -215,18 +215,31 @@ public sealed partial class MainWindow
 
     private static string DeveloperVersionId(CatalogReleaseOption release) => "developer-version-" + release.Version;
 
-    private Control? FindDeveloperVersionFocusTarget(string? id)
+    private ListBox? FindDeveloperVersionListForFocus(string? id)
     {
         if (id?.StartsWith("developer-version-", StringComparison.Ordinal) != true) return null;
-        var list = this.GetVisualDescendants().OfType<ListBox>().FirstOrDefault(candidate =>
-            AutomationProperties.GetAutomationId(candidate) == "developer-version-list" && candidate.IsEnabled);
-        if (list?.SelectedItem is not CatalogReleaseOption release || id != DeveloperVersionId(release)) return null;
+        return this.GetVisualDescendants().OfType<ListBox>().FirstOrDefault(list =>
+            AutomationProperties.GetAutomationId(list) == "developer-version-list" &&
+            list.SelectedItem is CatalogReleaseOption release && id == DeveloperVersionId(release));
+    }
+
+    private static Control? FindDeveloperVersionFocusTarget(ListBox list)
+    {
+        if (!list.IsEffectivelyEnabled || list.SelectedItem is not CatalogReleaseOption release) return null;
 
         // ScrollIntoView can create a temporary container while the list measures.
         // Focus the realized row so subsequent keys and UI Automation refer to the visible item.
         list.ScrollIntoView(release);
         list.UpdateLayout();
         return list.ContainerFromItem(release) ?? list;
+    }
+
+    private string? FocusAfterDeveloperVersionCheck(CatalogReleaseOption? release)
+    {
+        if (release is null || !IsVisible || !ReferenceEquals(SelectedCatalogRelease(), release)) return null;
+        if (FocusManager?.GetFocusedElement() is Control { IsEffectivelyEnabled: true } focused && focused is not Window)
+            return AutomationProperties.GetAutomationId(focused);
+        return DeveloperVersionId(release);
     }
 
     private Control DeveloperVersionRow(CatalogReleaseOption release)

@@ -456,7 +456,7 @@ public sealed partial class MainWindow
     }
     private Control? FindFocusTarget(string? id)
     {
-        if (FindDeveloperVersionFocusTarget(id) is { } versionRow) return versionRow;
+        if (FindDeveloperVersionListForFocus(id) is { } versions) return FindDeveloperVersionFocusTarget(versions);
         var controls=this.GetVisualDescendants().OfType<Control>().Where(c=>c.IsEffectivelyVisible&&c.IsEnabled&&c.Focusable).ToList();
         foreach(var candidate in new[]{id,"project-list","compact-project","status-check","card-refresh","settings"})
         {
