@@ -178,7 +178,12 @@ public sealed class AuthorityCrashTests(ITestOutputHelper output)
         Assert.Equal(events, ReadProjection(store));
         var expected = new[] { "left", "right" }.SelectMany(writerId => Enumerable.Range(0, 500).Select(index => writerId + "/" + index));
         Assert.Equal(expected.Order(), events.Select(entry => entry.Job).Order());
+        var projectedBytes = events.Select(entry => (long)AuthorityDocuments.Encode(entry).Length + 1).ToArray();
+        Assert.Equal(projectedBytes.Sum(), new FileInfo(store.DataPath("audit.jsonl")).Length);
+        var cumulativePrefixBytes = projectedBytes.Select((bytes, index) => bytes * (events.Length - index - 1)).Sum();
         output.WriteLine($"Writers {left.Process.Id}/{right.Process.Id} published 500 each. Ranges: " +
             $"{generations[0][0]}–{generations[0][^1]}/{generations[1][0]}–{generations[1][^1]}. Final counter and event count: 1,000.");
+        output.WriteLine($"Audit projection: {projectedBytes.Sum()} bytes at generation 1,000; " +
+            $"{cumulativePrefixBytes} cumulative pre-existing bytes across 1,000 commits, excluding tail checks.");
     }
 }

@@ -12,6 +12,7 @@ internal sealed class AuthorityStore
     private readonly AuthorityAreaCache cache = new();
     private readonly AuthorityAuditProjection projection;
     private readonly AuthorityLayout layout;
+    private readonly DistributionMaintenanceLease? inspectionLease;
     private readonly string[] generationDirectories;
     private readonly string[] dataDirectories;
     private string Root { get; }
@@ -20,9 +21,10 @@ internal sealed class AuthorityStore
     internal string ProgressPath => DataPath(layout.ProgressDirectory);
     internal Exception? OpenMaintenanceError { get; private set; }
 
-    private AuthorityStore(string root, AuthorityLayout layout)
+    private AuthorityStore(string root, AuthorityLayout layout, DistributionMaintenanceLease? inspectionLease = null)
     {
         Root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        this.inspectionLease = inspectionLease;
         this.layout = layout with
         {
             ExistingDistributionMarkers = layout.ExistingDistributionMarkers?.ToArray()
@@ -39,18 +41,30 @@ internal sealed class AuthorityStore
     {
         var store = new AuthorityStore(root, layout ?? AuthorityLayout.Default);
         // Validation precedes creation of even the maintenance/writer locks.
-        var existing = store.CheckRoot(validateHistory: true);
-        if (!existing) CreateDurableDirectory(store.Root);
+        if (!store.CheckRoot(validateHistory: true)) store.Initialize();
         using var writer = store.AcquireWriter(exclusiveMaintenance: false);
-        // Initialization and a second probe are serialized across first-time openers.
-        if (!store.CheckRoot(initializing: !existing)) store.Initialize();
-        var snapshot = store.ReadSnapshot();
-        store.CleanOrphans(snapshot);
-        store.OpenMaintenanceError = store.RunMaintenance(snapshot);
+        if (!store.CheckRoot()) throw new AuthorityRootException(AuthorityRootKind.Damaged, "Authority HEAD is missing.");
+        store.OpenMaintenanceError = store.Recover(writer);
         return store;
     }
 
-    internal AuthoritySnapshot ReadSnapshot()
+    internal static AuthorityStore OpenReadOnly(string root, DistributionMaintenanceLease exclusiveLease, AuthorityLayout? layout = null)
+    {
+        ArgumentNullException.ThrowIfNull(exclusiveLease);
+        var store = new AuthorityStore(root, layout ?? AuthorityLayout.Default, exclusiveLease);
+        return exclusiveLease.UseExclusive(store.Root, () =>
+        {
+            if (!store.CheckRoot(validateHistory: true))
+                throw new AuthorityRootException(AuthorityRootKind.Damaged, "Authority HEAD is missing.");
+            return store;
+        });
+    }
+
+    internal AuthoritySnapshot ReadSnapshot() => inspectionLease is null
+        ? ReadSnapshotCore()
+        : inspectionLease.UseExclusive(Root, ReadSnapshotCore);
+
+    private AuthoritySnapshot ReadSnapshotCore()
     {
         for (var attempt = 0; ; attempt++)
         {
@@ -66,6 +80,7 @@ internal sealed class AuthorityStore
 
     internal WriterLease Lock(bool exclusiveMaintenance = false)
     {
+        if (inspectionLease is not null) throw new InvalidOperationException("This authority store was opened for read-only inspection.");
         if (!CheckRoot()) throw new AuthorityRootException(AuthorityRootKind.Damaged, "Authority HEAD is missing.");
         return AcquireWriter(exclusiveMaintenance);
     }
@@ -80,7 +95,7 @@ internal sealed class AuthorityStore
         writer.Use<AuthorityCommitResult>(this, () =>
         {
             var snapshot = ReadSnapshot();
-            CleanOrphans(snapshot);
+            PrepareCleanup(snapshot);
             var plan = makePlan(snapshot);
             if (plan.Areas.Count == 0 && plan.Events.Count == 0)
                 return new(snapshot.Generation, false, RunMaintenance(snapshot));
@@ -99,9 +114,13 @@ internal sealed class AuthorityStore
 
     internal Exception? Recover(WriterLease writer) => writer.Use(this, () =>
     {
-        var snapshot = ReadSnapshot();
-        CleanOrphans(snapshot);
-        return RunMaintenance(snapshot);
+        try
+        {
+            var snapshot = ReadSnapshot();
+            PrepareCleanup(snapshot);
+            return RunMaintenance(snapshot);
+        }
+        catch (Exception error) when (IsReadError(error)) { return error; }
     });
 
     internal IEnumerable<StoredAuthorityEvent> ReadAudit(AuthoritySnapshot snapshot)
@@ -117,7 +136,11 @@ internal sealed class AuthorityStore
     internal bool HasAudit(AuthoritySnapshot snapshot, string action, string job) =>
         ReadAudit(snapshot).Any(entry => entry.Action == action && entry.Job == job);
 
-    internal AuthorityEventBatch ReadBatch(AuthoritySnapshot snapshot, long generation)
+    internal AuthorityEventBatch ReadBatch(AuthoritySnapshot snapshot, long generation) => inspectionLease is null
+        ? ReadBatchCore(snapshot, generation)
+        : inspectionLease.UseExclusive(Root, () => ReadBatchCore(snapshot, generation));
+
+    private AuthorityEventBatch ReadBatchCore(AuthoritySnapshot snapshot, long generation)
     {
         ValidateSnapshotOwner(snapshot);
         if (generation < 0 || generation > snapshot.Generation) throw new ArgumentOutOfRangeException(nameof(generation));
@@ -189,7 +212,7 @@ internal sealed class AuthorityStore
         return bytes;
     }
 
-    private bool CheckRoot(bool validateHistory = false, bool initializing = false)
+    private bool CheckRoot(bool validateHistory = false)
     {
         try
         {
@@ -217,9 +240,12 @@ internal sealed class AuthorityStore
                 foreach (var marker in layout.ExistingDistributionMarkers ?? AuthorityLayout.Default.ExistingDistributionMarkers!)
                     if (Attributes(SafePath.ResolveInsideChecked(Root, marker)) is not null)
                         throw new AuthorityRootException(AuthorityRootKind.ExistingDistribution, "Distribution files exist without an authority HEAD.");
-                // The private second check sees the two leases just acquired after the empty-root probe.
-                if (names.Any(name => !initializing || name is not (".maintenance.lock" or ".writer.lock")))
+                if (names.Length != 0)
+                {
+                    // A concurrent initializer can publish authority between enumeration and this probe.
+                    if (Attributes(DirectoryPath) is not null) return CheckRoot(validateHistory);
                     throw new AuthorityRootException(AuthorityRootKind.UnrecognizedLayout, "Existing files use an unrecognized distribution layout.");
+                }
                 return false;
             }
             RejectLink(DirectoryPath);
@@ -273,14 +299,33 @@ internal sealed class AuthorityStore
 
     private void Initialize()
     {
-        var staging = AuthorityDisk.Temporary(DirectoryPath);
-        CreateDurableDirectory(staging);
-        foreach (var name in dataDirectories) CreateDurableDirectory(Path.Combine(staging, name));
-        var updates = AuthorityDocuments.Areas.ToDictionary(area => area, area => AuthorityDocuments.Encode(AuthorityDocuments.Empty(area)));
-        Publish(staging, null, 0, updates, AuthorityDocuments.MakeBatch(0, []));
-        AuthorityDisk.Rename(staging, DirectoryPath, directory: true);
-        try { AuthorityDisk.FlushDirectory(Root); }
-        catch (IOException error) { throw new AuthorityCommitDurabilityException(0, error); }
+        var parent = Path.GetDirectoryName(Root) ?? throw new IOException("Authority initialization requires a parent directory.");
+        CreateDurableDirectory(Root);
+        var staging = AuthorityDisk.Temporary(Path.Combine(parent, ".authority-init"));
+        Directory.CreateDirectory(staging);
+        try
+        {
+            foreach (var name in dataDirectories) CreateDurableDirectory(Path.Combine(staging, name));
+            var updates = AuthorityDocuments.Areas.ToDictionary(area => area, area => AuthorityDocuments.Encode(AuthorityDocuments.Empty(area)));
+            Publish(staging, null, 0, updates, AuthorityDocuments.MakeBatch(0, []));
+            AuthorityDisk.FlushDirectory(parent);
+            AuthorityDisk.Reach(AuthorityBoundary.InitializationPrepared);
+            if (CheckRoot()) return; // A concurrent opener published a complete authority first.
+            try { AuthorityDisk.Rename(staging, DirectoryPath, directory: true); }
+            catch (IOException) when (Attributes(DirectoryPath) is not null && CheckRoot()) { return; }
+            try
+            {
+                AuthorityDisk.Reach(AuthorityBoundary.InitializationPublished);
+                AuthorityDisk.FlushDirectory(Root);
+                AuthorityDisk.FlushDirectory(parent);
+            }
+            catch (IOException error) { throw new AuthorityCommitDurabilityException(0, error); }
+        }
+        finally
+        {
+            // This path is unique to this initializer. A killed process leaves it outside the selected root.
+            if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
+        }
     }
 
     private WriterLease AcquireWriter(bool exclusiveMaintenance)
@@ -320,6 +365,16 @@ internal sealed class AuthorityStore
             files[area] = relative;
             hashes[area] = AuthorityDocuments.Hash(bytes);
         }
+    }
+
+    private void PrepareCleanup(AuthoritySnapshot snapshot)
+    {
+        // A preceding writer may have died after rename but before flushing the directory.
+        // Keep every old reference and orphan until the currently visible HEAD is durable.
+        AuthorityDisk.FlushDirectory(Root);
+        AuthorityDisk.Reach(AuthorityBoundary.BeforeCleanupDirectoryFlush);
+        AuthorityDisk.FlushDirectory(DirectoryPath);
+        CleanOrphans(snapshot);
     }
 
     private void CleanOrphans(AuthoritySnapshot snapshot)

@@ -8,7 +8,8 @@ namespace UeDtLauncher.Distribution.Authority;
 internal enum AuthorityBoundary
 {
     GenerationWrite, GenerationFlush, GenerationRename, GenerationDirectoryFlush,
-    HeadWrite, HeadFlush, BeforeHeadRename, HeadRename, HeadDirectoryFlush, AuditAppend
+    HeadWrite, HeadFlush, BeforeHeadRename, HeadRename, HeadDirectoryFlush, AuditAppend,
+    BeforeCleanupDirectoryFlush, InitializationPrepared, InitializationPublished
 }
 
 internal static class AuthorityDisk

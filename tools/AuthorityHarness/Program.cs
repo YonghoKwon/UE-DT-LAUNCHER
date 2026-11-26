@@ -6,6 +6,8 @@ if (args.Length < 2) return 2;
 
 try
 {
+    if (args[0] == "crash-init")
+        AuthorityDisk.Boundary.Value = PauseAt(Enum.Parse<AuthorityBoundary>(args[2]));
     var store = AuthorityStore.Open(args[1]);
     if (store.OpenMaintenanceError is { } error) throw error;
     switch (args[0])
@@ -44,15 +46,11 @@ try
             // Inspect the event staging path for the mixed commit, after its two data areas.
             var remaining = kind == "mixed" && boundary is AuthorityBoundary.GenerationWrite or AuthorityBoundary.GenerationFlush
                 or AuthorityBoundary.GenerationRename or AuthorityBoundary.GenerationDirectoryFlush ? 3 : 1;
-            AuthorityDisk.Boundary.Value = reached =>
-            {
-                if (reached != boundary || --remaining != 0) return;
-                Console.WriteLine("BOUNDARY");
-                Console.Out.Flush();
-                Thread.Sleep(Timeout.Infinite); // Parent kills this owned process at the confirmed boundary.
-            };
+            AuthorityDisk.Boundary.Value = PauseAt(boundary, remaining);
             store.Commit(current => MakeCrashPlan(current, kind));
             throw new InvalidOperationException("The requested boundary was not reached.");
+        case "crash-init":
+            throw new InvalidOperationException("The requested initialization boundary was not reached.");
         default:
             return 2;
     }
@@ -70,6 +68,14 @@ catch (Exception error)
 }
 
 static void Print<T>(T value) => Console.WriteLine(JsonSerializer.Serialize(value, AuthorityDocuments.Json));
+
+static Action<AuthorityBoundary> PauseAt(AuthorityBoundary boundary, int remaining = 1) => reached =>
+{
+    if (reached != boundary || --remaining != 0) return;
+    Console.WriteLine("BOUNDARY");
+    Console.Out.Flush();
+    Thread.Sleep(Timeout.Infinite); // Parent kills this owned process at the confirmed boundary.
+};
 
 static JsonElement Counter(JsonElement area, int value)
 {

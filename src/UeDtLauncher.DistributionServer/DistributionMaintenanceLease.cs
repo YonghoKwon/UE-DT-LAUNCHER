@@ -6,10 +6,19 @@ namespace UeDtLauncher.Distribution;
 public sealed class DistributionMaintenanceLease : IDisposable
 {
     private readonly FileStream stream;
-    private DistributionMaintenanceLease(FileStream stream) => this.stream = stream;
+    private readonly string root;
+    private readonly bool exclusive;
+    private readonly object lifetime = new();
+
+    private DistributionMaintenanceLease(FileStream stream, string root, bool exclusive)
+    {
+        this.stream = stream;
+        this.root = root;
+        this.exclusive = exclusive;
+    }
     public static DistributionMaintenanceLease Acquire(string root, bool exclusive, bool create = true)
     {
-        root = Path.GetFullPath(root);
+        root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
         if (!Directory.Exists(root))
         {
             if (!create) throw new IOException("Server root is unavailable.");
@@ -31,8 +40,24 @@ public sealed class DistributionMaintenanceLease : IDisposable
         { file.Dispose(); throw new PlatformNotSupportedException("Maintenance locking supports Windows/Linux only."); }
         if(!exclusive && File.Exists(SafePath.ResolveInsideChecked(root,"restore-staged.json")))
         {file.Dispose();throw new InvalidDataException("Staged restored root rejects live operations.");}
-        return new(file);
+        return new(file, root, exclusive);
     }
-    public void Dispose() => stream.Dispose();
+
+    internal T UseExclusive<T>(string expectedRoot, Func<T> read)
+    {
+        lock (lifetime)
+        {
+            ObjectDisposedException.ThrowIf(!stream.CanRead, this);
+            var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            if (!exclusive || !root.Equals(expectedRoot, comparison))
+                throw new ArgumentException("Read-only authority inspection requires the exclusive maintenance lease for this root.");
+            return read();
+        }
+    }
+
+    public void Dispose()
+    {
+        lock (lifetime) stream.Dispose();
+    }
     [DllImport("libc", SetLastError = true)] private static extern int flock(int fd, int operation);
 }
