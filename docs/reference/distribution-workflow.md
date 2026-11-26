@@ -102,18 +102,15 @@ upload는 셸 없이 ArgumentList로 ssh/scp를 호출합니다. 원격 경로·
 
 프로젝트/환경/채널/플랫폼마다 독립적으로 지정합니다. Linux 판은 platform=linux-x64로 실행합니다. 승격은 파일·사용 중 앱·PC 권한을 변경하지 않습니다. v2 권한이 없는 PC는 허용된 이전 승격판을 추천받고, 승격 이력이 전혀 없는 PC는 지정 대기 안내를 봅니다. 이미 최신인 대상과 현재 revision으로 반복하면 no-op입니다. revision 변경 오류가 나면 inspect를 다시 확인한 후 판단합니다.
 
-### 3.2 기존 서버 schema4 이전
+### 3.2 이전 SQLite 승격 데이터 점검
 
-기존 서버 프로세스를 중지하고 새 서버 바이너리로 아래 순서를 수행합니다. 회사 서비스 이름은 실제 설치 구성에 맞춥니다. 이전/구 서버를 같은 DB에 동시에 실행하지 않습니다.
+이 통합 빌드의 운영 준비는 새 빈 root에서 시작합니다. 이전 SQLite 전용 루트의 승격 기록이 필요하면 아래 읽기 전용 명령으로 점검할 수 있습니다. 구형 루트의 schema4 이전 절차는 [과거 검증 기록](archive/validation/release-promotion-validation.md)에 보존합니다.
 
 ```bash
 ./UeDtLauncher.DistributionServer promotion migrate --dry-run --config /dt/config/server.json
-./UeDtLauncher.DistributionServer promotion migrate --apply --config /dt/config/server.json
-./UeDtLauncher.DistributionServer promotion inspect --project-id demo --environment prod --channel stable --platform windows-x64 --config /dt/config/server.json
-./UeDtLauncher.DistributionServer serve --config /dt/config/server.json
 ```
 
-dry-run은 read-only DB 조회로 파일/DB를 변경하지 않습니다. apply의 schema 변경 전 SQLite 일관된 `distribution.pre-v4-*.db` 백업을 만들고, 기존 공개판 순서를 legacy-baseline으로 기록하여 PC별 기존 추천을 유지합니다. 반복 apply는 기준선을 중복 생성하지 않습니다. 기존 서버는 migration 전 serve를 거부하며, 새 빈 DB는 승격 이력이 없는 상태로 바로 시작합니다. baseline은 실제 수동 승격과 구분하고 이후 approve는 자동 승격하지 않습니다.
+통합 호환 시험은 유효 HEAD를 가진 루트에 잔존 SQLite를 두고 `promotion migrate --apply`를 검증합니다. schema6 미만의 DB는 변경 전에 `distribution.pre-v6-*.db`로 백업되며, 기존 공개판 순서를 한 번만 legacy-baseline으로 기록합니다. 새 빈 루트의 추천 이력은 비어 있습니다. 관리자가 첫 판을 명시적으로 승격합니다.
 
 API v1의 `?selectionPolicy=explicit-promotion-v1` 요청은 전체 허용 승인 목록·추천을 받습니다. query 없는 구형 요청은 승격된 허용 목록만 받습니다. 서명/권한/Range·Catalog freshness 형식은 유지합니다. [검증·호환 범위](archive/validation/release-promotion-validation.md)
 
