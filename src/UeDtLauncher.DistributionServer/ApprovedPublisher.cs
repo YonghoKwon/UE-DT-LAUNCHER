@@ -103,6 +103,13 @@ public sealed class ApprovedPublisher(IntakeStore store)
                 previous.Platform != metadata.Platform || previous.EntryPoint != manifest.EntryPoint || previous.Files.Count != manifest.Files.Count)
                 throw new InvalidDataException("Interrupted publication does not match the approved package.");
             var expectedFiles = manifest.Files.ToDictionary(file => file.Path, StringComparer.Ordinal);
+            var expectedInventory = expectedFiles.Keys.Select(path => "files/" + path)
+                .Concat(["manifest.json", "manifest.json.sig", "publication.json"])
+                .ToHashSet(StringComparer.Ordinal);
+            var actualInventory = DistributionBackup.Files(final)
+                .Select(path => Path.GetRelativePath(final, path).Replace(Path.DirectorySeparatorChar, '/'));
+            if (!expectedInventory.SetEquals(actualInventory))
+                throw new InvalidDataException("Interrupted publication inventory differs; operator inspection required.");
             foreach (var file in previous.Files)
                 if (!expectedFiles.Remove(file.Path, out var expected) || expected.Size != file.Size || expected.Executable != file.Executable ||
                     !string.Equals(expected.Sha256, file.Sha256, StringComparison.OrdinalIgnoreCase) ||

@@ -79,9 +79,10 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
                 RuntimeIdentities.Current().Owner, now.ToString("O"), reason, "manual");
             history.Add(promoted);
             result = new(true, track, revision, target.Id, history);
-            ReleasePromotions.BeforeCommit.Value?.Invoke();
-            return Change(catalog with { Promotions = [.. catalog.Promotions, promoted] },
+            var change = Change(catalog with { Promotions = [.. catalog.Promotions, promoted] },
                 new(now, "release-promoted", target.Id));
+            ReleasePromotions.BeforeCommit.Value?.Invoke();
+            return change;
         });
         return result!;
     }
@@ -107,6 +108,8 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
                 throw new InvalidDataException("Published metadata exceeds 1 MiB.");
             var relative = "releases/" + metadata.ReleaseId;
             var entry = new CatalogRelease(metadata.ReleaseId, jobId, relative, AuthorityDocuments.Hash(bytes), CatalogFields.From(metadata));
+            var change = Change(catalog with { Releases = [.. catalog.Releases, entry] },
+                new(DateTimeOffset.UtcNow, "published", jobId));
             var path = MetadataPath(entry.Id);
             var directory = ResolveChecked(payloadRoot, relative);
             activate();
@@ -123,7 +126,7 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
                 AuthorityDisk.SyncFileSystem(store.ReleaseMetadataPath);
             }
             result = new(entry.Id, entry.Job, directory, metadata);
-            return Change(catalog with { Releases = [.. catalog.Releases, entry] }, new(DateTimeOffset.UtcNow, "published", jobId));
+            return change;
         });
         return result!;
     }
@@ -218,11 +221,14 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
         catch (InvalidOperationException error) { throw new InvalidDataException("Published release path is unsafe.", error); }
     }
 
-    private static CommitPlan Change(CatalogDocument catalog, AuthorityEvent audit) => new(
-        new Dictionary<AuthorityArea, JsonElement>
+    private static CommitPlan Change(CatalogDocument catalog, AuthorityEvent audit)
+    {
+        Validate(catalog);
+        return new(new Dictionary<AuthorityArea, JsonElement>
         {
             [AuthorityArea.Catalog] = JsonSerializer.SerializeToElement(catalog, AuthorityDocuments.Json)
         }, [audit]);
+    }
 
     private sealed record CatalogDocument([property: JsonRequired] int SchemaVersion,
         [property: JsonRequired] List<CatalogRelease> Releases, [property: JsonRequired] List<PromotionEvent> Promotions,

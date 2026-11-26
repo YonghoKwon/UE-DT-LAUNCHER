@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import zipfile
@@ -22,6 +23,63 @@ def write_command_log(path, result, secret=False):
 def inventory(root):
     return {str(path.relative_to(root)): ('directory' if path.is_dir() else hashlib.sha256(path.read_bytes()).hexdigest())
             for path in root.rglob('*')}
+
+
+def checked_document(raw, field):
+    document = json.loads(raw)
+    prefix, separator, tail = raw.rpartition(f',"{field}":"'.encode())
+    digest = document[field]
+    if (not separator or not re.fullmatch(r'[0-9a-f]{64}', digest) or
+            tail != digest.encode() + b'"}' or
+            hashlib.sha256(prefix + separator + b'"}').hexdigest() != digest):
+        raise ValueError(f'Authority document has an invalid {field}')
+    return document
+
+
+def verify_promotion_authority(root, jobs, inspection):
+    authority = root / 'authority'
+    head = checked_document((authority / 'HEAD').read_bytes(), 'headSha256')
+    generation = head['generation']
+    catalog_reference = head['files']['catalog']
+    if (head['schema'] != 1 or type(generation) is not int or generation < 0 or
+            not re.fullmatch(r'catalog/[0-9]{6,19}\.json', catalog_reference) or
+            int(Path(catalog_reference).stem) > generation or
+            head['files']['events'] != f'events/{generation:06}.json'):
+        raise ValueError('Invalid catalog or audit reference in HEAD')
+    catalog_generation = int(Path(catalog_reference).stem)
+    if catalog_reference != f'catalog/{catalog_generation:06}.json':
+        raise ValueError('Catalog generation path is not canonical')
+    catalog_raw = (authority / catalog_reference).read_bytes()
+    if hashlib.sha256(catalog_raw).hexdigest() != head['sha256']['catalog']:
+        raise ValueError('Catalog digest differs from HEAD')
+    catalog = json.loads(catalog_raw)
+    releases = [(row['id'], row['job']) for row in catalog['releases']]
+    history = inspection['history']
+    if (catalog['schemaVersion'] != 1 or catalog['promotionReady'] is not True or
+            releases != list(jobs.items()) or catalog['promotions'] != history or
+            inspection['revision'] != history[-1]['revision'] or
+            inspection['recommendedRelease'] != history[-1]['releaseId']):
+        raise ValueError('Catalog history or publications differ from the CLI result')
+
+    observed = []
+    for number in range(generation + 1):
+        raw = (authority / f'events/{number:06}.json').read_bytes()
+        if number == generation and hashlib.sha256(raw).hexdigest() != head['sha256']['events']:
+            raise ValueError('Audit digest differs from HEAD')
+        batch = checked_document(raw, 'batchSha256')
+        if batch['schemaVersion'] != 1 or batch['generation'] != number:
+            raise ValueError('Invalid audit batch generation')
+        for ordinal, record in enumerate(batch['events']):
+            if record['generation'] != number or record['ordinal'] != ordinal:
+                raise ValueError('Invalid authority audit record position')
+            action = record['action']
+            if action in ('published', 'release-promoted'):
+                observed.append((number, action, record['job']))
+    if ([job for _, action, job in observed if action == 'published'] != list(jobs.values()) or
+            [release for _, action, release in observed if action == 'release-promoted'] !=
+            [event['releaseId'] for event in history] or observed[-1][0] != catalog_generation):
+        raise ValueError('Authority audit differs from the CLI publication or promotion history')
+    return catalog_reference, observed
 
 
 def main():
@@ -44,22 +102,28 @@ def main():
     config=['--config',root/'server.json']
     track=['--project-id','demo','--environment','prod','--channel','stable','--platform','windows-x64']
     run(server,'list',*config)
+    source=root/'server'
+    file_authority=(source/'authority'/'HEAD').is_file()
+    if args.require_file_authority and not file_authority:
+        raise RuntimeError('Published server has no file authority HEAD')
+    jobs={}
     def publish(version):
         upload=root/'server'/'incoming'/f'upload-{version}'; upload.mkdir(parents=True); archive=upload/'Windows.zip'
         with zipfile.ZipFile(archive,'x') as z: z.writestr('game.exe',b'non-executed promotion test payload')
         run(launcher,'release-metadata','--zip',archive,*track,'--version',version,'--entry-point','game.exe','--output',upload/'release.json')
         job=json.loads(run(server,'ingest',upload,*config)); run(server,'approve',job['id'],*config)
+        jobs[f'demo/prod/stable/{version}/windows-x64']=job['id']
     publish('2.0.0')
     initial=json.loads(run(server,'promotion','inspect',*track,*config)); assert initial['revision']==0 and initial['recommendedRelease'] is None
     promoted=json.loads(run(server,'promote',*track,'--version','2.0.0','--expected-revision','0','--reason','isolated validation',*config))
     publish('9.0.0'); publish('1.0.0')
     after=json.loads(run(server,'promotion','inspect',*track,*config)); assert after['recommendedRelease']==promoted['recommendedRelease'] and after['revision']==promoted['revision']
+    before_retries=verify_promotion_authority(source,jobs,after) if file_authority else None
     same=json.loads(run(server,'promote',*track,'--version','2.0.0','--expected-revision',after['revision'],'--reason','repeat',*config)); assert same['revision']==after['revision']
     run(server,'promote',*track,'--version','1.0.0','--expected-revision','0','--reason','stale',*config,expected=1)
-    source=root/'server'
-    file_authority=(source/'authority'/'HEAD').is_file()
-    if args.require_file_authority and not file_authority:
-        raise RuntimeError('Published server has no file authority HEAD')
+    if file_authority and verify_promotion_authority(source,jobs,same) != before_retries:
+        raise ValueError('No-op or stale request changed the authority catalog or audit')
+    final_inspection=same
     summary={'publishedProcesses':True,'approvalDoesNotPromote':True,'higherAndOlderApprovalPreserveRecommendation':True,
         'sameTargetNoOp':True,'staleRevisionRejected':True,'fileAuthorityVerified':False,'companyValidation':False}
     if args.catalog_proof:
@@ -81,7 +145,7 @@ def main():
                 else: raise TimeoutError('Server did not become ready')
                 releases=a['projects'][0]['releases']; assert len(releases)==3 and [r['version'] for r in releases if r['isLatest']]==['2.0.0']
                 legacy=catalog(all_token,False); assert [r['version'] for r in legacy['projects'][0]['releases']]==['2.0.0']
-                head=json.loads(run(server,'promote',*track,'--version','1.0.0','--expected-revision',after['revision'],'--reason','explicit previous version',*config))
+                final_inspection=json.loads(run(server,'promote',*track,'--version','1.0.0','--expected-revision',after['revision'],'--reason','explicit previous version',*config))
                 a=catalog(all_token); limited=catalog(old_token)
                 assert [r['version'] for r in a['projects'][0]['releases'] if r['isLatest']]==['1.0.0']
                 assert [r['version'] for r in limited['projects'][0]['releases'] if r['isLatest']]==['2.0.0']
@@ -103,6 +167,7 @@ def main():
     migration(legacy,1)
     summary['legacyRejectedUnchanged']=True
     if file_authority:
+        verify_promotion_authority(source,jobs,final_inspection)
         migration(source,0)
         mixed=root/'mixed'; shutil.copytree(source,mixed)
         (mixed/'distribution.db').write_bytes(b'SQLite format 3\0'+bytes(80))

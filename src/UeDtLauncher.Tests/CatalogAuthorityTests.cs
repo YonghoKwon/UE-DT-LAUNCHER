@@ -85,6 +85,51 @@ public sealed class CatalogAuthorityTests
         Assert.Empty(fixture.Audit("published"));
     }
 
+    [Theory]
+    [InlineData("files/unlisted.dat", true)]
+    [InlineData("unexpected.json", true)]
+    [InlineData("files/game.exe", false)]
+    public async Task UncommittedReleaseRejectsDivergentInventory(string relative, bool added)
+    {
+        using var fixture = new CatalogFixture();
+        var job = await fixture.Ingest("1.0.0", "first");
+        AuthorityDisk.Boundary.Value = point =>
+        {
+            if (point == AuthorityBoundary.BeforeHeadRename) throw new IOException("before catalog HEAD");
+        };
+        try { await Assert.ThrowsAsync<IOException>(() => fixture.Publisher.ApproveAsync(job.Id)); }
+        finally { AuthorityDisk.Boundary.Value = null; }
+
+        var path = Path.Combine(fixture.Intake.Root, "releases", Selection("1.0.0").ReleaseId, relative);
+        if (added) await File.WriteAllTextAsync(path, "unlisted fixture file");
+        else File.Delete(path);
+        var head = File.ReadAllBytes(fixture.Authority.DataPath("HEAD"));
+
+        var error = await Assert.ThrowsAsync<InvalidDataException>(() => fixture.Publisher.ApproveAsync(job.Id));
+        Assert.Contains("inventory differs", error.Message);
+        Assert.Equal(head, File.ReadAllBytes(fixture.Authority.DataPath("HEAD")));
+        Assert.Null(fixture.Publisher.FindByJob(job.Id));
+        Assert.Empty(fixture.Audit("published"));
+    }
+
+    [Fact]
+    public async Task InvalidCatalogFieldsAreRejectedBeforeActivationOrHeadPublication()
+    {
+        using var fixture = new CatalogFixture();
+        var valid = await fixture.Publish("1.0.0");
+        var invalid = await fixture.Ingest("2.0.0", "invalid", displayName: null);
+        var rejectedId = Selection("2.0.0").ReleaseId;
+        var head = File.ReadAllBytes(fixture.Authority.DataPath("HEAD"));
+        var audit = fixture.Audit("published");
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => fixture.Publisher.ApproveAsync(invalid.Id));
+        Assert.Equal(head, File.ReadAllBytes(fixture.Authority.DataPath("HEAD")));
+        Assert.Equal(audit, fixture.Audit("published"));
+        Assert.False(Directory.Exists(Path.Combine(fixture.Intake.Root, "releases", rejectedId)));
+        Assert.False(File.Exists(Path.Combine(fixture.Authority.ReleaseMetadataPath, rejectedId + ".json")));
+        Assert.Equal(valid.ReleaseId, Assert.Single(new ReleasePromotions(fixture.Intake).Snapshot().Releases).ReleaseId);
+    }
+
     [Fact]
     public async Task VerifiedMetadataCacheCannotMaskCorruptionOrBeMutatedByCallers()
     {
@@ -198,36 +243,39 @@ public sealed class CatalogAuthorityTests
         using var fixture = new CatalogFixture();
         await fixture.Publish("1.0.0");
         var promotion = new ReleasePromotions(fixture.Intake);
-        var first = promotion.Promote(Selection("1.0.0"), 0, "first");
         var token = new DistributionTokens(fixture.Intake).Issue("fixture");
-        await using var app = DistributionHttp.CreateApplication(fixture.Intake);
+        Action<long>? pauseReader = null;
+        await using var app = DistributionHttp.CreateApplicationCore(fixture.Intake, new()
+        {
+            AfterCatalogHeadRead = generation => Interlocked.Exchange(ref pauseReader, null)?.Invoke(generation)
+        });
         await app.StartAsync();
         using var http = new HttpClient { BaseAddress = new Uri(app.Urls.Single()), Timeout = TimeSpan.FromSeconds(30) };
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var reachedWriter = new ManualResetEventSlim();
-        using var allowWriter = new ManualResetEventSlim();
         var initial = await GetCatalog();
-        Assert.Equal("1.0.0", Assert.Single(Assert.Single(initial.Projects).Releases).Version);
+        AssertState(initial, ["1.0.0"], latest: null);
         var observations = new List<DistributionCatalog> { initial };
-        var writer = Task.Run(async () =>
+
+        var beforePublish = await ReadAcross(async () =>
         {
             await fixture.Publish("2.0.0");
-            ReleasePromotions.BeforeCommit.Value = () =>
-            {
-                reachedWriter.Set();
-                if (!allowWriter.Wait(TimeSpan.FromSeconds(30))) throw new TimeoutException("Reader did not observe staged promotion.");
-            };
-            try { promotion.Promote(Selection("2.0.0"), first.Revision, "second"); }
-            finally { ReleasePromotions.BeforeCommit.Value = null; }
+            promotion.Promote(Selection("1.0.0"), 0, "first");
         });
-        try
+        // A recommendation for 1.0.0 without 2.0.0 in the inventory never existed.
+        AssertState(beforePublish, ["1.0.0"], latest: null);
+        observations.Add(beforePublish);
+        var afterPublish = await GetCatalog();
+        AssertState(afterPublish, ["1.0.0", "2.0.0"], latest: "1.0.0");
+        observations.Add(afterPublish);
+
+        var beforePromotion = await ReadAcross(() =>
         {
-            Assert.True(reachedWriter.Wait(TimeSpan.FromSeconds(30)));
-            for (var i = 0; i < 16; i++) observations.Add(await GetCatalog());
-            Assert.All(observations.Skip(1), value => Assert.Equal("1.0.0", Recommendation(value)));
-        }
-        finally { allowWriter.Set(); }
-        await writer;
+            promotion.Promote(Selection("2.0.0"), 1, "second");
+            return Task.CompletedTask;
+        });
+        AssertState(beforePromotion, ["1.0.0", "2.0.0"], latest: "1.0.0");
+        observations.Add(beforePromotion);
+
         var toggles = Task.Run(() =>
         {
             var revision = promotion.Inspect(Selection("2.0.0")).Revision;
@@ -237,13 +285,46 @@ public sealed class CatalogAuthorityTests
         while (observations.Count < 999) observations.Add(await GetCatalog());
         await toggles;
         observations.Add(await GetCatalog());
-        Assert.All(observations.Skip(1), value =>
+        Assert.All(observations.Skip(4), value =>
         {
             Assert.Equal(new[] { "1.0.0", "2.0.0" }, Assert.Single(value.Projects).Releases.Select(r => r.Version));
             Assert.Contains(Recommendation(value), new[] { "1.0.0", "2.0.0" });
         });
-        Assert.Equal("2.0.0", Recommendation(observations[^1]));
+        AssertState(observations[^1], ["1.0.0", "2.0.0"], latest: "2.0.0");
         Assert.Equal(1_000, observations.Select(value => value.Sequence).Distinct().Count());
+
+        async Task<DistributionCatalog> ReadAcross(Func<Task> write)
+        {
+            var expectedGeneration = fixture.Authority.ReadSnapshot().Generation;
+            var reached = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var resume = new ManualResetEventSlim();
+            Interlocked.Exchange(ref pauseReader, generation =>
+            {
+                reached.SetResult(generation);
+                if (!resume.Wait(TimeSpan.FromSeconds(30))) throw new TimeoutException("HEAD reader was not resumed.");
+            });
+            var request = GetCatalog();
+            try
+            {
+                Assert.Equal(expectedGeneration, await reached.Task.WaitAsync(TimeSpan.FromSeconds(30)));
+                await write();
+                Assert.True(fixture.Authority.ReadSnapshot().Generation > expectedGeneration);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref pauseReader, null);
+                resume.Set();
+                await request;
+            }
+            return await request;
+        }
+
+        static void AssertState(DistributionCatalog value, string[] versions, string? latest)
+        {
+            var releases = Assert.Single(value.Projects).Releases;
+            Assert.Equal(versions, releases.Select(release => release.Version));
+            Assert.Equal(latest is null ? Array.Empty<string>() : [latest], releases.Where(release => release.IsLatest).Select(release => release.Version));
+        }
 
         static string Recommendation(DistributionCatalog value) => Assert.Single(Assert.Single(value.Projects).Releases, r => r.IsLatest).Version;
         async Task<DistributionCatalog> GetCatalog()
@@ -291,7 +372,7 @@ public sealed class CatalogAuthorityTests
             Publisher = new(Intake);
         }
 
-        internal async Task<IntakeJob> Ingest(string version, string source)
+        internal async Task<IntakeJob> Ingest(string version, string source, string? displayName = "Demo")
         {
             var upload = Path.Combine(Intake.Root, "incoming", source);
             Directory.CreateDirectory(upload);
@@ -301,7 +382,7 @@ public sealed class CatalogAuthorityTests
                 payload.Write("synthetic payload");
             var sidecarPath = Path.Combine(upload, "release.json");
             await SidecarPackageValidator.GenerateAsync(zip, sidecarPath,
-                new() { ProjectId = "demo", DisplayName = "Demo", Version = version, EntryPoint = "game.exe" });
+                new() { ProjectId = "demo", DisplayName = displayName!, Version = version, EntryPoint = "game.exe" });
             using var sidecar = JsonDocument.Parse(await File.ReadAllBytesAsync(sidecarPath));
             await File.WriteAllBytesAsync(sidecarPath, JsonSerializer.SerializeToUtf8Bytes(sidecar.RootElement));
             var job = await Intake.IngestAsync(upload);
