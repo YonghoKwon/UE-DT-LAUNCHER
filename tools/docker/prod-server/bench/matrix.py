@@ -173,7 +173,7 @@ class Matrix(Fixture):
             "peakMultiplier": peak / shape["payloadBytes"], "steadyBytes": steady, "peakBytes": peak})
 
     def register_clients(self):
-        self.dist_ip = self.container_address(self.compose("ps", "-q", "dist"), self.network)
+        self.dist_ip = self.frontend_address()
         public = self.root / "release-public.pem"
         self.compose("cp", f"dist:{KEYS}/release-public.pem", public)
         (self.root / "private").mkdir()
