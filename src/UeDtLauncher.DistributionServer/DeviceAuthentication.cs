@@ -18,6 +18,11 @@ public sealed class DistributionDeviceKeys(IntakeStore store, TimeProvider? cloc
     public void Add(string client, DevicePublicKey key, DateTimeOffset? expiresAt = null)
     {
         ReleaseSidecar.Segment(client); DeviceCredentials.ValidatePublic(key);
+        if (CredentialAuthority.For(store) is { } authority)
+        {
+            authority.AddDeviceKey(client, key, CredentialLifecycle.Expiry(expiresAt));
+            return;
+        }
         using var gate = store.Lock(); using var write = store.DatabaseWrite(); using var db = store.Open();
         using var tx = db.BeginTransaction(); using var command = db.CreateCommand(); command.Transaction = tx;
         command.CommandText = "INSERT INTO device_keys(key_id,client,public_pem,revoked,expires_at) VALUES($key,$client,$pem,0,$expiry)";
@@ -25,9 +30,18 @@ public sealed class DistributionDeviceKeys(IntakeStore store, TimeProvider? cloc
         command.Parameters.AddWithValue("$expiry", (object?)CredentialLifecycle.Expiry(expiresAt) ?? DBNull.Value);
         command.ExecuteNonQuery(); CredentialLifecycle.Audit(db, tx, "device-key-added", key.KeyId); tx.Commit();
     }
+    public void AddMany(IEnumerable<(string Client, DevicePublicKey Key, DateTimeOffset? Expiry)> registrations) =>
+        (CredentialAuthority.For(store) ?? throw new InvalidOperationException("Batch registration requires the credential authority store."))
+            .AddDeviceKeys(registrations);
+
     public void Revoke(string keyId)
     {
         DeviceCredentials.ValidateIdentifier(keyId);
+        if (CredentialAuthority.For(store) is { } authority)
+        {
+            authority.RevokeDeviceKey(keyId);
+            return;
+        }
         using var gate = store.Lock(); using var write = store.DatabaseWrite(); using var db = store.Open(); using var tx = db.BeginTransaction(); using var command = db.CreateCommand(); command.Transaction = tx;
         command.CommandText = "UPDATE device_keys SET revoked=1 WHERE key_id=$key"; command.Parameters.AddWithValue("$key", keyId);
         if (command.ExecuteNonQuery() != 1) throw new InvalidDataException("Unknown device key.");
@@ -36,20 +50,14 @@ public sealed class DistributionDeviceKeys(IntakeStore store, TimeProvider? cloc
     public RegisteredDeviceKey? Find(string keyId)
     {
         RegisteredDeviceKey? found;
-        using (var read = store.DatabaseRead())
-        using (var db = store.Open())
-        using (var command = db.CreateCommand())
-        {
-            command.CommandText = "SELECT key_id,client,public_pem,revoked,expires_at,expired FROM device_keys WHERE key_id=$key";
-            command.Parameters.AddWithValue("$key", keyId); using var reader = command.ExecuteReader();
-            found = reader.Read() ? Read(reader) : null;
-        }
+        found = CredentialAuthority.FindDeviceKey(store, keyId, Read);
         if (found is null || found.Revoked || found.Expired) return found is null ? null : found with { Revoked = true };
         if (!CredentialLifecycle.Due(found.ExpiresAtUtc, (clock ?? TimeProvider.System).GetUtcNow())) return found;
         CredentialLifecycle.LatchExpiry(store, true, keyId); return found with { Revoked = true, Expired = true };
     }
     public IReadOnlyList<RegisteredDeviceKey> List()
     {
+        if (CredentialAuthority.For(store) is { } authority) return authority.ListDeviceKeys();
         using var read = store.DatabaseRead(); using var db = store.Open(); using var command = db.CreateCommand();
         command.CommandText = "SELECT key_id,client,public_pem,revoked,expires_at,expired FROM device_keys ORDER BY key_id";
         using var reader = command.ExecuteReader(); var result = new List<RegisteredDeviceKey>();
