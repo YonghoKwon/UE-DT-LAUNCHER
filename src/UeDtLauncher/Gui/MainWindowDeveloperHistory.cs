@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
@@ -10,6 +11,18 @@ public sealed partial class MainWindow
     private TextBox? _developerHistoryText;
     private bool _developerHistoryErrorsOnly;
     private bool _developerRawLogExpanded;
+    private readonly ObservableCollection<LauncherHistoryEntry> _developerHistory = [];
+
+    private LauncherHistoryOperation? BeginDeveloperHistory(string operation, string stage = "확인") =>
+        IsDeveloper ? new(operation, stage, RecordDeveloperHistory) : null;
+
+    private void RecordDeveloperHistory(string operation, string stage, LauncherHistoryResult result)
+    {
+        if (!IsDeveloper) return;
+        // The caller supplies application labels. Raw messages and exception text stay in the original log.
+        if (_developerHistory.Count == 500) _developerHistory.RemoveAt(0);
+        _developerHistory.Add(new(DateTimeOffset.Now, operation, stage, result));
+    }
 
     private Control EnterpriseLogs()
     {
@@ -92,7 +105,7 @@ public sealed partial class MainWindow
     }
 
     private string DeveloperHistoryText() => string.Join(Environment.NewLine,
-        _presentation.History.Reverse()
+        _developerHistory.Reverse()
             .Where(entry => !_developerHistoryErrorsOnly || entry.Result == LauncherHistoryResult.Failed)
             .Select(entry => entry.Text));
 

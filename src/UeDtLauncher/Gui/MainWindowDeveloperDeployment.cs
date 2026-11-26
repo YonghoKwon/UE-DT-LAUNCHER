@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -174,17 +175,25 @@ public sealed partial class MainWindow
         }
         else
         {
-            var items = allowed.Select(DeveloperVersionItem).ToArray();
             var list = Identify(new ListBox
             {
                 // Initial selection must not scroll the containing workspace down to this list.
                 AutoScrollToSelectedItem = false,
-                ItemsSource = items,
+                ItemsSource = allowed,
+                ItemTemplate = new FuncDataTemplate<CatalogReleaseOption>((release, _) =>
+                    release is null ? null : DeveloperVersionRow(release)),
                 SelectedIndex = Array.IndexOf(allowed, selected),
                 MaxHeight = 230,
                 Background = SurfaceBrush
             }, "developer-version-list", "허용된 버전");
             ScrollViewer.SetHorizontalScrollBarVisibility(list, Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled);
+            list.ContainerPrepared += (_, args) =>
+            {
+                var release = allowed[args.Index];
+                if (args.Container is ListBoxItem row)
+                    row.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+                Identify(args.Container, "developer-version-" + release.Version, $"{release.Version}, {DeveloperRecommendationLabel(release)}");
+            };
             _selectionControls.Add(list);
             list.SelectionChanged += (_, _) =>
             {
@@ -194,7 +203,7 @@ public sealed partial class MainWindow
                 if (!MatchingReleases().Contains(release)) return;
                 _config.VersionPolicy = "exact";
                 _config.RequestedVersion = release.Version;
-                _workspaceFocus = AutomationProperties.GetAutomationId(items[list.SelectedIndex]);
+                _workspaceFocus = "developer-version-" + release.Version;
                 SelectionChanged();
                 Build();
             };
@@ -205,7 +214,7 @@ public sealed partial class MainWindow
         return Card(body);
     }
 
-    private ListBoxItem DeveloperVersionItem(CatalogReleaseOption release)
+    private Control DeveloperVersionRow(CatalogReleaseOption release)
     {
         var firstLine = release.Notes?.Split(['\r', '\n'], 2)[0].Trim();
         var details = new StackPanel { Spacing = LauncherVisualTokens.SpaceXs };
@@ -221,11 +230,7 @@ public sealed partial class MainWindow
             preview.TextTrimming = TextTrimming.CharacterEllipsis;
             details.Children.Add(preview);
         }
-        return Identify(new ListBoxItem
-        {
-            Content = details,
-            HorizontalContentAlignment = HorizontalAlignment.Stretch
-        }, "developer-version-" + release.Version, $"{release.Version}, {DeveloperRecommendationLabel(release)}");
+        return details;
     }
 
     private Control DeveloperBuildInformation()

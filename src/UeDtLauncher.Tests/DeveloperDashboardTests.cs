@@ -27,16 +27,20 @@ public class DeveloperDashboardTests
             ? [Release("2.0.0", false, "이 버전의 첫 줄\r\n두 번째 줄"), Release("1.0.0", true)]
             : [Release("1.0.0", true)]);
         var window = fixture.Window;
-        var rows = Find<ListBox>(window, "developer-version-list").Items.Cast<ListBoxItem>().ToArray();
-        Assert.Equal(exactGrant ? ["developer-version-2.0.0", "developer-version-1.0.0"] : new[] { "developer-version-1.0.0" },
-            rows.Select(Id));
-        Assert.Contains("현재 추천", Labels(rows[^1]));
+        var list = Find<ListBox>(window, "developer-version-list");
+        var versions = list.Items.Cast<CatalogReleaseOption>().ToArray();
+        Assert.Equal(exactGrant ? ["2.0.0", "1.0.0"] : new[] { "1.0.0" }, versions.Select(release => release.Version));
+        list.BringIntoView();
+        Dispatcher.UIThread.RunJobs();
+        var rows = versions.Select(item => Assert.IsType<ListBoxItem>(list.ContainerFromItem(item))).ToArray();
+        Assert.Equal("developer-version-1.0.0", Id(rows[^1]));
+        Assert.Contains("현재 추천", RowLabels(rows[^1]));
         Assert.Contains("현재 추천", Labels(Find<Border>(window, "release-info")));
         if (exactGrant)
         {
-            Assert.Contains("추천 아님", Labels(rows[0]));
-            Assert.Contains("이 버전의 첫 줄", Labels(rows[0]));
-            Assert.DoesNotContain("두 번째 줄", Labels(rows[0]));
+            Assert.Contains("추천 아님", RowLabels(rows[0]));
+            Assert.Contains("이 버전의 첫 줄", RowLabels(rows[0]));
+            Assert.DoesNotContain("두 번째 줄", RowLabels(rows[0]));
             Find<ListBox>(window, "developer-version-list").SelectedIndex = 0;
             Dispatcher.UIThread.RunJobs();
             Assert.Equal("exact", fixture.Model.Config.VersionPolicy);
@@ -90,17 +94,14 @@ public class DeveloperDashboardTests
     [AvaloniaFact]
     public async Task HistoryCopiesFilteredKoreanSummaryAndKeepsOriginalBytes()
     {
-        using var fixture = new Fixture([Release("1.0.0", true)]);
+        var raw = "파일 C:\\fixture\\build\\game.exe\nAuthorization: Bearer fixture-secret";
+        var backend = new Backend { DownloadMessage = raw, CheckError = new IOException("fixture-secret /var/private/path") };
+        using var fixture = new Fixture([Release("1.0.0", true)], backend: backend);
         var window = fixture.Window;
-        var history = Presentation(window);
-        history.Begin(LauncherUiOperation.Update);
-        history.Stage("Download");
-        var raw = "[Download] 파일 C:\\fixture\\build\\game.exe\nAuthorization: Bearer fixture-secret";
-        Invoke(window, "AppendLog", raw, true);
-        history.Complete("완료 C:\\fixture\\private");
-        history.Begin(LauncherUiOperation.Check);
-        Invoke(window, "SetErrorDetails", LauncherUiError.From(new IOException("fixture-secret /var/private/path")));
-        var bytes = Encoding.UTF8.GetBytes(history.LogText);
+        await (Task)Invoke(window, "RunAsync", false, false, null)!;
+        await (Task)Invoke(window, "RefreshInstallStatusAsync", true)!;
+        var log = Presentation(window);
+        var bytes = Encoding.UTF8.GetBytes(log.LogText);
         var summary = Find<TextBox>(window, "developer-history-summary");
         Assert.Matches(@"\d{2}:\d{2}:\d{2}  ·  업데이트 / 파일 준비  ·  진행 중", summary.Text!);
         Assert.Contains("완료", summary.Text);
@@ -118,7 +119,81 @@ public class DeveloperDashboardTests
         Assert.Equal(summary.Text, copied);
         foreach (var hidden in new[] { "fixture-secret", "Authorization", "C:\\fixture", "/var/private" })
             Assert.DoesNotContain(hidden, copied!);
-        Assert.Equal(bytes, Encoding.UTF8.GetBytes(history.LogText));
+        Assert.Equal(bytes, Encoding.UTF8.GetBytes(log.LogText));
+    }
+
+    [AvaloniaFact]
+    public async Task TroubleshootEntryRecordsOneStartAndOutcome()
+    {
+        var backend = new Backend();
+        using var fixture = new Fixture([Release("1.0.0", true)], backend: backend);
+        await (Task)Invoke(fixture.Window, "TroubleshootAsync")!;
+
+        Assert.Equal(1, backend.Checks);
+        Assert.Equal(0, backend.Executions);
+        Assert.Equal([LauncherHistoryResult.Started, LauncherHistoryResult.Completed],
+            History(fixture.Window).Where(entry => entry.Operation == "문제 해결").Select(entry => entry.Result));
+    }
+
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LaunchEntryRecordsOneTerminalOutcomeAndNamesSkippedLaunch(bool skipped)
+    {
+        var backend = new Backend
+        {
+            Runtime = skipped ? RuntimeState.Quiescent : RuntimeState.Running,
+            Completion = skipped ? LauncherUiCompletion.CommittedLaunchSkipped : LauncherUiCompletion.Completed
+        };
+        using var fixture = new Fixture([Release("1.0.0", true)], backend: backend);
+        var window = fixture.Window;
+        var action = (Task)Invoke(window, "RunAsync", false, true, null)!;
+        Dispatcher.UIThread.RunJobs();
+        var dialogs = (List<Window>)Field(window, "_openDialogs");
+        var confirm = Assert.Single(dialogs).GetVisualDescendants().OfType<Button>().Single(button => Id(button) == "dialog-confirm");
+        confirm.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await action;
+        Assert.Equal(1, backend.Executions);
+        Assert.Equal([LauncherHistoryResult.Started, skipped ? LauncherHistoryResult.Skipped : LauncherHistoryResult.Completed],
+            History(window).Where(entry => entry.Operation == "실행").Select(entry => entry.Result));
+        Assert.Equal(skipped, History(window).Any(entry => entry.Operation == "설치" && entry.Result == LauncherHistoryResult.Completed));
+    }
+
+    [AvaloniaFact]
+    public async Task RestoreEntryKeepsAppliedResultWhenItsFollowUpFails()
+    {
+        var backend = new Backend { CheckError = new IOException("Read after restore failed.") };
+        using var fixture = new Fixture([Release("1.0.0", true)], backend: backend,
+            restore: (_, _) => Task.FromResult(new LauncherRestoreResult(LauncherRestoreDisposition.Applied)));
+        var window = fixture.Window;
+        var context = (LauncherUiOperationContext)Invoke(window, "CaptureUiOperation", (object?)null)!;
+        var config = ManagedClientContext.Create(fixture.Model.Config);
+        context.Pin(config);
+        ManagedClientContext.Bind(config, context.Selection!);
+        var preview = new RollbackPreview("backup", new string('0', 64), "2026-11-26", "1.0.0", "0.9.0", false, true);
+        await (Task)Invoke(window, "RestoreUiPreviewAsync", context, config, preview)!;
+
+        Assert.Equal(1, backend.Checks);
+        Assert.Collection(History(window),
+            row => Assert.Equal(("백업 복원", LauncherHistoryResult.Started), (row.Operation, row.Result)),
+            row => Assert.Equal(("백업 복원", LauncherHistoryResult.Completed), (row.Operation, row.Result)),
+            row => Assert.Equal(("상태 확인", LauncherHistoryResult.Started), (row.Operation, row.Result)),
+            row => Assert.Equal(("상태 확인", LauncherHistoryResult.Failed), (row.Operation, row.Result)));
+    }
+
+    [AvaloniaFact]
+    public async Task ZipFailureBelongsToExportAndDoesNotRelabelEarlierWork()
+    {
+        using var fixture = new Fixture([Release("1.0.0", true)], backend: new Backend());
+        var window = fixture.Window;
+        await (Task)Invoke(window, "RunAsync", false, false, null)!;
+        Directory.CreateDirectory(fixture.Root);
+        File.WriteAllText(Path.Combine(fixture.Root, "support"), "occupied");
+        Assert.False(await (Task<bool>)Invoke(window, "ExportLogsZipAsync")!);
+
+        var error = Assert.Single(History(window), entry => entry.Result == LauncherHistoryResult.Failed);
+        Assert.Equal(("로그 ZIP 저장", "저장"), (error.Operation, error.Stage));
+        Assert.Single(History(window), entry => entry.Operation == "업데이트" && entry.Result == LauncherHistoryResult.Completed);
     }
 
     [AvaloniaFact]
@@ -140,7 +215,10 @@ public class DeveloperDashboardTests
         }
         var list = Find<ListBox>(window, "developer-version-list");
         Assert.Equal(20, list.Items.Count);
-        var first = Assert.IsType<ListBoxItem>(list.SelectedItem);
+        list.BringIntoView();
+        Dispatcher.UIThread.RunJobs();
+        Assert.InRange(list.GetVisualDescendants().OfType<ListBoxItem>().Count(), 1, 19);
+        var first = Assert.IsType<ListBoxItem>(list.ContainerFromItem(list.SelectedItem!));
         Assert.True(first.Focus(NavigationMethod.Tab));
         window.KeyPressQwerty(PhysicalKey.ArrowDown, Avalonia.Input.RawInputModifiers.None);
         Dispatcher.UIThread.RunJobs();
@@ -152,6 +230,7 @@ public class DeveloperDashboardTests
         }
         Assert.Equal("1.0.20", fixture.Model.Config.RequestedVersion);
         list = Find<ListBox>(window, "developer-version-list");
+        Assert.InRange(list.GetVisualDescendants().OfType<ListBoxItem>().Count(), 1, 19);
         var listScroll = list.GetVisualDescendants().OfType<ScrollViewer>().First();
         Assert.True(listScroll.Offset.Y > 0);
 
@@ -176,6 +255,7 @@ public class DeveloperDashboardTests
             Version = version, IsLatest = latest, Notes = notes };
 
     private static IEnumerable<string?> Labels(Control root) => root.GetLogicalDescendants().OfType<TextBlock>().Select(text => text.Text);
+    private static IEnumerable<string?> RowLabels(ListBoxItem row) => row.GetVisualDescendants().OfType<TextBlock>().Select(text => text.Text);
 
     private static string? Id(Control control) => AutomationProperties.GetAutomationId(control);
 
@@ -188,16 +268,59 @@ public class DeveloperDashboardTests
     private static void SetField(MainWindow window, string name, object value) =>
         typeof(MainWindow).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, value);
 
-    private static object? Invoke(MainWindow window, string name, params object[] args) =>
+    private static object Field(MainWindow window, string name) =>
+        typeof(MainWindow).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+
+    private static IEnumerable<LauncherHistoryEntry> History(MainWindow window) =>
+        (IEnumerable<LauncherHistoryEntry>)Field(window, "_developerHistory");
+
+    private static object? Invoke(MainWindow window, string name, params object?[] args) =>
         typeof(MainWindow).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, args);
+
+    private sealed class Backend : ILauncherUiBackend
+    {
+        public string? DownloadMessage { get; init; }
+        public Exception? CheckError { get; init; }
+        public RuntimeState Runtime { get; init; } = RuntimeState.Quiescent;
+        public LauncherUiCompletion Completion { get; init; } = LauncherUiCompletion.Completed;
+        public int Checks { get; private set; }
+        public int Executions { get; private set; }
+
+        public Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext context, LauncherConfig config,
+            Action<LauncherProgress> progress, CancellationToken token = default)
+        {
+            Checks++;
+            return CheckError is { } error ? Task.FromException<LauncherUiOperationResult>(error)
+                : Task.FromResult(Result(context, config, LauncherUiCompletion.Checked));
+        }
+
+        public Task<LauncherUiOperationResult> ExecuteAsync(LauncherUiOperationContext context, LauncherConfig config,
+            bool repair, bool launch, Action<LauncherProgress> progress, FileLogger? logger, CancellationToken token = default)
+        {
+            Executions++;
+            if (DownloadMessage is { } message) progress(new("Download", message, 10));
+            return Task.FromResult(Result(context, config, Completion));
+        }
+
+        private LauncherUiOperationResult Result(LauncherUiOperationContext context, LauncherConfig config, LauncherUiCompletion completion)
+        {
+            context.Pin(config);
+            ManagedClientContext.Bind(config, context.Selection!);
+            var version = context.Selection!.Version;
+            return new(config, context.Selection, new(true, version, version, false, 0, 0, false),
+                new(Runtime, "fixture", "fixture"), completion);
+        }
+    }
 
     private sealed class Fixture : IDisposable
     {
         private readonly string _root = Path.Combine(Path.GetTempPath(), "uedt-developer-dashboard-" + Guid.NewGuid().ToString("N"));
+        public string Root => _root;
         public MainWindow Window { get; }
         public LauncherDashboardViewModel Model { get; }
 
-        public Fixture(CatalogReleaseOption[] allowed, bool managed = true, double width = 1280, double height = 720)
+        public Fixture(CatalogReleaseOption[] allowed, bool managed = true, double width = 1280, double height = 720,
+            ILauncherUiBackend? backend = null, Func<LauncherConfig, RollbackPreview, Task<LauncherRestoreResult>>? restore = null)
         {
             var config = new LauncherConfig
             {
@@ -219,7 +342,8 @@ public class DeveloperDashboardTests
                         Release("8.8.8", false, environment: "dev"), Release("9.9.9", false, platform: "other-platform")]
                 }
             };
-            Window = new(new(Path.Combine(_root, "display.json"), LauncherConfigSource.Explicit, false), Model, new(), false);
+            Window = new(new(Path.Combine(_root, "display.json"), LauncherConfigSource.Explicit, false), Model, new(), false,
+                backend, restorePreview: restore, preferencesPath: Path.Combine(_root, "ui-preferences.json"));
             Window.Width = width;
             Window.Height = height;
             Window.Show();

@@ -31,6 +31,7 @@ public sealed partial class MainWindow : Window
 
     private async void OpenInstallFolder()
     {
+        var history = BeginDeveloperHistory("설치 폴더 열기");
         try
         {
             var path = SelectedInstallDirectory() ?? throw new InvalidOperationException("선택한 배포의 상태를 먼저 확인해 주세요.");
@@ -41,9 +42,11 @@ public sealed partial class MainWindow : Window
                     FileName = PortableMaintenance.ExistingFolder(path), UseShellExecute = true
                 });
             });
+            history?.Finish(LauncherHistoryResult.Completed);
         }
         catch (Exception ex)
         {
+            history?.Finish(LauncherHistoryResult.Failed);
             AppendLog("폴더를 열 수 없습니다: " + FriendlyError(ex), true);
             SetStatus("설치 폴더를 확인할 수 없습니다. 상태를 먼저 확인해 주세요.");
         }
@@ -53,6 +56,7 @@ public sealed partial class MainWindow : Window
         if (_running) return;
         if (_readOnlyRecoveryFollowUp) { await RefreshInstallStatusAsync(); return; }
         _running = true; SetBusy(true);
+        var history = BeginDeveloperHistory(backups ? "백업 정리" : "임시 파일 정리");
         try
         {
             var context = CaptureUiOperation();
@@ -65,23 +69,30 @@ public sealed partial class MainWindow : Window
             foreach (var message in messages) AppendLog(message, true);
             if (result.FailedCount > 0 || !result.ResumeRecordsPreserved)
             {
+                history?.Finish(LauncherHistoryResult.Failed);
                 AppendLog($"정리 결과: 삭제 {result.RemovedCount}개 / 실패 {result.FailedCount}개 / 남은 {result.RemainingCount}개", true);
                 MarkError(new AgentOperationException("maintenance-partial", Guid.NewGuid().ToString("N"), "사용 중인 파일과 권한을 확인한 뒤 정리를 다시 시도해 주세요."), backups ? "일부 백업 정리 필요" : "일부 임시 파일 정리 필요", showDialog: false);
             }
             else
             {
+                history?.Finish(LauncherHistoryResult.Completed);
                 var title = backups ? $"백업 정리 완료 · 삭제 {result.RemovedCount}개 · 남은 {result.RemainingCount}개 (보관 기준 {config.MaxBackupCount}개)" : "임시 파일 정리 완료 · 이어받기 기록 보존";
                 BeginReadOnlyFollowUp("정리 완료");
+                var followUp = BeginDeveloperHistory("상태 확인", "재확인");
                 try
                 {
-                    var checkedResult = await _uiBackend.CheckAsync(context, config, CreateUiProgress());
+                    var checkedResult = await _uiBackend.CheckAsync(context, config, CreateUiProgress(followUp));
                     if (ApplyUiResult(context, checkedResult)) { _presentation.Complete(title); _presentation.Retry = null; Build(); }
+                    FinishHistoryForObservation(followUp, checkedResult.Runtime, "재확인");
                 }
                 catch (Exception error)
-                { _readOnlyRecoveryFollowUp = true; _presentation.Retry = CurrentContext(LauncherUiOperation.Check); MarkError(error, "정리 완료 · 상태 재확인 필요", showDialog: false); }
+                {
+                    followUp?.Finish(LauncherHistoryResult.Failed, "재확인");
+                    _readOnlyRecoveryFollowUp = true; _presentation.Retry = CurrentContext(LauncherUiOperation.Check); MarkError(error, "정리 완료 · 상태 재확인 필요", showDialog: false);
+                }
             }
         }
-        catch (Exception ex) { MarkError(ex, "정리할 수 없습니다", showDialog: false); }
+        catch (Exception ex) { history?.Finish(LauncherHistoryResult.Failed); MarkError(ex, "정리할 수 없습니다", showDialog: false); }
         finally { FinishUiOperation(); }
     }
     private async void ClearCache() => await RunMaintenanceAsync(false);
@@ -89,7 +100,7 @@ public sealed partial class MainWindow : Window
     private void ClearLog()
     {
         _presentation.Logs.Clear();
-        _presentation.History.Clear();
+        _developerHistory.Clear();
         if (_logBox is not null) _logBox.Text = string.Empty;
     }
     private string UserLogDirectory() => _config.IsManagedDeployment
@@ -119,9 +130,10 @@ public sealed partial class MainWindow : Window
 
     private async Task<bool> ExportLogsZipAsync()
     {
+        var history = BeginDeveloperHistory("로그 ZIP 저장", "저장");
         try
         {
-            var support = Path.Combine(Path.GetDirectoryName(LauncherUiPreferences.DefaultPath)!, "support");
+            var support = Path.Combine(Path.GetDirectoryName(_preferencesPath ?? LauncherUiPreferences.DefaultPath)!, "support");
             var log = _presentation.LogText;
             var doctor = _lastDoctorReport;
             var zip = await Task.Run(() =>
@@ -142,9 +154,15 @@ public sealed partial class MainWindow : Window
             });
             SetStatus("지원 로그 ZIP을 사용자 지원 폴더에 저장했습니다.");
             AppendLog(IsDeveloper ? "지원 로그 저장: " + zip : "지원 로그 ZIP 저장 완료", true);
+            history?.Finish(LauncherHistoryResult.Completed);
             return true;
         }
-        catch (Exception ex) { MarkError(ex, "지원 로그 저장 실패", showDialog: IsDeveloper); return false; }
+        catch (Exception ex)
+        {
+            history?.Finish(LauncherHistoryResult.Failed);
+            MarkError(ex, "지원 로그 저장 실패", showDialog: IsDeveloper);
+            return false;
+        }
     }
 
     private string StorageSummary() => _config.IsManagedDeployment ? "업데이트 서비스에서 관리" : $"임시 파일 {FormatBytes(DirSize(SelectedStatePaths.StagingDir))} / 백업 {FormatBytes(DirSize(SelectedStatePaths.BackupDir))}";

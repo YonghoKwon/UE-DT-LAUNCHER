@@ -50,7 +50,6 @@ public sealed partial class MainWindow
 
     private void SetErrorDetails(LauncherUiError error)
     {
-        _presentation.RecordHistory(LauncherHistoryResult.Failed);
         _presentation.ErrorCode = error.Code;
         _presentation.SupportId = error.SupportId;
         _errorTime = DateTimeOffset.Now;

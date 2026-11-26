@@ -59,6 +59,7 @@ public sealed partial class MainWindow : Window
     {
         var requested = DisplaySelectionContext();
         var ownsBusy = !_running;
+        var history = BeginDeveloperHistory("배포 목록");
         if (ownsBusy) { BeginOperation(LauncherUiOperation.Catalog); _running = true; SetBusy(true); }
         try
         {
@@ -71,14 +72,14 @@ public sealed partial class MainWindow : Window
             _presentation.ErrorCode = null; _presentation.SupportId = null;
             _catalogState = _catalog.Status;
             MergeCatalogProjects();
-            if (ownsBusy && IsDeveloper && HasProject)
-                _presentation.RecordHistory(LauncherHistoryResult.Completed);
             if (HasProject && requested != DisplaySelectionContext()) InvalidateDisplayedInstallation();
             UpdateReleaseNotes();
+            history?.Finish(HasProject ? LauncherHistoryResult.Completed : LauncherHistoryResult.Waiting);
             return true;
         }
         catch (Exception ex)
         {
+            history?.Finish(LauncherHistoryResult.Failed);
             _catalogState = "카탈로그 오류";
             MarkError(ex, "카탈로그 확인 실패", showDialog: !suppressDialog);
             return false;
@@ -171,7 +172,7 @@ public sealed partial class MainWindow : Window
         _viewModel.GeneralState = GeneralLauncherState.AwaitingPromotion;
         _installState = "실행 버전 지정 대기"; _installDetail = "관리자가 실행 버전을 지정하지 않았습니다.";
         _presentation.ErrorCode = null; _presentation.SupportId = null; _presentation.Retry = null;
-        _presentation.Complete(_installDetail, showCompletion: false, LauncherHistoryResult.Waiting); Build();
+        _presentation.Complete(_installDetail, showCompletion: false); Build();
     }
 
     private async Task RunAsync(bool repair, bool launch, ReleaseSelection? expectedSelection = null)
@@ -179,27 +180,53 @@ public sealed partial class MainWindow : Window
         if (_running) return;
         if (_readOnlyRecoveryFollowUp) { await RefreshInstallStatusAsync(); return; }
         _running = true; SetBusy(true);
+        var operation = launch ? LauncherUiOperation.Launch : repair ? LauncherUiOperation.Repair : LauncherUiOperation.Update;
+        var history = BeginDeveloperHistory(launch ? "실행" : repair ? "복구" : "업데이트");
         using var operationCancellation = new CancellationTokenSource();
         RecommendationChange? recommendation = null;
         try
         {
             var context = CaptureUiOperation(expectedSelection);
-            if (IsDeveloper && launch && !await ConfirmDevLaunch(context)) return;
+            if (IsDeveloper && launch && !await ConfirmDevLaunch(context))
+            {
+                history?.Finish(LauncherHistoryResult.Cancelled);
+                return;
+            }
             recommendation = CheckedRecommendationFor(context);
-            BeginOperation(launch ? LauncherUiOperation.Launch : repair ? LauncherUiOperation.Repair : LauncherUiOperation.Update);
+            BeginOperation(operation);
             Progress(0); ResetSpeedTracking(); StartCancellableUiOperation(operationCancellation);
             var config = await RunConfig(repair, launch);
-            if (!await CanMutateRecommendationAsync(context, null, operationCancellation.Token)) return;
-            var result = await _uiBackend.ExecuteAsync(context, config, repair, launch, CreateUiProgress(), _fileLogger, operationCancellation.Token);
+            if (!await CanMutateRecommendationAsync(context, null, operationCancellation.Token))
+            {
+                history?.Finish(LauncherHistoryResult.Waiting);
+                return;
+            }
+            var result = await _uiBackend.ExecuteAsync(context, config, repair, launch, CreateUiProgress(history), _fileLogger, operationCancellation.Token);
+            if (history is not null) ValidateUiResult(context, result);
             _resumeOperation = null;
             if (_presentation.Committing || result.Completion == LauncherUiCompletion.CommittedLaunchSkipped) ShowInstallationNotice(result);
-            if (result.Completion == LauncherUiCompletion.CommittedRefreshRequired) { CommittedUiRefreshRequired(failure: result.FollowUpFailure); return; }
+            if (result.Completion == LauncherUiCompletion.CommittedRefreshRequired)
+            {
+                if (launch) RecordDeveloperHistory("설치", "적용", LauncherHistoryResult.Completed);
+                var outcome = !launch ? LauncherHistoryResult.Completed : result.FollowUpFailure?.Stage == "Launch"
+                    ? LauncherHistoryResult.Failed : LauncherHistoryResult.Unknown;
+                history?.Finish(outcome, launch ? "실행" : null);
+                CommittedUiRefreshRequired(failure: result.FollowUpFailure);
+                return;
+            }
             _presentation.Complete(result.Completion == LauncherUiCompletion.CommittedLaunchSkipped ? "설치 완료 · 프로그램 실행은 생략했습니다." : launch ? "실행 준비 완료" : repair ? "파일 복구 완료" : "업데이트 확인 완료");
-            if (ApplyUiResult(context, result)) Build();
+            var ready = ApplyUiResult(context, result);
+            if (launch && result.Completion == LauncherUiCompletion.CommittedLaunchSkipped)
+            {
+                RecordDeveloperHistory("설치", "적용", LauncherHistoryResult.Completed);
+                history?.Finish(LauncherHistoryResult.Skipped, "실행");
+            }
+            else FinishHistoryForObservation(history, result.Runtime, launch ? "실행" : null);
+            if (ready) Build();
         }
-        catch (LauncherUiCancelledException cancelled) { RecordCancelledOperation(cancelled.Operation,cancelled.RetainedPartialDownload,recommendation); }
-        catch (OperationCanceledException) { RecordCancelledOperation(null); }
-        catch (Exception ex) { MarkError(ex); }
+        catch (LauncherUiCancelledException cancelled) { history?.Finish(LauncherHistoryResult.Cancelled); RecordCancelledOperation(cancelled.Operation,cancelled.RetainedPartialDownload,recommendation); }
+        catch (OperationCanceledException) { history?.Finish(LauncherHistoryResult.Cancelled); RecordCancelledOperation(null); }
+        catch (Exception ex) { history?.Finish(ex is NoPromotedReleaseException ? LauncherHistoryResult.Waiting : LauncherHistoryResult.Failed); MarkError(ex); }
         finally { FinishUiOperation(); }
     }
 
@@ -207,15 +234,16 @@ public sealed partial class MainWindow : Window
     {
         if (_running) return;
         if (!HasProject) { await RefreshCatalog(true, suppressDialog: true); return; }
+        var history = BeginDeveloperHistory("상태 확인");
         if (_catalog.SelectionPolicy == CatalogRecommendation.ExplicitPolicy && _config.VersionPolicy != "exact" && SelectedCatalogRelease() is null)
-        { AwaitPromotion(); return; }
+        { history?.Finish(LauncherHistoryResult.Waiting); AwaitPromotion(); return; }
         _running = true; SetBusy(true);
         _checkedRecommendation = null;
         try
         {
             var context = CaptureUiOperation();
             BeginOperation(LauncherUiOperation.Check); _viewModel.GeneralState = GeneralLauncherState.Checking; Progress(0); Build();
-            var result = await _uiBackend.CheckAsync(context, await RunConfig(false, false), CreateUiProgress());
+            var result = await _uiBackend.CheckAsync(context, await RunConfig(false, false), CreateUiProgress(history));
             ValidateUiResult(context, result);
             var change = !IsDeveloper
                 ? RecommendationChange.Find(context.VersionPolicy, SelectedCatalogRelease(), result.Status)
@@ -225,9 +253,10 @@ public sealed partial class MainWindow : Window
                 : null;
             if (ApplyUiResult(context, result) && (change is null || !ApplyPreviousRuntimeBlock(priorRuntime)))
             { _presentation.Complete(_installState); Build(); }
+            FinishHistoryForObservation(history, result.Runtime);
             _checkedRecommendation = change;
         }
-        catch (Exception ex) { MarkError(ex, "상태 확인 실패", showDialog: !suppressDialog); }
+        catch (Exception ex) { history?.Finish(LauncherHistoryResult.Failed); MarkError(ex, "상태 확인 실패", showDialog: !suppressDialog); }
         finally { FinishUiOperation(); }
         if (!_showStartupSkeleton && _checkedRecommendation is not null) OfferRecommendationChange();
     }
@@ -237,6 +266,8 @@ public sealed partial class MainWindow : Window
         if (_running) return;
         if (_readOnlyRecoveryFollowUp) { await RefreshInstallStatusAsync(); return; }
         _running = true; SetBusy(true);
+        var history = BeginDeveloperHistory("문제 해결");
+        LauncherHistoryOperation? followUp = null;
         BeginOperation(LauncherUiOperation.Troubleshoot);
         LauncherUiOperationContext? context = null;
         LauncherConfig? config = null;
@@ -248,23 +279,29 @@ public sealed partial class MainWindow : Window
         {
             if (UsesDistributionServer && _catalog.Releases.Count == 0)
             {
-                if (!await RefreshCatalog(false, suppressDialog: true) || !HasProject) return;
+                if (!await RefreshCatalog(false, suppressDialog: true) || !HasProject)
+                {
+                    history?.Finish(LauncherHistoryResult.Waiting);
+                    return;
+                }
             }
             context = CaptureUiOperation(); _presentation.Retry = CurrentContext(LauncherUiOperation.Troubleshoot); config = await RunConfig(false, false);
             BeginOperation(LauncherUiOperation.Troubleshoot); Progress(0); StartCancellableUiOperation(cancellation);
-            checkedResult = await _uiBackend.CheckAsync(context, config, CreateUiProgress(), cancellation.Token);
+            checkedResult = await _uiBackend.CheckAsync(context, config, CreateUiProgress(history), cancellation.Token);
             ValidateUiResult(context, checkedResult); _viewModel.RequireRuntimeQuiescent(checkedResult.Runtime);
             var action = LauncherUiOperations.TroubleshootAction(checkedResult.Status);
             if (action == LauncherTroubleshootAction.Repair)
             {
                 repairAttempted = true;
-                var repaired = await _uiBackend.ExecuteAsync(context, config, true, false, CreateUiProgress(), _fileLogger, cancellation.Token);
+                var repaired = await _uiBackend.ExecuteAsync(context, config, true, false, CreateUiProgress(history), _fileLogger, cancellation.Token);
                 ValidateUiResult(context, repaired);
                 repairCommitted = true; ClearResumeAfterMutation(context);
+                history?.Finish(LauncherHistoryResult.Completed, "복구");
                 if (repaired.Completion == LauncherUiCompletion.CommittedRefreshRequired || cancellation.IsCancellationRequested) { CommittedUiRefreshRequired("파일 복구 완료", repaired.FollowUpFailure); return; }
+                followUp = BeginDeveloperHistory("상태 확인", "재확인");
                 BeginReadOnlyFollowUp("파일 복구 완료");
                 _viewModel.RequireRuntimeQuiescent(repaired.Runtime);
-                checkedResult = await _uiBackend.CheckAsync(context, config, CreateUiProgress());
+                checkedResult = await _uiBackend.CheckAsync(context, config, CreateUiProgress(followUp));
                 if (checkedResult.Status.UpdateRequired) throw new InvalidDataException("파일 복구 후 검증을 완료하지 못했습니다.");
             }
             if (ApplyUiResult(context, checkedResult))
@@ -272,16 +309,19 @@ public sealed partial class MainWindow : Window
                 _presentation.Complete(action == LauncherTroubleshootAction.OfferInstall ? "확인 완료 · 설치/업데이트가 필요합니다." : repairAttempted ? "파일 복구 완료" : "설치 상태 점검 완료", showCompletion: repairAttempted);
                 Build();
             }
+            FinishHistoryForObservation(repairCommitted ? followUp : history, checkedResult.Runtime);
         }
         catch (Exception ex)
         {
             if (repairCommitted)
             {
+                followUp?.Finish(LauncherHistoryResult.Failed, "재확인");
                 _readOnlyRecoveryFollowUp = true;
                 _presentation.Retry = CurrentContext(LauncherUiOperation.Check);
                 MarkError(ex, "파일 복구 완료 · 상태 재확인 필요", showDialog: false);
                 return;
             }
+            history?.Finish(ex is OperationCanceledException ? LauncherHistoryResult.Cancelled : LauncherHistoryResult.Failed);
             var offer = LauncherDashboardViewModel.CanOfferRecoveryRollback(repairAttempted, checkedResult?.Status.HasBackup == true, ex);
             if (ex is LauncherUiCancelledException cancelled) { RecordCancelledOperation(cancelled.Operation,cancelled.RetainedPartialDownload); return; }
             if (ex is OperationCanceledException) { RecordCancelledOperation(null); return; }
@@ -309,6 +349,7 @@ public sealed partial class MainWindow : Window
         var previousPresentation = _presentation.Capture();
         var previousState = _viewModel.GeneralState;
         _running = true; SetBusy(true);
+        var applying = false;
         try
         {
             var context = CaptureUiOperation();
@@ -327,9 +368,14 @@ public sealed partial class MainWindow : Window
             if (!await ConfirmPreviewAsync(preview))
             { _presentation.Restore(previousPresentation); _viewModel.GeneralState = previousState; return; }
             BeginOperation(LauncherUiOperation.Rollback);
+            applying = true;
             await RestoreUiPreviewAsync(context, config, preview);
         }
-        catch (Exception ex) { MarkError(ex, "백업 복원 실패"); }
+        catch (Exception ex)
+        {
+            if (!applying) RecordDeveloperHistory("백업 복원", "준비", LauncherHistoryResult.Failed);
+            MarkError(ex, "백업 복원 실패");
+        }
         finally { FinishUiOperation(); }
     }
 

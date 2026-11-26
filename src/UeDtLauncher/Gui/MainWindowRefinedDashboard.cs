@@ -102,8 +102,7 @@ public sealed partial class MainWindow : Window
         _allowAutomaticChecks = startServices;
         _preferencesPath = preferencesPath;
         if (model is not null) _viewModel = model;
-        _presentation.TracksHistory = IsDeveloper;
-        if (IsDeveloper) _presentation.History.CollectionChanged += (_, _) => RefreshDeveloperHistory();
+        if (IsDeveloper) _developerHistory.CollectionChanged += (_, _) => RefreshDeveloperHistory();
         _preferences = preferences ?? (startServices ? LauncherUiPreferences.Load(preferencesPath) : new());
         InitializeComponent();
         if (model is null) LoadConfig(); else SelectProject();
@@ -172,6 +171,7 @@ public sealed partial class MainWindow : Window
                 _installDetail = "업데이트 서비스에 연결한 뒤 다시 확인해 주세요.";
                 _viewModel.GeneralState = GeneralLauncherState.RecoverableError;
                 _presentation.Title = "업데이트 서비스 연결이 필요합니다"; _presentation.Percent = null;
+                RecordDeveloperHistory("서비스 연결", "확인", LauncherHistoryResult.Failed);
                 SetErrorDetails(LauncherUiError.From(new AgentConnectionException(new IOException())));
                 return;
             }
@@ -222,6 +222,7 @@ public sealed partial class MainWindow : Window
                 ? new AgentOperationException("not-configured", Guid.NewGuid().ToString("N"), "Launcher display configuration is missing.")
                 : new ArgumentException("Invalid launcher configuration.", failure));
             _presentation.Title = "런처 설정을 확인해 주세요.";
+            RecordDeveloperHistory("화면 설정", "확인", LauncherHistoryResult.Failed);
             SetErrorDetails(error);
             _installState = "설정 확인 필요";
             _installDetail = missing && IsDeveloper ? $"설정 파일이 없습니다: {ConfigPath}" : error.Message;
