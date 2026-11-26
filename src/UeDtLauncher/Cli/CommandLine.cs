@@ -18,6 +18,7 @@ public static partial class Program
         "--catalog",
         "--catalog-profile",
         "--channel",
+        "--client",
         "--config",
         "--credential-name",
         "--deployment-mode",
@@ -111,6 +112,9 @@ public static partial class Program
         output.WriteLine("    [--server-url http://10.20.30.40] [--project-id id] [--platform windows-x64|linux-x64] [--profile general|developer]");
         output.WriteLine("    [--deployment-mode managed-agent|portable] [--auth request-signature-v1|bearer] [--credential-name name] [--signing-key-id id] [--public-key path]");
         output.WriteLine("  credential keygen --name name --key-id pc-key --public-out device-public.json [--storage managed|portable]");
+        output.WriteLine("  enroll prepare --name name --key-id id --client pc-id --output folder [--storage managed|portable] [--force]");
+        output.WriteLine("  enroll finish --server-url origin --project-id id --platform windows-x64|linux-x64 --credential-name name --signing-key-id id --public-key pem --output config.json [--storage managed|portable] [--force]");
+        output.WriteLine("    Enrollment defaults to managed storage. Finish saves <output>.doctor.json and does not restart services.");
         output.WriteLine("  operation status|cancel|resume|discard --id <operation-id> [--config portable.json] [--endpoint pipe-or-socket]");
         output.WriteLine("  scheduled-check --config <config.json> (one query/status cycle; default disabled, explicit interval required; never installs/starts apps)");
         output.WriteLine("  run --config config.json [--operation-id <32-hex-id>] [--no-launch]; persistent resume requires performance.resumeCacheBytes");

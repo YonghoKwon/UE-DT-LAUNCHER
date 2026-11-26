@@ -29,6 +29,7 @@ public sealed class DistributionSettings
 public sealed class IntakeStore
 {
     private readonly Func<string, long>? availableBytes;
+    private readonly string? enrollmentReadOnlyDatabase;
     private string? scanCursor;
     private const string JobColumns = "id,source,state,snapshot,message,phase,processed_bytes,total_bytes,estimated_disk_bytes,progress_at";
     public DistributionSettings Settings { get; }
@@ -36,6 +37,35 @@ public sealed class IntakeStore
     internal IDisposable DatabaseRead() => DistributionDatabaseCoordinator.Read(DatabaseGate);
     internal IDisposable DatabaseWrite() => DistributionDatabaseCoordinator.Write(DatabaseGate);
     public string Root => Settings.Root;
+
+    // Temporary bootstrap for enrollment validation until the authentication store exposes its own read API.
+    internal static IntakeStore OpenForEnrollmentValidation(DistributionSettings settings)
+    {
+        if (settings.IntakeWorkers is < 1 or > 2) throw new InvalidDataException("IntakeWorkers must be 1 or 2.");
+        settings.Root = Path.GetFullPath(settings.Root);
+        var path = SafePath.ResolveInsideChecked(settings.Root, "distribution.db");
+        if (File.Exists(SafePath.ResolveInsideChecked(settings.Root, "restore-staged.json")))
+            throw new InvalidDataException("Staged restored root rejects enrollment.");
+        using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        // This store uses rollback journaling. A WAL reader can create shared-memory files,
+        // even with SQLite's read-only flag, so refuse an externally changed journal mode.
+        Span<byte> header = stackalloc byte[64];
+        file.ReadExactly(header);
+        if (!header[..16].SequenceEqual("SQLite format 3\0"u8) || header[18] != 1 || header[19] != 1)
+            throw new InvalidDataException("Enrollment validation requires the existing rollback-journal store format.");
+        // SQLite stores PRAGMA user_version at header offset 60. Enrollment never migrates a store.
+        if (System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(header[60..]) != 6)
+            throw new InvalidDataException("Enrollment requires the current server store schema.");
+        return new(settings, path);
+    }
+
+    private IntakeStore(DistributionSettings settings, string readOnlyDatabase)
+    {
+        Settings = settings;
+        enrollmentReadOnlyDatabase = readOnlyDatabase;
+        DatabaseGate = DistributionDatabaseCoordinator.ForRoot(Root);
+    }
+
     public IntakeStore(DistributionSettings settings, Func<string, long>? availableBytes = null)
     {
         this.availableBytes = availableBytes;
@@ -115,7 +145,14 @@ public sealed class IntakeStore
     public SqliteConnection Open()
     {
         using var measurement = DistributionPerformance.MeasureDatabase("open");
-        var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Path.Combine(Root, "distribution.db") }.ToString());
+        var options = new SqliteConnectionStringBuilder { DataSource = Path.Combine(Root, "distribution.db") };
+        if (enrollmentReadOnlyDatabase is not null)
+        {
+            options.DataSource = enrollmentReadOnlyDatabase;
+            options.Mode = SqliteOpenMode.ReadOnly;
+            options.Pooling = false;
+        }
+        var db = new SqliteConnection(options.ToString());
         try { db.Open(); }
         catch (SqliteException ex) { db.Dispose(); DistributionPerformance.RecordDatabaseBusy(ex.SqliteErrorCode); throw; }
         return db;

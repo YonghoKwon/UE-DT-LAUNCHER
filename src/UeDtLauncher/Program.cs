@@ -11,7 +11,7 @@ public static partial class Program
     private static readonly string[] KnownSubcommands =
     {
         "run", "service", "rollback", "runtime", "upload", "generate-manifest", "update-catalog", "release-metadata", "import-install",
-        "list-releases", "generate-nginx-acl", "sign-manifest", "generate-signing-key", "sample-config", "publish-release", "doctor", "diagnostics", "agent", "credential", "operation", "scheduled-check"
+        "list-releases", "generate-nginx-acl", "sign-manifest", "generate-signing-key", "sample-config", "publish-release", "doctor", "diagnostics", "agent", "credential", "enroll", "operation", "scheduled-check"
     };
 
     [STAThread]
@@ -179,6 +179,7 @@ public static partial class Program
                 "list-releases" => await ListReleasesAsync(args.Skip(1).ToArray()),
                 "generate-nginx-acl" => await GenerateNginxAclAsync(args.Skip(1).ToArray()),
                 "sample-config" => await WriteSampleConfigAsync(args.Skip(1).ToArray()),
+                "enroll" => await RunEnrollmentAsync(args.Skip(1).ToArray()),
                 "sign-manifest" => await SignManifestAsync(args.Skip(1).ToArray()),
                 "agent" => await RunAgentClientAsync(args.Skip(1).ToArray()),
                 "credential" => RunCredentialCommand(args.Skip(1).ToArray()),

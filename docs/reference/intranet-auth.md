@@ -6,6 +6,38 @@
 
 서버 CLI 수명 관리: `client-key add ... --expires-at 2030-01-01T00:00:00Z`, `token-issue pc --expires-at ...`, `token-list`, `token-revoke-id --id 관리ID`. 생략하면 기존처럼 무기한이다. 새 자격 등록·실제 연결 성공 후 이전 자격을 폐기한다. 현재 내부 DB schema6 전환 전 서버/watch/작업을 중지하며 일관된 snapshot 백업이 생성된다. 관리 목록에는 token/hash를 출력하지 않는다. `maxApiRequestsPerSecond`/`maxConcurrentDownloads`는 기본 null(비활성), 명시한 양수 한도 초과는429/Retry-After다. 실제 HTTP 슬롯 반환·만료/audit 원자성의 로컬 검증과 회사 계정/프록시 인수를 구분한다.
 
+### PC 여러 대 일괄 등록
+
+서버와 인증 모드가 준비된 뒤 실행한다. 아래 주소·ID는 예시다. 관리자 승인으로 배정한 ID와 공개키 출처를 확인한 뒤 입력 폴더에 넣는다.
+
+| 순서 | 담당 / 실행 위치 | 동작 | 정상 결과 |
+|---:|---|---|---|
+| 1 | PC 관리자 / Windows PowerShell 또는 Linux 터미널 | PC별 `enroll prepare --name ue-dt-device --key-id pc-001-v1 --client pc-001 --output <수집 폴더>` | `pc-001.enroll.json`에 공개키·호스트명·관측 IPv4·생성 UTC를 기록한다. 같은 key ID로 다시 실행하면 키를 보존한다. 묶음 파일 교체는 `--force`가 필요하다. |
+| 2 | 배포 관리자 / Linux 서버 | 공개키 묶음만 `/dt/keys/enroll/`로 전달. `client-enroll`을 `--dry-run`으로 확인하고 같은 입력으로 적용 | 모든 입력을 검사한 후 키를 등록하고 `/dt/config/access-policy.json`의 새 PC 항목을 한 번에 게시한다. 기존 PC의 주소와 grant는 유지한다. |
+| 3 | PC 관리자 / Windows PowerShell 또는 Linux 터미널 | 배포 서명 공개키 `/dt/keys/release-public.pem`의 신뢰된 사본을 준비하고 `enroll finish` 실행 | 운영 설정과 `<output>.doctor.json`을 저장한다. Portable은 현재 사용자로 온라인 진단한다. 관리형은 Agent 재로딩 전 `deferred`로 기록한다. |
+
+Windows PC 예시(관리형은 상승된 PowerShell, portable은 `--storage portable`을 두 명령 모두에 지정):
+
+```powershell
+.\UeDtLauncher.exe enroll prepare --name ue-dt-device --key-id pc-001-v1 --client pc-001 --output .\enroll
+.\UeDtLauncher.exe enroll finish --server-url http://10.20.30.40 --project-id ue-dt-simulator --platform windows-x64 --credential-name ue-dt-device --signing-key-id release-1 --public-key .\release-public.pem --output "$env:ProgramData\UE-DT Launcher\config\launcher.config.json"
+```
+
+Linux 서버 예시(초기화된 저장소와 정책을 가리키는 `--config` 사용):
+
+```bash
+UeDtLauncher.DistributionServer client-enroll --from /dt/keys/enroll/ --grant ue-dt-simulator:prod:stable --config /dt/config/server.json --dry-run
+UeDtLauncher.DistributionServer client-enroll --from /dt/keys/enroll/ --grant ue-dt-simulator:prod:stable --config /dt/config/server.json
+```
+
+`--grant project:environment:channel`은 트랙마다 반복할 수 있다. `--address-source observed`는 기본값이다. NAT·DHCP 등으로 관측값을 사용할 수 없으면 `--address-source file:/dt/config/enroll-addresses.csv`를 두 서버 명령에 넣고, UTF-8 CSV에 `clientId,address` 헤더와 주소마다 `pc-001,10.10.20.15/32` 같은 행을 적는다. CSV를 선택하면 모든 묶음에 관리자 지정 주소가 필요하다. 관리자는 묶음의 출처와 주소를 검토하고 적용 중 다른 정책 편집을 피한다.
+
+검증 오류가 있으면 명령이 오류 목록과 함께 종료된다. 적용 중 키 등록 뒤 정책 교체에 실패하면 같은 입력으로 다시 실행한다. 이미 등록된 동일 PC·공개키는 재사용하고 정책 추가를 완료한다. 다른 PC 또는 다른 공개키에 같은 ID를 사용하면 거부한다. 폐기된 키 상태는 그대로 유지한다. 등록한 키의 배포 권한에는 정책 grant가 필요하다.
+
+`finish`의 `--output`은 관리자가 미리 보호한 Agent 설정 위치 또는 portable 사용자 설정 경로를 사용한다. `--force`를 명시할 때 설정과 기존 진단 파일을 교체한다. 관리형 서비스 반영은 관리자 작업이다. 반영 후 선택 전용 화면 설정으로 `doctor --online`을 다시 실행한다. 화면 설정은 [기능 지도 A4](feature-workflow.md#a4-런처와-agent-설정--pc-관리자)를 참고한다.
+
+### PC 개별 등록
+
 | 순서 | 실행 위치 | 명령/작업 | 정상 결과 |
 |---:|---|---|---|
 | 1 | Linux 서버 관리자 | 기존 server.json의 `publicUrl`을 실제 사내 HTTP origin으로, `authenticationMode`를 `request-signature-v1`로 설정. `listenUrl`은 `http://127.0.0.1:18500` 유지 | 기존 root·서명키·policy 경로 보존. 변경 전 DB 백업, 구/신 서버 동시 실행 금지 |
