@@ -39,8 +39,8 @@ public sealed class UploadStatusProjectionTests
         using var temp = new UploadStatusTestDirectory();
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var keyPath = Path.Combine(temp.Path, "signing.pem");
-        await File.WriteAllTextAsync(keyPath, key.ExportECPrivateKeyPem());
         var store = new IntakeStore(new() { Root = temp.Path, SigningKeyPath = keyPath });
+        await File.WriteAllTextAsync(keyPath, key.ExportECPrivateKeyPem());
         try
         {
             var publisher = new ApprovedPublisher(store);

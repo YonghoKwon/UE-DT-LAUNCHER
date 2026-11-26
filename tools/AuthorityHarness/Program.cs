@@ -1,11 +1,13 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using UeDtLauncher.Distribution;
 using UeDtLauncher.Distribution.Authority;
 
 if (args.Length < 2) return 2;
 
 try
 {
+    if (args[0] is "intake-crash" or "intake-reopen") return RunIntake(args);
     if (args[0] == "crash-init")
         AuthorityDisk.Boundary.Value = PauseAt(Enum.Parse<AuthorityBoundary>(args[2]));
     var store = AuthorityStore.Open(args[1]);
@@ -68,6 +70,45 @@ catch (Exception error)
 }
 
 static void Print<T>(T value) => Console.WriteLine(JsonSerializer.Serialize(value, AuthorityDocuments.Json));
+
+static int RunIntake(string[] args)
+{
+    var store = new IntakeStore(new() { Root = args[1] });
+    var authority = store.Authority;
+    if (authority.OpenMaintenanceError is { } error) throw error;
+    if (args[0] == "intake-reopen")
+    {
+        var snapshot = authority.ReadSnapshot();
+        var events = authority.ReadAudit(snapshot).ToArray();
+        var projected = File.ReadLines(authority.DataPath("audit.jsonl"))
+            .Select(line => JsonSerializer.Deserialize<StoredAuthorityEvent>(line, AuthorityDocuments.Json));
+        if (!events.SequenceEqual(projected!)) throw new InvalidDataException("Reopened audit projection differs from authority.");
+        Print(new { snapshot.Generation, jobs = snapshot.Get(AuthorityArea.Jobs), events });
+        return 0;
+    }
+
+    var boundary = Enum.Parse<AuthorityBoundary>(args[2]);
+    var occurrence = boundary is AuthorityBoundary.GenerationWrite or AuthorityBoundary.GenerationFlush or
+        AuthorityBoundary.GenerationRename or AuthorityBoundary.GenerationDirectoryFlush ? 2 : 1;
+    AuthorityDisk.Boundary.Value = PauseAt(boundary, occurrence);
+    const string id = "fixture";
+    using var jobLock = store.LockJob(id);
+    switch (args[3])
+    {
+        case "X1":
+            store.Save(new(id, Path.Combine(store.Root, "incoming", id), "pending", null, "updated"));
+            break;
+        case "X2":
+            store.ChangeState(id, "failed", "waiting", reset: true);
+            break;
+        case "X3":
+            _ = new IntakeWorkClaim(store, store.Get(id), "validating", Path.Combine(store.Root, "processing", "scratch"), null, "waiting");
+            break;
+        default:
+            return 2;
+    }
+    throw new InvalidOperationException("The requested intake boundary was not reached.");
+}
 
 static Action<AuthorityBoundary> PauseAt(AuthorityBoundary boundary, int remaining = 1) => reached =>
 {

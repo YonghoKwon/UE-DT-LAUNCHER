@@ -62,7 +62,7 @@ public sealed class RetentionMaintenanceTests : IDisposable
         var path=Failed();store.Save(new("failed",path,"pending",null,null));
         await Assert.ThrowsAsync<InvalidDataException>(()=>RetentionMaintenance.PlanAsync(store.Settings,["failed"],[]));
         var temp=Path.Combine(root,"processing/active");Directory.CreateDirectory(temp);
-        using(var db=store.Open()){using var q=db.CreateCommand();q.CommandText="INSERT INTO active_work VALUES('active','owner',$path,NULL,'now')";q.Parameters.AddWithValue("$path",temp);q.ExecuteNonQuery();}
+        IntakeAuthorityTests.AddAbandonedWork(store, "active", temp);
         await Assert.ThrowsAsync<InvalidDataException>(()=>RetentionMaintenance.PlanAsync(store.Settings,[],["processing/active"]));
         await Assert.ThrowsAsync<InvalidDataException>(()=>RetentionMaintenance.PlanAsync(store.Settings,[],["releases/demo"]));
     }

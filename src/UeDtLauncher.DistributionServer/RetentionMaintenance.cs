@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using UeDtLauncher.Distribution.Authority;
 
 namespace UeDtLauncher.Distribution;
 
@@ -51,14 +52,15 @@ public static class RetentionMaintenance
         using var db = DistributionBackup.Open(root, true); using var tx = db.BeginTransaction(deferred: true); using var q = db.CreateCommand(); q.Transaction = tx;
         var references = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         var jobs = new List<(string, string, string, string?)>(); var proof = new List<string>();
-        q.CommandText = "SELECT id,source,state,snapshot FROM jobs ORDER BY id";
-        using (var r = q.ExecuteReader()) while (r.Read())
+        var intake = IntakeJobs.Read(AuthorityStore.ReadAlongsideSqlite(root));
+        foreach (var entry in intake.Jobs.OrderBy(job => job.Id, StringComparer.Ordinal))
         {
-            var job = (r.GetString(0), r.GetString(1), r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3)); jobs.Add(job);
+            var job = (entry.Id, IntakeJobs.Resolve(root, entry.Source), entry.State,
+                IntakeJobs.ResolveOptional(root, entry.Snapshot)); jobs.Add(job);
             proof.Add(Hash(new{Id=job.Item1,Source=job.Item2,State=job.Item3,Snapshot=job.Item4}));
             if (job.Item3 is not ("failed" or "rejected")) { references.Add(job.Item2); if (job.Item4 is not null) references.Add(job.Item4); }
         }
-        foreach (var sql in new[] { "SELECT id,directory FROM releases ORDER BY id", "SELECT CAST(id AS TEXT),release_id FROM promotions ORDER BY id", "SELECT job,COALESCE(scratch,''),COALESCE(snapshot,'') FROM active_work ORDER BY job" })
+        foreach (var sql in new[] { "SELECT id,directory FROM releases ORDER BY id", "SELECT CAST(id AS TEXT),release_id FROM promotions ORDER BY id" })
         {
             q.CommandText = sql; using var r = q.ExecuteReader();
             while (r.Read())
@@ -67,6 +69,13 @@ public static class RetentionMaintenance
                 proof.Add(Hash(new{Id=r.GetString(0),Values=values}));
                 foreach(var path in values)if(Path.IsPathRooted(path))references.Add(Path.GetFullPath(path));
             }
+        }
+        foreach (var work in intake.ActiveWork.OrderBy(work => work.Job, StringComparer.Ordinal))
+        {
+            var values = new[] { IntakeJobs.ResolveOptional(root, work.Scratch) ?? "",
+                IntakeJobs.ResolveOptional(root, work.Snapshot) ?? "" };
+            proof.Add(Hash(new { Id = work.Job, Values = values }));
+            foreach (var path in values.Where(Path.IsPathRooted)) references.Add(path);
         }
         tx.Commit(); return new(jobs, references, Hash(proof));
     }
