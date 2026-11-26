@@ -224,7 +224,7 @@ GUI 설정에서 **연결·준비 상태 점검**을 열면 오프라인 설정 
 
 ### 실행 안전성
 
-실행 중/Pending/Unknown에서는 update·repair·rollback을 하지 않습니다. 상태 확인과 정지 후 명시적 복구는 [실행 안전성](runtime-safety.md)을 따릅니다. `Agent migrate --apply`는 동일 설치 공유 위험으로 현재 차단되며 dry-run만 지원합니다. `import-install`의 명시적 복사와 사용자 세이브 이전은 서로 다른 작업입니다.
+실행 중/Pending/Unknown에서는 update·repair·rollback을 하지 않습니다. 상태 확인과 정지 후 명시적 복구는 [실행 안전성](runtime-safety.md)을 따릅니다. `UeDtLauncher.Agent migrate --config <설정>`의 기본 동작은 이전 계획 조회입니다. 동일 설치 공유 위험 때문에 `--apply`는 차단됩니다. `import-install`의 명시적 복사와 사용자 세이브 이전은 서로 다른 작업입니다.
 
 ## 선택적 UE 데이터 경로 (2026-10-02)
 

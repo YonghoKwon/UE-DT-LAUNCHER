@@ -9,7 +9,8 @@ try
 var arguments = args.ToList();
 if (arguments.Contains("--help"))
 {
-    Console.WriteLine("UeDtLauncher.DistributionServer <serve|watch|ingest directory|list|inspect id|approve id|promote|promotion inspect|promotion migrate --dry-run|--apply|reject id|retry id|token-issue client|token-revoke client|usage|cleanup [--apply]> --config server.json");
+    Console.WriteLine("UeDtLauncher.DistributionServer <serve|watch|ingest directory|list|inspect id|approve id|promote|promotion inspect|promotion migrate --dry-run|--apply|reject id|retry id|token-issue client|token-revoke client|usage|cleanup> --config server.json");
+    Console.WriteLine("cleanup only reports scratch data. For deletion, use retention plan followed by retention apply --plan plan.json --confirm.");
     Console.WriteLine("promote --project-id id --environment prod --channel stable --platform windows-x64 --version version --expected-revision N --reason text; promotion inspect uses the same track flags without version/revision/reason.");
     Console.WriteLine("client-key add --client id --public-key device-public.json | client-key list | client-key revoke --key-id id; append --config server.json");
     Console.WriteLine("client-enroll --from folder --grant project:environment:channel [--grant project:environment:channel] [--address-source observed|file:<csv>] [--dry-run] --config server.json");

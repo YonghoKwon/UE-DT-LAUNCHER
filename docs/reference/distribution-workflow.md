@@ -90,7 +90,9 @@ UeDtLauncher credential set --name company-distribution
 
 7정리의 목록은 파일 내용 해시 없이 상태·크기·디렉터리 신원만 읽습니다. 선택 후 한 번 만든 계획의 전체 hash/inventory·보호·잠금 검사는 유지합니다. 계획은 `console-retention-<id>.json`에 보존되고 콘솔 적용 성공 후 삭제합니다. 시작 전 잠금 실패는 serve/watch 정상 중지 후 같은 계획으로 적용하고, 중간 I/O 실패는 자료가 일부 처리됐을 수 있으므로 같은 계획/journal로 재개합니다. 새 계획으로 덮지 않습니다. 8자격 조회는 비밀을 출력하지 않습니다. 메뉴/확인 입력 대기 동안 세션 전체 lease는 잡지 않으며 비터미널은 변경 없이 종료합니다. HTTP 쓰기 API는 없습니다.
 
-Windows PowerShell에서 `upload check --profile upload.profile.json`으로 최초 준비를 확인합니다. Linux 터미널은 `./UeDtLauncher upload check --profile upload.profile.json`을 사용합니다. 키 인증 전용(BatchMode)이고 비밀번호를 묻지 않으며, 미등록 호스트 키는 최초1회 터미널 ssh로 직접 확인·등록합니다. check는 디렉터리/쓰기 권한 조회만 하므로 실제 전송·디스크 공간·서비스 읽기 ACL 인수를 대신하지 않습니다. 기본 출력은 한국어이며 기계 연동에는 `--format json`을 붙입니다. 성공 시 소유 작업 사본만 정리하고 `--keep-work` 또는 실패 시에는 보존합니다.
+Windows PowerShell에서 `upload check --profile upload.profile.json`으로 최초 준비를 확인합니다. Linux 터미널은 `./UeDtLauncher upload check --profile upload.profile.json`을 사용합니다. 키 인증 전용(BatchMode)이고 비밀번호를 묻지 않으며, 미등록 호스트 키는 최초1회 터미널 ssh로 직접 확인·등록합니다. check는 디렉터리/쓰기 권한 조회만 하므로 실제 전송·디스크 공간·서비스 읽기 ACL 인수를 대신하지 않습니다. 기본 출력은 한국어이며 기계 연동에는 `upload check`에 `--format json`을 붙입니다.
+
+실제 전송을 수행하는 `upload`는 성공 시 소유 작업 사본만 정리합니다. `--keep-work`를 지정했거나 전송에 실패하면 사본을 보존합니다.
 
 upload는 셸 없이 ArgumentList로 ssh/scp를 호출합니다. 원격 경로·계정/호스트·ID를 허용 문자로 검사하며 두 전송 성공 전에는 이름을 바꾸지 않습니다. 실패 시 단계·잔여 가능 자료를 확인하고 새 ID로 다시 접수합니다. `serve`와 `watch`는 첫 스캔 전에, 스캔 중에는 주기적으로, 스캔이 끝나면 다시 업로드 ID별 상태 JSON을 갱신합니다. 개발자는 같은 SSH 프로필로 `upload status --upload-id <ID> --wait`를 실행해 승인 대기까지 확인합니다. [B3 상태 조회·계정 권한](feature-workflow.md#b3-서버로-두-파일-올리기--개발-pc)
 
