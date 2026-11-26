@@ -23,10 +23,8 @@ public sealed partial class App : Application
             desktop.MainWindow = window;
             desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
             if (GuiInstance is { } instance)
-            {
-                instance.Activate = () => Dispatcher.UIThread.Post(window.OpenFromTray);
-                instance.StartListening();
-            }
+                instance.SetActivationHandler(token => Dispatcher.UIThread.InvokeAsync(
+                    window.OpenFromTray, DispatcherPriority.Normal, token).GetTask());
 
             var icon = new TrayIcon { IsVisible = false };
             if (icon.NativeMenuExporter is not null)

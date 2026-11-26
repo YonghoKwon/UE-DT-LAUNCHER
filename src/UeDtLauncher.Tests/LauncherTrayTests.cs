@@ -55,8 +55,8 @@ public sealed class LauncherTrayTests
             window.Show();
             window.Close();
             Assert.False(window.IsVisible);
-            Assert.True(Assert.IsType<Window>(Field(window, "_trayNotice")).IsVisible);
             await window.TrayNoticeSaved;
+            Assert.True(Assert.IsType<Window>(Field(window, "_trayNotice")).IsVisible);
             Assert.True(LauncherUiPreferences.Load(fixture.PreferencesPath).HasSeenTrayNotice);
             window.OpenFromTray();
             window.Close();
@@ -64,6 +64,35 @@ public sealed class LauncherTrayTests
             Assert.Null(FieldOrNull(window, "_trayNotice"));
         }
         finally { await window.ExitFromTrayAsync(); }
+    }
+
+    [AvaloniaFact]
+    public async Task TwoEditionsClaimTheSharedNoticeBeforeEitherShowsIt()
+    {
+        using var fixture = new Fixture(noticeSeen: false);
+        var general = fixture.CreateWindow(new(), startServices: false, edition: LauncherEdition.General);
+        var developer = fixture.CreateWindow(new(), startServices: false);
+        try
+        {
+            general.Show();
+            developer.Show();
+            using (SingleInstanceLock.Acquire(fixture.PreferencesPath + ".lock"))
+            {
+                general.Close();
+                developer.Close();
+                Assert.Null(FieldOrNull(general, "_trayNotice"));
+                Assert.Null(FieldOrNull(developer, "_trayNotice"));
+            }
+            await Task.WhenAll(general.TrayNoticeSaved, developer.TrayNoticeSaved);
+            Assert.Single(new[] { general, developer }, window =>
+                FieldOrNull(window, "_trayNotice") is Window { IsVisible: true });
+            Assert.True(LauncherUiPreferences.Load(fixture.PreferencesPath).HasSeenTrayNotice);
+        }
+        finally
+        {
+            await general.ExitFromTrayAsync();
+            await developer.ExitFromTrayAsync();
+        }
     }
 
     [AvaloniaFact]
@@ -175,21 +204,104 @@ public sealed class LauncherTrayTests
         Assert.Equal(60, preferences.TrayCheckMinutes);
     }
 
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SlowProjectKeepsEarlierBadgeAndAllowsLaterProjects(bool managed)
+    {
+        using var fixture = new Fixture(managed: managed);
+        var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var waitingAttempts = 0;
+        fixture.Backend.BeforeCheck = async (context, token) =>
+        {
+            if (managed && context.ProjectId == "waiting" && ++waitingAttempts == 1)
+                throw new AgentOperationException("busy", "fixture", "The previous read is draining.");
+            if (context.ProjectId != "second") return;
+            secondStarted.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, token);
+        };
+        var window = fixture.CreateWindow(new(), startServices: false, queryTimeout: TimeSpan.FromSeconds(1), promoteWaiting: true);
+        try
+        {
+            var scanning = window.CheckTrayUpdatesAsync();
+            await secondStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(window.TrayStatus.HasUpdate);
+            Assert.True(window.TrayCheckAvailable);
+            await scanning.WaitAsync(TimeSpan.FromSeconds(5));
+            string[] expected = managed ? ["demo", "second", "waiting", "waiting"] : ["demo", "second", "waiting"];
+            Assert.Equal(expected, fixture.Backend.Checks.Select(check => check.ProjectId));
+            Assert.Equal(["업데이트 있음", "확인 필요", "최신 상태"], window.TrayStatus.Projects.Select(row => row.Status));
+            Assert.Equal(0, fixture.Backend.Executions);
+        }
+        finally { await window.ExitFromTrayAsync(); }
+    }
+
+    [AvaloniaFact]
+    public async Task ManualCheckPressedDuringStatusProbeRunsWhenProbeFinishes()
+    {
+        using var fixture = new Fixture(managed: true);
+        var status = new TaskCompletionSource<ManagedAgentResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var window = fixture.CreateWindow(new(), startServices: false, statusProbe: () => status.Task);
+        try
+        {
+            window.Show();
+            var poll = window.PollStatusAsync();
+            await window.CheckTrayUpdatesAsync();
+            Assert.Empty(fixture.Backend.Checks);
+            status.SetResult(new() { Success = true });
+            await poll.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(["demo", "second"], fixture.Backend.Checks.Select(check => check.ProjectId));
+            Assert.Equal(0, fixture.Backend.Executions);
+        }
+        finally { await window.ExitFromTrayAsync(); }
+    }
+
     [Fact]
-    public async Task SecondInstanceSignalsExistingOwnerAndEditionsUseSeparateLocks()
+    public async Task ContenderWaitsPastFiveSecondsForDisplayAcknowledgement()
     {
         using var directory = new TempDirectory();
         var path = Path.Combine(directory.Path, "ui-preferences.json");
         using (var owner = Assert.IsType<LauncherGuiInstance>(LauncherGuiInstance.AcquireOrActivate(path, LauncherEdition.General)))
         {
-            var activation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            owner.Activate = () => activation.TrySetResult();
-            owner.StartListening();
-            Assert.Null(LauncherGuiInstance.AcquireOrActivate(path, LauncherEdition.General));
-            await activation.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var contender = Task.Run(() => LauncherGuiInstance.AcquireOrActivate(path, LauncherEdition.General));
+            await Task.Delay(TimeSpan.FromMilliseconds(5200));
+            Assert.False(contender.IsCompleted);
+            var display = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var invoked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            owner.SetActivationHandler(token =>
+            {
+                invoked.TrySetResult();
+                return display.Task.WaitAsync(token);
+            });
+            await invoked.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.False(contender.IsCompleted);
+            display.SetResult(true);
+            Assert.Null(await contender.WaitAsync(TimeSpan.FromSeconds(5)));
             using var developer = Assert.IsType<LauncherGuiInstance>(LauncherGuiInstance.AcquireOrActivate(path, LauncherEdition.Developer));
         }
         using var restarted = Assert.IsType<LauncherGuiInstance>(LauncherGuiInstance.AcquireOrActivate(path, LauncherEdition.General));
+    }
+
+    [Fact]
+    public async Task ClosingOwnerDoesNotAcknowledgeAndContenderAcquiresItsLease()
+    {
+        using var directory = new TempDirectory();
+        var path = Path.Combine(directory.Path, "ui-preferences.json");
+        Task<LauncherGuiInstance?> contender;
+        using (var owner = Assert.IsType<LauncherGuiInstance>(LauncherGuiInstance.AcquireOrActivate(path, LauncherEdition.General)))
+        {
+            var invoked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            owner.SetActivationHandler(async token =>
+            {
+                invoked.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                return false;
+            });
+            contender = Task.Run(() => LauncherGuiInstance.AcquireOrActivate(path, LauncherEdition.General));
+            await invoked.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.False(contender.IsCompleted);
+        }
+        using var replacement = Assert.IsType<LauncherGuiInstance>(await contender.WaitAsync(TimeSpan.FromSeconds(5)));
     }
 
     private static T Find<T>(Window window, string id) where T : Control =>
@@ -235,21 +347,23 @@ public sealed class LauncherTrayTests
             File.WriteAllText(ConfigPath, "{}");
         }
 
-        internal MainWindow CreateWindow(LauncherUiPreferences preferences, bool startServices)
+        internal MainWindow CreateWindow(LauncherUiPreferences preferences, bool startServices,
+            TimeSpan? queryTimeout = null, bool promoteWaiting = false,
+            Func<Task<ManagedAgentResponse>>? statusProbe = null, LauncherEdition edition = LauncherEdition.Developer)
         {
             var catalog = new CatalogSnapshot
             {
                 SelectionPolicy = CatalogRecommendation.ExplicitPolicy,
                 Projects = new[] { "demo", "second", "waiting", "hidden", "other-track" }.Select(id =>
                     new CatalogProjectOption { ProjectId = id, DisplayName = id }).ToList(),
-                Releases = [Release("demo"), Release("second"), Release("waiting", latest: false), Release("hidden"), Release("other-track", environment: "dev")]
+                Releases = [Release("demo"), Release("second"), Release("waiting", latest: promoteWaiting), Release("hidden"), Release("other-track", environment: "dev")]
             };
-            var model = new LauncherDashboardViewModel(LauncherEdition.Developer) { Config = _config };
+            var model = new LauncherDashboardViewModel(edition) { Config = _config };
             var window = new MainWindow(new(ConfigPath, LauncherConfigSource.Explicit, true), model, preferences,
                 startServices, Backend, catalogLoader: (_, _, _) => Task.FromResult(new CatalogSnapshot()),
                 runtimeConfigLoader: _ => Task.FromResult(new LauncherConfig { LogDir = Path.Combine(_directory.Path, "logs") }),
-                preferencesPath: PreferencesPath);
-            window.EnableTray((_, _, _) => Task.FromResult(catalog), Clock);
+                preferencesPath: PreferencesPath, agentStatusProbe: statusProbe);
+            window.EnableTray((_, _, _) => Task.FromResult(catalog), Clock, queryTimeout);
             return window;
         }
 
@@ -277,20 +391,22 @@ public sealed class LauncherTrayTests
     private sealed class Backend : ILauncherUiBackend
     {
         internal readonly List<LauncherUiOperationContext> Checks = [];
+        internal Func<LauncherUiOperationContext, CancellationToken, Task>? BeforeCheck;
         internal int Executions;
 
-        public Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext context, LauncherConfig config,
+        public async Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext context, LauncherConfig config,
             Action<LauncherProgress> progress, CancellationToken token = default)
         {
             Checks.Add(context);
+            if (BeforeCheck is { } before) await before(context, token);
             var selection = context.Selection;
             config.SelectedRelease = selection;
             var version = selection?.Version ?? context.RequestedVersion;
             var previous = context.ProjectId == "demo" && selection is not null
                 ? new PreviousInstallation(selection with { Version = "1.0.0" }, "") : null;
             var installedVersion = previous is not null ? null : context.ProjectId == "demo" ? "1.0.0" : version;
-            return Task.FromResult(new LauncherUiOperationResult(config, selection,
-                new(previous is null, installedVersion, version, previous is not null || installedVersion != version, 0, 0, false, previous), null));
+            return new(config, selection,
+                new(previous is null, installedVersion, version, previous is not null || installedVersion != version, 0, 0, false, previous), null);
         }
 
         public Task<LauncherUiOperationResult> ExecuteAsync(LauncherUiOperationContext context, LauncherConfig config,

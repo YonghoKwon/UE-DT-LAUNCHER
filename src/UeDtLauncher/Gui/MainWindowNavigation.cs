@@ -65,7 +65,7 @@ public sealed partial class MainWindow : Window
         string? serviceVersion = null;
         try
         {
-            var response = await new ManagedAgentClient().SendAsync("status", timeout: TimeSpan.FromSeconds(2));
+            var response = await _agentStatusProbe();
             var displayVersion = response.AgentVersion?.Split('+', 2)[0];
             connected = response.Success;
             if (connected && LauncherUiError.IsSupportTag(displayVersion?.Replace('.', '-')))
@@ -80,6 +80,7 @@ public sealed partial class MainWindow : Window
         finally
         {
             _agentStatusRefreshing = false;
+            DispatchPendingTrayCheck();
         }
         if (_windowClosed || !ReferenceEquals(checkedConfig, _config)) return false;
         var versionChanged = !string.Equals(_serviceVersion, serviceVersion, StringComparison.Ordinal);

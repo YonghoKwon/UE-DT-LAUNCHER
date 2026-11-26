@@ -149,6 +149,7 @@ public sealed partial class MainWindow : Window
         c.ClientProfile = _viewModel.EffectiveProfile;
         c.SelfUpdate = null;
         if (!c.IsManagedDeployment) LauncherPaths.ResolveInPlace(c, runtimePath, installPath);
+        else if (!readOnly) await WaitForManagedTrayQueryAsync(token);
         return c;
     }
 
@@ -196,7 +197,8 @@ public sealed partial class MainWindow : Window
             recommendation = CheckedRecommendationFor(context);
             BeginOperation(operation);
             Progress(0); ResetSpeedTracking(); StartCancellableUiOperation(operationCancellation);
-            var config = await RunConfig(repair, launch);
+            var config = await RunProjectConfig(_selectedProject, DisplaySelectionContext(), repair, launch,
+                token: operationCancellation.Token);
             if (!await CanMutateRecommendationAsync(context, null, operationCancellation.Token))
             {
                 history?.Finish(LauncherHistoryResult.Waiting);

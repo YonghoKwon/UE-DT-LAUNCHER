@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Threading;
 
 namespace UeDtLauncher.Gui;
 
@@ -14,6 +15,10 @@ public sealed partial class MainWindow
     private HashSet<string> _trayHiddenProjects = new(StringComparer.OrdinalIgnoreCase);
     private Func<LauncherConfig, string, CancellationToken, Task<CatalogSnapshot>>? _trayCatalogLoader;
     private TimeProvider _trayClock = TimeProvider.System;
+    private TimeSpan _trayQueryTimeout = TimeSpan.FromSeconds(30);
+    private CancellationTokenSource? _trayCheck;
+    private Task? _managedTrayQuery;
+    private bool _trayCheckRequested;
     private long? _lastTrayCheckAt;
     private (string Environment, string Channel)? _trayTrack;
     private bool _startupStarted;
@@ -25,20 +30,23 @@ public sealed partial class MainWindow
     internal event Action? TrayStatusChanged;
     internal bool StatusTimerRunning => _agentStatusTimer.IsEnabled;
     internal TimeSpan StatusTimerInterval => _agentStatusTimer.Interval;
-    internal bool TrayCheckAvailable => !_running && !_windowClosed && _configurationError is null;
+    internal bool TrayCheckAvailable => !_windowClosed && !_exitingFromTray && _configurationError is null;
     internal Task TrayNoticeSaved => _trayNoticeSave;
 
     internal void EnableTray(Func<LauncherConfig, string, CancellationToken, Task<CatalogSnapshot>> loadCatalog,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null, TimeSpan? queryTimeout = null)
     {
         _trayCatalogLoader = loadCatalog;
         _trayClock = clock ?? TimeProvider.System;
+        if (queryTimeout is { } timeout) _trayQueryTimeout = timeout;
         Closing += HideToTrayOnClose;
         StartStatusPolling();
     }
 
     private void ResetTrayStatus()
     {
+        _trayCheck?.Cancel();
+        _trayCheckRequested = false;
         _lastTrayCheckAt = null;
         _trayTrack = null;
         var visible = _viewModel.ProjectsForProfile().Select(project => project.ProjectId)
@@ -53,6 +61,7 @@ public sealed partial class MainWindow
         if (_trayTrack is not { } track || track == (_config.Environment, _config.Channel)) return;
         _trayTrack = null;
         _lastTrayCheckAt = null;
+        _trayCheck?.Cancel();
         SetTrayStatus(new([]));
         if (!_config.IsManagedDeployment && _agentStatusTimer.IsEnabled) StartStatusPolling();
     }
@@ -67,8 +76,8 @@ public sealed partial class MainWindow
         foreach (var dialog in _openDialogs.ToArray().Reverse())
             if (dialog != _trayNotice && dialog.IsVisible) dialog.Close();
         Hide();
-        if (!_preferences.HasSeenTrayNotice)
-            ShowTrayNotice();
+        if (!_preferences.HasSeenTrayNotice && _trayNoticeSave.IsCompleted)
+            _trayNoticeSave = ClaimTrayNoticeAsync();
     }
 
     private void ShowTrayNotice()
@@ -81,15 +90,16 @@ public sealed partial class MainWindow
         notice.Closed += (_, _) => _trayNotice = null;
         _trayNotice = notice;
         notice.Show();
-        _preferences = _preferences with { HasSeenTrayNotice = true };
-        _trayNoticeSave = SaveTrayNoticeAsync();
     }
 
-    private async Task SaveTrayNoticeAsync()
+    private async Task ClaimTrayNoticeAsync()
     {
         try
         {
-            await LauncherUiPreferences.UpdateAsync(_preferencesPath, latest => latest with { HasSeenTrayNotice = true });
+            var (value, claimed) = await LauncherUiPreferences.UpdateAsync(_preferencesPath, latest =>
+                latest.KeepInTray ? latest with { HasSeenTrayNotice = true } : latest);
+            _preferences = _preferences with { HasSeenTrayNotice = value.HasSeenTrayNotice };
+            if (claimed && !_windowClosed && !_exitingFromTray) ShowTrayNotice();
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
@@ -97,13 +107,15 @@ public sealed partial class MainWindow
         }
     }
 
-    internal void OpenFromTray()
+    internal bool OpenFromTray()
     {
-        if (_windowClosed || _exitingFromTray) return;
+        if (_windowClosed || _exitingFromTray) return false;
+        if (_config.IsManagedDeployment) _trayCheck?.Cancel();
         _trayNotice?.Close();
         if (!IsVisible) Show();
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         Activate();
+        return IsVisible && WindowState != WindowState.Minimized;
     }
 
     internal async Task ExitFromTrayAsync()
@@ -133,38 +145,63 @@ public sealed partial class MainWindow
     internal async Task PollStatusAsync()
     {
         if (!_config.IsManagedDeployment && !_windowClosed) StartStatusPolling();
-        if (_windowClosed || _running || _agentStatusRefreshing) return;
+        if (_windowClosed || _running || _agentStatusRefreshing || _trayCheck is not null) return;
         if (_config.IsManagedDeployment && !await RefreshAgentStatusAsync())
         {
             if (_windowClosed || _trayCatalogLoader is null) return;
             _lastTrayCheckAt = null;
-            SetTrayStatus(new([], ConnectionFailed: true));
+            SetTrayStatus(TrayStatus with { ConnectionFailed = true });
+            await RunTrayCheckIfReadyAsync(automatic: false);
             return;
         }
-        if (_trayCatalogLoader is not null && StartupCompletion.IsCompleted && TimeUntilTrayCheck() <= TimeSpan.Zero)
-            await CheckTrayUpdatesAsync();
+        if (TrayStatus.ConnectionFailed)
+            SetTrayStatus(TrayStatus with { ConnectionFailed = false });
+        await RunTrayCheckIfReadyAsync(automatic: true);
     }
 
-    internal async Task CheckTrayUpdatesAsync()
+    internal Task CheckTrayUpdatesAsync()
     {
-        if (!TrayCheckAvailable || _agentStatusRefreshing || _trayCatalogLoader is not { } loadCatalog) return;
+        if (!TrayCheckAvailable) return Task.CompletedTask;
+        _trayCheckRequested = true;
+        return RunTrayCheckIfReadyAsync(automatic: false);
+    }
+
+    private void DispatchPendingTrayCheck()
+    {
+        if (_trayCheckRequested)
+            Dispatcher.UIThread.Post(async () => await RunTrayCheckIfReadyAsync(automatic: false), DispatcherPriority.Background);
+    }
+
+    private async Task RunTrayCheckIfReadyAsync(bool automatic)
+    {
+        if (!TrayCheckAvailable || _running || _agentStatusRefreshing || _trayCheck is not null ||
+            _trayCatalogLoader is not { } loadCatalog) return;
+        var manual = _trayCheckRequested;
+        // The legacy Agent serializes commands. Reserve automatic managed reads for the hidden window.
+        if (!manual && (!automatic || !StartupCompletion.IsCompleted || TimeUntilTrayCheck() > TimeSpan.Zero ||
+            (_config.IsManagedDeployment && IsVisible))) return;
+        _trayCheckRequested = false;
         var capturedConfig = _config;
         var context = DisplaySelectionContext();
+        _trayTrack = (context.Environment, context.Channel);
         var usesDistribution = UsesDistributionServer;
         var path = ConfigPath;
         var hidden = _trayHiddenProjects;
         var projects = new List<TrayProjectStatus>();
         using var check = CancellationTokenSource.CreateLinkedTokenSource(_trayLifetime.Token);
-        check.CancelAfter(TimeSpan.FromMinutes(2));
+        _trayCheck = check;
         var token = check.Token;
         _lastTrayCheckAt = _trayClock.GetTimestamp();
         if (!_config.IsManagedDeployment) StartStatusPolling();
-        _running = true;
-        SetBusy(true);
         try
         {
-            var catalogConfig = await RunProjectConfig(_selectedProject, context, readOnly: true, token: token);
-            var catalog = await loadCatalog(catalogConfig, context.Platform, token);
+            var (catalogConfig, catalog) = await QueryTrayAsync(context.Managed, async queryToken =>
+            {
+                var config = await RunProjectConfig(_selectedProject, context, readOnly: true, token: queryToken);
+                return (config, await loadCatalog(config, context.Platform, queryToken));
+            }, token);
+            token.ThrowIfCancellationRequested();
+            Publish();
             if (usesDistribution || !string.IsNullOrWhiteSpace(catalogConfig.CatalogUrl))
             {
                 foreach (var project in catalog.Projects.Where(project => !hidden.Contains(project.ProjectId)))
@@ -180,6 +217,7 @@ public sealed partial class MainWindow
                     if (recommendation is null)
                     {
                         projects.Add(new(project.DisplayName, "실행 버전 지정 대기"));
+                        Publish();
                         continue;
                     }
 
@@ -192,32 +230,87 @@ public sealed partial class MainWindow
                     var read = new LauncherUiOperationContext(context.Managed, selection.ProjectId, selection.Environment,
                         selection.Channel, selection.Platform, "exact", selection.Version, usesDistribution ? selection : null);
                     projects.Add(await ReadTrayProjectAsync(target, read, project.DisplayName, recommendation, token));
+                    Publish();
                 }
             }
             else if (HasProject)
             {
                 projects.Add(await ReadTrayProjectAsync(_selectedProject, context, _selectedProject.DisplayName, null, token));
-            }
-
-            if (MatchesTrayContext())
-            {
-                _trayTrack = (context.Environment, context.Channel);
-                SetTrayStatus(new(projects));
+                Publish();
             }
         }
-        catch (Exception) when (_windowClosed) { }
+        catch (Exception) when (token.IsCancellationRequested)
+        {
+            if (MatchesTrayContext())
+            {
+                _lastTrayCheckAt = null;
+                _trayCheckRequested |= manual;
+            }
+        }
         catch (Exception error)
         {
-            if (MatchesTrayContext()) SetTrayStatus(new([], ConnectionFailed: error is AgentConnectionException, CheckFailed: true));
+            if (MatchesTrayContext())
+                SetTrayStatus(new(projects.ToArray(), ConnectionFailed: error is AgentConnectionException, CheckFailed: true));
         }
         finally
         {
-            _running = false;
-            if (!_windowClosed) SetBusy(false);
+            _trayCheck = null;
+            DispatchPendingTrayCheck();
         }
 
         bool MatchesTrayContext() => !_windowClosed && ReferenceEquals(_config, capturedConfig) &&
             ConfigPath == path && DisplaySelectionContext() == context;
+
+        void Publish()
+        {
+            if (!token.IsCancellationRequested && MatchesTrayContext())
+                SetTrayStatus(new(projects.ToArray()));
+        }
+    }
+
+    private async Task<T> QueryTrayAsync<T>(bool managed, Func<CancellationToken, Task<T>> query, CancellationToken sessionToken)
+    {
+        sessionToken.ThrowIfCancellationRequested();
+        // A disconnected client cannot cancel a v1 server command. Let the current managed read drain
+        // on foreground handoff, and prevent the remainder of the scan from entering the Agent gate.
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(managed ? _trayLifetime.Token : sessionToken);
+        limit.CancelAfter(_trayQueryTimeout);
+        var request = ReadAsync();
+        if (managed) _managedTrayQuery = request;
+        try
+        {
+            var result = await request;
+            limit.Token.ThrowIfCancellationRequested();
+            sessionToken.ThrowIfCancellationRequested();
+            return result;
+        }
+        finally
+        {
+            if (managed) _managedTrayQuery = null;
+        }
+
+        async Task<T> ReadAsync()
+        {
+            while (true)
+            {
+                sessionToken.ThrowIfCancellationRequested();
+                limit.Token.ThrowIfCancellationRequested();
+                try { return await query(limit.Token); }
+                catch (AgentOperationException error) when (managed && error.ErrorCode == "busy")
+                {
+                    // An earlier request or another client can still be draining the shared Agent gate.
+                    using var retry = CancellationTokenSource.CreateLinkedTokenSource(limit.Token, sessionToken);
+                    await Task.Delay(TimeSpan.FromMilliseconds(250), retry.Token);
+                }
+            }
+        }
+    }
+
+    private async Task WaitForManagedTrayQueryAsync(CancellationToken token)
+    {
+        if (_managedTrayQuery is not { } request) return;
+        try { await request.WaitAsync(token); }
+        catch (Exception) when (!token.IsCancellationRequested) { /* The tray owns this query's error. */ }
     }
 
     private async Task<TrayProjectStatus> ReadTrayProjectAsync(ProjectUiConfig project, LauncherUiOperationContext context,
@@ -225,8 +318,11 @@ public sealed partial class MainWindow
     {
         try
         {
-            var config = await RunProjectConfig(project, context, readOnly: true, token: token);
-            var result = await _uiBackend.CheckAsync(context, config, _ => { }, token);
+            var result = await QueryTrayAsync(context.Managed, async queryToken =>
+            {
+                var config = await RunProjectConfig(project, context, readOnly: true, token: queryToken);
+                return await _uiBackend.CheckAsync(context, config, _ => { }, queryToken);
+            }, token);
             context.Validate(result);
             var status = result.Status;
             if (recommendation is not null &&
@@ -248,7 +344,7 @@ public sealed partial class MainWindow
                 : status.UpdateRequired ? "확인 필요" : "최신 상태";
             return new(name, label, hasUpdate);
         }
-        catch (Exception error) when (!token.IsCancellationRequested && error is not AgentConnectionException)
+        catch (Exception) when (!token.IsCancellationRequested)
         {
             return new(name, "확인 필요");
         }

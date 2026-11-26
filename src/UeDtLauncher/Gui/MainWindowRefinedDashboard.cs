@@ -26,7 +26,16 @@ public sealed partial class MainWindow : Window
     private string _installState { get => _viewModel.InstallState; set => _viewModel.InstallState = value; }
     private string _installDetail { get => _viewModel.InstallDetail; set => _viewModel.InstallDetail = value; }
     private string _releaseNotes { get => _viewModel.ReleaseNotes; set => _viewModel.ReleaseNotes = value; }
-    private bool _running { get => _viewModel.Running; set => _viewModel.Running = value; }
+    private bool _running
+    {
+        get => _viewModel.Running;
+        set
+        {
+            _viewModel.Running = value;
+            if (value) _trayCheck?.Cancel();
+            else DispatchPendingTrayCheck();
+        }
+    }
     private string _agentState { get => _viewModel.AgentState; set => _viewModel.AgentState = value; }
     private bool _agentStatusRefreshing;
     private bool _startupInitialized;
@@ -39,6 +48,7 @@ public sealed partial class MainWindow : Window
     private readonly Func<LauncherConfig, Task<RollbackPreview?>> _managedRollbackPreview;
     private readonly Func<LauncherConfig, string, CancellationToken, Task<CatalogSnapshot>> _catalogLoader;
     private readonly Func<string, bool, DoctorTarget?, CancellationToken, Task<DoctorReport>> _doctor;
+    private readonly Func<Task<ManagedAgentResponse>> _agentStatusProbe;
     private bool _windowMetricsInitialized;
     private readonly bool _allowAutomaticChecks;
     private readonly string? _preferencesPath;
@@ -89,7 +99,8 @@ public sealed partial class MainWindow : Window
         Func<string, Task<LauncherConfig>>? runtimeConfigLoader = null,
         Func<LauncherConfig, RollbackPreview, Task<LauncherRestoreResult>>? restorePreview = null,
         Func<LauncherConfig, Task<RollbackPreview?>>? managedRollbackPreview = null,
-        string? preferencesPath = null)
+        string? preferencesPath = null,
+        Func<Task<ManagedAgentResponse>>? agentStatusProbe = null)
     {
         _uiBackend = backend ?? new LauncherUiBackend();
         _runtimeConfigLoader = runtimeConfigLoader ?? (path => LauncherPaths.LoadResolvedAsync(path));
@@ -102,6 +113,7 @@ public sealed partial class MainWindow : Window
             : Task.Run(async () => { await RollbackPreviewService.RestoreExpectedAsync(config, preview.BackupId, preview.MetadataFingerprint); return new LauncherRestoreResult(LauncherRestoreDisposition.Applied); }));
         _catalogLoader = catalogLoader ?? CatalogSnapshotService.LoadAsync;
         _doctor = doctor ?? ((path, online, target, token) => LauncherDoctor.RunAsync(path, online, token, target: target));
+        _agentStatusProbe = agentStatusProbe ?? (() => new ManagedAgentClient().SendAsync("status", timeout: TimeSpan.FromSeconds(2)));
         _startupOptions = startupOptions;
         _allowAutomaticChecks = startServices;
         _preferencesPath = preferencesPath;
