@@ -190,6 +190,26 @@ public sealed class UploadStatusCommandTests
     }
 
     [Fact]
+    public async Task DelayedTimeoutCallbackDoesNotAllowAnotherStatusQuery()
+    {
+        var clock = new DelayedTimeoutClock();
+        var runner = new FakeRunner(new UploadProcessOutput(44, []));
+        using var output = new StringWriter();
+        using var errors = new StringWriter();
+        var pending = Program.UploadStatusAsync(Args(options: ["--wait", "--timeout", "2", "--interval", "1"]),
+            output, errors, runner, clock);
+        var completeDelay = await clock.DelayCallback.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        clock.Advance(TimeSpan.FromMilliseconds(2500));
+        // Both timers are due. Deliver the poll delay first and withhold the deadline callback.
+        completeDelay();
+
+        Assert.Equal(4, await pending.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Single(runner.Calls);
+        Assert.Empty(output.ToString());
+        Assert.Contains("제한시간", errors.ToString());
+    }
+
+    [Fact]
     public async Task RejectsOversizeMismatchAndUntrustedFieldsWithoutPrintingRawResponse()
     {
         var valid = Reply("pending").StandardOutput;
@@ -227,6 +247,29 @@ public sealed class UploadStatusCommandTests
         using var errors = new StringWriter();
         var exit = await Program.UploadAsync(args, output, errors, runner);
         return (exit, output.ToString(), errors.ToString());
+    }
+
+    private sealed class DelayedTimeoutClock : TimeProvider
+    {
+        private long timestamp;
+        private int timerCount;
+        internal TaskCompletionSource<Action> DelayCallback { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => Interlocked.Read(ref timestamp);
+        internal void Advance(TimeSpan delta) => Interlocked.Add(ref timestamp, delta.Ticks);
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            if (Interlocked.Increment(ref timerCount) == 2) DelayCallback.SetResult(() => callback(state));
+            return new InertTimer();
+        }
+
+        private sealed class InertTimer : ITimer
+        {
+            public bool Change(TimeSpan dueTime, TimeSpan period) => true;
+            public void Dispose() { }
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
     }
 
     internal sealed class FakeRunner(params UploadProcessOutput[] responses) : IUploadProcessRunner
