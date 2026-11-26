@@ -1,6 +1,6 @@
 namespace UeDtLauncher.Distribution.Authority;
 
-internal enum AuthorityRootKind { LegacyDatabase, ExistingDistribution, UnrecognizedLayout, Damaged, UnsupportedFileSystem }
+internal enum AuthorityRootKind { LegacyDatabase, ExistingDistribution, UnrecognizedLayout, Damaged, UnsupportedFileSystem, MissingRoot, MountMismatch }
 
 internal sealed record AuthorityLayout(
     string AuthorityDirectory = "authority",

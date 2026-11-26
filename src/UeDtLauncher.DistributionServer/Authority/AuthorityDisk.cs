@@ -30,12 +30,36 @@ internal static class AuthorityDisk
 
     internal static string Temporary(string path) => path + ".tmp-" + Guid.NewGuid().ToString("N");
 
-    internal static void Write(string path, byte[] bytes, bool head = false)
+    // Create exactly one entry. Directory.CreateDirectory can recreate missing ancestors.
+    internal static void ReserveInitializationDirectory(string path)
     {
-        var temporary = Temporary(path);
+        bool created;
+        int alreadyExists;
+        if (OperatingSystem.IsLinux())
+        {
+            created = Mkdir(path, 0x1c0) == 0; // 0700
+            alreadyExists = 17; // EEXIST
+        }
+        else if (OperatingSystem.IsWindows())
+        {
+            created = CreateWindowsDirectory(ExtendedPath(path), IntPtr.Zero);
+            alreadyExists = 183; // ERROR_ALREADY_EXISTS
+        }
+        else throw new PlatformNotSupportedException("Authority storage supports Windows or Linux.");
+        if (created) return;
+        var error = Marshal.GetLastPInvokeError();
+        if (error != alreadyExists) throw NativeError("Reserve authority initialization directory", error);
+    }
+
+    internal static void Write(string path, byte[] bytes, bool head = false, string? initializationOwner = null)
+    {
+        var temporary = Temporary(initializationOwner is null ? path : path + ".init-" + initializationOwner);
+        // The cleanup scope starts only after we exclusively create the entry.
+        var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write,
+            initializationOwner is null ? FileShare.None : FileShare.Read);
         try
         {
-            using (var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            using (file)
             {
                 file.Write(bytes);
                 Reach(head ? AuthorityBoundary.HeadWrite : AuthorityBoundary.GenerationWrite);
@@ -147,6 +171,74 @@ internal static class AuthorityDisk
         finally { Marshal.FreeHGlobal(buffer); }
     }
 
+    internal static string? DirectoryMountId(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            var volume = new StringBuilder(32768);
+            if (GetVolumePathName(path, volume, (uint)volume.Capacity)) return volume.ToString().ToUpperInvariant();
+            var error = Marshal.GetLastPInvokeError();
+            if (error is 2 or 3) return null;
+            throw NativeError("Identify authority directory mount", error);
+        }
+        if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException("Authority storage requires Windows or Linux.");
+
+        // mnt_id identifies bind mounts even when st_dev is shared. fdinfo also works
+        // on kernels predating the STATX_MNT_ID flag, including the RHEL 8 base kernel.
+        var descriptor = OpenDirectory(path, DirectoryFlag | 0x200000 | 0x80000); // O_PATH | O_CLOEXEC
+        if (descriptor < 0)
+        {
+            var error = Marshal.GetLastPInvokeError();
+            if (error == 2) return null;
+            throw NativeError("Open authority directory for mount identification", error);
+        }
+        try
+        {
+            const string field = "mnt_id:";
+            foreach (var line in File.ReadLines(FormattableString.Invariant($"/proc/self/fdinfo/{descriptor}")))
+                if (line.StartsWith(field, StringComparison.Ordinal)) return line[field.Length..].Trim();
+            throw new AuthorityFileSystemException("The authority mount ID is unavailable in procfs.");
+        }
+        finally { Close(descriptor); }
+    }
+
+    internal static bool MatchesInitializationPrefix(string path, byte[] expected)
+    {
+        if (!OperatingSystem.IsLinux()) return ReadPrefix(path);
+
+        // Open the inode without opening its contents, then refuse links, special
+        // files, and files from another user before any read. The descriptor pins
+        // this inode while a live initializer atomically renames its scratch file.
+        var noFollow = RuntimeInformation.ProcessArchitecture is Architecture.Arm or Architecture.Arm64 ? 0x8000 : 0x20000;
+        var descriptor = OpenDirectory(path, noFollow | 0x200000 | 0x80000); // O_PATH | O_CLOEXEC
+        if (descriptor < 0)
+        {
+            var error = Marshal.GetLastPInvokeError();
+            if (error == 2) throw new FileNotFoundException("Initialization file moved.");
+            throw NativeError("Inspect authority initialization file", error);
+        }
+        try
+        {
+            const uint identityFields = 0x0d; // STATX_TYPE | STATX_NLINK | STATX_UID
+            if (Statx(descriptor, "", 0x1000, identityFields, out var stat) != 0) // AT_EMPTY_PATH
+                throw NativeError("Inspect authority initialization file identity", Marshal.GetLastPInvokeError());
+            return (stat.Mask & identityFields) == identityFields && (stat.Mode & 0xf000) == 0x8000 &&
+                stat.Links == 1 && stat.User == EffectiveUserId() &&
+                ReadPrefix(FormattableString.Invariant($"/proc/self/fd/{descriptor}"));
+        }
+        finally { Close(descriptor); }
+
+        bool ReadPrefix(string source)
+        {
+            using var file = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            var prefix = new byte[expected.Length + 1];
+            var count = file.ReadAtLeast(prefix, prefix.Length, false);
+            return count <= expected.Length && prefix.AsSpan(0, count).SequenceEqual(expected.AsSpan(0, count));
+        }
+    }
+
+    private static int DirectoryFlag => RuntimeInformation.ProcessArchitecture is Architecture.Arm or Architecture.Arm64 ? 0x4000 : 0x10000;
+
     internal static void FlushDirectory(string path)
     {
         if (OperatingSystem.IsLinux()) FlushLinux(path, wholeFileSystem: false);
@@ -164,8 +256,7 @@ internal static class AuthorityDisk
     private static void FlushLinux(string path, bool wholeFileSystem)
     {
         // Linux ARM and AArch64 use their own O_DIRECTORY value.
-        var directoryFlag = RuntimeInformation.ProcessArchitecture is Architecture.Arm or Architecture.Arm64 ? 0x4000 : 0x10000;
-        var descriptor = OpenDirectory(path, directoryFlag);
+        var descriptor = OpenDirectory(path, DirectoryFlag);
         if (descriptor < 0) throw NativeError("Open authority directory", Marshal.GetLastPInvokeError());
         try
         {
@@ -198,6 +289,25 @@ internal static class AuthorityDisk
     private static extern int OpenDirectory(string path, int flags);
     [DllImport("libc", EntryPoint = "close", SetLastError = true)]
     private static extern int Close(int descriptor);
+    [DllImport("libc", EntryPoint = "mkdir", SetLastError = true)]
+    private static extern int Mkdir(string path, uint mode);
+    [DllImport("libc", EntryPoint = "statx", SetLastError = true)]
+    private static extern int Statx(int descriptor, string path, int flags, uint mask, out InitializationFileStat stat);
+    [DllImport("libc", EntryPoint = "geteuid")]
+    private static extern uint EffectiveUserId();
+
+    [StructLayout(LayoutKind.Explicit, Size = 256)]
+    private struct InitializationFileStat
+    {
+        [FieldOffset(0)] internal uint Mask;
+        [FieldOffset(16)] internal uint Links;
+        [FieldOffset(20)] internal uint User;
+        [FieldOffset(28)] internal ushort Mode;
+    }
+
+    [DllImport("kernel32.dll", EntryPoint = "CreateDirectoryW", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CreateWindowsDirectory(string path, IntPtr securityAttributes);
     [DllImport("libc", EntryPoint = "fsync", SetLastError = true)]
     private static extern int Fsync(int descriptor);
     [DllImport("libc", EntryPoint = "syncfs", SetLastError = true)]

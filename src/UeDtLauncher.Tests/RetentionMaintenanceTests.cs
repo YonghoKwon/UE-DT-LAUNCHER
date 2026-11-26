@@ -4,7 +4,7 @@ using Xunit;
 namespace UeDtLauncher.Tests;
 public sealed class RetentionMaintenanceTests : IDisposable
 {
-    private readonly string root=Path.Combine(Path.GetTempPath(),"retention-"+Guid.NewGuid().ToString("N"));
+    private readonly string root = Directory.CreateTempSubdirectory("retention-").FullName;
     private readonly IntakeStore store;
     public RetentionMaintenanceTests()=>store=new(new(){Root=root});
     public void Dispose(){RetentionMaintenance.Boundary.Value=null;Directory.Delete(root,true);}

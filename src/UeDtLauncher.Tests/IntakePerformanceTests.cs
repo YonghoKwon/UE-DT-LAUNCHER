@@ -11,7 +11,7 @@ namespace UeDtLauncher.Tests;
 
 public sealed class IntakePerformanceTests(ITestOutputHelper testOutput) : IDisposable
 {
-    private readonly string root = Path.Combine(Path.GetTempPath(), "intake-perf-" + Guid.NewGuid().ToString("N"));
+    private readonly string root = Directory.CreateTempSubdirectory("intake-perf-").FullName;
 
     [Fact]
     public async Task SnapshotSpaceFailurePrecedesCopyAndReportsEstimate()

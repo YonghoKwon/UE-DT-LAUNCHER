@@ -18,6 +18,7 @@ public sealed class OperationsConsoleTests : IDisposable
         File.WriteAllText(keyPath, key.ExportPkcs8PrivateKeyPem());
         settings = new() { Root = Path.Combine(root, "server"), SigningKeyPath = keyPath, PolicyPath = Path.Combine(root, "policy.json") };
         File.WriteAllText(settings.PolicyPath, "{\"clients\":[]}");
+        Directory.CreateDirectory(settings.Root);
         store = new(settings);
     }
 

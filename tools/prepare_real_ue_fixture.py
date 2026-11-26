@@ -141,6 +141,7 @@ def prepare(args):
         origin = f'http://127.0.0.1:{reservation.getsockname()[1]}'
     write(root/'policy.json', {'clients': [{'id':'ue-test-pc','addresses':['127.0.0.1/32'],
          'grants':[{'projectId':'ma0t10-dt','environment':'prod','channel':'stable','versions':[args.version]}]}]})
+    (root/'server').mkdir()
     write(root/'server.json', {'root':str(root/'server'),'publicUrl':origin,'listenUrl':origin,
         'signingKeyPath':str(root/'release.pem'),'policyPath':str(root/'policy.json'),'authenticationMode':'request-signature-v1'})
     run('launcher','credential','keygen','--name','ue-test-device','--key-id','ue-test-device-key',

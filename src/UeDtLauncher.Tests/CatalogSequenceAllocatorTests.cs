@@ -6,7 +6,7 @@ namespace UeDtLauncher.Tests;
 
 public sealed class CatalogSequenceAllocatorTests : IDisposable
 {
-    private readonly string root = Path.Combine(Path.GetTempPath(), "sequence-reservation-" + Guid.NewGuid().ToString("N"));
+    private readonly string root = Directory.CreateTempSubdirectory("sequence-reservation-").FullName;
     private readonly IntakeStore store;
     public CatalogSequenceAllocatorTests() => store = new(new() { Root=root });
     public void Dispose() { Directory.Delete(root,true); }
