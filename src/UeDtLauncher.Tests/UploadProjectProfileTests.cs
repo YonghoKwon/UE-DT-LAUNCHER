@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Xunit;
 
 namespace UeDtLauncher.Tests;
@@ -43,60 +44,54 @@ public sealed class UploadProjectProfileTests : IDisposable
     }
 
     [Theory]
-    [InlineData("missing-required")]
-    [InlineData("conflict")]
-    [InlineData("unknown-field")]
-    [InlineData("secret-field")]
-    [InlineData("invalid-utf8")]
-    [InlineData("oversize-notes")]
-    [InlineData("missing-file")]
-    [InlineData("duplicate-field")]
-    [InlineData("invalid-schema")]
-    [InlineData("missing-zip")]
-    [InlineData("missing-project-profile")]
-    [InlineData("invalid-release-path")]
-    public async Task InvalidInputExitsTwoBeforeLocalWorkOrRunner(string scenario)
+    [InlineData("missing-required", "--project-id")]
+    [InlineData("conflict", "중 하나만")]
+    [InlineData("unknown-field", "허용 필드")]
+    [InlineData("secret-field", "허용 필드")]
+    [InlineData("invalid-utf8", "올바른 UTF-8")]
+    [InlineData("oversize-notes", "64 KiB")]
+    [InlineData("missing-file", "--notes-file에")]
+    [InlineData("duplicate-field", "허용 필드")]
+    [InlineData("invalid-schema", "schemaVersion")]
+    [InlineData("missing-zip", "--zip에")]
+    [InlineData("missing-project-profile", "--project-profile에")]
+    [InlineData("invalid-release-path", "ZIP 내부 경로")]
+    public async Task InvalidInputExitsTwoBeforeLocalWorkOrRunner(string scenario, string expectedGuidance)
     {
         var zip = MakeZip();
         var profile = await WriteProfileAsync();
         var notes = Path.Combine(root, "note-path-marker.md");
-        string[] parameters = scenario switch
+        await File.WriteAllTextAsync(notes, Notes);
+        var project = JsonNode.Parse(await File.ReadAllTextAsync(profile))!.AsObject();
+        string[] extra = [];
+        switch (scenario)
         {
-            "missing-required" => [],
-            "conflict" => ["--project-profile", profile, "--notes", Notes, "--notes-file", notes],
-            "invalid-release-path" => ["--project-profile", profile, "--hero-path", "../private-path-marker"],
-            _ => ["--project-profile", profile, "--notes-file", notes]
-        };
-        if (scenario == "invalid-utf8") await File.WriteAllBytesAsync(notes, [0xef, 0xbb, 0xbf, 0xc3, 0x28]);
-        if (scenario == "oversize-notes") await File.WriteAllBytesAsync(notes, new byte[65537]);
-        if (scenario is "unknown-field" or "secret-field" or "duplicate-field" or "invalid-schema")
-        {
-            var json = scenario switch
-            {
-                "unknown-field" => """{"invalidFieldMarker":"invalid-value-marker"}""",
-                "secret-field" => """{"apiToken":"sensitive-value-marker"}""",
-                "duplicate-field" => """{"projectId":"a","ProjectId":"b"}""",
-                _ => """{"schemaVersion":2}"""
-            };
-            await File.WriteAllTextAsync(profile, json);
+            case "missing-required": project.Remove("projectId"); break;
+            case "conflict": extra = ["--notes", Notes]; break;
+            case "unknown-field": project["invalidFieldMarker"] = "invalid-value-marker"; break;
+            case "secret-field": project["apiToken"] = "sensitive-value-marker"; break;
+            case "invalid-utf8": await File.WriteAllBytesAsync(notes, [0xef, 0xbb, 0xbf, 0xc3, 0x28]); break;
+            case "oversize-notes": await File.WriteAllBytesAsync(notes, new byte[65537]); break;
+            case "missing-file": notes = Path.Combine(root, "missing-notes.md"); break;
+            case "duplicate-field": project["ProjectId"] = "different"; break;
+            case "invalid-schema": project["schemaVersion"] = 2; break;
+            case "missing-zip": zip = Path.Combine(root, "missing.zip"); break;
+            case "missing-project-profile": profile = Path.Combine(root, "missing-project-path-marker.json"); break;
+            case "invalid-release-path": project["heroPath"] = "../private-path-marker"; break;
+            default: throw new ArgumentOutOfRangeException(nameof(scenario));
         }
-        if (scenario == "missing-zip")
-        {
-            zip = Path.Combine(root, "missing.zip");
-            parameters = ["--project-profile", profile];
-        }
-        if (scenario == "missing-project-profile")
-            parameters = ["--project-profile", Path.Combine(root, "missing-project-path-marker.json")];
+        if (scenario != "missing-project-profile") await File.WriteAllTextAsync(profile, project.ToJsonString());
 
         var runner = new RecordingRunner();
         var work = Path.Combine(root, "work");
         var sidecar = Path.Combine(root, "release.json");
-        string[] args = ["--version", "1.0.0", "--zip", zip, ..parameters];
+        string[] args = ["--version", "1.0.0", "--zip", zip, "--project-profile", profile, "--notes-file", notes, ..extra];
         var before = Directory.GetFileSystemEntries(root).Order().ToArray();
         using var output = new StringWriter();
         using var errors = new StringWriter();
         var error = await Assert.ThrowsAsync<CliArgumentException>(() =>
             Program.UploadAsync([..args, ..Connection], output, errors, runner, work));
+        Assert.Contains(expectedGuidance, error.Message);
         foreach (var marker in new[] { root, Notes, "invalidFieldMarker", "sensitive-value-marker", "private-path-marker", notes })
             Assert.DoesNotContain(marker, error.Message);
         Assert.Equal(2, await Program.MainAsync(["upload", ..args, ..Connection]));
@@ -106,6 +101,87 @@ public sealed class UploadProjectProfileTests : IDisposable
         Assert.Equal(before, Directory.GetFileSystemEntries(root).Order());
         Assert.Empty(output.ToString());
         Assert.Empty(errors.ToString());
+    }
+
+    [Theory]
+    [InlineData("missing-profile", "--profile")]
+    [InlineData("invalid-profile-json", "--profile")]
+    [InlineData("invalid-profile-setting", "--profile")]
+    [InlineData("missing-zip-member", "ZIP 내부 경로")]
+    public async Task InvalidUploadConnectionOrMemberFailsBeforeWorkOrRemoteCalls(string scenario, string expectedGuidance)
+    {
+        const string marker = "private-input-marker";
+        var zip = MakeZip();
+        var project = await WriteProfileAsync();
+        var connection = Path.Combine(root, marker + ".json");
+        var notes = Path.Combine(root, "notes.md");
+        await File.WriteAllTextAsync(notes, Notes);
+        if (scenario != "missing-profile")
+        {
+            var json = scenario switch
+            {
+                "invalid-profile-json" => """{"server":"private-input-marker", """,
+                "invalid-profile-setting" => """{"server":"user@host.example","remoteIncoming":"private-input-marker"}""",
+                _ => """{"server":"user@host.example","remoteIncoming":"/srv/incoming"}"""
+            };
+            await File.WriteAllTextAsync(connection, json);
+        }
+        if (scenario == "missing-zip-member")
+        {
+            var profile = JsonNode.Parse(await File.ReadAllTextAsync(project))!.AsObject();
+            profile["heroPath"] = "Pictures/" + marker + ".png";
+            await File.WriteAllTextAsync(project, profile.ToJsonString());
+        }
+
+        string[] args = ["--zip", zip, "--version", "1.0.0", "--project-profile", project, "--profile", connection, "--notes-file", notes];
+        var runner = new RecordingRunner();
+        var work = Path.Combine(root, "work");
+        var before = Directory.GetFileSystemEntries(root).Order().ToArray();
+        var error = await Assert.ThrowsAsync<CliArgumentException>(() =>
+            Program.UploadAsync(args, TextWriter.Null, TextWriter.Null, runner, work));
+        Assert.Contains(expectedGuidance, error.Message);
+        Assert.DoesNotContain(marker, error.ToString());
+        Assert.Equal(2, await Program.MainAsync(["upload", ..args]));
+        Assert.Equal(0, runner.AvailabilityChecks);
+        Assert.Empty(runner.Calls);
+        Assert.Equal(before, Directory.GetFileSystemEntries(root).Order());
+    }
+
+    [Fact]
+    public async Task DryRunJsonMasksHomeAndOtherLocalPaths()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        Assert.NotEmpty(home);
+        var work = Path.Combine(home, "upload-work");
+        var zip = MakeZip();
+        var profile = await WriteProfileAsync();
+        var connection = Path.Combine(root, "connection.json");
+        var identity = Path.Combine(root, "identity.key");
+        await File.WriteAllTextAsync(identity, "synthetic identity");
+        await JsonFiles.WriteAsync(connection, new UploadProfile("user@host.example", "/srv/incoming", IdentityFile: identity));
+        using var output = new StringWriter();
+        var runner = new RecordingRunner();
+        Assert.Equal(0, await Program.UploadAsync(["--zip", zip, "--version", "1.0.0", "--project-profile", profile,
+            "--profile", connection, "--upload-id", "safe-plan", "--dry-run", "--format", "json"], output, TextWriter.Null, runner, work));
+        using var json = JsonDocument.Parse(output.ToString());
+        var steps = json.RootElement.GetProperty("steps").EnumerateArray().ToArray();
+        Assert.Equal("~/upload-work/safe-plan-NEW/payload.zip", LocalArgument(steps[1]));
+        Assert.Equal("~/upload-work/safe-plan-NEW/release.json", LocalArgument(steps[2]));
+        foreach (var step in steps)
+        {
+            var arguments = step.GetProperty("arguments").EnumerateArray().Select(arg => arg.GetString()).ToList();
+            Assert.DoesNotContain(arguments, argument => argument!.Contains(home, StringComparison.OrdinalIgnoreCase));
+            Assert.DoesNotContain(identity, arguments);
+            Assert.EndsWith("identity.key", arguments[arguments.IndexOf("-i") + 1]);
+        }
+        Assert.Equal(0, runner.AvailabilityChecks);
+        Assert.Empty(runner.Calls);
+
+        static string? LocalArgument(JsonElement step)
+        {
+            var args = step.GetProperty("arguments");
+            return args[args.GetArrayLength() - 2].GetString();
+        }
     }
 
     [Fact]
@@ -205,17 +281,16 @@ public sealed class UploadProjectProfileTests : IDisposable
         Assert.Equal(1, profile.SchemaVersion);
         Assert.Null(profile.ProjectId);
         await File.WriteAllTextAsync(path, "existing-content");
-        await Assert.ThrowsAsync<IOException>(() => Program.UploadAsync(args, TextWriter.Null));
+        using var errors = new StringWriter();
+        Assert.Equal(1, await Program.UploadAsync(args, TextWriter.Null, errors));
+        Assert.Contains("--force", errors.ToString());
         Assert.Equal("existing-content", await File.ReadAllTextAsync(path));
         Assert.Equal(0, await Program.UploadAsync([..args, "--force"], TextWriter.Null));
         Assert.Equal(1, UploadProjectProfile.Parse(await File.ReadAllBytesAsync(path)).SchemaVersion);
 
         var raced = Path.Combine(root, "raced.project.json");
-        async Task<bool> Create()
-        {
-            try { return await Program.UploadAsync(["project-init", "--output", raced], TextWriter.Null) == 0; }
-            catch (IOException) { return false; }
-        }
+        async Task<bool> Create() =>
+            await Program.UploadAsync(["project-init", "--output", raced], TextWriter.Null, TextWriter.Null) == 0;
         Assert.Single(await Task.WhenAll(Create(), Create()), success => success);
         Assert.Equal(1, UploadProjectProfile.Parse(await File.ReadAllBytesAsync(raced)).SchemaVersion);
         Assert.Empty(Directory.GetFiles(root, "*.tmp"));

@@ -27,7 +27,13 @@ public static partial class Program
         if (args.FirstOrDefault() == "project-init")
         {
             var destination = Get(args, "--output") ?? throw new CliArgumentException("--output에 프로젝트 프로필 경로를 지정하세요.");
-            await UploadProjectProfile.InitializeAsync(destination, Has(args, "--force"));
+            var force = Has(args, "--force");
+            try { await UploadProjectProfile.InitializeAsync(destination, force); }
+            catch (IOException) when (!force && File.Exists(destination))
+            {
+                errors.WriteLine("프로젝트 프로필이 이미 있습니다. 새 파일명을 지정하거나 교체하려면 --force를 사용하세요.");
+                return 1;
+            }
             output.WriteLine("프로젝트 프로필을 만들었습니다. projectId, platform, entryPoint와 프로젝트에 필요한 항목을 편집하세요.");
             return 0;
         }
@@ -36,8 +42,8 @@ public static partial class Program
         var serverOptions = new UploadProfile(Get(args, "--server"), Get(args, "--remote-incoming"), port, Get(args, "--identity-file"));
         if (args.FirstOrDefault() == "check")
         {
-            var checkProfile = serverProfilePath is null ? new UploadProfile() : await JsonFiles.ReadAsync<UploadProfile>(serverProfilePath);
-            var check = await new UploadPreflight(runner ?? new OpenSshProcessRunner()).CheckAsync(checkProfile.Override(serverOptions));
+            var checkProfile = await ReadUploadConnectionAsync(serverProfilePath, serverOptions);
+            var check = await new UploadPreflight(runner ?? new OpenSshProcessRunner()).CheckAsync(checkProfile);
             if (format == "json") output.WriteLine(JsonSerializer.Serialize(check, JsonFiles.Options));
             else UploadPreflight.Write(output, check);
             return check.Success ? 0 : 1;
@@ -47,23 +53,33 @@ public static partial class Program
         var dryRun = Has(args, "--dry-run");
         var planWithoutDestination = dryRun && Get(args, "--project-profile") is not null &&
                                      serverProfilePath is null && serverOptions == new UploadProfile();
-        var profile = serverProfilePath is null ? new UploadProfile() : await JsonFiles.ReadAsync<UploadProfile>(serverProfilePath);
-        profile = planWithoutDestination ? new UploadProfile("upload-user@server.invalid", "/incoming") : profile.Override(serverOptions);
+        var profile = planWithoutDestination ? new UploadProfile("upload-user@server.invalid", "/incoming")
+            : await ReadUploadConnectionAsync(serverProfilePath, serverOptions);
+        var uploadId = Get(args, "--upload-id");
+        if (uploadId is not null)
+        {
+            try { ReleaseSidecar.Segment(uploadId); }
+            catch (InvalidDataException) { throw new CliArgumentException("--upload-id의 식별자 형식을 확인하세요."); }
+        }
         UploadResult result;
         try
         {
             result = await new ReleaseUploader(runner ?? new OpenSshProcessRunner()).ExecuteAsync(zip, input.Metadata,
-                profile, Get(args, "--upload-id"), workRoot ?? Path.Combine(Environment.CurrentDirectory, "upload-work"), dryRun,
+                profile, uploadId, workRoot ?? Path.Combine(Environment.CurrentDirectory, "upload-work"), dryRun,
                 progress: value => UploadPresentation.Progress(errors, value), keepWork: Has(args, "--keep-work"));
         }
         catch (ReleaseDocumentSizeException)
         {
             throw new CliArgumentException("release.json exceeds 1 MiB.");
         }
+        catch (Exception error) when (error is InvalidDataException or FileNotFoundException or DirectoryNotFoundException)
+        {
+            throw new CliArgumentException("--zip의 형식과 프로젝트 프로필에 지정한 ZIP 내부 경로를 확인하세요.");
+        }
         if (format == "json")
         {
             var metadata = input.Metadata;
-            var json = JsonSerializer.SerializeToNode(result, JsonFiles.Options)!.AsObject();
+            var json = JsonSerializer.SerializeToNode(UploadPresentation.ForOutput(result), JsonFiles.Options)!.AsObject();
             json["project"] = JsonSerializer.SerializeToNode(new
             {
                 metadata.ProjectId, metadata.Version, metadata.Platform, metadata.Channel, input.NotesBytes
@@ -81,5 +97,21 @@ public static partial class Program
                 output.WriteLine("계획에 예시 목적지를 사용했습니다. 전송에는 실제 업로드 접속 프로필이나 서버 옵션이 필요합니다.");
         }
         return result.Success ? 0 : 1;
+    }
+
+    private static async Task<UploadProfile> ReadUploadConnectionAsync(string? path, UploadProfile options)
+    {
+        try
+        {
+            var profile = path is null ? new UploadProfile() : await JsonFiles.ReadAsync<UploadProfile>(path);
+            profile = profile.Override(options);
+            profile.Validate();
+            return profile;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or
+                                            JsonException or InvalidOperationException or NotSupportedException)
+        {
+            throw new CliArgumentException("--profile 및 서버, 원격 incoming, 포트, identity 파일 설정을 확인하세요.");
+        }
     }
 }

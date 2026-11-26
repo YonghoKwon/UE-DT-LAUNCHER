@@ -21,6 +21,28 @@ public sealed record UploadProgress(int Number, string Message, long Bytes = 0);
 
 public static class UploadPresentation
 {
+    internal static UploadResult ForOutput(UploadResult result) => result with
+    {
+        WorkDirectory = result.WorkDirectory is null ? null : LocalPath(result.WorkDirectory),
+        Steps = result.Steps.Select(step => step with
+        {
+            Arguments = step.Arguments.Select(argument => Path.IsPathFullyQualified(argument) ? LocalPath(argument) : argument).ToArray()
+        }).ToArray()
+    };
+
+    private static string LocalPath(string path)
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (home.Length > 0)
+        {
+            var relative = Path.GetRelativePath(home, path);
+            if (relative == ".") return "~";
+            if (!Path.IsPathRooted(relative) && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+                return HumanText.Safe("~/" + relative.Replace(Path.DirectorySeparatorChar, '/'));
+        }
+        return HumanText.Safe(Path.GetFileName(Path.TrimEndingDirectorySeparator(path)));
+    }
+
     public static string Stage(string name) => name switch
     {
         "mkdir" => "원격 폴더 준비",

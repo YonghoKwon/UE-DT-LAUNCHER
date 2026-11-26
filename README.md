@@ -115,6 +115,8 @@ upload는 키 인증 전용(BatchMode)으로 비밀번호를 묻지 않습니다
 
 명령줄 값이 프로젝트 프로필보다 우선하고, 생략한 선택 값에는 기본값을 적용합니다. `--notes-file`은 BOM을 포함해 최대 64 KiB인 UTF-8 텍스트입니다. `--notes`와 함께 지정하면 종료2입니다. 노트 옵션은 `release-metadata`에서도 사용할 수 있습니다. 프로젝트 프로필의 필드와 작성 방법은 [기능 지도 B2](docs/reference/feature-workflow.md#b2-releasejson-만들기--개발-pc-powershell)와 [합성 예시](examples/ma0t10.project.json)를 참고하세요.
 
+업로드 JSON의 로컬 경로는 홈 기준 `~/…` 또는 파일·폴더명으로 표시합니다. 접속 프로필 오류나 ZIP 내부 경로 불일치는 작업 사본을 만들거나 원격에 연결하기 전에 종료2로 안내합니다.
+
 자동 업로드 ID는 릴리스 정보를 알아볼 수 있는 접두부를 길이에 맞춰 자르고 UTC 밀리초 시각·짧은 난수 접미부를 붙여 최대128자로 만듭니다. 프로젝트/버전 등 릴리스 메타데이터는 자르지 않습니다. 명시한 `--upload-id`는 그대로 검증하며 자동 수정하지 않습니다.
 
 서버 운영자는 Linux 터미널에서 `./UeDtLauncher.DistributionServer console --config /etc/ue-dt-distribution/server.json`을 실행합니다. 운영 콘솔은 터미널 입력만 허용하며 승인과 승격은 별도 확인입니다. [B2~B6 전체 명령·결과](docs/reference/feature-workflow.md)
