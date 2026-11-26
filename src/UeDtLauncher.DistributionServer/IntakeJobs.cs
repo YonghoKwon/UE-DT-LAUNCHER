@@ -7,7 +7,8 @@ namespace UeDtLauncher.Distribution;
 internal sealed record StoredIntakeJob(
     [property: JsonRequired] string Id, [property: JsonRequired] string Source,
     [property: JsonRequired] string State, [property: JsonRequired] string? Snapshot,
-    [property: JsonRequired] string? Message, [property: JsonRequired] Guid? ClaimId);
+    [property: JsonRequired] string? Message, [property: JsonRequired] Guid? ClaimId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateTimeOffset? PublishedAt = null);
 
 internal sealed record IntakeActiveWork(
     [property: JsonRequired] string Job, [property: JsonRequired] Guid Owner,

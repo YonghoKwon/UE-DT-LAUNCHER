@@ -8,25 +8,35 @@ public sealed partial class IntakeStore
 {
     public List<IntakeJob> List() => List(Authority.ReadSnapshot());
 
-    internal List<IntakeJob> List(AuthoritySnapshot snapshot) =>
-        IntakeJobs.Read(snapshot).Jobs.Select(job => Present(job, snapshot)).ToList();
+    internal List<IntakeJob> List(AuthoritySnapshot snapshot)
+    {
+        var legacyPublicationTimes = LegacyPublicationTimes(snapshot);
+        return IntakeJobs.Read(snapshot).Jobs.Select(job => Present(job, snapshot, legacyPublicationTimes)).ToList();
+    }
 
     public IntakeJob? Find(string id)
     {
         var snapshot = Authority.ReadSnapshot();
         var job = IntakeJobs.Read(snapshot).Jobs.Find(job => job.Id == id);
-        return job is null ? null : Present(job, snapshot);
+        return job is null ? null : Present(job, snapshot, LegacyPublicationTimes(snapshot));
     }
 
     public IntakeJob Get(string id) => Find(id) ?? throw new InvalidOperationException("Job not found.");
 
-    private IntakeJob Present(StoredIntakeJob job, AuthoritySnapshot snapshot)
+    private Lazy<ILookup<string, DateTimeOffset>> LegacyPublicationTimes(AuthoritySnapshot snapshot) => new(() =>
+        Authority.ReadAudit(snapshot).Where(entry => entry.Action == "published").ToLookup(entry => entry.Job, entry => entry.At));
+
+    private IntakeJob Present(StoredIntakeJob job, AuthoritySnapshot snapshot,
+        Lazy<ILookup<string, DateTimeOffset>> legacyPublicationTimes)
     {
         if (job.State == "published" && CatalogAuthority.For(this)?.Find(job.Id, byJob: true, snapshot: snapshot) is { } release)
         {
             var size = release.Metadata.PackageSize;
+            var completedAt = job.PublishedAt ?? legacyPublicationTimes.Value[job.Id]
+                .Select(time => (DateTimeOffset?)time).LastOrDefault();
             return new(job.Id, IntakeJobs.Resolve(Root, job.Source), job.State,
-                IntakeJobs.ResolveOptional(Root, job.Snapshot), job.Message, "published", size, size);
+                IntakeJobs.ResolveOptional(Root, job.Snapshot), job.Message, "published", size, size,
+                ProgressUpdatedAt: completedAt?.ToString("O"));
         }
 
         var progress = ReadProgress(job);
@@ -58,7 +68,7 @@ public sealed partial class IntakeStore
                     job.EstimatedAdditionalDiskBytes, job.ProgressUpdatedAt);
             var next = new StoredIntakeJob(job.Id, previous?.Source ?? IntakeJobs.Relative(Root, job.Source),
                 job.State, job.Snapshot is null ? null : IntakeJobs.Relative(Root, job.Snapshot), job.Message,
-                claim);
+                claim, job.State == "published" ? previous?.PublishedAt : null);
             if (index < 0) jobs.Jobs.Add(next);
             else jobs.Jobs[index] = next;
             return jobs.Plan(new AuthorityEvent(DateTimeOffset.UtcNow, job.State, job.Id));

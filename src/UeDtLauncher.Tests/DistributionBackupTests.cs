@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text.Json;
 using UeDtLauncher.Distribution;
 using UeDtLauncher.Distribution.Authority;
 using Xunit;
@@ -71,6 +72,38 @@ public sealed class DistributionBackupTests : IDisposable
         Assert.Equal(1000L, FileAuthorityFixtures.HighWater(restored));
         Assert.False(File.Exists(Path.Combine(target, "restore-staged.json")));
     }
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    public async Task ActivateRejectsSemanticallyInvalidAuthorityAndPreservesFence(bool damageTarget, bool damageAuth)
+    {
+        var backup = Path.Combine(root, "backup");
+        var target = Path.Combine(root, "restored");
+        await DistributionBackup.CreateAsync(settings, backup);
+        await DistributionBackup.StageAsync(backup, target, settings);
+
+        var damagedRoot = damageTarget ? target : settings.Root;
+        var authority = AuthorityStore.InspectExisting(damagedRoot).Store;
+        using (var lease = DistributionMaintenanceLease.Acquire(damagedRoot, true, create: false))
+        {
+            var area = damageAuth ? AuthorityArea.Auth : AuthorityArea.Sequence;
+            var invalid = damageAuth
+                ? JsonSerializer.SerializeToElement(new { schemaVersion = 1, tokens = (object?)null, deviceKeys = Array.Empty<object>() })
+                : JsonSerializer.SerializeToElement(new { schemaVersion = 1, highWater = -1 });
+            authority.CommitOffline(lease, _ => new(new Dictionary<AuthorityArea, JsonElement> { [area] = invalid }, []));
+        }
+
+        var head = Path.Combine(target, "authority", "HEAD");
+        var before = File.ReadAllBytes(head);
+        var error = await Assert.ThrowsAsync<AuthorityRootException>(() => DistributionBackup.ActivateAsync(target, settings, true));
+        Assert.Equal(AuthorityRootKind.Damaged, error.Kind);
+        Assert.True(File.Exists(Path.Combine(target, "restore-staged.json")));
+        Assert.False(File.Exists(Path.Combine(target, "restored-policy.json")));
+        Assert.Equal(before, File.ReadAllBytes(head));
+    }
+
     [Theory]
     [InlineData("authority-files-copied", false)]
     [InlineData("authority-head-replaced", true)]

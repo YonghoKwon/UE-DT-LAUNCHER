@@ -48,8 +48,6 @@ public sealed class ApprovedPublisher(IntakeStore store)
         var snapshot = job.Snapshot ?? throw new InvalidDataException("Missing private snapshot.");
         var metadataBytes = await SidecarPackageValidator.ReadDocumentAsync(Path.Combine(snapshot, "release.json"), token);
         var metadata = SidecarPackageValidator.Parse(metadataBytes);
-        if (authority is not null && metadata.DisplayName is null)
-            throw new InvalidDataException("Catalog release display name is missing.");
         var existing = Find(metadata.ReleaseId);
         if (existing is not null)
         {

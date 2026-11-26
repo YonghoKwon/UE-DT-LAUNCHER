@@ -123,10 +123,11 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
                 throw new InvalidDataException("Published metadata exceeds 1 MiB.");
             var relative = "releases/" + metadata.ReleaseId;
             var entry = new CatalogRelease(metadata.ReleaseId, jobId, relative, AuthorityDocuments.Hash(bytes), CatalogFields.From(metadata));
+            var completedAt = DateTimeOffset.UtcNow;
             var change = Change(catalog with { Releases = [.. catalog.Releases, entry] },
-                new(DateTimeOffset.UtcNow, "published", jobId));
+                new(completedAt, "published", jobId));
             var jobs = IntakeJobs.Read(snapshot);
-            claim.CompletePublication(jobs);
+            claim.CompletePublication(jobs, completedAt);
             var areas = new Dictionary<AuthorityArea, JsonElement>(change.Areas)
             {
                 [AuthorityArea.Jobs] = jobs.Plan().Areas[AuthorityArea.Jobs]
@@ -195,7 +196,7 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
             if (entry?.Fields is not { } fields || entry.Job is null || entry.MetadataSha256 is not { Length: 64 } ||
                 entry.MetadataSha256.Any(c => c is not (>= '0' and <= '9' or >= 'a' and <= 'f')) ||
                 fields.ProjectId is null || fields.Environment is null || fields.Channel is null ||
-                fields.Platform is null || fields.Version is null || fields.DisplayName is null)
+                fields.Platform is null || fields.Version is null)
                 throw new InvalidDataException("Catalog release entry is invalid.");
             var selection = new ReleaseSelection(fields.ProjectId, fields.Environment, fields.Channel, fields.Platform, fields.Version);
             var track = ReleasePromotions.Track(selection);
@@ -272,7 +273,7 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
 
     private sealed record CatalogRelease(string Id, string Job, string Directory, string MetadataSha256, CatalogFields Fields);
 
-    private sealed record CatalogFields(string ProjectId, string DisplayName, string Environment, string Channel,
+    private sealed record CatalogFields(string ProjectId, string? DisplayName, string Environment, string Channel,
         string Version, string Platform, string? Notes, string? HeroPath, string? ThumbnailPath)
     {
         [JsonIgnore]

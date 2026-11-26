@@ -48,6 +48,7 @@ public sealed class CatalogAuthorityTests
             Assert.Equal(published ? "published" : "publishing", persistedJob.GetProperty("state").GetString());
             Assert.Equal(published ? 0 : 1, jobs.GetProperty("activeWork").GetArrayLength());
             Assert.Equal(published, persistedJob.GetProperty("claimId").ValueKind == JsonValueKind.Null);
+            Assert.Equal(published, persistedJob.TryGetProperty("publishedAt", out _));
             Assert.Equal(published ? 1 : 0, data.RootElement.GetProperty("events").EnumerateArray()
                 .Count(entry => entry.GetProperty("action").GetString() == "published"));
         }
@@ -69,6 +70,11 @@ public sealed class CatalogAuthorityTests
         await fixture.Publisher.ApproveAsync(job.Id);
         var winner = Assert.Single(fixture.Audit("published"));
         Assert.Equal(job.Id, winner.Job);
+        var completedAt = winner.At.ToString("O");
+        Assert.Equal(completedAt, publishedJob.ProgressUpdatedAt);
+        var reopenedStore = new IntakeStore(fixture.Intake.Settings);
+        Assert.Equal(completedAt, reopenedStore.Get(job.Id).ProgressUpdatedAt);
+        Assert.Equal(completedAt, Assert.Single(reopenedStore.List()).ProgressUpdatedAt);
         var losingJob = await fixture.Ingest("1.0.0", "second");
         var conflict = await Assert.ThrowsAsync<IOException>(() => fixture.Publisher.ApproveAsync(losingJob.Id));
         Assert.Contains("belongs to another publication", conflict.Message);
@@ -124,21 +130,44 @@ public sealed class CatalogAuthorityTests
     }
 
     [Fact]
-    public async Task InvalidCatalogFieldsAreRejectedBeforeActivationOrHeadPublication()
+    public async Task ExplicitNullDisplayNamePublishesAndRemainsReadable()
     {
         using var fixture = new CatalogFixture();
-        var valid = await fixture.Publish("1.0.0");
-        var invalid = await fixture.Ingest("2.0.0", "invalid", displayName: null);
-        var rejectedId = Selection("2.0.0").ReleaseId;
-        var head = File.ReadAllBytes(fixture.Authority.DataPath("HEAD"));
-        var audit = fixture.Audit("published");
+        var job = await fixture.Ingest("1.0.0", "unnamed", displayName: null);
+        var release = await fixture.Publisher.ApproveAsync(job.Id);
+        Assert.Null(release.Metadata.DisplayName);
 
-        await Assert.ThrowsAsync<InvalidDataException>(() => fixture.Publisher.ApproveAsync(invalid.Id));
-        Assert.Equal(head, File.ReadAllBytes(fixture.Authority.DataPath("HEAD")));
-        Assert.Equal(audit, fixture.Audit("published"));
-        Assert.False(Directory.Exists(Path.Combine(fixture.Intake.Root, "releases", rejectedId)));
-        Assert.False(File.Exists(Path.Combine(fixture.Authority.ReleaseMetadataPath, rejectedId + ".json")));
-        Assert.Equal(valid.ReleaseId, Assert.Single(new ReleasePromotions(fixture.Intake).Snapshot().Releases).ReleaseId);
+        var reopened = new IntakeStore(fixture.Intake.Settings);
+        var publisher = new ApprovedPublisher(reopened);
+        Assert.Null(publisher.Find(release.ReleaseId)!.Metadata.DisplayName);
+        Assert.Null(Assert.Single(publisher.List()).Metadata.DisplayName);
+
+        var promotions = new ReleasePromotions(reopened);
+        promotions.Promote(Selection("1.0.0"), 0, "fixture");
+        var snapshot = promotions.Snapshot();
+        var catalog = PromotionCatalog.Build(snapshot, snapshot.Releases, false, reopened.Settings.PublicUrl,
+            new PublishedAssetCache(), 1, DateTimeOffset.UtcNow);
+        Assert.Null(Assert.Single(catalog.Projects).DisplayName);
+    }
+
+    [Fact]
+    public async Task PublicationTimeSurvivesReopenOfJobsWrittenBeforeTimestampField()
+    {
+        using var fixture = new CatalogFixture();
+        var release = await fixture.Publish("1.0.0");
+        var completedAt = Assert.Single(fixture.Audit("published")).At.ToString("O");
+        fixture.Authority.Commit(snapshot =>
+        {
+            var jobs = IntakeJobs.Read(snapshot);
+            var job = Assert.Single(jobs.Jobs);
+            Assert.NotNull(job.PublishedAt);
+            jobs.Jobs[0] = job with { PublishedAt = null };
+            return jobs.Plan();
+        });
+
+        var reopened = new IntakeStore(fixture.Intake.Settings);
+        Assert.Equal(completedAt, reopened.Get(release.JobId).ProgressUpdatedAt);
+        Assert.Equal(completedAt, Assert.Single(reopened.List()).ProgressUpdatedAt);
     }
 
     [Fact]

@@ -298,9 +298,12 @@ public sealed class DistributionPerformanceTests
         Assert.Equal(144, sequences.Count);
         Assert.Equal(sequences.Count, sequences.Distinct().Count());
         Assert.True(progressCount >= 8 * 4);
-        var uploadsInTest = server.Store.List().Where(job => uploads.Contains(job.Source)).ToArray();
-        Assert.Equal(8, uploadsInTest.Length);
-        Assert.All(uploadsInTest, job => Assert.Equal("published", job.State));
+        var jobs = server.Store.List();
+        Assert.Equal(10, jobs.Count);
+        Assert.All(jobs, job => Assert.Equal("published", job.State));
+        var expectedSources = uploads.Concat(new[] { "1.0.0", "2.0.0" }
+            .Select(version => Path.Combine(server.Store.Root, "incoming", version))).Order(StringComparer.Ordinal);
+        Assert.Equal(expectedSources, jobs.Select(job => job.Source).Order(StringComparer.Ordinal));
         Assert.Equal(10, new ApprovedPublisher(server.Store).List().Count);
         Assert.Empty(IntakeJobs.Read(server.Store.Authority.ReadSnapshot()).ActiveWork);
     }

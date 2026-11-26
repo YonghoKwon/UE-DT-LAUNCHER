@@ -30,10 +30,10 @@ internal sealed class IntakeWorkClaim : IDisposable
         });
     }
 
-    internal void CompletePublication(IntakeJobs jobs)
+    internal void CompletePublication(IntakeJobs jobs, DateTimeOffset completedAt)
     {
         var index = PublishingIndex(jobs);
-        jobs.Jobs[index] = jobs.Jobs[index] with { State = "published", ClaimId = null };
+        jobs.Jobs[index] = jobs.Jobs[index] with { State = "published", ClaimId = null, PublishedAt = completedAt };
         jobs.ActiveWork.RemoveAll(work => work.Job == jobId && work.Owner == owner);
     }
 

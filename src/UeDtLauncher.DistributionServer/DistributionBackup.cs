@@ -86,13 +86,20 @@ public static class DistributionBackup
         Directories = new[] { "incoming", "processing", "releases", "archive", "authority" },
         Requirement = "Stop serve/watch/workers; run as server owner/admin. Complete-source-loss recovery is excluded."
     };
+    private static AuthoritySnapshot ReadValidatedAuthority(string root)
+    {
+        var snapshot = AuthorityStore.InspectExisting(root);
+        CatalogAuthority.ValidateRoot(snapshot, root);
+        return snapshot;
+    }
+
     public static async Task<DistributionBackupManifest> CreateAsync(DistributionSettings settings, string destination)
     {
         var root = Path.GetFullPath(settings.Root); destination = Path.GetFullPath(destination);
         if (Directory.Exists(destination) || Inside(root, destination)) throw new IOException("Backup needs a new directory outside server root.");
-        _ = AuthorityStore.InspectExisting(root, validateHistory: true);
+        _ = ReadValidatedAuthority(root);
         using var lease = DistributionMaintenanceLease.Acquire(root, true, create: false);
-        var authority = AuthorityStore.InspectExisting(root, validateHistory: true);
+        var authority = ReadValidatedAuthority(root);
         using var oldServer = new AuthenticationProcessLease(root);
         foreach(var journal in Directory.EnumerateFiles(root,"retention-*.json"))
             if(new FileInfo(journal).Length>64*1024*1024 || (await JsonFiles.ReadAsync<RetentionJournal>(journal)).Phase!="Completed")
@@ -132,9 +139,7 @@ public static class DistributionBackup
         }
         if (!expected.SetEquals(Files(content).Select(Path.GetFullPath))) throw new InvalidDataException("Backup contains unlisted files.");
         if (Digest(await File.ReadAllBytesAsync(Path.Combine(directory, "policy.json"))) != manifest.PolicySha256) throw new InvalidDataException("Backup policy mismatch.");
-        var snapshot = AuthorityStore.InspectExisting(content);
-        ValidateAudit(snapshot);
-        _ = new CatalogAuthority(snapshot.Store, content).Snapshot(snapshot);
+        ValidateAudit(ReadValidatedAuthority(content));
         return manifest;
     }
 
@@ -190,9 +195,7 @@ public static class DistributionBackup
         AuthorityDisk.Write(head, File.ReadAllBytes(snapshot.Store.DataPath("HEAD")), head: true);
         AuthorityDisk.CompleteHeadPublication(directory, snapshot.Generation);
         if (activating) Boundary.Value?.Invoke("authority-head-replaced");
-        var copiedSnapshot = AuthorityStore.InspectExisting(target);
-        ValidateAudit(copiedSnapshot);
-        _ = new CatalogAuthority(copiedSnapshot.Store, target).Snapshot(copiedSnapshot);
+        ValidateAudit(ReadValidatedAuthority(target));
     }
 
     private static void CopyProjection(string source, string destination)
@@ -267,8 +270,7 @@ public static class DistributionBackup
         PrepareAuthorityDirectories(target);
         foreach (var name in new[] { "incoming", "processing", "releases", "archive", ".job-locks" })
             Directory.CreateDirectory(SafePath.ResolveInsideChecked(target, name));
-        var staged = AuthorityStore.InspectExisting(target);
-        ValidateAudit(staged);
+        ValidateAudit(ReadValidatedAuthority(target));
         return new { Staged = true, Public = false, Target = target, Next = "restore activate --target ... --confirm with surviving current source; private key remains separate" };
     }
     public static async Task<object> ActivateAsync(string target, DistributionSettings current, bool confirm)
@@ -281,14 +283,14 @@ public static class DistributionBackup
         var ordered=new[]{original,target}.Order(OperatingSystem.IsWindows()?StringComparer.OrdinalIgnoreCase:StringComparer.Ordinal).ToArray();
         using var firstLease=DistributionMaintenanceLease.Acquire(ordered[0],true,create:false);
         using var secondLease=DistributionMaintenanceLease.Acquire(ordered[1],true,create:false);
+        var authority = ReadValidatedAuthority(original);
+        _ = ReadValidatedAuthority(target);
         using var oldServer = new AuthenticationProcessLease(current.Root);
         if(File.Exists(Path.Combine(current.Root,"restore-staged.json")))throw new InvalidDataException("Staged source is not current authority.");
         var fence = Path.Combine(target, "restore-staged.json");
         var manifest = await JsonFiles.ReadAsync<DistributionBackupManifest>(fence);
         if (Path.GetFullPath(target) == Path.GetFullPath(current.Root)) throw new InvalidDataException("Cannot activate over source root.");
         if (manifest.Origin != current.PublicUrl.TrimEnd('/') || manifest.SigningKeyId != current.SigningKeyId || manifest.SigningPublicKeySha256 != Signer(current)) throw new InvalidDataException("Current origin/signer changed.");
-        var authority = AuthorityStore.InspectExisting(original);
-        _ = AuthorityStore.InspectExisting(target);
         var intake = IntakeJobs.Read(authority);
         var deletionPaths = intake.MaintenanceDeletions.Select(item => item.Path).ToHashSet(IntakeJobs.PathComparer);
         var catalog = new CatalogAuthority(authority.Store, original).Snapshot(authority);
