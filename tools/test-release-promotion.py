@@ -4,15 +4,14 @@ configure_console()
 import argparse
 import hashlib
 import json
-import os
 from pathlib import Path
+import shutil
 import subprocess
 import zipfile
 import base64
 import socket
 import urllib.request
 import time
-import sqlite3
 
 
 def write_command_log(path, result, secret=False):
@@ -20,8 +19,14 @@ def write_command_log(path, result, secret=False):
     path.write_text('secret output omitted\n' if secret else result.stdout + result.stderr, encoding='utf-8')
 
 
+def inventory(root):
+    return {str(path.relative_to(root)): ('directory' if path.is_dir() else hashlib.sha256(path.read_bytes()).hexdigest())
+            for path in root.rglob('*')}
+
+
 def main():
     p=argparse.ArgumentParser(); p.add_argument('--root',required=True); p.add_argument('--server',required=True); p.add_argument('--launcher',required=True); p.add_argument('--catalog-proof',action='store_true')
+    p.add_argument('--require-file-authority',action='store_true')
     args=p.parse_args(); root=Path(args.root).resolve(); server=Path(args.server).resolve(); launcher=Path(args.launcher).resolve()
     if root.exists(): raise ValueError('Use a new private test root')
     root.mkdir(parents=True); counter=0
@@ -38,6 +43,7 @@ def main():
         'signingKeyPath':str(root/'sign.pem'),'policyPath':str(root/'policy.json')})
     config=['--config',root/'server.json']
     track=['--project-id','demo','--environment','prod','--channel','stable','--platform','windows-x64']
+    run(server,'list',*config)
     def publish(version):
         upload=root/'server'/'incoming'/f'upload-{version}'; upload.mkdir(parents=True); archive=upload/'Windows.zip'
         with zipfile.ZipFile(archive,'x') as z: z.writestr('game.exe',b'non-executed promotion test payload')
@@ -50,11 +56,12 @@ def main():
     after=json.loads(run(server,'promotion','inspect',*track,*config)); assert after['recommendedRelease']==promoted['recommendedRelease'] and after['revision']==promoted['revision']
     same=json.loads(run(server,'promote',*track,'--version','2.0.0','--expected-revision',after['revision'],'--reason','repeat',*config)); assert same['revision']==after['revision']
     run(server,'promote',*track,'--version','1.0.0','--expected-revision','0','--reason','stale',*config,expected=1)
-    db=root/'server/distribution.db'; before=hashlib.sha256(db.read_bytes()).hexdigest()
-    preview=json.loads(run(server,'promotion','migrate','--dry-run',*config)); assert preview['ready']
-    assert before==hashlib.sha256(db.read_bytes()).hexdigest()
+    source=root/'server'
+    file_authority=(source/'authority'/'HEAD').is_file()
+    if args.require_file_authority and not file_authority:
+        raise RuntimeError('Published server has no file authority HEAD')
     summary={'publishedProcesses':True,'approvalDoesNotPromote':True,'higherAndOlderApprovalPreserveRecommendation':True,
-        'sameTargetNoOp':True,'staleRevisionRejected':True,'dryRunDatabaseUnchanged':True,'companyValidation':False}
+        'sameTargetNoOp':True,'staleRevisionRejected':True,'fileAuthorityVerified':False,'companyValidation':False}
     if args.catalog_proof:
         write(root/'policy.json',{'clients':[{'id':'all','addresses':['127.0.0.1/32'],'grants':[{'projectId':'demo','environment':'prod','channel':'stable'}]},
             {'id':'old','addresses':['127.0.0.1/32'],'grants':[{'projectId':'demo','environment':'prod','channel':'stable','versions':['2.0.0']}]}]})
@@ -81,20 +88,29 @@ def main():
                 assert a['sequence']>legacy['sequence']; summary['catalogAndPerPcPromotionProof']=True
             finally:
                 process.terminate(); process.wait(timeout=15)
-    # Exercise offline schema3 migration with published CLI, preserving approved order.
-    legacy=root/'legacy'; legacy.mkdir(); legacy_db=legacy/'distribution.db'
-    with sqlite3.connect(db) as source, sqlite3.connect(legacy_db) as target: source.backup(target)
-    with sqlite3.connect(legacy_db) as target: target.executescript('DROP TABLE promotions; DROP TABLE promotion_state; PRAGMA user_version=3;')
-    legacy_config=root/'legacy-server.json'; write(legacy_config,{'root':str(legacy)})
-    before=hashlib.sha256(legacy_db.read_bytes()).hexdigest()
-    plan=json.loads(run(server,'promotion','migrate','--dry-run','--config',legacy_config))
-    assert plan['applyRequired'] and before==hashlib.sha256(legacy_db.read_bytes()).hexdigest()
-    run(server,'promotion','migrate','--apply','--config',legacy_config)
-    run(server,'promotion','migrate','--apply','--config',legacy_config)
-    history=json.loads(run(server,'promotion','inspect',*track,'--config',legacy_config))
-    assert len(history['history'])==3 and all(e['kind']=='legacy-baseline' for e in history['history'])
-    assert history['recommendedRelease'].endswith('/1.0.0/windows-x64') and len(list(legacy.glob('distribution.pre-v6-*.db')))==1
-    summary['publishedOfflineMigrationProof']=True
+    def migration(target, expected):
+        path=root/(target.name+'-migration.json')
+        write(path,{'root':str(target)})
+        before=inventory(target)
+        for mode in ('--dry-run','--apply','--apply'):
+            result=run(server,'promotion','migrate',mode,'--config',path,expected=expected)
+            if expected==0:
+                assert json.loads(result)=={'ready':True,'applyRequired':False,'baselineReleases':[]}
+            assert before==inventory(target)
+
+    legacy=root/'legacy'; legacy.mkdir()
+    (legacy/'distribution.db').write_bytes(b'SQLite format 3\0'+bytes(80))
+    migration(legacy,1)
+    summary['legacyRejectedUnchanged']=True
+    if file_authority:
+        migration(source,0)
+        mixed=root/'mixed'; shutil.copytree(source,mixed)
+        (mixed/'distribution.db').write_bytes(b'SQLite format 3\0'+bytes(80))
+        migration(mixed,1)
+        damaged=root/'damaged'; shutil.copytree(source,damaged)
+        (damaged/'authority'/'HEAD').write_text('{}',encoding='utf-8')
+        migration(damaged,1)
+        summary['fileAuthorityVerified']=True
     write(root/'summary.json',summary); print('PASS: '+str(root))
 
 

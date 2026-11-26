@@ -25,7 +25,7 @@ public static class DistributionHttp
     {
         if (File.Exists(Path.Combine(store.Root, "restore-staged.json"))) throw new InvalidDataException("Restored root is staged; reconcile current security records before serving.");
         var promotions = new ReleasePromotions(store);
-        if (!promotions.Snapshot().Ready) throw new InvalidDataException("Stop the server and apply promotion migration before serving.");
+        if (!promotions.Snapshot().Ready) throw new InvalidDataException("The configured promotion store is unready. Inspect the root offline before serving.");
         if (!Uri.TryCreate(store.Settings.ListenUrl, UriKind.Absolute, out var listen) ||
             !IPAddress.TryParse(listen.Host, out var ip) || !IPAddress.IsLoopback(ip))
             throw new InvalidDataException("Distribution API must bind to loopback behind nginx.");
@@ -160,11 +160,7 @@ public static class DistributionHttp
                 }
                 PublishedRelease? release = null;
                 if (TryGetReleaseId(path, out var releaseId))
-                {
-                    databaseGate.EnterReadLock();
-                    try { release = publisher.Find(releaseId); }
-                    finally { databaseGate.ExitReadLock(); }
-                }
+                    release = publisher.Find(releaseId);
                 if (release is null || !client.AllowsRelease(release.Metadata))
                 {
                     databaseGate.EnterWriteLock();

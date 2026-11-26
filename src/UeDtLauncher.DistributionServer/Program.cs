@@ -1,6 +1,7 @@
 using System.Text.Json;
 using UeDtLauncher;
 using UeDtLauncher.Distribution;
+using UeDtLauncher.Distribution.Authority;
 
 CliErrors.ConfigureRedirectedConsole();
 try
@@ -44,7 +45,13 @@ DateTimeOffset? Expiry()
 if (action == "promotion" && arguments.ElementAtOrDefault(1) == "migrate")
 {
     if (arguments.Contains("--dry-run") == arguments.Contains("--apply")) throw new ArgumentException("Choose --dry-run or --apply.");
-    if (arguments.Contains("--dry-run")) { Console.WriteLine(JsonSerializer.Serialize(ReleasePromotions.PreviewMigration(settings), JsonFiles.Options)); return; }
+    try { Console.WriteLine(JsonSerializer.Serialize(ReleasePromotions.PreviewMigration(settings), JsonFiles.Options)); }
+    catch (AuthorityRootException error)
+    {
+        Console.Error.WriteLine($"{error.Kind}: {error.Message}");
+        Environment.ExitCode = 1;
+    }
+    return;
 }
 if (action is "backup" or "restore")
 {
@@ -88,7 +95,6 @@ switch (action)
         Console.WriteLine(JsonSerializer.Serialize(arguments.ElementAtOrDefault(1) switch
         {
             "inspect" => (object)promotion.Inspect(Selection(false)),
-            "migrate" => promotion.Migrate(),
             _ => throw new ArgumentException("promotion requires inspect or migrate.")
         }, JsonFiles.Options)); break;
     case "client-key":

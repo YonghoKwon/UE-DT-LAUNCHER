@@ -60,6 +60,15 @@ internal sealed class AuthorityStore
         });
     }
 
+    // CLI inspection must reject old, mixed, and damaged roots without creating any file or lock.
+    internal static AuthoritySnapshot InspectExisting(string root)
+    {
+        var store = new AuthorityStore(root, AuthorityLayout.Default);
+        if (!store.CheckRoot(validateHistory: true))
+            throw new AuthorityRootException(AuthorityRootKind.Damaged, "Authority HEAD is missing.");
+        return store.ReadSnapshot();
+    }
+
     internal AuthoritySnapshot ReadSnapshot() => inspectionLease is null
         ? ReadSnapshotCore()
         : inspectionLease.UseExclusive(Root, ReadSnapshotCore);
@@ -404,8 +413,15 @@ internal sealed class AuthorityStore
                 id.ValueKind != JsonValueKind.String || string.IsNullOrEmpty(id.GetString())) return;
             live.Add(id.GetString()! + ".json");
         }
-        foreach (var file in Directory.EnumerateFiles(ReleaseMetadataPath))
-            if (IsTemporary(file) || file.EndsWith(".json", StringComparison.Ordinal) && !live.Contains(Path.GetFileName(file)))
+        var files = Directory.EnumerateFiles(ReleaseMetadataPath, "*", new EnumerationOptions
+        {
+            RecurseSubdirectories = true,
+            AttributesToSkip = FileAttributes.ReparsePoint,
+            IgnoreInaccessible = false
+        });
+        foreach (var file in files)
+            if (IsTemporary(file) || file.EndsWith(".json", StringComparison.Ordinal) &&
+                !live.Contains(Path.GetRelativePath(ReleaseMetadataPath, file).Replace(Path.DirectorySeparatorChar, '/')))
                 AuthorityDisk.TryDelete(file);
     }
 
