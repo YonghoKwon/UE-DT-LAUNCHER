@@ -105,7 +105,15 @@ internal sealed class AuthorityStore
             {
                 if (attempt == ReadRetries)
                     throw new AuthorityStoreException("Could not read a valid authority snapshot after three retries.", error);
-                Thread.Yield();
+                DistributionPerformance.RecordAuthorityReadRetry();
+                if (error is FileNotFoundException or DirectoryNotFoundException ||
+                    OperatingSystem.IsWindows() && (error.HResult & 0xFFFF) is 32 or 33)
+                {
+                    // Missing or sharing-conflicted entries can become visible after a concurrent
+                    // rename or cleanup. Space out the same three HEAD re-reads.
+                    Thread.Sleep(4 << attempt);
+                }
+                else Thread.Yield();
             }
         }
     }

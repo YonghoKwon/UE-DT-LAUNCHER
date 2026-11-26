@@ -14,7 +14,7 @@ public static class DistributionPerformance
     private static readonly Counter<long> Busy = Meter.CreateCounter<long>("distribution.database.busy");
     private static long databaseOperations, databaseTicks, requests, requestTicks, sequenceWaitTicks, databaseBusy, policyCompilations, policyReuses, assetHits, assetMisses;
     private static long authenticationOperations, authenticationTicks, authorityUnavailable, policyUnavailable;
-    private static long authorityReads, authorityReadTicks, authorityCommits, authorityCommitTicks;
+    private static long authorityReads, authorityReadTicks, authorityReadRetries, authorityCommits, authorityCommitTicks;
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string,long> phases=new(StringComparer.Ordinal);
     public static IDisposable MeasurePhase(string phase)
     {
@@ -63,6 +63,7 @@ public static class DistributionPerformance
         Interlocked.Add(ref authorityCommitTicks, elapsed.Ticks);
     });
 
+    internal static void RecordAuthorityReadRetry() => Interlocked.Increment(ref authorityReadRetries);
     internal static void RecordAuthorityUnavailable() => Interlocked.Increment(ref authorityUnavailable);
     internal static void RecordPolicyUnavailable() => Interlocked.Increment(ref policyUnavailable);
 
@@ -81,6 +82,7 @@ public static class DistributionPerformance
         authenticationOperations = Interlocked.Read(ref authenticationOperations),
         authenticationElapsedMs = TimeSpan.FromTicks(Interlocked.Read(ref authenticationTicks)).TotalMilliseconds,
         authorityReads = Interlocked.Read(ref authorityReads),
+        authorityReadRetries = Interlocked.Read(ref authorityReadRetries),
         authorityReadElapsedMs = TimeSpan.FromTicks(Interlocked.Read(ref authorityReadTicks)).TotalMilliseconds,
         authorityCommitAttempts = Interlocked.Read(ref authorityCommits),
         authorityCommitElapsedMs = TimeSpan.FromTicks(Interlocked.Read(ref authorityCommitTicks)).TotalMilliseconds,
