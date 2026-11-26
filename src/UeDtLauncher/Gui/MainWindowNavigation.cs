@@ -81,7 +81,7 @@ public sealed partial class MainWindow : Window
         {
             _agentStatusRefreshing = false;
         }
-        if (!ReferenceEquals(checkedConfig, _config)) return false;
+        if (_windowClosed || !ReferenceEquals(checkedConfig, _config)) return false;
         var versionChanged = !string.Equals(_serviceVersion, serviceVersion, StringComparison.Ordinal);
         _serviceVersion = serviceVersion;
         _lastServiceCheck = DateTimeOffset.Now;
@@ -189,6 +189,7 @@ public sealed partial class MainWindow : Window
 
     private void SelectionChanged(CatalogReleaseOption? focusVersionAfterCheck = null)
     {
+        ClearTrayStatusForTrackChange();
         _presentation.Retry = null;
         _selectedRuntimeConfig = null;
         _viewModel.ProjectStatus = null;

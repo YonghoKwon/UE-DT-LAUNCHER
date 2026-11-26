@@ -44,14 +44,19 @@ public sealed partial class MainWindow
             Children = { Txt(title, LauncherVisualTokens.FontSection, true), Txt(description, LauncherVisualTokens.FontBody, false) }
         });
 
-    private async Task SaveDisplayPreferencesAsync(LauncherUiPreferences openedWith, int scaleIndex, bool highContrast)
+    private async Task SaveDisplayPreferencesAsync(LauncherUiPreferences openedWith, int scaleIndex, bool highContrast,
+        bool keepInTray, int trayCheckMinutes)
     {
         var scale = LauncherUiPreferences.SupportedScales[scaleIndex];
         var (value, _) = await LauncherUiPreferences.UpdateAsync(_preferencesPath, latest => latest with
         {
             TextScale = scale != openedWith.TextScale ? scale : latest.TextScale,
-            HighContrast = highContrast != openedWith.HighContrast ? highContrast : latest.HighContrast
+            HighContrast = highContrast != openedWith.HighContrast ? highContrast : latest.HighContrast,
+            KeepInTray = keepInTray != openedWith.KeepInTray ? keepInTray : latest.KeepInTray,
+            TrayCheckMinutes = trayCheckMinutes != openedWith.TrayCheckMinutes ? trayCheckMinutes : latest.TrayCheckMinutes
         });
-        _preferences = value;
+        var intervalChanged = value.TrayCheckMinutes != _preferences.TrayCheckMinutes;
+        _preferences = value with { HasSeenTrayNotice = value.HasSeenTrayNotice || _preferences.HasSeenTrayNotice };
+        if (intervalChanged && _agentStatusTimer.IsEnabled) StartStatusPolling();
     }
 }

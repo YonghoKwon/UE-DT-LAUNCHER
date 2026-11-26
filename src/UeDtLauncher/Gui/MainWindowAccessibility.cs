@@ -101,9 +101,13 @@ public sealed partial class MainWindow
         var openedWith = _preferences;
         var scale=Identify(new ComboBox {ItemsSource=new[]{"100%","125%","150%","200%"},SelectedIndex=Array.IndexOf(LauncherUiPreferences.SupportedScales,_preferences.TextScale),MinHeight=40,FontSize=14*_preferences.TextScale},"text-scale","글자 크기");
         var contrast=Identify(new CheckBox {Content="앱 고대비 사용",IsChecked=_preferences.HighContrast,Foreground=Fg(),FontSize=14*_preferences.TextScale},"high-contrast","앱 고대비 사용");
+        var (keepInTray, trayInterval) = TrayPreferenceControls();
         var body=new StackPanel {Spacing=16,Children={Txt("화면 접근성",18,true),Muted("글자 크기",14),scale,contrast,Muted("운영체제에서 고대비를 요청하면 앱 설정과 관계없이 고대비로 표시합니다.",13),
             KeyValue("프로젝트",_selectedProject.DisplayName),KeyValue("설치 버전",ReadInstalledVersion()??"미설치")}};
         body.Children.Add(DeveloperKeyValue("설정 파일",ConfigPath));body.Children.Add(DeveloperKeyValue("선택",_config.Environment+" / "+_config.Channel));
+        body.Children.Add(keepInTray);
+        body.Children.Add(Txt("확인 주기", LauncherVisualTokens.FontBody, true));
+        body.Children.Add(trayInterval);
         body.Children.Add(EnterpriseButton("지원 로그 ZIP 저장","settings-export",(_,_)=>ExportLogsZip(),tracked:false));
         body.Children.Add(EnterpriseButton("연결·준비 상태 점검","settings-readiness",(_,_)=>ShowReadinessDialog(),tracked:false));
         if(_config.SelfUpdate?.Enabled==true || File.Exists(SelfUpdateManager.PendingFilePath))body.Children.Add(Muted(LauncherBuildInfo.UpdateNotice,12));
@@ -113,7 +117,12 @@ public sealed partial class MainWindow
         {
             var index=Math.Clamp(scale.SelectedIndex,0,3);
             if(sender is Button source)source.IsEnabled=false;
-            try {await SaveDisplayPreferencesAsync(openedWith,index,contrast.IsChecked==true);dialog!.Close();Build();RefreshOpenDialogs();RecordDisplayDiagnostic();}
+            try
+            {
+                await SaveDisplayPreferencesAsync(openedWith, index, contrast.IsChecked == true,
+                    keepInTray.IsChecked == true, LauncherUiPreferences.TrayCheckIntervals[Math.Max(0, trayInterval.SelectedIndex)]);
+                dialog!.Close(); Build(); RefreshOpenDialogs(); RecordDisplayDiagnostic();
+            }
             catch(Exception ex){RecordDeveloperHistory("화면 설정", "저장", LauncherHistoryResult.Failed);MarkError(ex,"화면 설정 저장 실패");}
             finally {if(sender is Button sourceButton)sourceButton.IsEnabled=true;}
         },40),"dialog-confirm","화면 설정 적용");

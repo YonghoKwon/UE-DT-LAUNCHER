@@ -29,6 +29,9 @@ public sealed partial class MainWindow
 
         var installDirectory = SelectedInstallDirectory();
         var general = SettingsPanel(DialogCard(connection));
+        var (keepInTray, trayInterval) = TrayPreferenceControls();
+        general.Children.Add(DialogCard(SettingsPanel(keepInTray,
+            Txt("확인 주기", LauncherVisualTokens.FontBody, true), trayInterval)));
         if (PortableServerAddress() is { } address)
             general.Children.Add(DialogCard(KeyValue("서버 주소", address)));
         if (installDirectory is not null)
@@ -175,7 +178,8 @@ public sealed partial class MainWindow
             button.IsEnabled = false;
             try
             {
-                await SaveDisplayPreferencesAsync(openedWith, Math.Max(0, scale.SelectedIndex), contrast.IsChecked == true);
+                await SaveDisplayPreferencesAsync(openedWith, Math.Max(0, scale.SelectedIndex), contrast.IsChecked == true,
+                    keepInTray.IsChecked == true, LauncherUiPreferences.TrayCheckIntervals[Math.Max(0, trayInterval.SelectedIndex)]);
                 dialog!.Close();
                 Build();
                 RefreshOpenDialogs();
@@ -245,11 +249,11 @@ public sealed partial class MainWindow
         {
             if (await RefreshCatalog(false, suppressDialog: true) && HasProject)
                 await RefreshAuthorizedSelectionAsync(suppressDialog: true);
-            if (_allowAutomaticChecks && _config.IsManagedDeployment && IsVisible)
+            if (_allowAutomaticChecks && _config.IsManagedDeployment)
             {
                 await RefreshAgentStatusAsync();
-                _agentStatusTimer.Start();
             }
+            StartStatusPolling();
         }
     }
 }

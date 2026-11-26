@@ -69,7 +69,11 @@ public static partial class Program
 
             try
             {
-                return BuildAvaloniaApp().StartWithClassicDesktopLifetime(GuiArgs(args));
+                using var instance = LauncherGuiInstance.AcquireOrActivate(LauncherUiPreferences.DefaultPath, LauncherBuildInfo.Edition);
+                if (instance is null) return 0;
+                return BuildAvaloniaApp()
+                    .AfterSetup(builder => ((App)builder.Instance!).GuiInstance = instance)
+                    .StartWithClassicDesktopLifetime(GuiArgs(args));
             }
             catch (Exception ex) when (OperatingSystem.IsLinux())
             {
