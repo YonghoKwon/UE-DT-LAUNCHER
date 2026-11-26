@@ -53,7 +53,12 @@ public sealed class CatalogAuthorityTests
         var completed = await fixture.Publisher.ApproveAsync(job.Id);
         Assert.Equal(final.Replace('/', Path.DirectorySeparatorChar), completed.Directory);
         Assert.Equal(id, fixture.Publisher.FindByJob(job.Id)?.ReleaseId);
-        Assert.Equal("published", fixture.Intake.Get(job.Id).State);
+        var publishedJob = fixture.Intake.Get(job.Id);
+        Assert.Equal("published", publishedJob.State);
+        Assert.Equal("published", publishedJob.Phase);
+        Assert.Equal(completed.Metadata.PackageSize, publishedJob.ProcessedBytes);
+        Assert.Equal(completed.Metadata.PackageSize, publishedJob.TotalBytes);
+        Assert.False(fixture.Intake.Authority.HasAudit(fixture.Intake.Authority.ReadSnapshot(), "published", job.Id));
         Assert.Equal(installedSignature, File.ReadAllBytes(Path.Combine(final, "manifest.json.sig")));
         await fixture.Publisher.ApproveAsync(job.Id);
         var winner = Assert.Single(fixture.Audit("published"));
@@ -69,12 +74,12 @@ public sealed class CatalogAuthorityTests
     {
         using var fixture = new CatalogFixture();
         var job = await fixture.Ingest("1.0.0", "first");
-        AuthorityDisk.Boundary.Value = point =>
+        CatalogAuthority.PublicationBoundary.Value = point =>
         {
             if (point == AuthorityBoundary.BeforeHeadRename) throw new IOException("before catalog HEAD");
         };
         try { await Assert.ThrowsAsync<IOException>(() => fixture.Publisher.ApproveAsync(job.Id)); }
-        finally { AuthorityDisk.Boundary.Value = null; }
+        finally { CatalogAuthority.PublicationBoundary.Value = null; }
         var competitor = await fixture.Ingest("1.0.0", "second");
         var conflict = await Assert.ThrowsAsync<IOException>(() => fixture.Publisher.ApproveAsync(competitor.Id));
         Assert.Contains("belongs to another publication", conflict.Message);
@@ -93,12 +98,12 @@ public sealed class CatalogAuthorityTests
     {
         using var fixture = new CatalogFixture();
         var job = await fixture.Ingest("1.0.0", "first");
-        AuthorityDisk.Boundary.Value = point =>
+        CatalogAuthority.PublicationBoundary.Value = point =>
         {
             if (point == AuthorityBoundary.BeforeHeadRename) throw new IOException("before catalog HEAD");
         };
         try { await Assert.ThrowsAsync<IOException>(() => fixture.Publisher.ApproveAsync(job.Id)); }
-        finally { AuthorityDisk.Boundary.Value = null; }
+        finally { CatalogAuthority.PublicationBoundary.Value = null; }
 
         var path = Path.Combine(fixture.Intake.Root, "releases", Selection("1.0.0").ReleaseId, relative);
         if (added) await File.WriteAllTextAsync(path, "unlisted fixture file");

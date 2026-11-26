@@ -54,11 +54,13 @@ public sealed class ApprovedPublisher(IntakeStore store)
             if (existing.JobId != id) throw PublicationConflict(id);
             if (authority is not null)
             {
-                CompleteAuthorityJob(job, existing.Metadata.PackageSize);
+                CompleteAuthorityJob(job.Id, job.State);
+                var size = existing.Metadata.PackageSize;
+                store.Progress(id, observer).Report(new("published", size, size, 0));
                 return existing;
             }
             using var gate = store.Lock();
-            if (!store.ChangeState(id, job.State, "published")) throw new InvalidOperationException("Job state changed.");
+            if (!store.ChangeState(id, job.State, "published", writer: gate)) throw new InvalidOperationException("Job state changed.");
             return existing;
         }
         // A publishing journal is committed before touching release directories. Repeating approval recovers it.
@@ -140,7 +142,7 @@ public sealed class ApprovedPublisher(IntakeStore store)
                 published = authority.Publish(id, metadata, metadataBytes, Activate);
             }
             catch (PublicationIdConflictException) { throw PublicationConflict(id); }
-            CompleteAuthorityJob(job with { State = "publishing" }, published.Metadata.PackageSize);
+            CompleteAuthorityJob(id, "publishing");
             progress.Report(new("published", metadata.PackageSize, metadata.PackageSize, 0));
             return published;
         }
@@ -151,25 +153,25 @@ public sealed class ApprovedPublisher(IntakeStore store)
             existing = Find(metadata.ReleaseId);
             if (existing is not null)
             {
-                if (existing.JobId != id) throw PublicationConflict(id);
-                if (!store.ChangeState(id, "publishing", "published")) throw new InvalidOperationException("Job state changed.");
+                if (existing.JobId != id) throw PublicationConflict(id, gate);
+                if (!store.ChangeState(id, "publishing", "published", writer: gate)) throw new InvalidOperationException("Job state changed.");
                 return existing;
             }
             Activate();
 
-            using var database = store.DatabaseWrite();
-            using var db = store.Open(); using var transaction = db.BeginTransaction(); using var command = db.CreateCommand();
-            command.Transaction = transaction;
-            command.CommandText = """
-                INSERT INTO releases(id,job,directory,metadata) VALUES($id,$job,$dir,$metadata);
-                UPDATE jobs SET state='published',phase='published',processed_bytes=$size,total_bytes=$size,estimated_disk_bytes=0,progress_at=$at WHERE id=$job AND state='publishing';
-                INSERT INTO audit(at,action,job) VALUES($at,'published',$job);
-                """;
-            command.Parameters.AddWithValue("$id", metadata.ReleaseId); command.Parameters.AddWithValue("$job", id);
-            command.Parameters.AddWithValue("$dir", final); command.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(metadata, JsonFiles.Options));
-            command.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O"));
-            command.Parameters.AddWithValue("$size", metadata.PackageSize);
-            command.ExecuteNonQuery(); transaction.Commit();
+            using (var database = store.DatabaseWrite())
+            using (var db = store.Open())
+            using (var transaction = db.BeginTransaction())
+            using (var command = db.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText = "INSERT INTO releases(id,job,directory,metadata) VALUES($id,$job,$dir,$metadata)";
+                command.Parameters.AddWithValue("$id", metadata.ReleaseId); command.Parameters.AddWithValue("$job", id);
+                command.Parameters.AddWithValue("$dir", final); command.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(metadata, JsonFiles.Options));
+                command.ExecuteNonQuery(); transaction.Commit();
+            }
+            // Until PROD-01S5 integrates X4, a committed release can be reconciled by the existing approval retry.
+            if (!store.ChangeState(id, "publishing", "published", writer: gate)) throw new InvalidOperationException("Job state changed.");
         }
         progress.Report(new("published", metadata.PackageSize, metadata.PackageSize, 0));
         return new(metadata.ReleaseId, id, final, metadata);
@@ -189,28 +191,17 @@ public sealed class ApprovedPublisher(IntakeStore store)
 
     // Transitional reconciliation. The file catalog and audit have committed. S5 replaces this
     // update with the jobs area's published transition in the same CommitPlan.
-    private void CompleteAuthorityJob(IntakeJob job, long size)
+    private void CompleteAuthorityJob(string id, string expected)
     {
-        using var writer = store.Lock();
-        using var database = store.DatabaseWrite();
-        using var db = store.Open();
-        using var command = db.CreateCommand();
-        command.CommandText = """
-            UPDATE jobs SET state='published',message=NULL,phase='published',processed_bytes=$size,
-                total_bytes=$size,estimated_disk_bytes=0,progress_at=$at WHERE id=$job AND state=$expected
-            """;
-        command.Parameters.AddWithValue("$job", job.Id);
-        command.Parameters.AddWithValue("$expected", job.State);
-        command.Parameters.AddWithValue("$size", size);
-        command.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O"));
-        if (command.ExecuteNonQuery() != 1) throw new InvalidOperationException("Job state changed after publication.");
+        if (!store.ChangeState(id, expected, "published", recordAudit: false))
+            throw new InvalidOperationException("Job state changed after publication.");
     }
 
-    private IOException PublicationConflict(string id)
+    private IOException PublicationConflict(string id, IDisposable? writer = null)
     {
         const string message = "Release version already belongs to another publication; use a new version.";
         // A known losing publisher is not a recoverable activation journal. Keep retry available.
-        store.ChangeState(id, "publishing", "failed", message: message);
+        store.ChangeState(id, "publishing", "failed", message: message, writer: writer);
         return new IOException(message);
     }
 

@@ -12,6 +12,7 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
     private static readonly StringComparer PathComparer = OperatingSystem.IsWindows()
         ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
     private const int MaxMetadataBytes = 1024 * 1024;
+    internal static readonly AsyncLocal<Action<AuthorityBoundary>?> PublicationBoundary = new();
     private readonly AuthorityParsedCache<ReleaseSidecar> metadataCache = new(SidecarPackageValidator.Parse);
     private readonly object catalogCacheGate = new();
     private ((string Path, string Digest) Key, CatalogDocument Document)? cachedCatalog;
@@ -90,7 +91,7 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
     internal PublishedRelease Publish(string jobId, ReleaseSidecar metadata, byte[] bytes, Action activate)
     {
         PublishedRelease? result = null;
-        store.Commit(snapshot =>
+        CommitPublication(snapshot =>
         {
             var catalog = ReadCatalog(snapshot);
             var existing = catalog.Releases.Find(row => PathComparer.Equals(row.Id, metadata.ReleaseId));
@@ -129,6 +130,20 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
             return change;
         });
         return result!;
+    }
+
+    private void CommitPublication(Func<AuthoritySnapshot, CommitPlan> plan)
+    {
+        var boundary = PublicationBoundary.Value;
+        if (boundary is null)
+        {
+            store.Commit(plan);
+            return;
+        }
+        var previous = AuthorityDisk.Boundary.Value;
+        AuthorityDisk.Boundary.Value = boundary;
+        try { store.Commit(plan); }
+        finally { AuthorityDisk.Boundary.Value = previous; }
     }
 
     private CatalogDocument ReadCatalog(AuthoritySnapshot snapshot)

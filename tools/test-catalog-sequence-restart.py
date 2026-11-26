@@ -34,6 +34,9 @@ def read_high_water(root):
     high_water = sequence['highWater']
     if sequence['schemaVersion'] != 1 or type(high_water) is not int or not 0 <= high_water < 2**63:
         raise ValueError('Invalid sequence high-water')
+    # A jobs-only S2 authority retains the initial sequence while SQLite allocates sequences.
+    if high_water == 0 and reference == 'sequence/000000.json' and (Path(root) / 'distribution.db').is_file():
+        return None
     return high_water
 
 
@@ -82,7 +85,7 @@ def main():
                     issued.append(client.sequence)
                 high_water=read_high_water(settings['root'])
                 if args.require_file_authority and high_water is None:
-                    raise RuntimeError('Published server has no file authority HEAD')
+                    raise RuntimeError('Published server did not reserve a file authority sequence')
                 # Transitional published hosts still run the restart check. Their internal
                 # high-water is unobserved, so require skipping the entire observed 64-number block.
                 expected_floor = ((issued[-1] - 1) // 64 + 1) * 64

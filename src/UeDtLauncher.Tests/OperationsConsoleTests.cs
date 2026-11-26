@@ -91,12 +91,7 @@ public sealed class OperationsConsoleTests : IDisposable
         Directory.CreateDirectory(failed); File.WriteAllText(Path.Combine(failed, "payload"), "failed");
         store.Save(new("failed", failed, "failed", null, null));
         var active = Path.Combine(store.Root, "processing", "active"); Directory.CreateDirectory(active);
-        using (var db = store.Open())
-        using (var command = db.CreateCommand())
-        {
-            command.CommandText = "INSERT INTO active_work VALUES('active','owner',$path,NULL,'now')";
-            command.Parameters.AddWithValue("$path", active); command.ExecuteNonQuery();
-        }
+        IntakeAuthorityTests.AddAbandonedWork(store, "active", active);
         var choices = await OperationsConsole.CleanupChoicesAsync(store);
         Assert.Contains(choices, c => c.JobId == "failed");
         Assert.DoesNotContain(choices, c => c.JobId == published.JobId || c.JobId == pending.Id || c.Temporary == "processing/active");
@@ -308,7 +303,7 @@ public sealed class OperationsConsoleTests : IDisposable
         long AuditCount()
         {
             using var db = store.Open(); using var command = db.CreateCommand(); command.CommandText = "SELECT COUNT(*) FROM audit";
-            return Convert.ToInt64(command.ExecuteScalar());
+            return Convert.ToInt64(command.ExecuteScalar()) + store.Authority.ReadAudit(store.Authority.ReadSnapshot()).LongCount();
         }
         var audit = AuditCount();
         using (var exclusivePayload = new FileStream(payload, FileMode.Open, FileAccess.ReadWrite, FileShare.None))

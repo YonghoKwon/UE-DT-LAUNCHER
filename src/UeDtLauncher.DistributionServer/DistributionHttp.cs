@@ -57,7 +57,6 @@ public static class DistributionHttp
         var assets = new PublishedAssetCache();
         var limits = new DistributionRequestLimits(store.Settings,hooks?.Clock);
         var sequences = new CatalogSequenceAllocator(store);
-        var databaseGate = store.DatabaseGate;
         IAccessPolicyProvider provider = new FileAccessPolicyProvider(store.Settings.PolicyPath);
         app.Lifetime.ApplicationStopped.Register(() => app.Logger.LogInformation("DistributionPerformance {Metrics}",
             JsonSerializer.Serialize(DistributionPerformance.Snapshot())));
@@ -169,9 +168,7 @@ public static class DistributionHttp
                     release = publisher.Find(releaseId);
                 if (release is null || !client.AllowsRelease(release.Metadata))
                 {
-                    databaseGate.EnterWriteLock();
-                    try { store.Audit("download-denied", clientId); }
-                    finally { databaseGate.ExitWriteLock(); }
+                    store.Audit("download-denied", clientId);
                     context.Response.StatusCode = 403; return;
                 }
                 context.Items["release"] = release;

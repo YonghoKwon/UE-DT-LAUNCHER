@@ -36,7 +36,7 @@ def checked_document(raw, field):
     return document
 
 
-def verify_promotion_authority(root, jobs, inspection):
+def read_authority_catalog(root):
     authority = root / 'authority'
     head = checked_document((authority / 'HEAD').read_bytes(), 'headSha256')
     generation = head['generation']
@@ -52,7 +52,14 @@ def verify_promotion_authority(root, jobs, inspection):
     catalog_raw = (authority / catalog_reference).read_bytes()
     if hashlib.sha256(catalog_raw).hexdigest() != head['sha256']['catalog']:
         raise ValueError('Catalog digest differs from HEAD')
-    catalog = json.loads(catalog_raw)
+    return head, catalog_reference, json.loads(catalog_raw)
+
+
+def verify_promotion_authority(root, jobs, inspection):
+    authority = root / 'authority'
+    head, catalog_reference, catalog = read_authority_catalog(root)
+    generation = head['generation']
+    catalog_generation = int(Path(catalog_reference).stem)
     releases = [(row['id'], row['job']) for row in catalog['releases']]
     history = inspection['history']
     if (catalog['schemaVersion'] != 1 or catalog['promotionReady'] is not True or
@@ -100,12 +107,9 @@ def main():
     write(root/'server.json',{'root':str(root/'server'),'publicUrl':'https://localhost:19443','listenUrl':'http://127.0.0.1:'+str(port),
         'signingKeyPath':str(root/'sign.pem'),'policyPath':str(root/'policy.json')})
     config=['--config',root/'server.json']
+    assert json.loads(run(server,'list',*config)) == []
     track=['--project-id','demo','--environment','prod','--channel','stable','--platform','windows-x64']
-    run(server,'list',*config)
     source=root/'server'
-    file_authority=(source/'authority'/'HEAD').is_file()
-    if args.require_file_authority and not file_authority:
-        raise RuntimeError('Published server has no file authority HEAD')
     jobs={}
     def publish(version):
         upload=root/'server'/'incoming'/f'upload-{version}'; upload.mkdir(parents=True); archive=upload/'Windows.zip'
@@ -114,6 +118,15 @@ def main():
         job=json.loads(run(server,'ingest',upload,*config)); run(server,'approve',job['id'],*config)
         jobs[f'demo/prod/stable/{version}/windows-x64']=job['id']
     publish('2.0.0')
+    file_authority=(source/'authority'/'HEAD').is_file()
+    if file_authority:
+        _, reference, catalog = read_authority_catalog(source)
+        # During S2–S5 the published jobs authority can coexist with the SQLite catalog.
+        file_authority = not (reference == 'catalog/000000.json' and
+                              not catalog['releases'] and not catalog['promotions'] and
+                              (source/'distribution.db').is_file())
+    if args.require_file_authority and not file_authority:
+        raise RuntimeError('Published server did not commit the file catalog')
     initial=json.loads(run(server,'promotion','inspect',*track,*config)); assert initial['revision']==0 and initial['recommendedRelease'] is None
     promoted=json.loads(run(server,'promote',*track,'--version','2.0.0','--expected-revision','0','--reason','isolated validation',*config))
     publish('9.0.0'); publish('1.0.0')
@@ -168,14 +181,21 @@ def main():
     summary['legacyRejectedUnchanged']=True
     if file_authority:
         verify_promotion_authority(source,jobs,final_inspection)
-        migration(source,0)
+        pure = source
+        if (source/'distribution.db').is_file():
+            pure = root/'pure'
+            shutil.copytree(source, pure, ignore=shutil.ignore_patterns('distribution.db', 'distribution.db-*'))
+        migration(pure,0)
+    if (source/'authority'/'HEAD').is_file():
         mixed=root/'mixed'; shutil.copytree(source,mixed)
-        (mixed/'distribution.db').write_bytes(b'SQLite format 3\0'+bytes(80))
+        if not (mixed/'distribution.db').is_file():
+            (mixed/'distribution.db').write_bytes(b'SQLite format 3\0'+bytes(80))
         migration(mixed,1)
-        damaged=root/'damaged'; shutil.copytree(source,damaged)
+        damaged=root/'damaged'
+        shutil.copytree(source, damaged, ignore=shutil.ignore_patterns('distribution.db', 'distribution.db-*'))
         (damaged/'authority'/'HEAD').write_text('{}',encoding='utf-8')
         migration(damaged,1)
-        summary['fileAuthorityVerified']=True
+    summary['fileAuthorityVerified']=file_authority
     write(root/'summary.json',summary); print('PASS: '+str(root))
 
 
