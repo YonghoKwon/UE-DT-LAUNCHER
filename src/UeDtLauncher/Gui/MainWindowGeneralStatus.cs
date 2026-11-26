@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Layout;
 using System.IO.Compression;
+using System.Text.Json;
 
 namespace UeDtLauncher.Gui;
 
@@ -9,23 +10,32 @@ public sealed partial class MainWindow
     private DateTimeOffset _errorTime;
     private string _errorStage = "확인";
     private bool _errorDetailsExpanded;
-    private bool _recommendationExpanded;
+    private (ReleaseSelection Recommended, ReleaseSelection Previous)? _explainedRecommendation;
+    private (LauncherUiOperationContext Context, GeneralSupportDiagnostic Diagnostic)? _damageDiagnostic;
+
+    private sealed record GeneralSupportDiagnostic(string Code, string Stage, string? SupportId, DateTimeOffset OccurredAt, string ComputerName);
 
     private bool SelectedInstallationDamaged => _viewModel.ProjectStatus is
         { IsInstalled: true, UpdateRequired: true } status &&
         string.Equals(status.InstalledVersion, status.AvailableVersion, StringComparison.OrdinalIgnoreCase);
 
-    private bool RecommendationBelowInstalledRecord => _viewModel.ProjectStatus is
-        { IsInstalled: false, PreviousInstallation: { } previous, AvailableVersion: { } available } &&
-        Version.TryParse(available.TrimStart('v', 'V'), out var recommended) &&
-        Version.TryParse(previous.Release.Version.TrimStart('v', 'V'), out var installed) && recommended < installed;
+    private (ReleaseSelection Recommended, ReleaseSelection Previous)? LowerRecommendation()
+    {
+        if (_config.VersionPolicy != "latest" || SelectedCatalogRelease() is not { IsLatest: true } release ||
+            _viewModel.ProjectStatus is not { IsInstalled: false, PreviousInstallation: { } previous, AvailableVersion: { } available } ||
+            !string.Equals(available, release.Version, StringComparison.OrdinalIgnoreCase) ||
+            !Version.TryParse(available.TrimStart('v', 'V'), out var recommended) ||
+            !Version.TryParse(previous.Release.Version.TrimStart('v', 'V'), out var installed) || recommended >= installed)
+            return null;
+        return (new(release.ProjectId, release.Environment, release.Channel, release.Platform, release.Version), previous.Release);
+    }
 
     private string GeneralActionText() => _viewModel.GeneralState switch
     {
         GeneralLauncherState.Checking => "상태 확인 중",
         GeneralLauncherState.NotInstalled => "설치",
         GeneralLauncherState.UpdateAvailable when SelectedInstallationDamaged => "문제 해결",
-        GeneralLauncherState.UpdateAvailable when RecommendationBelowInstalledRecord => "권장 버전 변경 안내",
+        GeneralLauncherState.UpdateAvailable when LowerRecommendation() is { } recommendation && _explainedRecommendation != recommendation => "권장 버전 변경 안내",
         GeneralLauncherState.UpdateAvailable => "업데이트",
         GeneralLauncherState.Working => "작업 중",
         _ => _viewModel.PrimaryActionText
@@ -36,7 +46,7 @@ public sealed partial class MainWindow
         GeneralLauncherState.Checking => "배포와 설치 상태를 확인하고 있습니다.",
         GeneralLauncherState.NotInstalled => "처음 설치합니다. 설치 중에는 진행률이 표시되며, 완료되면 프로그램을 실행합니다.",
         GeneralLauncherState.UpdateAvailable when SelectedInstallationDamaged => "일부 파일이 손상됐습니다. 문제 해결은 손상된 파일만 다시 받습니다.",
-        GeneralLauncherState.UpdateAvailable when RecommendationBelowInstalledRecord => "현재 권장 버전이 이전 설치 기록보다 낮습니다.",
+        GeneralLauncherState.UpdateAvailable when LowerRecommendation() is not null => "현재 권장 버전이 이전 설치 기록보다 낮습니다.",
         GeneralLauncherState.UpdateAvailable => "업데이트할 수 있습니다. 완료되면 프로그램을 실행합니다.",
         GeneralLauncherState.Working => "요청한 작업을 진행하고 있습니다.",
         _ => _installDetail
@@ -60,30 +70,44 @@ public sealed partial class MainWindow
     internal static string SupportInfo(string? supportId, DateTimeOffset time) =>
         $"PC 이름: {Environment.MachineName}\n지원 ID: {supportId ?? "없음"}\n시각: {time:yyyy-MM-dd HH:mm:ss zzz}";
 
+    private GeneralSupportDiagnostic CurrentSupportDiagnostic()
+    {
+        if (_presentation.ErrorCode is { } code)
+            return new(code, _errorStage, _presentation.SupportId, _errorTime, Environment.MachineName);
+        if (_viewModel.GeneralState == GeneralLauncherState.RuntimeBlocked)
+            return new("runtime-blocked", "확인", null, DateTimeOffset.Now, Environment.MachineName);
+
+        var context = DisplaySelectionContext();
+        if (_damageDiagnostic is { } existing && existing.Context == context) return existing.Diagnostic;
+        var diagnostic = new GeneralSupportDiagnostic("damaged-installation", "확인", Guid.NewGuid().ToString("N"),
+            DateTimeOffset.Now, Environment.MachineName);
+        _damageDiagnostic = (context, diagnostic);
+        return diagnostic;
+    }
+
     private Control GeneralErrorDetails()
     {
-        var capturedInfo = SupportInfo(_presentation.SupportId, _errorTime == default ? DateTimeOffset.Now : _errorTime);
+        var diagnostic = CurrentSupportDiagnostic();
+        var capturedInfo = SupportInfo(diagnostic.SupportId, diagnostic.OccurredAt);
         var copy = EnterpriseButton("지원 정보 복사", "copy-support-info", async (_, _) =>
         {
             if (Clipboard is not null) await Clipboard.SetTextAsync(capturedInfo);
         });
-        var code = _presentation.ErrorCode ?? (_viewModel.GeneralState == GeneralLauncherState.RuntimeBlocked ? "runtime-blocked" : "damaged-installation");
         var details = new StackPanel { Spacing = 8 };
-        details.Children.Add(Identify(Muted($"오류 코드 {code} · 단계 {_errorStage}", 14), "safe-error-details", "오류 코드와 발생 단계"));
-        details.Children.Add(Muted(capturedInfo, 14));
+        details.Children.Add(Identify(Muted($"오류 코드 {diagnostic.Code} · 단계 {diagnostic.Stage}", 14), "safe-error-details", "오류 코드와 발생 단계"));
+        details.Children.Add(Identify(Muted(capturedInfo, 14), "safe-support-info", "지원 정보"));
         details.Children.Add(EnterpriseButton("로그 ZIP 저장", "save-error-logs", async (_, _) =>
         {
             try
             {
-                var log = DiagnosticRedactor.Redact(_presentation.LogText);
                 var folder = Path.Combine(Path.GetDirectoryName(LauncherUiPreferences.DefaultPath)!, "support");
                 await Task.Run(() =>
                 {
                     Directory.CreateDirectory(folder);
                     var path = Path.Combine(folder, $"launcher-logs-{Guid.NewGuid():N}.zip");
                     using var archive = ZipFile.Open(path, ZipArchiveMode.Create);
-                    using var output = new StreamWriter(archive.CreateEntry("launcher.log").Open());
-                    output.Write(log);
+                    using var output = archive.CreateEntry("support.json").Open();
+                    JsonSerializer.Serialize(output, diagnostic, JsonFiles.Options);
                 });
                 SetStatus("지원 로그 ZIP을 사용자 지원 폴더에 저장했습니다.");
             }

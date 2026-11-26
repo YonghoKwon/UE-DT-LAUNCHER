@@ -32,7 +32,12 @@ public sealed partial class MainWindow : Window
         if (!IsDeveloper && _viewModel.GeneralState == GeneralLauncherState.UpdateAvailable)
         {
             if (SelectedInstallationDamaged) { await TroubleshootAsync(); return; }
-            if (RecommendationBelowInstalledRecord) { _recommendationExpanded = !_recommendationExpanded; Build(); return; }
+            if (LowerRecommendation() is { } recommendation && _explainedRecommendation != recommendation)
+            {
+                _explainedRecommendation = recommendation;
+                Build();
+                return;
+            }
         }
         switch (_viewModel.PrimaryAction)
         {

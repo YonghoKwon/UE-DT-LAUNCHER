@@ -326,8 +326,8 @@ public sealed partial class MainWindow
         if (IsDeveloper || _viewModel.GeneralState != GeneralLauncherState.Ready)
             stack.Children.Add(Identify(Muted(IsDeveloper ? _installDetail : GeneralStateDetail(),LauncherVisualTokens.FontBody),
                 "project-state-guidance","프로그램 상태 안내"));
-        if (!IsDeveloper && RecommendationBelowInstalledRecord && _recommendationExpanded)
-            stack.Children.Add(Muted("관리자가 최근에 권장 버전을 변경했습니다. 다음 설치에서는 현재 권장 버전이 사용됩니다.", LauncherVisualTokens.FontBody));
+        if (!IsDeveloper && LowerRecommendation() is { } recommendation && _explainedRecommendation == recommendation)
+            stack.Children.Add(Muted("현재 권장 버전을 설치할 수 있습니다. 이전 설치는 보존됩니다.", LauncherVisualTokens.FontBody));
         var versions=new WrapPanel {Orientation=Orientation.Horizontal};
         versions.Children.Add(new StackPanel {Margin=new Thickness(0,0,LauncherVisualTokens.Space2Xl,0),Children={Muted(!IsDeveloper && _viewModel.ProjectStatus is {IsInstalled:false,PreviousInstallation:not null}?"기존 설치 버전":"설치 버전",LauncherVisualTokens.FontCaption),Txt(ReadInstalledVersion()??"미설치",LauncherVisualTokens.FontBody,true)}});
         versions.Children.Add(new StackPanel {Children={Muted(IsDeveloper?"선택 배포 버전":"최신 배포 버전",LauncherVisualTokens.FontCaption),Txt(LatestCatalogVersion()??"확인 필요",LauncherVisualTokens.FontBody,true)}});

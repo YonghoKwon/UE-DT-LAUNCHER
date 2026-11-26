@@ -138,6 +138,7 @@ public sealed partial class MainWindow
     {
         ValidateUiResult(context,result);
         _selectedRuntimeConfig=result.Config;_viewModel.ApplyProjectStatus(result.Status);
+        if (!SelectedInstallationDamaged) _damageDiagnostic = null;
         _installState=_viewModel.GeneralState switch
         {GeneralLauncherState.NotInstalled=>"설치 필요",GeneralLauncherState.UpdateAvailable=>"업데이트 가능",_=>"최신 상태"};
         _installDetail=result.Status switch

@@ -432,26 +432,38 @@ public sealed class LauncherEngine : IDisposable
 
     private async Task DownloadWithRetryAsync(Uri uri, string targetPath, ManifestFile file, Action<long, bool>? onBytes, CancellationToken cancellationToken)
     {
-        Exception? lastError = null;
         // A private randomized scratch file cannot alias another manifest entry such as app.download.
         // The same scratch path is retained across retries so Range resume still works.
         using var cacheReservation=_resume?.ReservePartial(file);
         var tempPath = cacheReservation?.Path ?? targetPath + ".download-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            await TransferWithRetryAsync(uri, targetPath, file, tempPath,
+                onBytes is null ? null : bytes => onBytes(bytes, cacheReservation is not null && bytes > 0 && bytes < file.Size), cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            if (cacheReservation is not null && HasPartialDownload(cacheReservation.Path, file.Size))
+                Interlocked.Exchange(ref _retainedPartialDownload, 1);
+            throw;
+        }
+    }
+
+    private async Task TransferWithRetryAsync(Uri uri, string targetPath, ManifestFile file, string tempPath, Action<long>? onBytes, CancellationToken cancellationToken)
+    {
+        Exception? lastError = null;
         var maxAttempts = Math.Max(1, _config.MaxRetryCount);
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
             try
             {
-                await DownloadFileAsync(uri, targetPath, tempPath, file.Size,
-                    onBytes is null ? null : bytes => onBytes(bytes, cacheReservation is not null && bytes > 0 && bytes < file.Size), cancellationToken);
+                await DownloadFileAsync(uri, targetPath, tempPath, file.Size, onBytes, cancellationToken);
                 if (!await HashMatchesAsync(targetPath, file.Sha256, cancellationToken))
                     throw new IOException($"SHA-256 mismatch after download: {file.Path}");
                 return;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                if (cacheReservation is not null && HasPartialDownload(cacheReservation.Path, file.Size))
-                    Interlocked.Exchange(ref _retainedPartialDownload, 1);
                 throw;
             }
             catch (Exception ex)
