@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
+using Avalonia.LogicalTree;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -19,6 +20,11 @@ public sealed partial class MainWindow
             dialog.Background=PageBrush;
             dialog.RequestedThemeVariant=RequestedThemeVariant;
             dialog.Classes.Set("high-contrast",HighContrast);
+            foreach (var card in dialog.GetLogicalDescendants().OfType<Border>().Where(b => b.Classes.Contains("dialog-card")))
+            {
+                card.Background = SurfaceBrush;
+                card.BorderBrush = LauncherVisualTokens.Brush(LauncherVisualTokens.BorderColor(IsDeveloper, HighContrast));
+            }
             foreach(var text in dialog.GetVisualDescendants().OfType<TextBlock>())text.Foreground=Fg();
             foreach(var box in dialog.GetVisualDescendants().OfType<TextBox>()){box.Foreground=Fg();box.Background=SurfaceBrush;}
             foreach(var combo in dialog.GetVisualDescendants().OfType<ComboBox>()){combo.Foreground=Fg();combo.Background=SurfaceBrush;}
@@ -39,11 +45,20 @@ public sealed partial class MainWindow
             }
         }
     }
-    private Window AccessibleDialog(string title,Control body,Button cancel,params Button[] actions)
+    private Border DialogCard(Control child)
     {
-        var origin=FocusManager?.GetFocusedElement() as Control;
+        var card = Card(child);
+        card.Classes.Add("dialog-card");
+        return card;
+    }
+    private Window AccessibleDialog(string title,Control body,Button cancel,params Button[] actions) =>
+        AccessibleDialog(this,title,body,cancel,actions);
+
+    private Window AccessibleDialog(Window owner,string title,Control body,Button cancel,params Button[] actions)
+    {
+        var origin=owner.FocusManager?.GetFocusedElement() as Control;
         var originId=origin is null?null:AutomationProperties.GetAutomationId(origin);
-        var screen=Screens.ScreenFromWindow(this)??Screens.Primary;
+        var screen=Screens.ScreenFromWindow(owner)??Screens.Primary;
         var maxWidth=(screen?.WorkingArea.Width??1200)/(screen?.Scaling??1)-32;
         var maxHeight=(screen?.WorkingArea.Height??800)/(screen?.Scaling??1)-80;
         var dialog=new Window {Title=title,Width=Math.Min(640,maxWidth),Height=Math.Min(540,maxHeight),MinWidth=Math.Min(360,maxWidth),MinHeight=Math.Min(240,maxHeight),
@@ -60,7 +75,15 @@ public sealed partial class MainWindow
         foreach(var button in new[]{cancel}.Concat(actions)){button.Margin=new Thickness(8,4,0,0);footer.Children.Add(button);}
         root.Children.Add(AtRow(footer,2));dialog.Content=root;
         dialog.Opened+=(_,_)=>Dispatcher.UIThread.Post(()=>cancel.Focus(NavigationMethod.Tab));
-        dialog.Closed+=(_,_)=>{_openDialogs.Remove(dialog);Dispatcher.UIThread.Post(()=>FindFocusTarget(originId)?.Focus(NavigationMethod.Tab));};
+        dialog.Closed+=(_,_)=>
+        {
+            _openDialogs.Remove(dialog);
+            Dispatcher.UIThread.Post(()=>
+            {
+                if(owner.IsVisible)
+                    (owner==this?FindFocusTarget(originId):origin)?.Focus(NavigationMethod.Tab);
+            });
+        };
         return dialog;
     }
     private async Task<bool> ShowConfirmationAsync(string title,Control body,string actionLabel)
@@ -71,13 +94,16 @@ public sealed partial class MainWindow
         dialog=AccessibleDialog(title,body,cancel,accept);
         return await dialog.ShowDialog<bool>(this);
     }
-    internal Window ShowEnterpriseSettings(bool developer)
+    internal Window ShowEnterpriseSettings(bool developer) => developer ? ShowDeveloperSettings() : ShowGeneralSettings();
+
+    private Window ShowDeveloperSettings()
     {
+        var openedWith = _preferences;
         var scale=Identify(new ComboBox {ItemsSource=new[]{"100%","125%","150%","200%"},SelectedIndex=Array.IndexOf(LauncherUiPreferences.SupportedScales,_preferences.TextScale),MinHeight=40,FontSize=14*_preferences.TextScale},"text-scale","글자 크기");
         var contrast=Identify(new CheckBox {Content="앱 고대비 사용",IsChecked=_preferences.HighContrast,Foreground=Fg(),FontSize=14*_preferences.TextScale},"high-contrast","앱 고대비 사용");
         var body=new StackPanel {Spacing=16,Children={Txt("화면 접근성",18,true),Muted("글자 크기",14),scale,contrast,Muted("운영체제에서 고대비를 요청하면 앱 설정과 관계없이 고대비로 표시합니다.",13),
             KeyValue("프로젝트",_selectedProject.DisplayName),KeyValue("설치 버전",ReadInstalledVersion()??"미설치")}};
-        if(developer){body.Children.Add(DeveloperKeyValue("설정 파일",ConfigPath));body.Children.Add(DeveloperKeyValue("선택",_config.Environment+" / "+_config.Channel));}
+        body.Children.Add(DeveloperKeyValue("설정 파일",ConfigPath));body.Children.Add(DeveloperKeyValue("선택",_config.Environment+" / "+_config.Channel));
         body.Children.Add(EnterpriseButton("지원 로그 ZIP 저장","settings-export",(_,_)=>ExportLogsZip(),tracked:false));
         body.Children.Add(EnterpriseButton("연결·준비 상태 점검","settings-readiness",(_,_)=>ShowReadinessDialog(),tracked:false));
         if(_config.SelfUpdate?.Enabled==true || File.Exists(SelfUpdateManager.PendingFilePath))body.Children.Add(Muted(LauncherBuildInfo.UpdateNotice,12));
@@ -86,13 +112,12 @@ public sealed partial class MainWindow
         var apply=Identify(PrimaryButton("적용",async (sender,_)=>
         {
             var index=Math.Clamp(scale.SelectedIndex,0,3);
-            var value=new LauncherUiPreferences(LauncherUiPreferences.SupportedScales[index],contrast.IsChecked==true);
             if(sender is Button source)source.IsEnabled=false;
-            try {await value.SaveAsync();_preferences=value;dialog!.Close();Build();RefreshOpenDialogs();RecordDisplayDiagnostic();}
+            try {await SaveDisplayPreferencesAsync(openedWith,index,contrast.IsChecked==true);dialog!.Close();Build();RefreshOpenDialogs();RecordDisplayDiagnostic();}
             catch(Exception ex){MarkError(ex,"화면 설정 저장 실패");}
             finally {if(sender is Button sourceButton)sourceButton.IsEnabled=true;}
         },40),"dialog-confirm","화면 설정 적용");
-        dialog=AccessibleDialog(developer?"개발자 설정":"설정",body,close,apply);dialog.Show(this);return dialog;
+        dialog=AccessibleDialog("개발자 설정",body,close,apply);dialog.Show(this);return dialog;
     }
     private void ShowEnterpriseError(string title,string message)
     {

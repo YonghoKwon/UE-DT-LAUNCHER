@@ -37,6 +37,6 @@ public sealed record LauncherUiError(string Code,string Message,string SupportId
         return new(IsSupportTag(code) ? code : "unknown",message,IsSupportTag(id) ? id! : Guid.NewGuid().ToString("N"),DiagnosticRedactor.Redact(error.ToString()));
     }
 
-    private static bool IsSupportTag(string? value) => value is { Length: > 0 and <= 64 } &&
+    internal static bool IsSupportTag(string? value) => value is { Length: > 0 and <= 64 } &&
         value.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
 }

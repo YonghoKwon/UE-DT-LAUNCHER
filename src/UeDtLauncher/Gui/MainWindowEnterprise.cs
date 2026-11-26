@@ -160,10 +160,16 @@ public sealed partial class MainWindow
                 }
                 else
                 {
-                    var help=ScaleHeader(new Expander {Header="릴리스 설명 및 도움말",IsExpanded=_helpExpanded,Content=new StackPanel {Spacing=LauncherVisualTokens.SpaceMd,Children={Txt(_releaseNotes,LauncherVisualTokens.FontBody,false),Muted("프로그램이 실행 중이면 정상 종료 후 다시 확인해 주세요. 창을 닫아도 실행 중인 프로그램은 종료되지 않습니다.",LauncherVisualTokens.FontBody)}}});
+                    var help=ScaleHeader(new Expander {Header="릴리스 설명 및 도움말",IsExpanded=_helpExpanded});
+                    if (_helpExpanded) help.Content = GeneralReleaseHelp();
                     KeyboardNavigation.SetTabNavigation(help,KeyboardNavigationMode.Local);
                     Identify(help,"release-help","릴리스 설명 및 도움말");
-                    help.PropertyChanged+=(_,e)=>{if(e.Property==Expander.IsExpandedProperty)_helpExpanded=help.IsExpanded;};
+                    help.PropertyChanged+=(_,e)=>
+                    {
+                        if (e.Property != Expander.IsExpandedProperty) return;
+                        _helpExpanded=help.IsExpanded;
+                        if (help.IsExpanded) help.Content ??= GeneralReleaseHelp();
+                    };
                     content.Children.Add(Card(help));
                 }
             }

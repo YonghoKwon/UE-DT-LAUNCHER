@@ -68,7 +68,7 @@ public sealed partial class MainWindow
     }
 
     internal static string SupportInfo(string? supportId, DateTimeOffset time) =>
-        $"PC 이름: {Environment.MachineName}\n지원 ID: {supportId ?? "없음"}\n시각: {time:yyyy-MM-dd HH:mm:ss zzz}";
+        $"런처 버전: {LauncherDisplayVersion}\nPC 이름: {Environment.MachineName}\n지원 ID: {(LauncherUiError.IsSupportTag(supportId) ? supportId : "없음")}\n시각: {time:yyyy-MM-dd HH:mm:ss zzz}";
 
     private GeneralSupportDiagnostic CurrentSupportDiagnostic()
     {
