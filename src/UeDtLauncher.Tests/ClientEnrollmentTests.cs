@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
@@ -73,6 +74,86 @@ public sealed class ClientEnrollmentTests
         Assert.Equal(after, fixture.Snapshot());
     }
 
+    [Theory]
+    [InlineData("127.1")]
+    [InlineData("0177.0.0.1")]
+    [InlineData("127.0.0.0/024")]
+    [InlineData("010.1.2.0/24")]
+    public async Task NoncanonicalCsvRowRejectsWholeTree(string address)
+    {
+        using var fixture = new Fixture();
+        await fixture.InitializeAsync();
+        await fixture.AddBundleAsync("pc-a", "key-a");
+        await fixture.AddBundleAsync("pc-b", "key-b");
+        await fixture.AddBundleAsync("pc-c", "key-c");
+        var csv = Path.Combine(fixture.Root, "addresses.csv");
+        await File.WriteAllTextAsync(csv, $"clientId,address\npc-a,127.0.0.1\npc-b,{address}\npc-c,127.0.0.0/24\n");
+        var marker = Path.Combine(fixture.Settings.Root, ".hidden");
+        await File.WriteAllTextAsync(marker, "keep");
+        if (OperatingSystem.IsWindows()) File.SetAttributes(marker, FileAttributes.Hidden);
+        Directory.CreateDirectory(Path.Combine(fixture.Settings.Root, ".empty"));
+        var before = fixture.Snapshot();
+
+        var run = await fixture.RunAsync(extra: ["--address-source", "file:" + csv]);
+
+        Assert.Equal(1, run.Code);
+        Assert.Contains("Address CSV row 3", run.Error);
+        Assert.Empty(fixture.Keys.List());
+        Assert.Equal(before, fixture.Snapshot());
+    }
+
+    [Fact]
+    public async Task SingleKeyWriterWinningBeforeEnrollmentPreventsPartialBatch()
+    {
+        using var fixture = new Fixture();
+        await fixture.InitializeAsync();
+        await fixture.AddBundleAsync("pc-a", "key-a");
+        var last = await fixture.AddBundleAsync("pc-z", "key-z");
+        string[]? winnerSnapshot = null;
+
+        var run = await fixture.RunAsync(beforeWriter: () =>
+        {
+            fixture.Keys.Add("other-pc", new(1, last.KeyId, last.PublicKeyPem));
+            winnerSnapshot = fixture.Snapshot();
+        });
+
+        Assert.Equal(1, run.Code);
+        Assert.Contains("already registered", run.Error);
+        Assert.Equal("other-pc", Assert.Single(fixture.Keys.List()).ClientId);
+        Assert.Equal(winnerSnapshot, fixture.Snapshot());
+    }
+
+    [Fact]
+    public async Task EnrollmentHoldsSingleKeyWriterOutUntilPolicyPublication()
+    {
+        using var fixture = new Fixture();
+        await fixture.InitializeAsync();
+        await fixture.AddBundleAsync("pc-a", "key-a");
+        await fixture.AddBundleAsync("pc-z", "key-z");
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var outsider = new DevicePublicKey(1, "outside", key.ExportSubjectPublicKeyInfoPem());
+        using var started = new ManualResetEventSlim();
+        Task? writer = null;
+        bool completedBeforePublication = false;
+
+        var run = await fixture.RunAsync(beforeReplace: () =>
+        {
+            writer = Task.Factory.StartNew(() =>
+            {
+                started.Set();
+                fixture.Keys.Add("outside", outsider);
+            }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            Assert.True(started.Wait(TimeSpan.FromSeconds(5)));
+            completedBeforePublication = writer.Wait(TimeSpan.FromMilliseconds(250));
+        });
+
+        await Assert.IsAssignableFrom<Task>(writer).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(0, run.Code);
+        Assert.False(completedBeforePublication);
+        Assert.Equal(3, fixture.Keys.List().Count);
+        Assert.Equal(2, (await new FileAccessPolicyProvider(fixture.Settings.PolicyPath).LoadAsync(default)).Clients.Count);
+    }
+
     [Fact]
     public async Task InterruptedAfterKeyRegistrationReplaysPolicyOnly()
     {
@@ -110,6 +191,40 @@ public sealed class ClientEnrollmentTests
         Assert.False(Assert.Single(fixture.Keys.List()).Expired);
         Assert.Equal(before, fixture.Snapshot());
     }
+
+    [Fact]
+    public async Task LinuxPolicyPreservesExtendedAclOrRejectsBeforeAddingKeys()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        using var fixture = new Fixture();
+        await fixture.InitializeAsync();
+        await fixture.AddBundleAsync("pc-a", "key-a");
+        var policy = fixture.Settings.PolicyPath;
+        var acl = Convert.FromHexString("0200000001000600FFFFFFFF02000400FEFF000004000000FFFFFFFF10000400FFFFFFFF20000000FFFFFFFF");
+        if (setxattr(policy, "system.posix_acl_access", acl, (nuint)acl.Length, 0) != 0)
+        {
+            Assert.Equal(95, Marshal.GetLastPInvokeError()); // EOPNOTSUPP
+            var before = fixture.Snapshot();
+            Assert.Equal(1, (await fixture.RunAsync()).Code);
+            Assert.Empty(fixture.Keys.List());
+            Assert.Equal(before, fixture.Snapshot());
+            return;
+        }
+        using var source = LinuxFileAccess.OpenRegularRead(policy);
+        var original = LinuxFileAccess.ReadMetadata(source.SafeFileHandle);
+        Assert.Equal(acl, original.PosixAcl);
+
+        Assert.Equal(0, (await fixture.RunAsync()).Code);
+
+        using var replacement = LinuxFileAccess.OpenRegularRead(policy);
+        var current = LinuxFileAccess.ReadMetadata(replacement.SafeFileHandle);
+        Assert.NotEqual(original.File.Inode, current.File.Inode);
+        Assert.True(original.HasSameAccess(current));
+        Assert.Single(fixture.Keys.List());
+    }
+
+    [DllImport("libc", SetLastError = true)]
+    private static extern int setxattr(string path, string name, byte[] value, nuint length, int flags);
 
     [Theory]
     [InlineData(false)]
@@ -153,16 +268,18 @@ public sealed class ClientEnrollmentTests
             return bundle;
         }
 
-        internal async Task<(int Code, string Output, string Error)> RunAsync(string grant = "demo:prod:stable", string[]? extra = null, Action? beforeReplace = null)
+        internal async Task<(int Code, string Output, string Error)> RunAsync(string grant = "demo:prod:stable", string[]? extra = null,
+            Action? beforeReplace = null, Action? beforeWriter = null)
         {
             using var output = new StringWriter();
             using var error = new StringWriter();
-            var code = await ClientEnrollment.RunAsync(["--from", Bundles, "--grant", grant, "--config", Config, .. extra ?? []], output, error, beforeReplace);
+            var code = await ClientEnrollment.RunAsync(["--from", Bundles, "--grant", grant, "--config", Config, .. extra ?? []], output, error, beforeReplace, beforeWriter);
             return (code, output.ToString(), error.ToString());
         }
 
         internal string[] Snapshot() => Directory.EnumerateFileSystemEntries(Root, "*", SearchOption.AllDirectories)
-            .Order(StringComparer.Ordinal).Select(path => Directory.Exists(path) ? "directory:" + path : path + ":" + Convert.ToHexString(SHA256.HashData(ReadBytes(path)))).ToArray();
+            .Order(StringComparer.Ordinal).Select(path => Directory.Exists(path) ? "directory:" + path :
+                path + ":" + File.GetAttributes(path) + ":" + Convert.ToHexString(SHA256.HashData(ReadBytes(path)))).ToArray();
 
         internal static byte[] ReadBytes(string path)
         {

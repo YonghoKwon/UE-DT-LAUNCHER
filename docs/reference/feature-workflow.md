@@ -183,7 +183,7 @@ sudo -u uedt-distribution /opt/ue-dt-distribution/UeDtLauncher.DistributionServe
 
 ### A4. 런처와 Agent 설정 — PC 관리자
 
-일괄 등록 PC는 `enroll finish --server-url <origin> --project-id <ID> --platform <RID> --credential-name <이름> --signing-key-id <ID> --public-key <PEM> --output <설정 경로>`를 사용합니다. 관리형은 관리자가 보호 설정을 배치하고 서비스에 반영한 뒤 선택 전용 설정으로 `doctor --online`을 실행합니다. Portable은 `--storage portable`로 설정을 생성하고 같은 명령에서 온라인 진단을 저장합니다.
+일괄 등록 PC는 `enroll finish --server-url <origin> --project-id <ID> --platform <RID> --credential-name <이름> --signing-key-id <ID> --public-key <PEM> --output <설정 경로>`를 사용합니다. 관리형은 관리자가 시스템 Agent 설정 폴더에 보호된 `release-public.pem`을 먼저 배치하고 그 절대 경로를 지정합니다. 보호 설정을 서비스에 반영한 뒤 선택 전용 설정으로 `doctor --online`을 실행합니다. Portable은 `--storage portable`로 설정을 생성하고 같은 명령에서 온라인 진단을 저장합니다.
 
 | 파일/설정 | 정할 것 | 누가 관리 |
 |---|---|---|

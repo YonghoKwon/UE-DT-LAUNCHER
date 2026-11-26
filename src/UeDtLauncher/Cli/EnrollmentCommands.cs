@@ -86,13 +86,15 @@ public static partial class Program
         var overwrite = Has(args, "--force");
         RefuseExistingEnrollmentOutput(output, overwrite);
         RefuseExistingEnrollmentOutput(reportPath, overwrite);
-        var publicPath = Path.GetFullPath(Required(args, "--public-key"));
+        var managed = storage == "managed";
+        var suppliedKey = Required(args, "--public-key");
+        var publicPath = managed ? ManagedEnrollmentTrust.FixedPath(suppliedKey, ManagedLauncherPathLayout.SystemDefault().ConfigRoot) : Path.GetFullPath(suppliedKey);
         var extension = Path.GetExtension(output.TrimEnd(' ', '.'));
         if (string.Equals(publicPath, output, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(publicPath, reportPath, StringComparison.OrdinalIgnoreCase) ||
             extension.Equals(".keycred", StringComparison.OrdinalIgnoreCase) || extension.Equals(".cred", StringComparison.OrdinalIgnoreCase))
             throw new CliArgumentException("Use a separate output for enrollment configuration.");
-        using (var stream = File.OpenRead(publicPath))
+        using (var stream = managed ? ManagedEnrollmentTrust.OpenVerified(publicPath) : File.OpenRead(publicPath))
         using (var key = ECDsa.Create())
         {
             if (stream.Length > 4096) throw new InvalidDataException("Expected a release signing public key PEM.");

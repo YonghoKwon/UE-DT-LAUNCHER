@@ -11,14 +11,16 @@ internal static class ClientEnrollment
         Encoder = JavaScriptEncoder.Create(UnicodeRanges.BasicLatin, UnicodeRanges.HangulSyllables)
     };
 
-    internal static async Task<int> RunAsync(string[] args, TextWriter output, TextWriter error, Action? beforePolicyReplace = null)
+    internal static async Task<int> RunAsync(string[] args, TextWriter output, TextWriter error,
+        Action? beforePolicyReplace = null, Action? beforeWriterLease = null)
     {
         try
         {
             var options = EnrollmentOptions.Parse(args);
             var settings = await JsonFiles.ReadAsync<DistributionSettings>(options.Config);
             var inputs = await EnrollmentInputs.ReadAsync(options);
-            var keys = new DistributionDeviceKeys(IntakeStore.OpenForEnrollmentValidation(settings));
+            var store = IntakeStore.OpenForEnrollmentValidation(settings);
+            var keys = new DistributionDeviceKeys(store);
             var policyPath = Path.GetFullPath(settings.PolicyPath);
             var plan = await BuildPlanAsync(policyPath, keys, inputs);
             if (options.DryRun || !plan.HasChanges)
@@ -27,17 +29,14 @@ internal static class ClientEnrollment
                 return 0;
             }
 
-            using var maintenance = DistributionMaintenanceLease.Acquire(settings.Root, exclusive: false, create: false);
-            using var writer = new FileStream(SafePath.ResolveInsideChecked(settings.Root, ".client-enrollment.lock"),
-                FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-            // Re-read key and policy state under the enrollment writer lock. Ordinary key commands
-            // keep their own existing per-key writer lock and uniqueness checks.
-            plan = await BuildPlanAsync(policyPath, keys, inputs);
-            if (plan.HasChanges)
+            beforeWriterLease?.Invoke();
+            await store.WithEnrollmentWriterAsync(async writerStore =>
             {
-                var mutableKeys = new DistributionDeviceKeys(new IntakeStore(settings));
-                await ApplyAsync(plan, policyPath, mutableKeys, beforePolicyReplace);
-            }
+                // Validate against the current keys while holding the same writer lease as client-key add.
+                plan = await BuildPlanAsync(policyPath, keys, inputs);
+                if (plan.HasChanges)
+                    await ApplyAsync(plan, policyPath, new DistributionDeviceKeys(writerStore), beforePolicyReplace);
+            });
             await WritePlanAsync(output, plan, dryRun: false);
             return 0;
         }
@@ -47,7 +46,7 @@ internal static class ClientEnrollment
             foreach (var issue in invalid.Issues) await error.WriteLineAsync("- " + issue);
             return 1;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or JsonException or System.Data.Common.DbException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or JsonException or System.Data.Common.DbException or PlatformNotSupportedException)
         {
             await error.WriteLineAsync("Enrollment could not finish. Check the initialized server store, access policy and permissions. If apply was interrupted, repeat the same command to finish.");
             return 1;
@@ -146,6 +145,11 @@ internal static class ClientEnrollment
 
     private static async Task<byte[]> ReadPolicyAsync(string path)
     {
+        if (OperatingSystem.IsLinux())
+        {
+            await using var stream = LinuxFileAccess.OpenRegularRead(path);
+            return await EnrollmentInputs.ReadBoundedAsync(stream, FileAccessPolicyProvider.MaxPolicyBytes);
+        }
         var file = new FileInfo(path);
         if (file.LinkTarget is not null || file.Attributes.HasFlag(FileAttributes.ReparsePoint))
             throw new IOException("Policy must be a regular file.");
@@ -155,20 +159,23 @@ internal static class ClientEnrollment
     private static async Task ApplyAsync(EnrollmentPlan plan, string policyPath, DistributionDeviceKeys keys, Action? beforePolicyReplace)
     {
         string? temporary = null;
+        LinuxFileAccess.Metadata? originalAccess = null;
         try
         {
             if (plan.MergedPolicy is not null)
             {
+                if (OperatingSystem.IsLinux()) originalAccess = ReadLinuxPolicyAccess(policyPath);
                 temporary = Path.Combine(Path.GetDirectoryName(policyPath)!, $".client-enrollment-{Guid.NewGuid():N}.tmp");
                 var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write, Options = FileOptions.WriteThrough };
-                if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+                if (OperatingSystem.IsLinux()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
                 using (var stream = new FileStream(temporary, options))
                 {
                     await stream.WriteAsync(plan.MergedPolicy);
+                    if (OperatingSystem.IsLinux()) PreserveLinuxPolicyAccess(stream, originalAccess!);
                     stream.Flush(flushToDisk: true);
                 }
                 _ = await new FileAccessPolicyProvider(temporary).LoadAsync(CancellationToken.None);
-                if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temporary, File.GetUnixFileMode(policyPath));
+                await VerifyPolicyReplacementAsync(plan, policyPath, temporary, originalAccess);
             }
 
             foreach (var row in plan.Rows.Where(row => row.AddKey))
@@ -178,8 +185,7 @@ internal static class ClientEnrollment
             }
             if (temporary is null) return;
             beforePolicyReplace?.Invoke();
-            if (!(await ReadPolicyAsync(policyPath)).AsSpan().SequenceEqual(plan.OriginalPolicy))
-                throw new IOException("The policy changed during enrollment.");
+            await VerifyPolicyReplacementAsync(plan, policyPath, temporary, originalAccess);
             if (OperatingSystem.IsWindows()) File.Replace(temporary, policyPath, destinationBackupFileName: null);
             else File.Move(temporary, policyPath, overwrite: true);
         }
@@ -187,6 +193,39 @@ internal static class ClientEnrollment
         {
             if (temporary is not null) File.Delete(temporary);
         }
+    }
+
+    private static async Task VerifyPolicyReplacementAsync(EnrollmentPlan plan, string policyPath, string temporary, LinuxFileAccess.Metadata? originalAccess)
+    {
+        if (!(await ReadPolicyAsync(policyPath)).AsSpan().SequenceEqual(plan.OriginalPolicy))
+            throw new IOException("The policy changed during enrollment.");
+        if (OperatingSystem.IsLinux())
+        {
+            var source = ReadLinuxPolicyAccess(policyPath);
+            if (source.File != originalAccess!.File || !originalAccess.HasSameAccess(source) ||
+                !originalAccess.HasSameAccess(ReadLinuxPolicyAccess(temporary)))
+                throw new IOException("The policy ownership or permissions changed during enrollment.");
+        }
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
+    private static LinuxFileAccess.Metadata ReadLinuxPolicyAccess(string path)
+    {
+        try
+        {
+            using var stream = LinuxFileAccess.OpenRegularRead(path);
+            return LinuxFileAccess.ReadMetadata(stream.SafeFileHandle);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { throw new EnrollmentInputException(["Could not verify Linux policy ownership, group, mode or ACL."]); }
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
+    private static void PreserveLinuxPolicyAccess(FileStream staged, LinuxFileAccess.Metadata original)
+    {
+        try { LinuxFileAccess.PreserveAccess(staged.SafeFileHandle, original); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { throw new EnrollmentInputException(["Could not preserve Linux policy ownership, group, mode or ACL."]); }
     }
 
     private static Task WritePlanAsync(TextWriter output, EnrollmentPlan plan, bool dryRun) => output.WriteLineAsync(

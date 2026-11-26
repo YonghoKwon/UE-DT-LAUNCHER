@@ -29,7 +29,8 @@ public sealed class DistributionSettings
 public sealed class IntakeStore
 {
     private readonly Func<string, long>? availableBytes;
-    private readonly string? enrollmentReadOnlyDatabase;
+    private readonly string? enrollmentDatabasePath;
+    private readonly WriterLease? enrollmentWriter;
     private string? scanCursor;
     private const string JobColumns = "id,source,state,snapshot,message,phase,processed_bytes,total_bytes,estimated_disk_bytes,progress_at";
     public DistributionSettings Settings { get; }
@@ -59,11 +60,20 @@ public sealed class IntakeStore
         return new(settings, path);
     }
 
-    private IntakeStore(DistributionSettings settings, string readOnlyDatabase)
+    private IntakeStore(DistributionSettings settings, string databasePath, WriterLease? enrollmentWriter = null)
     {
         Settings = settings;
-        enrollmentReadOnlyDatabase = readOnlyDatabase;
+        enrollmentDatabasePath = databasePath;
+        this.enrollmentWriter = enrollmentWriter;
         DatabaseGate = DistributionDatabaseCoordinator.ForRoot(Root);
+    }
+
+    internal async Task WithEnrollmentWriterAsync(Func<IntakeStore, Task> action)
+    {
+        if (enrollmentDatabasePath is null || enrollmentWriter is not null)
+            throw new InvalidOperationException("Enrollment writer requires the validated existing store.");
+        using var lease = AcquireWriter();
+        await action(new IntakeStore(Settings, enrollmentDatabasePath, lease));
     }
 
     public IntakeStore(DistributionSettings settings, Func<string, long>? availableBytes = null)
@@ -146,10 +156,11 @@ public sealed class IntakeStore
     {
         using var measurement = DistributionPerformance.MeasureDatabase("open");
         var options = new SqliteConnectionStringBuilder { DataSource = Path.Combine(Root, "distribution.db") };
-        if (enrollmentReadOnlyDatabase is not null)
+        if (enrollmentDatabasePath is not null)
         {
-            options.DataSource = enrollmentReadOnlyDatabase;
-            options.Mode = SqliteOpenMode.ReadOnly;
+            options.DataSource = enrollmentDatabasePath;
+            enrollmentWriter?.VerifyActive();
+            options.Mode = enrollmentWriter is null ? SqliteOpenMode.ReadOnly : SqliteOpenMode.ReadWrite;
             options.Pooling = false;
         }
         var db = new SqliteConnection(options.ToString());
@@ -225,6 +236,13 @@ public sealed class IntakeStore
     internal Func<string, long>? AvailableBytes => availableBytes;
     public IDisposable Lock()
     {
+        if (enrollmentWriter is null) return AcquireWriter();
+        // Only the writer-scoped store used by enrollment may borrow this lease for Add.
+        enrollmentWriter.VerifyActive();
+        return BorrowedWriterLease.Instance;
+    }
+    private WriterLease AcquireWriter()
+    {
         var operationLease = DistributionMaintenanceLease.Acquire(Root, false);
         var started = Stopwatch.GetTimestamp();
         while (true)
@@ -235,7 +253,16 @@ public sealed class IntakeStore
         }
     }
     private sealed class WriterLease(FileStream writer, IDisposable operation) : IDisposable
-    { public void Dispose() { writer.Dispose(); operation.Dispose(); } }
+    {
+        private bool disposed;
+        internal void VerifyActive() => ObjectDisposedException.ThrowIf(disposed, this);
+        public void Dispose() { disposed = true; writer.Dispose(); operation.Dispose(); }
+    }
+    private sealed class BorrowedWriterLease : IDisposable
+    {
+        internal static BorrowedWriterLease Instance { get; } = new();
+        public void Dispose() { }
+    }
     public IDisposable LockJob(string id)
     {
         ReleaseSidecar.Segment(id);

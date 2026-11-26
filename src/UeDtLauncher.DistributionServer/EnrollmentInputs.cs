@@ -160,13 +160,18 @@ internal sealed record EnrollmentInputs(List<EnrollmentCandidate> Candidates, Li
                 var client = fields[0];
                 ReleaseSidecar.Segment(client);
                 var address = fields[1];
-                _ = AccessPolicyEvaluator.ParseNetwork(address);
+                var separator = address.IndexOf('/');
+                var literal = separator < 0 ? address : address[..separator];
+                if (!IPAddress.TryParse(literal, out var ip) || ip.ToString() != literal || literal.Contains('%'))
+                    throw new FormatException();
+                var network = AccessPolicyEvaluator.ParseNetwork(address);
+                if (separator >= 0 && network.ToString() != address) throw new FormatException();
                 if (!addresses.TryGetValue(client, out var list)) addresses.Add(client, list = []);
                 list.Add(address);
             }
             catch (Exception ex) when (ex is InvalidDataException or ArgumentException or FormatException)
             {
-                errors.Add($"Address CSV row {number}: expected client ID and IP or CIDR.");
+                errors.Add($"Address CSV row {number}: expected client ID and canonical IP or CIDR.");
             }
         }
         return addresses;
@@ -175,6 +180,11 @@ internal sealed record EnrollmentInputs(List<EnrollmentCandidate> Candidates, Li
     internal static async Task<byte[]> ReadBoundedAsync(string path, int limit)
     {
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, 4096, FileOptions.Asynchronous);
+        return await ReadBoundedAsync(stream, limit);
+    }
+
+    internal static async Task<byte[]> ReadBoundedAsync(FileStream stream, int limit)
+    {
         if (stream.Length > limit) throw new InvalidDataException("Enrollment input exceeds size limit.");
         var bytes = new byte[checked((int)stream.Length)];
         await stream.ReadExactlyAsync(bytes);

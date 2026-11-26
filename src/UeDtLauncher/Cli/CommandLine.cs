@@ -114,7 +114,7 @@ public static partial class Program
         output.WriteLine("  credential keygen --name name --key-id pc-key --public-out device-public.json [--storage managed|portable]");
         output.WriteLine("  enroll prepare --name name --key-id id --client pc-id --output folder [--storage managed|portable] [--force]");
         output.WriteLine("  enroll finish --server-url origin --project-id id --platform windows-x64|linux-x64 --credential-name name --signing-key-id id --public-key pem --output config.json [--storage managed|portable] [--force]");
-        output.WriteLine("    Enrollment defaults to managed storage. Finish saves <output>.doctor.json and does not restart services.");
+        output.WriteLine("    Managed: protected release-public.pem in Agent config. Finish saves <output>.doctor.json.");
         output.WriteLine("  operation status|cancel|resume|discard --id <operation-id> [--config portable.json] [--endpoint pipe-or-socket]");
         output.WriteLine("  scheduled-check --config <config.json> (one query/status cycle; default disabled, explicit interval required; never installs/starts apps)");
         output.WriteLine("  run --config config.json [--operation-id <32-hex-id>] [--no-launch]; persistent resume requires performance.resumeCacheBytes");
