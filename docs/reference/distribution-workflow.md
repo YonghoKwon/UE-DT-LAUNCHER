@@ -68,7 +68,7 @@ UeDtLauncher credential set --name company-distribution
 
 ## 3. 접수 및 승인
 
-쉬운 방법은 개발 PC의 `UeDtLauncher upload`와 서버 운영자의 `UeDtLauncher.DistributionServer console --config server.json`입니다. Windows PowerShell·Linux 터미널의 입력과 정상 결과는 [B2~B6 실행 안내](feature-workflow.md#b2-releasejson-만들기--개발-pc-powershell)에 있습니다. OpenSSH/known-host·incoming 권한은 최초 준비이며 이후 버전마다 새 업로드 ID를 사용합니다. 프로필은 접속 값과 identity 경로만 저장하고 명령줄 값이 우선합니다. dry-run은 생성 예정 파일과 단계만 보여주고 네트워크/파일 변경을 하지 않습니다.
+쉬운 방법은 개발 PC의 `UeDtLauncher upload`와 서버 운영자의 `UeDtLauncher.DistributionServer console --config server.json`입니다. Windows PowerShell·Linux 터미널의 입력과 정상 결과는 [B2~B6 실행 안내](feature-workflow.md#b2-releasejson-만들기--개발-pc-powershell)에 있습니다. OpenSSH/known-host·incoming 권한은 최초 준비이며 이후 버전마다 새 업로드 ID를 사용합니다. `--profile`은 접속 값과 identity 경로를 읽고 `--project-profile`은 프로젝트와 ZIP 내부 경로를 읽습니다. 명령줄 값이 우선합니다. dry-run은 로컬 ZIP을 검사해 생성 예정 파일과 전송 계획을 보여줍니다.
 
 콘솔 1·2는 번호 또는 전체 ID로 선택한 비공개 snapshot을 한국어 표/상세로 표시합니다. 3승인은 버전, 4거절·5실패 재시도는 작업 ID 앞8자를 확인 값으로 입력합니다. 선택 후와 확인 후 대상을 다시 읽으며 바뀐 대상은 적용하지 않습니다. 6승격은 트랙별 현재 추천 표시 → 번호 선택 → revision·사유 → 버전 재입력 순서입니다. 승인과 승격은 합치지 않습니다. 각 작업 뒤 메뉴로 돌아가고 잘못된 메뉴는 다시 묻습니다. EOF와 메뉴0은 종료합니다.
 

@@ -6,25 +6,16 @@ public static partial class Program
 {
     private static async Task<int> GenerateSidecarAsync(string[] args)
     {
-        var zip = Required(args, "--zip");
-        var metadata = new ReleaseSidecar
-        {
-            ProjectId = Required(args, "--project-id"),
-            DisplayName = Get(args, "--display-name") ?? Required(args, "--project-id"),
-            Version = Required(args, "--version"),
-            Environment = Get(args, "--environment") ?? "prod",
-            Channel = Get(args, "--channel") ?? "stable",
-            Platform = Required(args, "--platform"),
-            PayloadRoot = Get(args, "--payload-root") ?? ".",
-            EntryPoint = Required(args, "--entry-point"),
-            ExecutablePaths = (Get(args, "--executable-paths") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).ToList(),
-            Notes = Get(args, "--notes"),
-            HeroPath = Get(args, "--hero-path"),
-            ThumbnailPath = Get(args, "--thumbnail-path")
-        };
+        var input = await ReleaseMetadataInput.ReadAsync(args);
+        var zip = ReleaseMetadataInput.RequireZip(Get(args, "--zip"));
         var output = Get(args, "--output") ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(zip))!, "release.json");
-        await SidecarPackageValidator.GenerateAsync(zip, output, metadata);
-        Console.WriteLine("Created external release metadata: " + output);
+        try { await SidecarPackageValidator.GenerateAsync(zip, output, input.Metadata); }
+        catch (ReleaseDocumentSizeException)
+        {
+            throw new CliArgumentException("release.json exceeds 1 MiB.");
+        }
+        Console.WriteLine("외부 release.json 생성 완료");
+        input.WriteSummary(Console.Out);
         return 0;
     }
 

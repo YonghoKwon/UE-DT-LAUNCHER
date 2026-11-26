@@ -152,7 +152,10 @@ public sealed class OpenSshProcessRunner : IUploadProcessRunner
 public sealed record UploadStep(string Name, string Executable, IReadOnlyList<string> Arguments);
 public sealed record UploadResult(bool Success, bool DryRun, string UploadId, string RemoteDirectory,
     string? WorkDirectory, string? FailedStage, IReadOnlyList<UploadStep> Steps, string Remaining, string NextAction,
-    int? ExitCode = null, string? FailureKind = null, bool WorkPreserved = false, string? WorkCleanupWarning = null);
+    int? ExitCode = null, string? FailureKind = null, bool WorkPreserved = false, string? WorkCleanupWarning = null)
+{
+    internal string? SidecarSha256 { get; init; }
+}
 
 public sealed class ReleaseUploader
 {
@@ -188,6 +191,7 @@ public sealed class ReleaseUploader
         metadata.PackageSize = new FileInfo(zip).Length;
         progress?.Invoke(new(1, "ZIP 검사 중", metadata.PackageSize));
         metadata.PackageSha256 = await Hashing.Sha256FileAsync(zip, token);
+        var sidecarBytes = SidecarPackageValidator.SerializeForGeneration(metadata);
         await SidecarPackageValidator.ValidateArchiveAsync(zip, metadata, token);
         string? work = null;
         var localZip = Path.Combine(Path.GetFullPath(workRoot), uploadId + "-NEW", "payload.zip");
@@ -249,7 +253,10 @@ public sealed class ReleaseUploader
         return new(true, dryRun, uploadId, remote, work, null, steps,
             dryRun ? "변경 없음: payload.zip, release.json 생성 예정" : "payload.zip과 release.json 최종 파일 확인 완료; .uploading 없음",
             "운영자가 서버 콘솔에서 검사 결과를 확인하고 승인합니다. 승격은 검증 후 별도 수행합니다.",
-            WorkPreserved: !dryRun && (keepWork || cleanupWarning is not null), WorkCleanupWarning: cleanupWarning);
+            WorkPreserved: !dryRun && (keepWork || cleanupWarning is not null), WorkCleanupWarning: cleanupWarning)
+        {
+            SidecarSha256 = dryRun ? Convert.ToHexString(SHA256.HashData(sidecarBytes)).ToLowerInvariant() : null
+        };
     }
 
     private static string RemainingAt(int stage) => stage switch

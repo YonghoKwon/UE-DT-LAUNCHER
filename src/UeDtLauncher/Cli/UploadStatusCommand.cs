@@ -132,7 +132,8 @@ public static partial class Program
         var timeout = UploadStatusSeconds(args, "--timeout", 1800);
         var interval = UploadStatusSeconds(args, "--interval", 5);
         var port = Get(args, "--port") is null ? (int?)null : UploadStatusNumber(args, "--port", 22, 65535);
-        var profile = await ReadUploadProfileAsync(args, port, Get(args, "--remote-status"));
+        var profile = await ReadUploadProfileAsync(Get(args, "--profile"), new(Get(args, "--server"),
+            Get(args, "--remote-incoming"), port, Get(args, "--identity-file"), Get(args, "--remote-status")));
         var directory = profile.ResolveStatusDirectory();
         var step = UploadTransport.Ssh(profile, "status", $"cat -- {directory}/{uploadId}.json", closeInput: true);
         return new(uploadId, format, wait, timeout, interval, profile, step);
