@@ -160,7 +160,7 @@ public sealed partial class MainWindow
                     KeyboardNavigation.SetTabNavigation(more,KeyboardNavigationMode.Local);
                     more.PropertyChanged+=(_,e)=>{if(e.Property==Expander.IsExpandedProperty)_maintenanceExpanded=more.IsExpanded;};
                     Identify(more,"maintenance","유지보수 및 진단"); content.Children.Add(more);
-                    content.Children.Add(DeveloperVersionList(focusId));
+                    content.Children.Add(DeveloperVersionList());
                     var details=DeveloperBuildInformation(); var logs=EnterpriseLogs();
                     if(wide)
                     {
@@ -454,6 +454,7 @@ public sealed partial class MainWindow
     }
     private Control? FindFocusTarget(string? id)
     {
+        if (FindDeveloperVersionFocusTarget(id) is { } versionRow) return versionRow;
         var controls=this.GetVisualDescendants().OfType<Control>().Where(c=>c.IsEffectivelyVisible&&c.IsEnabled&&c.Focusable).ToList();
         foreach(var candidate in new[]{id,"project-list","compact-project","status-check","card-refresh","settings"})
         {

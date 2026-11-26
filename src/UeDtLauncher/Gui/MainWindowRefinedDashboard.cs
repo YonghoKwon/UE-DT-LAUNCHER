@@ -105,6 +105,7 @@ public sealed partial class MainWindow : Window
         if (IsDeveloper) _developerHistory.CollectionChanged += (_, _) => RefreshDeveloperHistory();
         _preferences = preferences ?? (startServices ? LauncherUiPreferences.Load(preferencesPath) : new());
         InitializeComponent();
+        WindowStartupLocation = WindowStartupLocation.CenterScreen;
         if (model is null) LoadConfig(); else SelectProject();
         _showStartupSkeleton = startServices && _configurationError is null;
         Build();
