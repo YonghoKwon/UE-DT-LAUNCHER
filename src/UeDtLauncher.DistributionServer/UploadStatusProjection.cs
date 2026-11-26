@@ -66,9 +66,9 @@ internal sealed class UploadStatusProjection(IntakeStore store, Action<Exception
     {
         var state = transferring ? "transferring" : jobState switch
         {
-            null or "waiting" => complete ? "waiting" : null,
+            null => complete ? "waiting" : null,
             "validating" or "processing" => "processing",
-            "failed" or "rejected" or "pending" or "publishing" => jobState,
+            "waiting" or "failed" or "rejected" or "pending" or "publishing" => jobState,
             "published" => release?.Recommended == true ? "recommended" : "published",
             _ => null
         };

@@ -122,7 +122,7 @@ upload는 키 인증 전용(BatchMode)으로 비밀번호를 묻지 않습니다
 
 자동 업로드 ID는 릴리스 정보를 알아볼 수 있는 접두부를 길이에 맞춰 자르고 UTC 밀리초 시각·짧은 난수 접미부를 붙여 최대128자로 만듭니다. 프로젝트/버전 등 릴리스 메타데이터는 자르지 않습니다. 명시한 `--upload-id`는 그대로 검증하며 자동 수정하지 않습니다.
 
-`upload status`는 SSH로 서버의 상태 파일을 조회합니다. 실서버 배치 예시는 `remoteIncoming=/dt/store/incoming`과 `remoteStatus=/dt/store/upload-status`입니다. `--wait`는 기본 5초마다 최대 30분간 조회하며 승인 대기·게시 처리 중·게시됨·현재 추천판에 도달하면 종료합니다. 이후 상태는 같은 ID로 다시 확인할 수 있습니다. 서버 관리자는 `/dt/store/upload-status/`에 업로더 읽기 권한과 서버 서비스 쓰기 권한을 부여합니다. [B3 상태 조회 옵션·권한 설정](docs/reference/feature-workflow.md#b3-서버로-두-파일-올리기--개발-pc)
+`upload status`는 SSH로 서버의 상태 파일을 조회합니다. 실서버 배치 예시는 `remoteIncoming=/dt/store/incoming`과 `remoteStatus=/dt/store/upload-status`입니다. `--wait`는 첫 상태 파일이 생기기 전에도 기본 5초마다 최대 30분간 조회하며 승인 대기·게시 처리 중·게시됨·현재 추천판에 도달하면 종료합니다. 이후 상태는 같은 ID로 다시 확인할 수 있습니다. 서버 관리자는 `/dt/store/upload-status/`에 업로더 읽기 권한과 서버 서비스 쓰기 권한을 부여합니다. [B3 상태 조회 옵션·권한 설정](docs/reference/feature-workflow.md#b3-서버로-두-파일-올리기--개발-pc)
 
 서버 운영자는 Linux 터미널에서 `./UeDtLauncher.DistributionServer console --config /dt/config/server.json`을 실행합니다. 운영 콘솔은 터미널 입력만 허용하며 승인과 승격은 별도 확인입니다. [B2~B6 전체 명령·결과](docs/reference/feature-workflow.md)
 

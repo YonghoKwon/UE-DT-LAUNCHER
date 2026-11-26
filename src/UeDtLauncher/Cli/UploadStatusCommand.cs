@@ -8,6 +8,8 @@ namespace UeDtLauncher;
 
 public static partial class Program
 {
+    private const int UploadStatusNotReady = 44;
+
     private sealed record UploadStatusRequest(string UploadId, string Format, bool Wait, TimeSpan Timeout,
         TimeSpan Interval, UploadProfile Profile, UploadStep Step);
 
@@ -69,7 +71,11 @@ public static partial class Program
                 var response = await runner.CaptureAsync(request.Step.Executable, request.Step.Arguments,
                     UploadStatus.MaximumBytes, deadline.Token);
                 deadline.Token.ThrowIfCancellationRequested();
-                if (response.ExitCode != 0)
+                if (response.ExitCode == UploadStatusNotReady && request.Wait)
+                {
+                    consecutiveFailures = 0;
+                }
+                else if (response.ExitCode != 0)
                 {
                     if (!request.Wait || ++consecutiveFailures == 3)
                     {
@@ -135,7 +141,12 @@ public static partial class Program
         var profile = await ReadUploadProfileAsync(Get(args, "--profile"), new(Get(args, "--server"),
             Get(args, "--remote-incoming"), port, Get(args, "--identity-file"), Get(args, "--remote-status")));
         var directory = profile.ResolveStatusDirectory();
-        var step = UploadTransport.Ssh(profile, "status", $"cat -- {directory}/{uploadId}.json", closeInput: true);
+        var path = $"{directory}/{uploadId}.json";
+        // Only a missing file in an accessible status directory is a normal wait response.
+        // The directory and every path segment were allowlisted before interpolation.
+        var command = $"if test -r {directory} && test -x {directory} && ! test -e {path} && ! test -L {path}; " +
+            $"then exit {UploadStatusNotReady}; fi; exec cat -- {path}";
+        var step = UploadTransport.Ssh(profile, "status", command, closeInput: true);
         return new(uploadId, format, wait, timeout, interval, profile, step);
     }
 

@@ -45,7 +45,7 @@ public sealed class UploadStatusCommandTests
             "-o", "PreferredAuthentications=publickey", "-o", "PasswordAuthentication=no", "-o", "KbdInteractiveAuthentication=no",
             "-o", "PermitLocalCommand=no", "-o", "ClearAllForwardings=yes", "-o", "ControlMaster=no", "-o", "ControlPath=none",
             "-o", "ConnectTimeout=10", "-o", "ConnectionAttempts=1", "-p", "2222", "-n", "-T", "upload@host.example",
-            "cat -- /srv/ue/upload-status/upload-1.json" }, call.Args);
+            ExpectedCommand("/srv/ue/upload-status") }, call.Args);
         using var original = JsonDocument.Parse(Reply("pending").StandardOutput);
         using var observed = JsonDocument.Parse(output);
         foreach (var field in original.RootElement.EnumerateObject())
@@ -65,8 +65,8 @@ public sealed class UploadStatusCommandTests
         await File.WriteAllTextAsync(profile, """{"server":"u@host","remoteStatus":"/read/status","port":22}""");
         Assert.Equal(0, (await Run(runner, args)).Exit);
         Assert.Equal(0, (await Run(runner, [.. args, "--remote-status", "/overridden"])).Exit);
-        Assert.Equal(new[] { "cat -- /upload-status/upload-1.json", "cat -- /read/status/upload-1.json",
-            "cat -- /overridden/upload-1.json" }, runner.Calls.Select(call => call.Args[^1]));
+        Assert.Equal(new[] { ExpectedCommand("/upload-status"), ExpectedCommand("/read/status"),
+            ExpectedCommand("/overridden") }, runner.Calls.Select(call => call.Args[^1]));
     }
 
     public static TheoryData<string> UnsafeSegments => new()
@@ -166,6 +166,30 @@ public sealed class UploadStatusCommandTests
     }
 
     [Fact]
+    public async Task WaitContinuesPastThreeMissingFilesAndResetsTheFailureCount()
+    {
+        var missing = new UploadProcessOutput(44, []);
+        var unavailable = new UploadProcessOutput(255, []);
+        var runner = new FakeRunner(unavailable, unavailable, missing, missing, missing, missing, unavailable, Reply("pending"));
+        var (exit, output, errors) = await Run(runner, Args(options: ["--wait", "--timeout", "20", "--interval", "1"]));
+        Assert.Equal(0, exit);
+        Assert.Contains("승인 대기", output);
+        Assert.Empty(errors);
+        Assert.Equal(8, runner.Calls.Count);
+    }
+
+    [Fact]
+    public async Task MissingStatusIsAQueryFailureWithoutWaitAndTimesOutWithWait()
+    {
+        var missing = new UploadProcessOutput(44, []);
+        Assert.Equal(1, (await Run(new(missing), Args())).Exit);
+        var (exit, output, errors) = await Run(new(missing), Args(options: ["--wait", "--timeout", "1", "--interval", "2"]));
+        Assert.Equal(4, exit);
+        Assert.Empty(output);
+        Assert.Contains("제한시간", errors);
+    }
+
+    [Fact]
     public async Task RejectsOversizeMismatchAndUntrustedFieldsWithoutPrintingRawResponse()
     {
         var valid = Reply("pending").StandardOutput;
@@ -192,6 +216,10 @@ public sealed class UploadStatusCommandTests
 
     private static UploadProcessOutput Reply(string state, string uploadId = "upload-1") =>
         new(0, JsonSerializer.SerializeToUtf8Bytes(new UploadStatus(uploadId, state, DateTimeOffset.UnixEpoch), JsonFiles.Options));
+
+    private static string ExpectedCommand(string directory) =>
+        $"if test -r {directory} && test -x {directory} && ! test -e {directory}/upload-1.json && ! test -L {directory}/upload-1.json; " +
+        $"then exit 44; fi; exec cat -- {directory}/upload-1.json";
 
     private static async Task<(int Exit, string Output, string Errors)> Run(FakeRunner runner, string[] args)
     {

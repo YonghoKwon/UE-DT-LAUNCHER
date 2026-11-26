@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -61,14 +62,107 @@ public sealed class UploadStatusProjectionTests
             await projection.RefreshAsync(default);
             Assert.Equal("recommended", ReadStatus(temp.Path, "1.0").State);
             Assert.Equal("published", ReadStatus(temp.Path, "2.0").State);
-            promotions.Promote(new("demo", "prod", "stable", "windows-x64", "2.0"), first.Revision, "fixture");
+            var secondPromotion = promotions.Promote(new("demo", "prod", "stable", "windows-x64", "2.0"), first.Revision, "fixture");
             await projection.RefreshAsync(default);
             Assert.Equal("published", ReadStatus(temp.Path, "1.0").State);
             var second = ReadStatus(temp.Path, "2.0");
             Assert.Equal("recommended", second.State);
             Assert.Equal("2.0", second.Release?.Version);
+            promotions.Promote(new("demo", "prod", "stable", "windows-x64", "1.0"), secondPromotion.Revision, "fixture");
+            await projection.RefreshAsync(default);
+            Assert.Equal("recommended", ReadStatus(temp.Path, "1.0").State);
+            Assert.Equal("published", ReadStatus(temp.Path, "2.0").State);
         }
         finally { ClearPool(temp.Path); }
+    }
+
+    [Fact]
+    public async Task RetryProjectsWaitingWithAnIncompletePairWithoutRegisteringOtherIncompleteUploads()
+    {
+        using var temp = new UploadStatusTestDirectory();
+        var store = new IntakeStore(new() { Root = temp.Path });
+        try
+        {
+            var source = UploadFolder(temp.Path, "retry");
+            await File.WriteAllTextAsync(Path.Combine(source, "release.json"), "fixture");
+            var unregistered = UploadFolder(temp.Path, "unregistered");
+            await File.WriteAllTextAsync(Path.Combine(unregistered, "release.json"), "fixture");
+            store.Save(new("fixture-job", source, "failed", null, "fixture failure"));
+            var projection = CheckedProjection(store);
+            await projection.RefreshAsync(default);
+            Assert.Equal("failed", ReadStatus(temp.Path, "retry").State);
+            store.Retry("fixture-job");
+            await projection.RefreshAsync(default);
+            var status = ReadStatus(temp.Path, "retry");
+            Assert.Equal("waiting", status.State);
+            Assert.Null(status.Reason);
+            Assert.False(File.Exists(StatusPath(temp.Path, "unregistered")));
+        }
+        finally { ClearPool(temp.Path); }
+    }
+
+    [Fact]
+    public async Task SingleServerProjectsProcessingBeforeItsLongIntakeCompletes()
+    {
+        using var temp = new UploadStatusTestDirectory();
+        using var releaseScan = new ManualResetEventSlim();
+        using var stopping = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var validating = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var store = new IntakeStore(new()
+        {
+            Root = temp.Path,
+            ListenUrl = "http://127.0.0.1:0",
+            PublicUrl = "http://127.0.0.1:18500",
+            PolicyPath = Path.Combine(temp.Path, "policy.json"),
+            AuthenticationMode = "request-signature-v1"
+        }, _ =>
+        {
+            validating.TrySetResult();
+            releaseScan.Wait(stopping.Token);
+            return long.MaxValue;
+        });
+        try
+        {
+            await File.WriteAllTextAsync(store.Settings.PolicyPath, """{"clients":[]}""");
+            var source = UploadFolder(temp.Path, "slow-upload");
+            var zip = Path.Combine(source, "payload.zip");
+            using (var archive = ZipFile.Open(zip, ZipArchiveMode.Create))
+            using (var stream = new StreamWriter(archive.CreateEntry("game.exe").Open()))
+                await stream.WriteAsync("fixture");
+            await SidecarPackageValidator.GenerateAsync(zip, Path.Combine(source, "release.json"),
+                new() { ProjectId = "demo", Version = "1.0", EntryPoint = "game.exe" });
+
+            await using var app = DistributionHttp.CreateApplication(store);
+            await app.StartAsync(stopping.Token);
+            var scanner = UploadStatusScanner.RunAsync(store, error => Assert.Fail(error.ToString()), stopping.Token);
+            try
+            {
+                await validating.Task.WaitAsync(stopping.Token);
+                await WaitForStateAsync(temp.Path, "slow-upload", "processing", stopping.Token);
+                await Task.Delay(TimeSpan.FromSeconds(5), stopping.Token);
+                using var client = new HttpClient { BaseAddress = new Uri(app.Urls.Single()) };
+                using var response = await client.GetAsync("/api/v1/catalog", stopping.Token);
+                Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+                Assert.Equal("validating", Assert.Single(store.List()).State);
+                Assert.Equal("processing", ReadStatus(temp.Path, "slow-upload").State);
+                releaseScan.Set();
+                await WaitForStateAsync(temp.Path, "slow-upload", "pending", stopping.Token);
+            }
+            finally
+            {
+                releaseScan.Set();
+                await stopping.CancelAsync();
+                await scanner;
+                await app.StopAsync();
+            }
+        }
+        finally { ClearPool(temp.Path); }
+    }
+
+    private static async Task WaitForStateAsync(string root, string uploadId, string state, CancellationToken token)
+    {
+        while (!File.Exists(StatusPath(root, uploadId)) || ReadStatus(root, uploadId).State != state)
+            await Task.Delay(50, token);
     }
 
     [Fact]
