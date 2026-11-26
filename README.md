@@ -100,16 +100,20 @@ dotnet publish src/UeDtLauncher.DistributionServer -c Release -r linux-x64 --sel
 UeDtLauncher release-metadata --zip Windows.zip --project-id demo --version 1.2.0 --platform windows-x64 --payload-root Windows --entry-point Demo.exe --output release.json
 ```
 
-Windows PowerShell의 쉬운 방법은 다음과 같습니다. OpenSSH와 기존 known-host 등록·업로드 계정 권한이 먼저 필요합니다. 프로필의 서버/경로는 실제 회사값으로 고치고 비밀번호·키 내용은 넣지 않습니다.
+Windows PowerShell에서 처음 한 번 접속 프로필과 프로젝트 프로필을 준비합니다. `--profile`에는 서버·계정·원격 경로·포트·identity 경로를 지정하고 `--project-profile`에는 ZIP 내부 경로와 배포할 프로젝트 값을 지정합니다. OpenSSH, 기존 known-host 등록과 업로드 권한이 필요합니다. 두 파일에 비밀번호·키 내용은 넣지 않습니다.
 
 ```powershell
-.\UeDtLauncher.exe upload init --output .\upload.profile.json
-.\UeDtLauncher.exe upload check --profile .\upload.profile.json
-.\UeDtLauncher.exe upload --profile .\upload.profile.json --zip .\Windows.zip --project-id demo --version 1.2.0 --platform windows-x64 --payload-root Windows --entry-point Demo.exe --dry-run
-# 계획 확인 후 같은 입력에서 --dry-run을 빼면 전송
+.\UeDtLauncher.exe upload init --output upload.profile.json
+.\UeDtLauncher.exe upload project-init --output ma0t10.project.json
+# 접속 프로필과 프로젝트 프로필을 실제 대상에 맞게 편집
+.\UeDtLauncher.exe upload check --profile upload.profile.json
+.\UeDtLauncher.exe upload --profile upload.profile.json --project-profile ma0t10.project.json --zip Windows.zip --version 1.4.0 --notes-file notes.md --dry-run
+# 계획 확인 후 매 배포는 같은 명령에서 --dry-run을 빼고 실행
 ```
 
 upload는 키 인증 전용(BatchMode)으로 비밀번호를 묻지 않습니다. 최초 호스트 키 등록은 터미널 `ssh 계정@호스트`로 직접 확인합니다. `upload check`는 ssh/scp 존재·접속·incoming 디렉터리/쓰기 권한만 조회하며 원격 파일·폴더를 만들지 않습니다. 기본 한국어 요약과 stderr 진행 안내를 사용하고, 도구 연동은 `--format json`을 명시합니다. 성공 후 이번 작업 폴더만 정리하며 `--keep-work` 또는 실패 시 보존합니다. 종료255는 주소·포트·키 인증·호스트 키 확인, 전송 실패는 네트워크·디스크 점검 후 새 ID로 재시도합니다.
+
+명령줄 값이 프로젝트 프로필보다 우선하고, 생략한 선택 값에는 기본값을 적용합니다. `--notes-file`은 BOM을 포함해 최대 64 KiB인 UTF-8 텍스트입니다. `--notes`와 함께 지정하면 종료2입니다. 노트 옵션은 `release-metadata`에서도 사용할 수 있습니다. 프로젝트 프로필의 필드와 작성 방법은 [기능 지도 B2](docs/reference/feature-workflow.md#b2-releasejson-만들기--개발-pc-powershell)와 [합성 예시](examples/ma0t10.project.json)를 참고하세요.
 
 자동 업로드 ID는 릴리스 정보를 알아볼 수 있는 접두부를 길이에 맞춰 자르고 UTC 밀리초 시각·짧은 난수 접미부를 붙여 최대128자로 만듭니다. 프로젝트/버전 등 릴리스 메타데이터는 자르지 않습니다. 명시한 `--upload-id`는 그대로 검증하며 자동 수정하지 않습니다.
 

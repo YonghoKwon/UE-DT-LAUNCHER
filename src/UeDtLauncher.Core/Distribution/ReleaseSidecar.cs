@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace UeDtLauncher;
@@ -28,13 +29,18 @@ public sealed class ReleaseSidecar
     public void Validate()
     {
         if (SchemaVersion != 1) throw new InvalidDataException("Unsupported release.json schemaVersion.");
-        Segment(ProjectId); Segment(Version);
-        KnownValues.ValidateReleaseTuple(Platform, Environment, Channel);
+        ValidateReleaseFields();
         if (string.IsNullOrWhiteSpace(PackageFile) || PackageFile.Contains('/') || PackageFile.Contains('\\') ||
             PackageFile.Contains(':') || !PackageFile.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("packageFile must name a ZIP in the upload directory.");
         if (PackageSize <= 0 || !Regex.IsMatch(PackageSha256, "^[0-9a-fA-F]{64}$"))
             throw new InvalidDataException("ZIP size and SHA-256 are required.");
+    }
+
+    internal void ValidateReleaseFields()
+    {
+        Segment(ProjectId); Segment(Version);
+        KnownValues.ValidateReleaseTuple(Platform, Environment, Channel);
         if (PayloadRoot != ".") Relative(PayloadRoot);
         Relative(EntryPoint);
         foreach (var path in ExecutablePaths) Relative(path);
@@ -65,6 +71,8 @@ public sealed record ZipIntakeLimits(long MaxExpandedBytes = 500L * 1024 * 1024 
 
 public static class SidecarPackageValidator
 {
+    internal const int MaxDocumentBytes = 1024 * 1024;
+
     public static async Task<ReleaseSidecar> ReadAsync(string path, CancellationToken token = default)
     {
         var bytes = await ReadDocumentAsync(path, token);
@@ -83,7 +91,7 @@ public static class SidecarPackageValidator
         using var output = new MemoryStream(); var buffer = new byte[8192]; int count;
         while ((count = await input.ReadAsync(buffer, token)) != 0)
         {
-            if (output.Length + count > 1024 * 1024) throw new InvalidDataException("release.json exceeds 1 MiB.");
+            if (output.Length + count > MaxDocumentBytes) throw new InvalidDataException("release.json exceeds 1 MiB.");
             output.Write(buffer, 0, count);
         }
         return output.ToArray();
@@ -96,8 +104,16 @@ public static class SidecarPackageValidator
         metadata.PackageSize = new FileInfo(zipPath).Length;
         metadata.PackageSha256 = await Hashing.Sha256FileAsync(zipPath, token);
         metadata.Validate();
+        SerializeForGeneration(metadata);
         if (File.Exists(output)) throw new IOException("Sidecar already exists; choose a new output path.");
         await JsonFiles.WriteAsync(output, metadata, overwrite: false, cancellationToken: token);
+    }
+
+    internal static byte[] SerializeForGeneration(ReleaseSidecar metadata)
+    {
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(metadata, JsonFiles.Options);
+        if (bytes.Length > MaxDocumentBytes) throw new ReleaseDocumentSizeException();
+        return bytes;
     }
 
     /// <summary>Read-only ZIP/hash/inventory validation for upload planning; extraction remains server-side.</summary>
@@ -205,3 +221,5 @@ public static class SidecarPackageValidator
         return metadata.PayloadRoot == "." ? destination : SafePath.ResolveInside(destination, metadata.PayloadRoot);
     }
 }
+
+internal sealed class ReleaseDocumentSizeException() : IOException("release.json exceeds 1 MiB.");
