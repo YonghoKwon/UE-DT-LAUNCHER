@@ -10,7 +10,20 @@ ZIP과 JSON은 별개 파일입니다. 내부 release.json은 분류에 사용�
 
 ## 1. 서버 준비
 
-확인형 정리: `retention inspect --config server.json`, `retention plan --jobs 실패ID --output 계획.json --config server.json`(또는 명시 `--temporary processing/폴더`). 원인/크기/선택을 확인하고 서버/watch를 정지한 뒤 `retention apply --plan 계획.json --confirm --config server.json`. public/모든 promotion/pending/active는 보호된다. stale/재생성 자료는 새 plan이 필요하며 중단은 같은 승인 journal로 재개한다. 보관 기간과 공개판 삭제는 미정이다.
+2026-11-27 PROD-10 [로컬] 문서 대조. PROD-01D의 Rocky 8.4 격리 검증과 PROD-02D의 가상망 측정은 회사 RHEL·SELinux·스토리지 인수와 별개입니다. 회사는 미검증입니다. [실환경 이관 체크리스트](commercial-deployment.md#실환경-이관-체크리스트)
+
+| 경로 | 운영 용도와 접근 |
+|---|---|
+| `/dt/store` | 처음에는 없거나 빈 전용 루트. `uedt-distribution` 소유, 0711. 로컬 ext4/XFS를 사용 |
+| `/dt/store/incoming`, `/dt/store/upload-status` | `uedt-upload` 그룹의 incoming 2770 쓰기. 상태 디렉터리 0750, 상태 파일 0640 읽기 |
+| `/dt/store/{processing,releases,archive,.job-locks}` | 서비스 계정의 비공개 처리·게시 payload·작업 보관·잠금 |
+| `/dt/store/authority` | `HEAD`, `catalog`, `jobs`, `auth`, `sequence`, `events` 불변 세대, `release-meta`, `progress`, 파생 `audit.jsonl`. 별도 DB 없음 |
+| `/dt/config`, `/dt/keys` | 보호 설정·정책 및 배포 서명키. 운영 설정은 관리자 쓰기·서비스 읽기, `/dt/keys/signing.pem`은 서비스 계정 소유 0400 |
+| `/dt/publish/{server-linux-x64,linux-x64}`, `/dt/tools` | 배포 서버·런처 CLI 게시본과 운영 도구 |
+
+회사 배치는 [A2 설치 순서](feature-workflow.md#a2-linux-서버-구성--관리자)를 따릅니다. 옛 `/dt/ue-dt-updates`와 `/dt/incoming`의 폐기는 사용자가 직접 수행하며, 설정·키·기존 배치의 용도를 먼저 확인합니다. SSH 로그인 키는 유지합니다.
+
+확인형 정리: `retention inspect --config server.json`, `retention plan --jobs 실패ID --output 계획.json --config server.json`(또는 명시 `--temporary processing/폴더`). 원인/크기/선택을 확인하고 서버/watch를 정지한 뒤 `retention apply --plan 계획.json --confirm --config server.json`. 공개판·모든 승격판·승인 대기·활성 작업은 보호합니다. stale/재생성 자료는 새 계획이 필요하며 중단은 같은 승인 journal로 재개합니다. 공개판 자동 삭제는 하지 않습니다. 비공개 자료의 보관 기간은 미정입니다.
 
 오프라인 유지보수(2026-10-03): 서버/watch/작업을 정상 중지 → `backup plan --config server.json` → `backup create --output 새백업 --config server.json` → `backup verify --backup 새백업 --config server.json`. private key는 별도 보관한다. 복원은 `restore stage --backup ... --target 빈폴더 --config 원본server.json` 후 `restore activate --target ... --confirm --config 원본server.json`이며 최신 생존 원본의 파일·보안·순번·승격·정책을 대조한다. 누락/불명이면 staged로 차단한다. 반환한 policyPath와 새 root를 운영 설정에 명시하고 별도 서명키를 준비한다. 회사 완전 유실 복구/RPO·RTO는 미검증이다.
 
@@ -19,13 +32,14 @@ ZIP과 JSON은 별개 파일입니다. 내부 release.json은 분류에 사용�
 
 초기화 도중 중단되면 같은 설정으로 다시 실행합니다. 서버는 저장소 안의 초기 준비 상태를 확인하고 세대 0 게시를 마칩니다. 구형·혼합·손상·미인식 저장소는 변경 전에 거부합니다. `authority`, `processing`, `archive`, `releases`, 그리고 `/dt/keys`의 서명 개인키는 서비스 계정만 접근하도록 구성합니다. [저장소 준비 스크립트](../../scripts/prepare-server-store.sh)
 
-`/dt/config/server.json`:
+신규 사내 HTTP 요청 서명용 `/dt/config/server.json` 예시입니다. `install-server.sh`는 이 인증 모드와 HTTP origin을 확인합니다. 기존 HTTPS/Bearer 배치를 유지할 때는 해당 설정과 nginx 구성을 따릅니다.
 
 ```json
 {
   "root": "/dt/store",
-  "publicUrl": "https://updates.example.com",
+  "publicUrl": "http://updates.example.com",
   "listenUrl": "http://127.0.0.1:18500",
+  "authenticationMode": "request-signature-v1",
   "signingKeyPath": "/dt/keys/signing.pem",
   "signingKeyId": "release-1",
   "policyPath": "/dt/config/access-policy.json",
@@ -33,7 +47,7 @@ ZIP과 JSON은 별개 파일입니다. 내부 release.json은 분류에 사용�
 }
 ```
 
-사이트 주소, 인증서, 크기 제한은 실제 패키지와 디스크 용량에 맞게 설정합니다. `packaging/linux/ue-dt-distribution.service` 사본의 실행 파일·설정·쓰기 경로를 예시 배치에 맞춰 지정합니다. [서비스 경로 설정](feature-workflow.md#a2-linux-서버-구성--관리자)에 따라 서비스와 `distribution-nginx.conf`를 배포합니다. nginx의 auth_request 모듈을 확인하고 `nginx -t` 후 적용합니다. backend 18500은 외부에 열지 않습니다.
+사이트 주소와 크기 제한은 실제 배치에 맞게 설정합니다. 신규 HTTP는 `packaging/linux/distribution-nginx-http-signature.conf`를 회사 주소에 맞게 검토하여 [A2 설치](feature-workflow.md#a2-linux-서버-구성--관리자)의 입력으로 사용합니다. 기존 HTTPS/Bearer 예시는 `packaging/linux/distribution-nginx.conf`이며 TLS 인증서와 nginx의 auth_request 모듈을 확인합니다. nginx 설정은 `nginx -t` 후 적용하고 backend 18500은 외부에 열지 않습니다.
 새 전용 HTTPS 가상 호스트에는 기존 `/projects`, `/catalogs`, json 확장자별 공개 location을 혼합하지 않습니다. 공개 파일 루트를 지정하지 않아 incoming/authority/키에 접근할 수 없습니다.
 
 ## 2. 서명과 PC 권한
@@ -42,7 +56,7 @@ ZIP과 JSON은 별개 파일입니다. 내부 release.json은 분류에 사용�
 UeDtLauncher generate-signing-key --private-key release-private.pem --public-key release-public.pem
 ```
 
-개인키는 서버 서비스와 승인 운영자만 읽도록 0600으로 보호합니다. 공개키만 클라이언트에 배포합니다. 키 교체 때 새 공개키를 먼저 배포하고 server.json의 keyId/개인키를 바꿉니다. 이미 게시된 Manifest 검증을 위해 사용 중인 기존 공개키를 제거하지 않습니다.
+생성한 개인키는 준비 중 0600으로 보호하고 신규 서버에서는 `/dt/keys/signing.pem`을 서비스 계정 소유 0400으로 배치합니다. 공개키만 클라이언트에 배포합니다. 키 교체 때 새 공개키를 먼저 배포하고 server.json의 keyId/개인키를 바꿉니다. 이미 게시된 Manifest 검증을 위해 사용 중인 기존 공개키를 제거하지 않습니다.
 
 정책 파일 예시:
 
@@ -151,11 +165,22 @@ UeDtLauncher agent update --project demo --environment dev --channel dev --versi
 
 ## 5. 유지보수 및 검증
 
+### 서버 용량과 보관
+
+250 GB 기준 175 GB(70%)에서 운영자가 경고하고 212.5 GB(85%)에서 새 승인을 중단합니다. `df`로 파일시스템 점유를 확인하고 `usage --config /dt/config/server.json`으로 저장소 점유를 확인합니다. 보호된 공개판은 보존하고 확인형 정리 또는 용량 증설 후 여유를 재확인합니다. 용량 기준은 운영 절차에 적용합니다.
+
+| [로컬] 승인 완료 점유 배수 `k` | m7at10 7.12 GB 환산 | ma0t10 0.556 GB 환산 |
+|---|---:|---:|
+| PROD-01D-r2, ma0t10 사본 `k=3.0045222` | 8개 | 114개 |
+| PROD-02D, 20 GB 시험 파일 포함 `k=4.00000370` | 6개 | 86개 |
+
+환산은 한 종류만 보관하면서 OS·기타 20 GB, 다음 업로드 임시 여유 `2S`를 확보한다고 가정한 `⌊(212.5−20−2S)/(k×S)⌋`입니다. `S`는 펼친 릴리스 크기(GB)입니다. 승인 완료 `k`를 다른 패키지에 적용한 계획값이며 회사에서 보관 수를 측정한 값은 아닙니다. PROD-02D의 `k`는 7개 목표 기준 3.57을 초과했습니다. 회사 T4/T5의 여유와 RTO는 이관에서 측정합니다. 주간 오프라인 백업 목표 RPO는 1주이며, 최신 생존 원본을 확인할 수 없는 전손은 서버 재구축·원본 패키지 재게시로 대응합니다.
+
 2026-10-06의 `retention plan`은 schema2입니다. 파일 inventory와 승인한 빈 디렉터리의 OS 신원까지 기록합니다. 적용 도중 새 파일·폴더가 생기면 재귀 삭제하지 않고 quarantine과 journal을 보존합니다. schema1 계획은 적용하지 않으며, 미시작 계획은 `retention plan`으로 다시 생성·검토하고 중단된 기존 journal은 관리자 수동 점검 대상으로 남깁니다. 삭제가 끝난 파일을 되돌려 복구했다고 표시하지 않습니다. 복원 활성화의 권위 세대·정책·서명 검증이나 fence 제거 직전 실패는 공개 차단을 유지하며 재시도 시 생존 원본의 최신 폐기·순번을 다시 확인합니다. 예외 시험과 실제 정전 내구성 보장은 구분합니다.
 
 서버 `intakeWorkers`는 기본1/최대2입니다. 접수 상태·점유는 `authority/HEAD`가 선택한 jobs 세대에서 읽습니다. OS 작업 잠금은 진행 중 폴더를 보호합니다. inspect의 단계·처리 바이트·예상 추가 공간은 현재 claim의 별도 진행 파일을 읽습니다. 이 파일이 없거나 손상되면 진행 수치가 비어 있을 수 있습니다. 게시·승격·인증·순번·정리 이력도 같은 파일 저장소를 사용합니다. 게시 상태와 공개 릴리스 색인, 감사 이벤트는 하나의 HEAD 변경으로 함께 반영됩니다. 목록과 상세 조회의 게시 완료 시각은 이 세대에 기록됩니다. 구/신 서버를 같은 root에서 동시에 실행하지 마세요. 2-worker는 선택 기능이며 API 간섭까지 함께 측정해야 합니다. [측정·검증](archive/validation/operations-closure-validation.md)
 
-`usage`는 용량 조회입니다. 운영 정리는 앞의 `retention inspect → plan → apply --confirm` 절차를 사용합니다. 기존 `cleanup`은 scratch 전용 호환 명령이며 공개판·승격·활성 자료의 삭제 기능으로 확대하지 않습니다. 중단 journal의 이동/삭제 의도와 directory identity를 유지하고 재생성 source를 수집하지 않습니다. 완료 삭제는 jobs 권위 영역의 삭제 ledger에 남깁니다.
+`usage`는 용량 조회입니다. 운영 정리는 앞의 `retention inspect → plan → apply --confirm` 절차를 사용합니다. 기존 `cleanup`은 scratch 조회용이며 `cleanup --apply`는 거부됩니다. 중단 journal의 이동/삭제 의도와 directory identity를 유지하고 재생성 source를 수집하지 않습니다. 완료 삭제는 jobs 권위 영역의 삭제 ledger에 남깁니다.
 접수·승인 상태 변경과 다운로드 거부는 권위 이벤트에 기록합니다. `authority/audit.jsonl`은 이벤트에서 복원할 수 있는 조회용 파생 파일입니다. nginx 접근 로그는 토큰을 포함하지 않아야 하며, 서비스 로그와 함께 접근 거부를 확인합니다.
 
 백업/복원은 앞의 전용 CLI로 수행합니다. 미완료 retention을 먼저 정리하고, `backup create/verify`로 HEAD·참조 세대·전체 이벤트·release-meta·audit.jsonl·릴리스 파일의 inventory/hash와 정책을 확인합니다. private signing key는 별도 보호 백업이 필요합니다.

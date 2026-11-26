@@ -196,6 +196,8 @@ GUI 설정에서 **연결·준비 상태 점검**을 열면 오프라인 설정 
 
 ### 현재 GUI 수용 체크리스트
 
+2026-11-27 PROD-10 [로컬] 문서 대조. 아래 사례는 동일 후보에 적용할 현재 체크리스트입니다. PROD-25 최종 게시본 직접 수용과 회사 T16은 모두 이 문서 개정에서 미실행입니다. **TODO(09/09L/25 결과 반영)** [회사 이관](commercial-deployment.md#실환경-이관-체크리스트)
+
 2026-11-12 SPRINT-01의 새 제품 게시본은 실제 GUI를 실행하지 않았습니다. 아래 고정 게시본의 8/51 이력은 [이전 생성 진행표](archive/history/local-completion-progress-pre-sprint-01.json)에 보존하며 새 게시본의 통과로 합산하지 않습니다. 당시 Windows 전체 자동화890건(일부 headless UI 검사 포함)과 게시 CLI readiness8/headless3는 [별도 기록](archive/validation/sprint-01-quality-admin-validation.md)을 따릅니다. 이 체크리스트의 남은 직접 수용 조건은 그대로 유지합니다.
 
 기존 고정 게시본의 사례별 판정은 [로컬 보완 스프린트 검증](archive/validation/local-completion-validation.md#현재-새-gui-수용과-미완료)과 [보존한 진행표](archive/history/local-completion-progress-pre-sprint-01.json)를 따릅니다. 이번 게시본의 실제 GUI는 전체 미실행이며 [현재 생성 진행표](archive/validation/local-completion-progress.md)에 분리합니다. 아래 사례 하나의 전체 조건을 같은 고정 게시본에서 모두 충족한 경우만 통과로 계산하고, 부분 관측이나 이전 후보의 통과를 합산하지 않습니다.

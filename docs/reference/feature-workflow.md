@@ -4,7 +4,7 @@
 
 > 개발자가 ZIP과 설명서를 올리면 서버가 검사합니다. 관리자가 승인·실행 버전 승격을 하면, 허용된 PC의 사용자가 설치하고 DT 프로그램을 실행합니다.
 
-2026-11-12 추가: B2~B3의 쉬운 방법은 `upload`, B4~B6 운영자 안내는 서버 `console`입니다. [SPRINT-01 Windows 합성 검증](archive/validation/sprint-01-quality-admin-validation.md)은 회사 서버에서 아래 명령을 실행한 결과가 아닙니다. 실제 SSH 왕복과 현장 콘솔 인수는 별도입니다.
+2026-11-27 PROD-10 [로컬] 문서 대조입니다. 표의 기준은 병합된 PROD 기능입니다. PROD-04B는 격리 SSH 전송과 게시·승격 상태를 확인했습니다. 회사 SSH·RHEL·PC는 미검증이며 동일 후보 리허설 근거는 **TODO(09/09L/25 결과 반영)**입니다. [SPRINT-01 Windows 합성 이력](archive/validation/sprint-01-quality-admin-validation.md) · [회사 이관 체크리스트](commercial-deployment.md#실환경-이관-체크리스트)
 
 ## 추가 운영 — 마우스 없이 가능한 작업
 
@@ -63,18 +63,19 @@ flowchart LR
 | 구분 | 순서 | 누가 / 어디서 | 입력·동작 | 끝났을 때 |
 |---|---:|---|---|---|
 | 처음 한 번 | A1 | 개발 담당 / 소스 저장소 | 런처·Agent·배포 서버 `dotnet publish` | OS별 실행 폴더 준비 |
-| 처음 한 번 | A2 | 관리자 / Linux 서버 | 서버 설정·통신/인증 모드·배포 서명키·서비스 구성 | 인증 없는 목록 요청은 401, 서비스 실행 중 |
+| 처음 한 번 | A2 | 서버 관리자 / RHEL Bash | `/dt` 입력·권한 검토 → `install-server.sh --apply` → nginx/systemd 활성화 확인 | 로컬 ext4/XFS, 서비스 active, 미인증 Catalog 401 |
 | PC 추가 시 | A3 | 관리자 / 서버와 PC | 사내 HTTP `enroll prepare` → 서버 `client-enroll`; 기존 HTTPS는 토큰 | 공개키, PC IP와 허용 트랙 등록 |
 | PC 추가 시 | A4 | 관리자 / 클라이언트 PC | `enroll finish`로 운영 설정, 관리형은 별도 GUI 표시 설정과 서비스 반영 | Portable 온라인 진단, 관리형은 반영 후 진단 |
 | 버전마다 | B1 | 개발자 / Unreal·작업 PC | Windows/Linux 각각 패키징·ZIP | 완성된 ZIP |
 | 버전마다 | B2 | 개발자 / Windows PowerShell·Linux 터미널 | 쉬운 방법 `upload --zip …`가 ZIP 검사·외부 JSON 생성. 직접 실행 `release-metadata` | 새 작업 폴더의 payload.zip + release.json |
-| 버전마다 | B3 | 개발자 / 같은 PC | 같은 `upload`가 새 incoming 폴더 생성 → 두 전송 → 두 이름 변경 → 확인. 전송 뒤 `upload status --upload-id <ID> --wait` | 최종 ZIP + JSON, 상태 조회에 승인 대기 또는 이후 상태 |
+| 버전마다 | B3 | 개발자 / 같은 PC | 같은 `upload`가 새 incoming 폴더 생성 → 두 전송 → 두 이름 변경 → 확인. 전송 뒤 `upload status --profile upload.profile.json --upload-id ID --wait` | 최종 ZIP + JSON, 상태 조회에 승인 대기 또는 이후 상태 |
 | 자동 | B4 | 배포 서버 | 폴더 감지·크기/해시/경로/압축 검사 | `pending` 승인 대기 |
 | 버전마다 | B5 | 관리자 / Linux 터미널 | 쉬운 방법 `console` 1현황 → 2snapshot 상세 → 3승인·버전 재입력. 직접 실행 list/inspect/approve | `published`, 배포 폴더 자동 생성; 추천은 그대로 |
 | 검증 후 | B6 | 개발자·관리자 / PC·Linux | 개발자 exact 검증 → console 6현재 추천/revision·사유·버전 확인. 직접 실행 promotion inspect/promote | PC별 최신 추천 갱신; revision 변경은 재조회 |
 | 사용할 때 | C1 | 사용자 / Windows 런처 | 일반 화면 **내 프로그램**에서 카드 선택. 허용 프로젝트가 하나면 상세 화면으로 바로 이동. 개발자는 프로젝트·필요한 버전 선택 | 설치 상태·가능한 작업 표시 |
-| 사용할 때 | C2 | 사용자 / 런처 버튼 | 설치 후 실행 / 업데이트 후 실행 / 실행 | 필요한 파일 준비 후 DT 실행 |
-| 문제 발생 시 | D | 사용자·관리자 | 재확인 → 검사 → 복구, 필요 시 백업 복원 | 상태 확인 또는 원인·다음 조치 확보 |
+| 사용할 때 | C2 | 사용자 / Windows 일반 런처 | 설치 후 실행 / 업데이트 후 실행 / 실행. 권장 버전이 낮아졌다면 변경 안내 확인 | 선택 버전을 설치·실행하거나 기존 버전을 유지 |
+| 창을 닫을 때 | C3 | 사용자 / Windows 알림 영역 | 창 닫기 → 아이콘에서 **열기**, **업데이트 확인** 또는 **종료** | 창이 숨겨지고 조회·창 열기 가능. 런처 종료 뒤 실행 중인 DT는 계속 동작 |
+| 문제 발생 시 | D | 사용자 / Windows GUI, PC 관리자 / PowerShell, 서버 관리자 / Bash | 지원 정보 복사 → `doctor --online` → 원인별 점검·복구 | 원인·지원 ID와 다음 조치 확보. [장애 런북](commercial-deployment.md#장애-대응-런북) |
 
 ## 3. 명령어 예시의 공통 조건
 
@@ -87,6 +88,14 @@ flowchart LR
 - **검증 환경부터 적용**합니다. 현재 MSI 서명 순서·프로세스 식별·Linux credential 소유권 등 운영 전 보완이 남아 있습니다. [회사 운영 승인 조건](../../PROJECT_GOALS.md)
 
 ## A. 처음 한 번: 서버와 PC 준비
+
+```mermaid
+flowchart LR
+    publishA["A1 개발 담당: OS별 게시"] --> installA["A2 서버 관리자: /dt 배치와 nginx/systemd 확인"]
+    installA --> prepareA["A3 PC 관리자: enroll prepare"]
+    prepareA --> enrollA["A3 서버 관리자: client-enroll dry-run과 적용"]
+    enrollA --> finishA["A4 PC 관리자: enroll finish, 서비스 반영과 doctor"]
+```
 
 ### A1. 실행 프로그램 만들기 — 개발 PC, 저장소 루트
 
@@ -102,6 +111,14 @@ $Launcher = (Resolve-Path .\publish\client-win-x64\UeDtLauncher.exe).Path
 **결과:** 클라이언트, Agent, Linux 배포 서버의 출력 폴더 3개. 실행 파일 하나만 복사하지 말고 **폴더 전체**를 전달합니다. Linux 클라이언트/Agent가 필요하면 해당 프로젝트를 `-r linux-x64`로 publish합니다. 회사용 설치본은 별도 MSI/RPM 제작·서명·실기기 검증이 필요합니다.
 
 ### A2. Linux 서버 구성 — 관리자
+
+신규 회사 배치는 RHEL 8.4에서 승인된 설치 창에 진행합니다. 관리자 Bash에서 아래 인자에 검토한 실제 입력 경로를 넣습니다. 설정 폴더에는 `server.json`과 `access-policy.json`, 키 폴더에는 `signing.pem`과 `release-public.pem`을 준비합니다. 마지막 인자는 회사 주소에 맞춰 검토한 HTTP 요청 서명 nginx 설정 파일입니다. root가 관리하는 `/dt/tools`에 `install-server.sh`와 `prepare-server-store.sh`를 함께 둡니다. SELinux가 활성화되어 있으면 적용 전에 대상 경로의 승인된 fcontext를 설정합니다.
+
+```bash
+sudo bash /dt/tools/install-server.sh --apply "$server_publish" "$launcher_publish" "$config_source" "$key_source" "$nginx_source"
+```
+
+정상 결과는 `/dt/store/authority/HEAD` 초기화, nginx 구문 검사, `/etc/systemd/system/ue-dt-distribution.service`와 `/etc/nginx/conf.d/ue-dt-distribution.conf` 배치입니다. 관리자가 SELinux 컨텍스트·방화벽·바인딩을 확인한 뒤 아래 systemd/nginx 확인을 실행합니다. 회사 HTTP 요청 서명 배치에서는 `curl`에 실제 HTTP origin을 사용합니다. [권한·구조·용량](distribution-workflow.md#1-서버-준비)
 
 관리자가 먼저 nginx 설치, 회사 DNS/TLS 인증서, SSH 업로드 계정, 전용 서비스 계정과 디렉터리 권한을 준비합니다. OS 패키지 설치·인증서 발급 방법은 회사 정책에 따라 달라지므로 여기서 임의의 회사 설정을 확정하지 않습니다.
 
@@ -124,17 +141,17 @@ New-Item -ItemType Directory -Force "$env:USERPROFILE\DT-Deploy\keys" | Out-Null
 
 개인키는 서버 관리자가 안전한 경로로 받아 예시 배치의 `/dt/keys/signing.pem`에 저장하고 서버 서비스/승인 운영자만 읽도록 보호합니다. 공개키만 PC에 전달합니다. 이미 운영 중인 키를 배포할 때마다 새로 만들지 않습니다. TLS 인증서와 이 배포 서명키는 서로 다른 용도입니다.
 
-서버 설정 JSON 전문·정책 예시는 [통합 운영 가이드](distribution-workflow.md)를 사용합니다. 빈 전용 root에 설정을 연결하고 서비스 계정으로 `/dt/publish/server-linux-x64/UeDtLauncher.DistributionServer list --config /dt/config/server.json`을 최초 한 번 실행합니다. 작업 목록 `[]`와 `/dt/store/authority/HEAD`를 확인한 뒤 업로더 권한을 적용합니다. 서비스 파일은 `packaging/linux/ue-dt-distribution.service`, nginx 예시는 `packaging/linux/distribution-nginx.conf`입니다. 서버 관리자가 서비스 사본의 `ExecStart`에 `/dt/publish/server-linux-x64/UeDtLauncher.DistributionServer serve --config /dt/config/server.json`을, `ReadWritePaths`에 `/dt/store`를 지정합니다. nginx의 도메인·TLS 경로를 실제 값으로 정하고 설정을 배치한 **후** 다음을 실행합니다.
+서버 설정 JSON과 정책 예시는 [통합 운영 가이드](distribution-workflow.md)를 사용합니다. 설치 스크립트는 서비스 계정의 `list --config /dt/config/server.json`으로 초기 HEAD를 만들고 업로더 권한을 적용합니다. 배치된 unit의 `ExecStart`가 `/dt/publish/server-linux-x64/UeDtLauncher.DistributionServer serve --config /dt/config/server.json`을 실행하고 `ReadWritePaths=/dt/store`인지 확인합니다. 아래 예시의 origin을 회사 `publicUrl`로 바꿔 실행합니다.
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now ue-dt-distribution
 sudo systemctl status ue-dt-distribution --no-pager
 sudo nginx -t && sudo systemctl reload nginx
-curl --silent --output /dev/null --write-out '%{http_code}\n' https://updates.example.com/api/v1/catalog
+curl --silent --output /dev/null --write-out '%{http_code}\n' http://updates.example.com/api/v1/catalog
 ```
 
-**결과:** 서비스 active, nginx 설정 검사 성공, 토큰 없는 Catalog 요청은 `401`. `401` 하나만으로 정상 PC 다운로드까지 검증된 것은 아닙니다. 인증서 오류는 우회하지 않고 DNS/회사 CA 설정을 수정합니다. API 포트18500은 외부에 열지 않고, 기존 공개 정적 경로를 섞지 않습니다.
+**결과:** 서비스 active, nginx 설정 검사 성공, 서명 없는 Catalog 요청은 `401`. 등록 PC에서 A4 온라인 진단과 실제 설치까지 확인합니다. API 포트 18500은 외부에 열지 않고 공개 정적 경로를 섞지 않습니다.
 
 ### A3. PC 권한·토큰 등록 — 관리자
 
@@ -234,7 +251,7 @@ flowchart TD
     paired -->|"아니오"| waiting["서버: 파일 대기"]
     waiting -->|"개발자: 원인 확인·새 ID로 재전송"| upload
     paired -->|"예"| validate["B4 서버: 비공개 검사"]
-    paired -->|"예: 업로드 ID 사용"| status["B3 개발자 선택: upload status --wait"]
+    paired -->|"예: 업로드 ID 사용"| status["B3 개발자: upload status --upload-id ID --wait"]
     validate -.->|"서버가 상태 파일 갱신"| status
     validate --> valid{"검사 통과?"}
     valid -->|"아니오"| fix["원인 확인 후 수정·재접수"]
@@ -462,6 +479,8 @@ N은 inspect 결과로 치환합니다. 승격은 자동 설치나 실행 전환
 
 ## C. 사용자 PC: 상태 확인 → 설치 → 실행
 
+일반 `UeDtLauncher.exe` 첫 실행은 회사 PC 관리자가 준비한 **업데이트 서비스**와 허용 목록을 확인합니다. 창을 닫아도 알림 영역에 남도록 설정한 경우 알림 아이콘에서 **열기**, **업데이트 확인**, **종료**를 선택할 수 있습니다. 조회에서 새 추천을 발견하면 아이콘에 배지가 표시됩니다. [일반 사용자 한 장 안내](launcher-user-guide.md#일반-사용자-한-장-안내)
+
 ```mermaid
 flowchart TD
     openLauncher["일반 런처 실행"] --> automatic["자동: 허용 배포 확인 / 관리형은 서비스 확인"]
@@ -488,6 +507,12 @@ flowchart TD
     prepare -->|"실패"| guidance
     apply -->|"실패"| guidance
     launch -->|"시작 실패"| guidance
+    detail -->|"창 닫기, 상주 켜짐"| tray["C3 Windows 알림 영역"]
+    cards -->|"창 닫기, 상주 켜짐"| tray
+    tray -->|"열기"| restoredWindow["기존 런처 창 표시"]
+    tray -->|"업데이트 확인"| trayCheck["추천·설치 상태 조회"]
+    trayCheck --> tray
+    tray -->|"종료"| exitLauncher["런처 종료, 실행 중 DT 유지"]
 ```
 
 | 일반 화면에서 보이는 상태 | 눌러야 할 것 | 실제 처리 |
@@ -530,6 +555,15 @@ $RuntimeConfig = "$env:ProgramData\UE-DT Launcher\config\launcher.config.json"
 Linux도 전체 운영 설정과 읽기/설치 권한을 확인합니다. portable `run`은 현재 계정으로 설치·실행하고, 관리형은 Agent에 설치를 요청합니다. Agent를 설치했다는 이유만으로 주기 업데이트가 시작되지는 않습니다. [무인 운영 차이](service-mode.md)
 
 ## D. 막혔을 때 어떤 순서로 확인하나요?
+
+```mermaid
+flowchart LR
+    report["사용자: 지원 정보 복사"] --> diagnose["PC 관리자: doctor --online"]
+    diagnose --> server["서버 관리자: 키·IP·승격·디스크·저장소 점검"]
+    server --> recheck["사용자: 상태 다시 확인"]
+```
+
+서버 증상별 조치와 복귀 기준은 [장애 대응 런북](commercial-deployment.md#장애-대응-런북)에 있습니다. PC에서 오류 화면의 **지원 정보 복사**로 지원 ID를 확보한 다음 아래 점검·재시도 표를 따릅니다.
 
 | 증상 | 먼저 할 일 | 명령·조치 | 정상 복귀 기준 |
 |---|---|---|---|
@@ -589,12 +623,24 @@ Linux는 `./UeDtLauncher`를 사용합니다. 단순 Healthy/종료0 대신 준�
 
 ## 5. 회사에서 쓰려면 다음에 무엇을 해야 하나요?
 
+### 로컬 리허설 R-1~R-3
+
+리허설은 회사 운영과 분리한 승인된 시험 키·패키지·저장소를 사용합니다. 모든 단계에서 같은 후보 게시본과 같은 서명 origin을 사용합니다. 단계마다 걸린 시간·막힌 위치·지원 ID와 결과를 기록합니다. 최종 후보와 장애 시험 증거는 **TODO(09/09L/25 결과 반영)**입니다.
+
+| 단계 | 담당 / 실행 위치 | 입력·동작 | 정상 결과 |
+|---|---|---|---|
+| R-1 | 리허설 담당 / Windows PowerShell | [Rocky 8.4 Docker 준비·기동](../../tools/docker/prod-server/README.md#준비와-기동)의 `stage`·`up` 사용. 실제 전송에는 `stage --ssh-public-key`로 시험 공개키를 제공 | dist·nginx·sshd 정상, 지정 origin의 미인증 Catalog 401 |
+| R-2 | 개발자 / PowerShell, 운영자 / 서버 콘솔 | B1~B6에 따라 같은 시험 `stable` 트랙에서 v1·v2 준비. `upload`와 `upload status`로 확인한 뒤 수동 승인, 개발자 exact 검증, 명시 승격 | v1 먼저 추천. R-3에서 v1을 설치한 뒤 v2를 추천 |
+| R-3 | 사용자 / Windows 일반 EXE, 운영자 / 서버 콘솔 | A3~A4로 등록한 시험 PC에서 v1 실행 → v2 추천 조회·업데이트 → 운영자가 v1 재승격 → 권장 버전 변경 안내 확인. 각 실행은 앱에서 정상 종료 | 추천과 실행 버전, 이전 설치·데이터 보존 여부, 권장 버전 변경 안내 기록 |
+
+리허설 담당자는 종료 직후 [해당 실행만 정리](../../tools/docker/prod-server/README.md#정리)합니다.
+
 2026-10-02 확정: UE 데이터는 실행 사용자·정확한 릴리스별로 분리합니다. 관리자가 opt-in 설정 → 사용자 클릭 → 사용자 runtime-host가 저장/로그 경로 준비 → DT 실행 순서입니다. repair/프로그램 backup 복원은 외부 사용자 데이터를 유지하고, 버전 간 데이터 공유/복사는 자동으로 하지 않습니다. 독자적인 앱 쓰기 경로는 따로 확인해야 합니다. [설정](guide-03-launcher-usage.md) · [이번 실제/미실행 구분](archive/validation/real-ue-data-safety-validation.md)
 
 1. **운영 전 차단 항목 보완:** 설치본 내부 EXE 서명 순서, 동명 프로세스 식별, Linux credential 소유권.
 2. **검증 서버1대·PC1대부터:** 실제 UE ZIP으로 A→B→C→D 전체 과정과 저장 데이터 유지 확인.
 3. **회사 환경 시험:** 실제 RHEL·인증서·IP·방화벽·대용량 다운로드·재부팅·설치본 갱신/제거 확인.
-4. **운영 기준 확정:** latest 승인/승격, 보관·삭제, 토큰 교체, 백업 복원, 무인 업데이트 시간·담당자.
+4. **운영 책임 배정:** 수동 승인과 명시 승격, 공개판 무삭제, 주간 백업 정책의 담당자를 지정합니다. 보관 여유와 RTO는 회사 이관에서 확인합니다.
 5. **제한된 시범 운영 후 확대:** 성능·UI·장애 대응 결과와 책임자 확인을 남기고 대상 PC를 늘림.
 
 현재10개 연결 API 지연은 성능 기준 미달이고, WSL1 nginx 대용량 전송 제한도 발견됐습니다. 이 문서의 사용 흐름이 존재한다는 사실만으로 전사 운영 준비가 끝난 것은 아닙니다. [보완 목록](../../IMPROVEMENTS.md) · [최종 목표와 수용 조건](../../PROJECT_GOALS.md) · [실제 검증 기록](archive/validation/performance-validation.md)

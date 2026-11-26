@@ -70,7 +70,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 | 항목 | ① 구현/절차 | ② 로컬 검사 | ③ 요구 환경 실행/측정 | ④ 수용 기준 | 진행률 |
 |---|---|---|---|---|---:|
-| OPS-10 | 한국어 upload/진행·read-only check·소유 사본 정리, 번호/짧은 확인 콘솔·공통 정리 보호 | fix-01 Windows 전체966건·기존 보안/확인/무변경 회귀 | 제품 입력2e4b8f9의 게시 HTTP 회귀는 별도 고정 근거로 기록 | 실제 SSH 성공·운영 터미널·회사 환경 수용 전에는50% 유지 | 50% |
+| OPS-10 | 한국어 upload/진행·read-only check·소유 사본 정리, 번호/짧은 확인 콘솔·공통 정리 보호 | fix-01 Windows 전체966건·기존 보안/확인/무변경 회귀 | PROD-03I 실제 격리 SSH 및 PROD-04B 게시·승격 상태 조회. 제품 입력2e4b8f9의 게시 HTTP 회귀는 별도 이력 | 운영 터미널 수용·회사 SSH 인수 전 50% 유지 | 50% |
 | OPS-07 | disabled check-only·정확한 selected/preparation·명시 주기 | 양 OS 회귀·조회 불변 | default1/exact2 게시 점검·준비도 보류 구분 | 실제 OS 예약/서비스 계정 별도 | 50% |
 | OPS-04 | durable intent·directory identity·private quarantine·schema6 ledger | 재생성/부분 삭제·중단 회귀 | 양 OS 게시 정리/stale 거부·복원 연결 확인 | 열린 writer/모든 경합·실제 업로드 계정 인수 | 50% |
 | OPS-05 | exclusive stage/fence·latest graph·policy·독립 Manifest 서명 | 누락/추가/동일 손상 서명·보호 회귀 | 양 OS 게시 backup/restore→인증된 설치 | 장애 전수·과거 키/회사 RPO/RTO·완전 유실 별도 | 50% |
@@ -114,6 +114,8 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 ## 운영·배포
 
+2026-11-27 PROD-10 [로컬] 문서 대조에서 병합본의 증거를 아래에 연결했습니다. OPS-02의 실제 MSI/LocalService, UI-04의 최종 후보 직접 수용, 회사 인수는 미검증입니다. [T1~T19 이관 초안](docs/reference/commercial-deployment.md#실환경-이관-체크리스트) · **TODO(09/09L/25 결과 반영)**
+
 | ID/우선 | 진행률 | 상태 | 현재 근거·영향 | 보완 방향·완료 조건 |
 |---|---:|---|---|---|
 | OPS-01/P0 | 50% | 부분 · 로컬 Windows UE 확인 | 실제ma0t10_dt UE5.3 Development 328파일 패키징·ZIP/외부 JSON 서명 게시·GUI 설치/실행·수명/종료, Manifest 해시 확인. [실제 UE 기록](docs/reference/archive/validation/real-ue-package-validation.md) | 실제 UE 업데이트/복구·Shipping/Linux/RHEL·회사 TLS/CA·IP·서비스 계정 검증은 남음. 로컬 성공은 회사 승인 아님 |
@@ -125,9 +127,11 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 | OPS-07/P1 | 50% | 부분 진행 · 조회 전용 | opt-in scheduled-check·명시 주기·중복 skip·비활성 외부 template | 실제 OS 예약/서비스 계정 인수 별도. 자동 설치/전환 제외 |
 | OPS-08/P0 | 50% | 부분 · 실제 인증서 대기 | 공식 사전 gate·EXE 선서명·MSI 내장 payload 검증·실행별 WiX intermediate 구현. 계약 11개 및 개발 MSI 추출/hash 비교 통과 | 실제 회사 인증서와 설치된 EXE 서명 검증은 미완료. [기록](docs/reference/archive/validation/deployment-safety-validation.md) |
 | OPS-09/P0 | 75% | 부분 · GUI/현장 검증 대기 | 누락 기록 fail-closed, 서비스 snapshot/barrier·이전/대상 잠금, 위험 migration apply 차단. 기존 각 393개·저장 경계 종료·health/대상 분리·CLI E2E 통과. 이번 portable 자식 수명·실행 중 변경 버튼 차단 추가 | 이전 관리형 복구/rollback과 이번 portable 증거는 게시본별 이력. 새 후보 양 모드 전체 GUI 수용, 모든 진입점/상태 조합의 실제 전수 검증과 회사 UE/계정·원격 CI는 미완료. [기존 기록](docs/reference/archive/validation/managed-gui-safety-validation.md), [이번 기록](docs/reference/archive/validation/ui-acceptance-finalization.md) |
-| OPS-10/P1 | 50% | 부분 진행 · 사용성 보완 자동화 확인 | 1차 리뷰7커밋 보존. fix-01: 기본 한국어 출력/JSON 옵션·키 전용 사전 점검·사본 공간/정리·번호/버전 확인·요약/추천 표시·내용 해시 없는 목록·같은 계획 재개. 전체966건 통과. [근거](docs/reference/archive/validation/sprint-01-quality-admin-validation.md) | 실제 SSH 성공/업로드 계정·known-host/서비스 읽기 ACL·운영 터미널·회사 수용은 별도. 웹 관리자/HTTP 쓰기 API 제외. 실제 인수 전 진척 상향 없음 |
+| OPS-10/P1 | 50% | 부분 진행 · 격리 SSH와 업로드 상태 확인 | PROD-03I의 두 업로드 SHA-256 4/4 일치 및 `pending`, PROD-04B의 동일 ID 상태 전이 5/5와 격리 권한 거부 확인. fix-01 한국어 출력·조회 전용 사전 점검·확인형 콘솔의 [이전 검증](docs/reference/archive/validation/sprint-01-quality-admin-validation.md) | 회사 SSH 계정·known-host·서비스 읽기 ACL, 실제 운영 터미널 및 동일 후보 리허설이 남음. [PROD-03I](https://github.com/YonghoKwon/UE-DT-LAUNCHER/pull/39) · [PROD-04B](https://github.com/YonghoKwon/UE-DT-LAUNCHER/pull/41) |
 
 ## 성능·저장 공간
+
+PROD-02D [로컬] 대용량 측정에서 환경 적합 M2 동시 10의 최종 실패는 0/30이었고 M0 대비 총 처리량은 9.53~10.04%로 T13-2 발동선 50% 미만이었습니다. 기존 PERF-03 체크포인트는 유지하며 PROD-13 착수 결정과 회사망 인수를 남깁니다. PROD-01D-r2 및 PROD-02D의 용량 측정과 보관 환산은 [운영 가이드](docs/reference/distribution-workflow.md#서버-용량과-보관)에 기록했습니다. [PROD-01D-r2](https://github.com/YonghoKwon/UE-DT-LAUNCHER/pull/35) · [PROD-02D](https://github.com/YonghoKwon/UE-DT-LAUNCHER/pull/38)
 
 | ID/우선 | 진행률 | 상태 | 현재 근거·영향 | 보완 방향·완료 조건 |
 |---|---:|---|---|---|

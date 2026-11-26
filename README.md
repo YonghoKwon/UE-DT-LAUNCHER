@@ -6,6 +6,8 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 
 ## 현재 상태
 
+- 2026-11-27 PROD-10 [로컬] 문서 대조 기준은 `3eb100d`(PROD PR #10~#41 중 병합분)입니다. 배포 서버는 별도 DB 없이 `/dt/store`의 불변 파일 세대와 `authority/HEAD`를 사용합니다. 운영 설정 `/dt/config`와 서명키 `/dt/keys`는 저장소 밖에 둡니다. 회사 실환경은 미검증입니다.
+- [일반 사용자 한 장 안내](docs/reference/launcher-user-guide.md#일반-사용자-한-장-안내) · [A~D 운영 순서](docs/reference/feature-workflow.md#2-한눈에-보는-전체-순서) · [장애 런북과 회사 이관](docs/reference/commercial-deployment.md#장애-대응-런북). 최종 후보 수용은 **TODO(09/09L/25 결과 반영)**입니다.
 - **합성 앱 기반 배포·설치·실행·복구는 로컬에서 활용 가능한 단계이며, 회사 정식 운영 인수(G1~G6)는 미완료입니다.**
 - 실제 회사 인증서·서비스 계정·RHEL·실제 UE 업데이트/복구·MSI/RPM 설치 수명주기는 아직 검증하지 않았습니다. 원격 CI는 기준 cef9f53의 과거 build 성공을 확인했으며 이번 스프린트 커밋은 원격 실행하지 않았습니다.
 - 2026-11-12 SPRINT-01: CLI 오류 정제·429/stale 안내·인수 검증, `upload`·서버 `console`, View 책임 분리를 추가했습니다. Windows 기본 환경 테스트890건과 고정 게시본 readiness8/headless3가 통과했습니다. 실제 GUI는 이번에 실행하지 않았고 과거 고정 게시본의 수용 이력은 별도로 보존합니다. [실행 범위·실패 이력](docs/reference/archive/validation/sprint-01-quality-admin-validation.md)
@@ -71,7 +73,7 @@ dotnet publish src/UeDtLauncher.DistributionServer -c Release -r linux-x64 --sel
 
 ## 처음 준비할 것
 
-1. Linux 서버에 DistributionServer·nginx·systemd 설정. 신규 사내 HTTP는 request-signature-v1을 명시합니다.
+1. 서버 관리자가 신규 사내 HTTP의 `/dt` 설정·서명키와 게시본을 준비한 뒤 `install-server.sh --apply`로 배치합니다. nginx·systemd와 미인증 Catalog 401을 확인합니다. [A2 실행 명령](docs/reference/feature-workflow.md#a2-linux-서버-구성--관리자)
 2. 서버 배포 서명키를 준비하고 배포 서명 공개키를 PC 관리자에게 전달합니다.
 3. 사내 HTTP PC는 `enroll prepare`로 공개키 묶음을 만들고, 서버 관리자가 `client-enroll`로 PC별 IP와 허용 트랙을 등록합니다. PC 개인키는 보호 저장소에 남습니다. 기존 HTTPS/Bearer는 토큰 절차를 사용합니다.
 4. PC 관리자가 `enroll finish`로 운영 설정과 진단 결과를 저장합니다. 관리형은 시스템 Agent 설정 폴더에 관리자 보호 공개키를 먼저 배치한 뒤 `finish`를 실행합니다. 관리자가 운영 설정을 업데이트 서비스에 반영한 뒤 `doctor --online`을 다시 실행합니다. 개별 설정은 `sample-config`로 생성할 수 있습니다.
@@ -94,7 +96,7 @@ dotnet publish src/UeDtLauncher.DistributionServer -c Release -r linux-x64 --sel
 | 1 | 개발자 | Windows/Linux ZIP을 각각 준비 |
 | 2 | 개발자 | 쉬운 방법: `upload`로 ZIP 검사·새 작업 폴더의 외부 JSON 생성 |
 | 3 | 개발자 | 같은 명령이 incoming/새업로드ID/에 두 파일 전송 후 최종 이름 확인. 직접 실행은 release-metadata + SSH/SCP |
-| 3 이후 | 개발자 | 출력된 업로드 ID로 `upload status --wait`를 실행해 서버 접수·승인 대기 상태 확인 |
+| 3 이후 | 개발자 | 같은 SSH 프로필과 출력된 업로드 ID로 `upload status --profile upload.profile.json --upload-id ID --wait`를 실행해 서버 접수·승인 대기 상태 확인 |
 | 4 | 서버 | 파일 쌍·해시·ZIP 검사 후 승인 대기 |
 | 5 | 관리자 | 서버 `console` 1·2에서 번호로 snapshot 확인 → 3승인·화면의 버전 재입력. 직접 실행은 list / inspect / approve |
 | 6 | 서버 | 서명·디렉터리 생성 후 배포 목록 공개 |

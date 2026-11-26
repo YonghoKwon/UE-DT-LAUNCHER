@@ -28,6 +28,21 @@ AgentWorker의 자동 스케줄러는 미구현입니다(OPS-07). Windows 서비
 
 관리형은 `--once`만 지원하며 자신의 보호 설정을 사용합니다. `--interval`은 Agent 스케줄러 설정이 아닙니다. runtime 추적 capability 없는 구형 클라이언트의 변경 요청은 거부됩니다.
 
+## Windows MSI와 LocalService
+
+2026-11-27 PROD-10 [로컬] WiX 소스와 설치 절차 대조입니다. 07M/07A의 설치·서비스 계정 연결 결과는 이 기준에서 확보하지 못했습니다. 실제 MSI 수명주기와 LocalService 인증·설치는 로컬 미검증이며 회사 T8·T10으로 이관합니다. [이관 체크리스트](commercial-deployment.md#실환경-이관-체크리스트)
+
+PC 관리자는 격리된 Windows 시험 PC에서 서명·해시가 확인된 정확한 MSI 파일을 사용합니다. General MSI에는 일반 EXE와 Agent, Developer MSI에는 일반·개발자 EXE와 Agent가 들어갑니다. 업그레이드/제거 전 앱을 정상 종료하고 운영 설정·설치 상태·사용자 데이터의 인벤토리와 백업을 확보합니다.
+
+| 단계 | 관리자 PowerShell의 입력·작업 | 정상 결과 |
+|---|---|---|
+| 설치 | `msiexec.exe /i "C:\Deploy\Launcher.msi" /L*v "C:\Deploy\install.log"`. 예시 경로는 실제 패키지와 보호된 로그 경로로 교체 | Windows Installer 성공, 필요 시 요청된 재부팅 후 `UeDtLauncherAgent` 서비스 확인 |
+| 등록·연결 | [PC 등록](intranet-auth.md)에 따라 `enroll finish` 후 보호 설정·공개키·credential 읽기 ACL을 확인합니다. 관리자 PowerShell에서 서비스 시작 또는 재시작 뒤 선택 전용 GUI 설정으로 `UeDtLauncher.exe doctor --config launcher.config.json --online` | `Get-CimInstance Win32_Service -Filter "Name='UeDtLauncherAgent'"`에 `NT AUTHORITY\LocalService`와 Running. 실제 인증 Catalog 조회와 한 버전 설치 결과 확보 |
+| 업그레이드 | `msiexec.exe /i "C:\Deploy\Launcher-next.msi" /L*v "C:\Deploy\upgrade.log"`. 같은 제품 계열에서 더 높은 버전 사용 | 새 버전 GUI·Agent와 기존 설정/데이터 확인. 실패하면 MSI 로그와 서비스 상태를 보존하고 승인된 복구 절차에서 이전 설치의 작동 여부 확인 |
+| 제거 | `msiexec.exe /x "C:\Deploy\Launcher-next.msi" /L*v "C:\Deploy\uninstall.log"`. 시험 종료 시 현재 설치본을 지정 | 서비스와 MSI 소유 실행 파일이 제거되고 보호 설정·사용자 데이터 보존 여부를 재부팅 후 인벤토리와 비교 |
+
+같은 버전의 다른 에디션은 MSI가 중복 설치를 차단합니다. 활성 운영 설정을 배치한 뒤에는 일반 사용자에게 credential 읽기 권한을 늘리지 않습니다. `enroll finish`가 관리형 설정에서 기록하는 `deferred`는 서비스 반영 전 상태입니다. LocalService의 회사 프록시와 실제 Catalog 조회는 T6·T8에서 별도로 확인합니다.
+
 ## serviceMode 설정
 
 ```json
