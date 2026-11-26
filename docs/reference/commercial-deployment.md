@@ -78,7 +78,7 @@ UeDtLauncher import-install --config C:\ue-dt\launcher.config.json --destination
 UeDtLauncher import-install --config C:\ue-dt\launcher.config.json --destination-root C:\ue-dt\apps --apply
 ```
 
-`migrate --config`는 기본으로 계획을 출력합니다. 기존 예제의 `--dry-run`을 붙여도 동일한 계획을 출력합니다. 기존 InstallDir를 공유하는 apply는 소유권 충돌 위험으로 차단되며 config/state를 생성하지 않습니다. Agent 실행 파일에는 독립 `--help` 진입점이 없으며, `--help`만 전달하면 일반 Agent 기동 경로로 들어갑니다. 기존 공유 구성이 있다면 별도 정비 계획이 필요합니다. `import-install`은 정지 확인·잠금 후 버전 설치 루트에 검사·복사하는 별도 경로이며 원본을 삭제하지 않습니다. UE 저장 데이터 이전은 USER-01의 별도 정책 대상입니다. [수동 점검](runtime-safety.md)
+`migrate --config`는 기본으로 계획을 출력합니다. 기존 예제의 `--dry-run`을 붙여도 동일한 계획을 출력합니다. 기존 InstallDir를 공유하는 apply는 소유권 충돌 위험으로 차단되며 config/state를 생성하지 않습니다. `UeDtLauncher.Agent --help`(또는 `-h`, `help`)는 설정을 읽거나 서비스를 시작하기 전에 사용법을 출력합니다. 저장소의 `cleanup`은 배포 서버 실행 파일에서 제공하는 조회 명령입니다. 기존 공유 구성이 있다면 별도 정비 계획이 필요합니다. `import-install`은 정지 확인·잠금 후 버전 설치 루트에 검사·복사하는 별도 경로이며 원본을 삭제하지 않습니다. UE 저장 데이터 이전은 USER-01의 별도 정책 대상입니다. [수동 점검](runtime-safety.md)
 
 ## 운영 승인 전 확인
 

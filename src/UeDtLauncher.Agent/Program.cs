@@ -9,6 +9,25 @@ public static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        if (args.Contains("--help", StringComparer.OrdinalIgnoreCase) ||
+            args.Contains("-h", StringComparer.OrdinalIgnoreCase) ||
+            args.Contains("help", StringComparer.OrdinalIgnoreCase))
+        {
+            Console.WriteLine("""
+                UE-DT Launcher Agent
+                UeDtLauncher.Agent                    Start the Agent host.
+                UeDtLauncher.Agent --help | -h | help  Show this help and exit.
+                UeDtLauncher.Agent --probe            Print Agent runtime information as JSON and exit.
+                UeDtLauncher.Agent migrate --config <legacy launcher.config.json> [--dry-run]
+                    Print the migration plan. --dry-run also prints the plan. --apply is blocked.
+
+                Server maintenance:
+                UeDtLauncher.DistributionServer cleanup --config <server.json>
+                    Report scratch cleanup candidates. Use the server's confirmed retention commands for deletion.
+                """);
+            return 0;
+        }
+
         CrashReporter.Install(ManagedLauncherPathLayout.Current().LogRoot);
         if (args.Contains("--probe", StringComparer.OrdinalIgnoreCase))
         {
