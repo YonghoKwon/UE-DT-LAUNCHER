@@ -67,6 +67,77 @@ public sealed class IntakePerformanceTests(ITestOutputHelper testOutput) : IDisp
     }
 
     [Fact]
+    public async Task IntakeProgressObserverCanCommitAuditOutsideTheAuthorityWriterLease()
+    {
+        var store = new IntakeStore(new() { Root = root });
+        var observerStore = new IntakeStore(store.Settings);
+        var checkedLease = false;
+        var job = await store.IngestAsync(await Package(store), observer: new InlineProgress(_ =>
+        {
+            if (checkedLease) return;
+            // No other writers use this fixture. An exclusive open fails immediately if progress still owns the lease.
+            using (File.Open(Path.Combine(root, ".writer.lock"), FileMode.Open, FileAccess.ReadWrite, FileShare.None)) { }
+            observerStore.Audit("observer-probe", "synthetic");
+            checkedLease = true;
+        }));
+
+        Assert.True(job.State == "pending", $"Expected pending, got {job.State}: {job.Message}");
+        Assert.True(checkedLease);
+        var snapshot = store.Authority.ReadSnapshot();
+        Assert.Single(store.Authority.ReadAudit(snapshot), entry => entry.Action == "observer-probe" && entry.Job == "synthetic");
+    }
+
+    [Fact]
+    public async Task BusyProgressWriterDoesNotFailAnUploadOrStopLaterScans()
+    {
+        var store = new IntakeStore(new() { Root = root, IntakeWorkers = 1 });
+        var firstUpload = await Package(store, "first");
+        FileStream? competingWriter = null;
+        var contended = false;
+        var progressSkipped = false;
+        AuthorityStore.BeforeAcquireWriter.Value = () =>
+        {
+            if (competingWriter is not null)
+            {
+                progressSkipped = !Directory.EnumerateFileSystemEntries(store.Authority.ProgressPath).Any();
+                competingWriter.Dispose();
+                competingWriter = null;
+            }
+            else if (!contended && IntakeJobs.Read(store.Authority.ReadSnapshot()).ActiveWork.Count == 1)
+            {
+                // The claim is already durable. Hold the writer through the first advisory progress attempt.
+                competingWriter = File.Open(Path.Combine(root, ".writer.lock"), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+                contended = true;
+            }
+        };
+        try { await store.ScanAsync(default); }
+        finally
+        {
+            AuthorityStore.BeforeAcquireWriter.Value = null;
+            competingWriter?.Dispose();
+        }
+
+        Assert.True(contended);
+        Assert.True(progressSkipped);
+        var first = Assert.Single(store.List());
+        Assert.Equal(firstUpload, first.Source);
+        Assert.True(first.State == "pending", $"Expected pending, got {first.State}: {first.Message}");
+        Assert.NotNull(first.Snapshot);
+        Assert.True(File.Exists(Path.Combine(first.Snapshot, "payload", "game.exe")));
+
+        var secondUpload = await Package(store, "second");
+        await store.ScanAsync(default);
+        var jobs = store.List();
+        Assert.Equal(2, jobs.Count);
+        Assert.All(jobs, job => Assert.Equal("pending", job.State));
+        Assert.Contains(jobs, job => job.Source == secondUpload);
+        Assert.Equal(first, store.Get(first.Id));
+        var snapshot = store.Authority.ReadSnapshot();
+        Assert.Empty(IntakeJobs.Read(snapshot).ActiveWork);
+        Assert.DoesNotContain(store.Authority.ReadAudit(snapshot), entry => entry.Action == "failed");
+    }
+
+    [Fact]
     public async Task CleanupSkipsLiveScratchWhileAnotherJobCanIngest()
     {
         var store = new IntakeStore(new() { Root = root });
