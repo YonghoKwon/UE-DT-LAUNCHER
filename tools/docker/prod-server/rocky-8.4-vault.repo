@@ -1,0 +1,13 @@
+[uedt-8.4-baseos]
+name=Rocky 8.4 Vault BaseOS
+baseurl=https://dl.rockylinux.org/vault/rocky/8.4/BaseOS/x86_64/os/
+enabled=1
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-rockyofficial
+
+[uedt-8.4-appstream]
+name=Rocky 8.4 Vault AppStream
+baseurl=https://dl.rockylinux.org/vault/rocky/8.4/AppStream/x86_64/os/
+enabled=1
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-rockyofficial

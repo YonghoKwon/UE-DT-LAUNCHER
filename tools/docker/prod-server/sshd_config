@@ -1,0 +1,17 @@
+Port 22
+HostKey /dt/tools/ssh_host_ed25519_key
+AuthorizedKeysFile /dt/tools/uploader.pub
+AllowUsers uploader
+AuthenticationMethods publickey
+PermitRootLogin no
+PasswordAuthentication no
+ChallengeResponseAuthentication no
+DisableForwarding yes
+PermitTunnel no
+PermitTTY no
+PermitUserEnvironment no
+PermitUserRC no
+UsePAM no
+ChrootDirectory /dt/upload-jail
+ForceCommand /upload-command.sh
+Subsystem sftp /usr/libexec/openssh/sftp-server

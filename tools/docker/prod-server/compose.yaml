@@ -1,0 +1,81 @@
+x-image: &image
+  image: uedt-prod-test:${UEDT_RUN_ID:?set UEDT_RUN_ID}
+  platform: linux/amd64
+  init: true
+  labels: &labels
+    uedt.run: ${UEDT_RUN_ID:?set UEDT_RUN_ID}
+    uedt.owner: ${UEDT_OWNER_TOKEN:?run stage first}
+
+services:
+  dist:
+    <<: *image
+    build:
+      context: ${UEDT_BUILD_CONTEXT:?set UEDT_BUILD_CONTEXT}
+      args:
+        RUN_ID: ${UEDT_RUN_ID:?set UEDT_RUN_ID}
+        OWNER_TOKEN: ${UEDT_OWNER_TOKEN:?run stage first}
+        ROCKY_IMAGE: docker.io/rockylinux/rockylinux:8.4@sha256:f0d7460b97156f6c8ea2ae73152bc11fe410d272387d60ddff36dfcea22ef689
+    command: [dist]
+    ports:
+      - "192.168.0.2:18080:80"
+    volumes:
+      - store:/dt/store
+      - config:/dt/config:ro
+      - keys:/dt/keys:ro
+    healthcheck:
+      test: [CMD, /dt/tools/entrypoint.sh, health, "18500"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  nginx:
+    <<: *image
+    command: [nginx]
+    network_mode: "service:dist"
+    depends_on:
+      dist:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, /dt/tools/entrypoint.sh, health, "80"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  sshd:
+    <<: *image
+    command: [sshd]
+    networks: [upload]
+    ports:
+      - "127.0.0.1:12222:22"
+    depends_on:
+      dist:
+        condition: service_healthy
+    volumes:
+      - type: volume
+        source: store
+        target: /dt/upload-jail/dt/store/incoming
+        volume:
+          nocopy: true
+          subpath: incoming
+      - type: volume
+        source: store
+        target: /dt/upload-jail/dt/store/upload-status
+        read_only: true
+        volume:
+          nocopy: true
+          subpath: upload-status
+  setup:
+    <<: *image
+    profiles: [setup]
+    command: [seed]
+    network_mode: none
+    volumes:
+      - config:/dt/config
+      - keys:/dt/keys
+
+volumes:
+  store: {labels: *labels}
+  config: {labels: *labels}
+  keys: {labels: *labels}
+
+networks:
+  default: {labels: *labels}
+  upload: {labels: *labels}

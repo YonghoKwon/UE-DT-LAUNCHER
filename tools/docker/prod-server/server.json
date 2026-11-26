@@ -1,0 +1,14 @@
+{
+  "root": "/dt/store",
+  "publicUrl": "http://host.docker.internal:18080",
+  "listenUrl": "http://127.0.0.1:18500",
+  "authenticationMode": "request-signature-v1",
+  "signingKeyPath": "/dt/keys/signing.pem",
+  "signingKeyId": "prod-01d-release",
+  "policyPath": "/dt/config/access-policy.json",
+  "limits": {
+    "maxZipBytes": 21474836480,
+    "maxExpandedBytes": 22548578304,
+    "maxFiles": 250000
+  }
+}
