@@ -1,0 +1,6 @@
+# Synthetic M0 only. Never use for deployment.
+services:
+  nginx:
+    volumes:
+      - ${UEDT_BENCH_M0_NGINX:?set M0 nginx config}:/etc/nginx/nginx.conf:ro
+      - bench-static:/bench-static:ro
