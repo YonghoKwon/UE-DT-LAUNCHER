@@ -114,7 +114,7 @@ public sealed partial class MainWindow
             var index=Math.Clamp(scale.SelectedIndex,0,3);
             if(sender is Button source)source.IsEnabled=false;
             try {await SaveDisplayPreferencesAsync(openedWith,index,contrast.IsChecked==true);dialog!.Close();Build();RefreshOpenDialogs();RecordDisplayDiagnostic();}
-            catch(Exception ex){MarkError(ex,"화면 설정 저장 실패");}
+            catch(Exception ex){RecordDeveloperHistory("화면 설정", "저장", LauncherHistoryResult.Failed);MarkError(ex,"화면 설정 저장 실패");}
             finally {if(sender is Button sourceButton)sourceButton.IsEnabled=true;}
         },40),"dialog-confirm","화면 설정 적용");
         dialog=AccessibleDialog("개발자 설정",body,close,apply);dialog.Show(this);return dialog;

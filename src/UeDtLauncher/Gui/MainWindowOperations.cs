@@ -54,6 +54,7 @@ public sealed partial class MainWindow
     {
         if(_running || !CanResumeSelected())return;
         var previous=_resumeOperation!;_running=true;
+        var history = BeginDeveloperHistory("다운로드 재개");
         var interrupted = _resumeRecommendation;
         BeginOperation(LauncherUiOperation.Check);
         using var cancellation=new CancellationTokenSource();
@@ -61,17 +62,28 @@ public sealed partial class MainWindow
         {
             var context=CaptureUiOperation(previous.Selection);var config=await RunConfig(false,false);config.UiResumeOperation=previous;
             interrupted ??= CheckedRecommendationFor(context);
-            if (!await CanMutateRecommendationAsync(context, interrupted, cancellation.Token)) return;
+            if (!await CanMutateRecommendationAsync(context, interrupted, cancellation.Token))
+            {
+                history?.Finish(LauncherHistoryResult.Waiting);
+                return;
+            }
             BeginOperation(LauncherUiOperation.Update);StartCancellableUiOperation(cancellation);
-            var result=await _uiBackend.ExecuteAsync(context,config,previous.Command=="repair",false,CreateUiProgress(),_fileLogger,cancellation.Token);
+            var result=await _uiBackend.ExecuteAsync(context,config,previous.Command=="repair",false,CreateUiProgress(history),_fileLogger,cancellation.Token);
+            if (history is not null) ValidateUiResult(context, result);
             _resumeOperation=null;
             if (_presentation.Committing) ShowInstallationNotice(result);
-            if(result.Completion==LauncherUiCompletion.CommittedRefreshRequired){CommittedUiRefreshRequired(failure:result.FollowUpFailure);return;}
+            if(result.Completion==LauncherUiCompletion.CommittedRefreshRequired)
+            {
+                history?.Finish(LauncherHistoryResult.Completed, "적용");
+                CommittedUiRefreshRequired(failure:result.FollowUpFailure);
+                return;
+            }
             if(ApplyUiResult(context,result)){_presentation.Complete("다운로드 재개 및 검증 완료");Build();}
+            FinishHistoryForObservation(history, result.Runtime);
         }
-        catch(LauncherUiCancelledException cancelled){RecordCancelledOperation(cancelled.Operation,cancelled.RetainedPartialDownload,interrupted);}
-        catch(OperationCanceledException){RecordCancelledOperation(previous,recommendation:interrupted);}
-        catch(Exception error){MarkError(error,"작업 재개 실패");}
+        catch(LauncherUiCancelledException cancelled){history?.Finish(LauncherHistoryResult.Cancelled);RecordCancelledOperation(cancelled.Operation,cancelled.RetainedPartialDownload,interrupted);}
+        catch(OperationCanceledException){history?.Finish(LauncherHistoryResult.Cancelled);RecordCancelledOperation(previous,recommendation:interrupted);}
+        catch(Exception error){history?.Finish(LauncherHistoryResult.Failed);MarkError(error,"작업 재개 실패");}
         finally{FinishUiOperation();}
     }
     private void CommittedUiRefreshRequired(string completedTitle="설치 완료",LauncherUiPostCommitFailure? failure=null)
@@ -80,6 +92,10 @@ public sealed partial class MainWindow
         _readOnlyRecoveryFollowUp=true;
         _presentation.Retry=CurrentContext(LauncherUiOperation.Check);
         var detail=failure?.Stage switch{"Launch"=>"실행 상태 재확인 필요","Integration"=>"바로가기 상태 재확인 필요",_=>"상태 재확인 필요"};
+        if (failure?.Stage == "Integration")
+            RecordDeveloperHistory("바로가기", "적용", LauncherHistoryResult.Failed);
+        else if (failure?.Stage != "Launch")
+            RecordDeveloperHistory("상태 확인", "재확인", failure is null ? LauncherHistoryResult.Unknown : LauncherHistoryResult.Failed);
         MarkError(failure?.Error??new AgentOperationException("status-refresh-required",Guid.NewGuid().ToString("N"),"설치는 완료됐습니다. 설치 상태를 다시 확인해 주세요."),completedTitle+" · "+detail,showDialog:false);
     }
     private void ClearResumeAfterMutation(LauncherUiOperationContext context)
@@ -133,7 +149,7 @@ public sealed partial class MainWindow
         if(context!=CaptureUiOperation())throw new InvalidDataException("선택이 변경된 작업 결과를 표시할 수 없습니다.");
         context.Validate(result);
     }
-    private Action<LauncherProgress> CreateUiProgress()
+    private Action<LauncherProgress> CreateUiProgress(LauncherHistoryOperation? history = null)
     {
         var generation=Interlocked.Increment(ref _uiProgressGeneration);
         return value=>
@@ -141,12 +157,20 @@ public sealed partial class MainWindow
             void Apply()
             {
                 if(_running && Interlocked.Read(ref _uiProgressGeneration)==generation &&
-                    _operationCancellation?.IsCancellationRequested!=true)EngineProgress(value);
+                    _operationCancellation?.IsCancellationRequested!=true)
+                {
+                    history?.Progress(value.Stage);
+                    EngineProgress(value);
+                }
             }
             if(Dispatcher.UIThread.CheckAccess())Apply();
             else Dispatcher.UIThread.Post(Apply);
         };
     }
+    private static void FinishHistoryForObservation(LauncherHistoryOperation? history, RuntimeObservation? runtime, string? stage = null) =>
+        history?.Finish(runtime?.State is RuntimeState.Quiescent or RuntimeState.Running
+            ? LauncherHistoryResult.Completed : LauncherHistoryResult.Unknown, stage);
+
     private bool ApplyUiResult(LauncherUiOperationContext context,LauncherUiOperationResult result)
     {
         ValidateUiResult(context,result);
@@ -172,28 +196,44 @@ public sealed partial class MainWindow
     }
     private async Task RestoreUiPreviewAsync(LauncherUiOperationContext context,LauncherConfig config,RollbackPreview preview)
     {
-        if(context!=CaptureUiOperation())throw new InvalidDataException("선택한 배포가 변경되었습니다.");
-        EndCancellableUiPhase();
-        var restoration=await _restorePreview(config,preview);
+        var history = BeginDeveloperHistory("백업 복원", "적용");
+        LauncherRestoreResult restoration;
+        try
+        {
+            if(context!=CaptureUiOperation())throw new InvalidDataException("선택한 배포가 변경되었습니다.");
+            EndCancellableUiPhase();
+            restoration=await _restorePreview(config,preview);
+        }
+        catch
+        {
+            history?.Finish(LauncherHistoryResult.Failed);
+            throw;
+        }
         if(restoration.Disposition==LauncherRestoreDisposition.Unknown)
         {
+            history?.Finish(LauncherHistoryResult.Unknown);
             ClearResumeAfterMutation(context);
             _readOnlyRecoveryFollowUp=true;_presentation.Retry=CurrentContext(LauncherUiOperation.Check);
             if(restoration.Error is not null)AppendLog(DiagnosticRedactor.Redact(restoration.Error.ToString()),true);
             MarkError(new AgentOperationException("recovery-outcome-unknown",(restoration.Error as AgentOperationException)?.CorrelationId??Guid.NewGuid().ToString("N"),"백업 복원 결과를 확인하지 못했습니다. 설치 상태를 먼저 확인해 주세요."),"복원 결과 확인 필요",showDialog:false);return;
         }
+        history?.Finish(LauncherHistoryResult.Completed);
         ClearResumeAfterMutation(context);
         _readOnlyRecoveryFollowUp=true;
         _selectedRuntimeConfig=config;
         BeginReadOnlyFollowUp("백업 복원 완료");
+        var followUp = BeginDeveloperHistory("상태 확인", "재확인");
         try
         {
-            var result=await _uiBackend.CheckAsync(context,config,CreateUiProgress());
-            if(!ApplyUiResult(context,result))return;
+            var result=await _uiBackend.CheckAsync(context,config,CreateUiProgress(followUp));
+            var ready = ApplyUiResult(context,result);
+            FinishHistoryForObservation(followUp, result.Runtime, "재확인");
+            if(!ready)return;
             _presentation.Complete("백업 복원 완료");Build();
         }
         catch(Exception ex)
         {
+            followUp?.Finish(LauncherHistoryResult.Failed, "재확인");
             _readOnlyRecoveryFollowUp=true;
             _presentation.Retry=CurrentContext(LauncherUiOperation.Check);
             MarkError(ex,"백업 복원 완료 · 상태 재확인 필요",showDialog:false);

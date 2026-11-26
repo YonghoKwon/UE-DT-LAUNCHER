@@ -101,7 +101,7 @@ public sealed partial class MainWindow : Window
         var wasCommitting = _presentation.Committing;
         _viewModel.ApplyProgressStage(stage); _presentation.Stage(stage);
         if (!IsDeveloper && !wasCommitting && _presentation.Committing) Build();
-        if (_statusText is not null) SetStatus(IsDeveloper ? $"{stage}: {message}" : FriendlyProgress(stage, message));
+        if (_statusText is not null) SetStatus(FriendlyProgress(stage, message));
         if (percent.HasValue) Progress(percent.Value); else Progress(stage switch { "Catalog" => 10, "Manifest" => 20, "Plan" => 35, "Download" => Math.Max(_progress?.Value ?? 0, 45), "Apply" => 85, "Package" => 88, "Launch" => 95, _ => Math.Max(_progress?.Value ?? 0, 5) });
         AppendLog(IsDeveloper ? $"[{stage}] {message}" : FriendlyProgress(stage, message));
     }
