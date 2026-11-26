@@ -11,7 +11,7 @@ namespace UeDtLauncher.Gui;
 public sealed partial class MainWindow
 {
     private sealed record ProjectCardStatus(LauncherUiOperationContext Context, GeneralLauncherState State,
-        string Label, string Action, string? Guidance = null);
+        string Label, string Action, string? Guidance = null, bool RecommendationChanged = false);
 
     private sealed record ProjectCardsView(WrapPanel Cards, TextBlock Empty, TextBlock Notice, TextBlock Error, TextBlock Busy)
     {
@@ -19,7 +19,7 @@ public sealed partial class MainWindow
     }
 
     private sealed record ProjectCardView(Border Card, Button Open, Button Action, StackPanel Face,
-        TextBlock Title, TextBlock Label, TextBlock Guidance, Border Skeleton, TextBlock ActionText)
+        TextBlock Title, TextBlock Label, TextBlock Guidance, Border Recommendation, Border Skeleton, TextBlock ActionText)
     {
         internal Bitmap? Bitmap { get; set; }
         internal ProjectCardStatus? Status { get; set; }
@@ -138,15 +138,19 @@ public sealed partial class MainWindow
             var config = await RunProjectConfig(project, context);
             var result = await _uiBackend.CheckAsync(context, config, _ => { }, token);
             context.Validate(result);
-            var runtime = LauncherDashboardViewModel.RequireRuntimeObservation(result.Runtime);
+            var change = RecommendationChange.Find(context.VersionPolicy, SelectedCatalogRelease(project.ProjectId), result.Status);
+            var observation = change is not null && result.Runtime?.State == RuntimeState.Quiescent
+                ? await ObservePreviousRecommendationRuntimeAsync(project, context, change, token)
+                : result.Runtime;
+            var runtime = LauncherDashboardViewModel.RequireRuntimeObservation(observation);
             if (runtime.State != RuntimeState.Quiescent)
                 return new(context, GeneralLauncherState.RuntimeBlocked,
-                    LauncherDashboardViewModel.RuntimeLabel(runtime.State), "다시 확인");
+                    LauncherDashboardViewModel.RuntimeLabel(runtime.State), "다시 확인", RecommendationChanged: change is not null);
 
             var state = LauncherDashboardViewModel.InstallationState(result.Status, developer: false);
             return new(context, state, LauncherDashboardViewModel.InstallationLabel(state),
-                CardAction(state, result.Status, LowerRecommendation(context.VersionPolicy,
-                    SelectedCatalogRelease(project.ProjectId), result.Status) is not null));
+                CardAction(state, result.Status, change is not null && !RecommendationExplained(change)),
+                RecommendationChanged: change is not null);
         }
         catch (Exception error) when (!token.IsCancellationRequested)
         {
@@ -161,9 +165,9 @@ public sealed partial class MainWindow
         state switch
         {
             GeneralLauncherState.NotInstalled => "설치",
-            GeneralLauncherState.Ready => "실행",
             GeneralLauncherState.UpdateAvailable when IsInstallationDamaged(status) => "문제 해결",
-            GeneralLauncherState.UpdateAvailable when lowerRecommendation => "권장 버전 변경 안내",
+            GeneralLauncherState.Ready or GeneralLauncherState.UpdateAvailable when lowerRecommendation => "권장 버전 변경 안내",
+            GeneralLauncherState.Ready => "실행",
             GeneralLauncherState.UpdateAvailable => "업데이트",
             _ => "다시 확인"
         };
@@ -173,8 +177,9 @@ public sealed partial class MainWindow
         if (!HasProjectCards || !HasProject) return;
         var state = _viewModel.GeneralState;
         _projectCardStatuses[_selectedProject.ProjectId] = new(DisplaySelectionContext(), state, _installState,
-            _readOnlyRecoveryFollowUp ? "다시 확인" : CardAction(state, _viewModel.ProjectStatus, LowerRecommendation() is not null),
-            state == GeneralLauncherState.RecoverableError ? _installDetail : null);
+            _readOnlyRecoveryFollowUp ? "다시 확인" : CardAction(state, _viewModel.ProjectStatus,
+                LowerRecommendation() is { } change && !RecommendationExplained(change)),
+            state == GeneralLauncherState.RecoverableError ? _installDetail : null, ShowRecommendationBadge);
     }
 
     private void SelectCardProject(ProjectUiConfig project)
@@ -356,6 +361,7 @@ public sealed partial class MainWindow
         });
         card.Guidance.Text = status?.Guidance;
         card.Guidance.IsVisible = status?.Guidance is not null;
+        card.Recommendation.IsVisible = status?.RecommendationChanged == true;
         card.Skeleton.IsVisible = status is null;
         card.ActionText.Text = status?.Action ?? "상태 확인 중";
         AutomationProperties.SetName(card.Card, name);
@@ -376,10 +382,12 @@ public sealed partial class MainWindow
         var title = Txt(project.DisplayName, LauncherVisualTokens.FontSection, true);
         var label = Txt(string.Empty, LauncherVisualTokens.FontCaption, true);
         var guidance = Muted(string.Empty, LauncherVisualTokens.FontCaption);
+        var recommendation = RecommendationBadge("card-recommendation-" + project.ProjectId);
+        recommendation.IsVisible = false;
         var skeleton = new Border { Height = 6, Width = 96, HorizontalAlignment = HorizontalAlignment.Left,
             CornerRadius = new(3), Background = LauncherVisualTokens.Brush(LauncherVisualTokens.MutedSurfaceColor(false, HighContrast)) };
         var face = new StackPanel { Spacing = LauncherVisualTokens.SpaceSm,
-            Children = { visual, title, label, guidance, skeleton } };
+            Children = { visual, title, label, recommendation, guidance, skeleton } };
         var open = EnterpriseButton(project.DisplayName, "card-open-" + project.ProjectId,
             async (_, _) => await OpenProjectCardAsync(project), tracked: false);
         open.Content = face;
@@ -392,7 +400,7 @@ public sealed partial class MainWindow
         card.Margin = new Thickness(0, 0, LauncherVisualTokens.SpaceMd, LauncherVisualTokens.SpaceMd);
         open.KeyDown += (_, args) => MoveProjectCardFocus(panel, card, args);
         Identify(card, "program-card-" + project.ProjectId, project.DisplayName);
-        return new(card, open, action, face, title, label, guidance, skeleton, (TextBlock)action.Content!);
+        return new(card, open, action, face, title, label, guidance, recommendation, skeleton, (TextBlock)action.Content!);
     }
 
     private static void MoveProjectCardFocus(WrapPanel panel, Border card, KeyEventArgs args)

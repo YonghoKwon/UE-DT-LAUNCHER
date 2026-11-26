@@ -253,6 +253,97 @@ public sealed class ProjectCardsTests
         Assert.Equal(1, fixture.Backend.Executions);
     }
 
+    [AvaloniaTheory]
+    [InlineData(false, RuntimeState.Quiescent, true, "다운로드와 설치")]
+    [InlineData(true, RuntimeState.Quiescent, true, "바로 실행")]
+    [InlineData(false, RuntimeState.Running, false, "프로그램이 실행 중")]
+    [InlineData(false, RuntimeState.LaunchPending, false, "실행 상태를 확인")]
+    [InlineData(false, RuntimeState.Unknown, false, "실행 상태를 확인")]
+    [InlineData(false, null, false, "실행 상태를 확인")]
+    public async Task RecommendationDialogUsesTargetStatusAndChecksPreviousRuntime(
+        bool installed, RuntimeState? runtime, bool enabled, string message)
+    {
+        using var fixture = new Fixture { Allowed = ["a"] };
+        fixture.Backend.PreviousVersion = "2.0.0";
+        fixture.Backend.RecommendationInstalled = installed;
+        fixture.Backend.PreviousRuntime = runtime is { } state ? new(state, "fixture", "fixture") : null;
+        await fixture.Refresh();
+
+        var dialog = Assert.Single(fixture.Window.OwnedWindows);
+        var accept = dialog.GetLogicalDescendants().OfType<Button>().Single(control => Id(control) == "recommendation-change");
+        Assert.Equal(enabled, accept.IsEnabled);
+        Assert.Equal("1.0.0로 변경", AutomationProperties.GetName(accept));
+        var text = dialog.GetLogicalDescendants().OfType<TextBlock>().Select(block => block.Text ?? "").ToArray();
+        Assert.Contains("프로그램 A의 권장 버전이 1.0.0으로 바뀌었습니다.", text);
+        Assert.Contains("이 PC에서 마지막으로 쓴 버전은 2.0.0입니다(표시용 기록).", text);
+        Assert.Contains(text, value => value.Contains(message));
+        Assert.Contains("사용자 데이터는 버전별로 따로 보관되며 자동으로 옮겨지지 않습니다.", text);
+        Assert.DoesNotContain(text.Concat(fixture.Texts()), value => new[] { "공개일", "패키지 크기", "업데이트 크기",
+            "미승격", "회수 원인", "관리자가 되돌", "설치 목록", "사용량", "서버 주소", "서비스 버전" }.Any(value.Contains));
+        Assert.True(fixture.Find<TextBlock>("recommendation-badge").IsVisible);
+        Assert.Equal(0, fixture.Backend.Executions);
+        Click(accept);
+        await WaitFor(() => !fixture.Model.Running);
+        Assert.Equal(enabled ? 1 : 0, fixture.Backend.Executions);
+        if (enabled)
+        {
+            Assert.Equal("1.0.0", fixture.Backend.ExecutedSelection?.Version);
+            Assert.Equal("latest", fixture.Model.Config.VersionPolicy);
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task LaterKeepsBothBadgesAndEachRecommendationOpensOnce()
+    {
+        using var fixture = new Fixture { Allowed = ["a", "b"] };
+        fixture.Backend.PreviousVersion = "3.0.0";
+        await fixture.Refresh();
+
+        Assert.True(fixture.Find<TextBlock>("card-recommendation-a").IsEffectivelyVisible);
+        Assert.Empty(fixture.Window.OwnedWindows);
+        Click(fixture.Find<Button>("card-action-a"));
+        await WaitFor(() => fixture.Window.OwnedWindows.Count > 0 && !fixture.Model.Running);
+        Dismiss();
+        Assert.True(fixture.Find<TextBlock>("recommendation-badge").IsVisible);
+        await fixture.Refresh();
+        Assert.Empty(fixture.Window.OwnedWindows);
+        Click(fixture.Find<Button>("project-cards-back"));
+        await WaitFor(() => !fixture.Model.Running);
+        Assert.True(fixture.Find<TextBlock>("card-recommendation-a").IsEffectivelyVisible);
+        Click(fixture.Find<Button>("card-open-a"));
+        await WaitFor(() => !fixture.Model.Running);
+        Assert.Empty(fixture.Window.OwnedWindows);
+
+        fixture.RecommendedVersion = "2.0.0";
+        await fixture.Refresh();
+        Dismiss();
+        fixture.RecommendedVersion = "1.0.0";
+        await fixture.Refresh();
+        Assert.Empty(fixture.Window.OwnedWindows);
+        Assert.Equal(0, fixture.Backend.Executions);
+
+        void Dismiss()
+        {
+            var dialog = Assert.Single(fixture.Window.OwnedWindows);
+            Click(dialog.GetLogicalDescendants().OfType<Button>().Single(control => Id(control) == "recommendation-later"));
+            Assert.Empty(fixture.Window.OwnedWindows);
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task PreviousRuntimeIsRecheckedBeforeAccepting()
+    {
+        using var fixture = new Fixture { Allowed = ["a"] };
+        fixture.Backend.PreviousVersion = "2.0.0";
+        await fixture.Refresh();
+        var dialog = Assert.Single(fixture.Window.OwnedWindows);
+        fixture.Backend.PreviousRuntime = new(RuntimeState.Running, "fixture", "fixture");
+        Click(dialog.GetLogicalDescendants().OfType<Button>().Single(control => Id(control) == "recommendation-change"));
+        await WaitFor(() => !fixture.Model.Running);
+        Assert.Equal(0, fixture.Backend.Executions);
+        Assert.False(fixture.Find<Button>("primary-action").IsEnabled);
+    }
+
     private static string? Id(Control control) => AutomationProperties.GetAutomationId(control);
     private static void Click(Button button) => button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
     private static void Press(Window window, PhysicalKey key)
@@ -274,6 +365,7 @@ public sealed class ProjectCardsTests
             "RefreshSelectionStatusAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
         private readonly string _root = Path.Combine(Path.GetTempPath(), "uedt-project-cards-" + Guid.NewGuid().ToString("N"));
         public string[] Allowed { get; set; } = ["a", "b", "c"];
+        public string RecommendedVersion { get; set; } = "1.0.0";
         public LauncherDashboardViewModel Model { get; }
         public MainWindow Window { get; }
         public Backend Backend { get; } = new();
@@ -296,7 +388,7 @@ public sealed class ProjectCardsTests
                     Projects = Allowed.Select(id => new CatalogProjectOption { ProjectId = id, DisplayName = "프로그램 " + id.ToUpperInvariant() }).ToList(),
                     Releases = Allowed.Select(id => new CatalogReleaseOption
                     {
-                        ProjectId = id, Version = "1.0.0", Environment = "prod", Channel = "stable", Platform = platform, IsLatest = true
+                        ProjectId = id, Version = RecommendedVersion, Environment = "prod", Channel = "stable", Platform = platform, IsLatest = true
                     }).ToList()
                 }), runtimeConfigLoader: _ => Task.FromResult(Config()));
             Window.Show();
@@ -322,6 +414,7 @@ public sealed class ProjectCardsTests
 
         public void Dispose()
         {
+            foreach (var dialog in Window.OwnedWindows.ToArray()) dialog.Close();
             Window.Close();
             Directory.Delete(_root, recursive: true);
         }
@@ -334,10 +427,14 @@ public sealed class ProjectCardsTests
         public Dictionary<int, TaskCompletionSource> CheckBarriers { get; } = new();
         public TaskCompletionSource? CompleteExecution { get; set; }
         public RuntimeObservation? Runtime { get; set; } = new(RuntimeState.Quiescent, "fixture", "fixture");
+        public RuntimeObservation? PreviousRuntime { get; set; } = new(RuntimeState.Quiescent, "fixture", "fixture");
+        public string? PreviousVersion { get; set; }
+        public bool RecommendationInstalled { get; set; }
         private int _concurrentChecks;
         public int PeakChecks { get; private set; }
         public int Executions { get; private set; }
         public string? ExecutedProject { get; private set; }
+        public ReleaseSelection? ExecutedSelection { get; private set; }
 
         public async Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext context, LauncherConfig config,
             Action<LauncherProgress> progress, CancellationToken token = default)
@@ -351,9 +448,14 @@ public sealed class ProjectCardsTests
                 if (CheckBarriers.TryGetValue(Checks.Count, out var checkpoint)) await checkpoint.Task.WaitAsync(token);
                 if (context.ProjectId == "c") throw new HttpRequestException("secret-marker", null, HttpStatusCode.Forbidden);
                 VersionedReleasePaths.Bind(config, context.Selection!);
-                var installed = context.ProjectId == "b";
-                return new(config, context.Selection, new(installed, installed ? "1.0.0" : null, "1.0.0", !installed, 0, 0, false),
-                    installed ? new(RuntimeState.Quiescent, "fixture", "fixture") : Runtime);
+                var selected = context.Selection!;
+                var isPrevious = context.ProjectId == "a" && selected.Version == PreviousVersion;
+                var hint = context.ProjectId == "a" && !isPrevious && PreviousVersion is { } version
+                    ? new PreviousInstallation(selected with { Version = version }, "2026-11-26T00:00:00Z")
+                    : null;
+                var installed = context.ProjectId == "b" || isPrevious || RecommendationInstalled;
+                var runtime = isPrevious ? PreviousRuntime : context.ProjectId == "b" ? new(RuntimeState.Quiescent, "fixture", "fixture") : Runtime;
+                return new(config, selected, new(installed, installed ? selected.Version : null, selected.Version, !installed, 0, 0, false, hint), runtime);
             }
             finally { _concurrentChecks--; }
         }
@@ -363,6 +465,7 @@ public sealed class ProjectCardsTests
         {
             Executions++;
             ExecutedProject = context.ProjectId;
+            ExecutedSelection = context.Selection;
             Assert.True(launch);
             Assert.False(repair);
             if (CompleteExecution is { } barrier) await barrier.Task.WaitAsync(token);

@@ -33,9 +33,9 @@ public sealed partial class MainWindow : Window
         if (!IsDeveloper && _viewModel.GeneralState == GeneralLauncherState.UpdateAvailable)
         {
             if (SelectedInstallationDamaged) { await TroubleshootAsync(); return; }
-            if (LowerRecommendation() is { } recommendation && _explainedRecommendation != recommendation)
+            if (LowerRecommendation() is { } recommendation && !RecommendationExplained(recommendation))
             {
-                _explainedRecommendation = recommendation;
+                _explainedRecommendation = recommendation.Recommended;
                 Build();
                 return;
             }
@@ -182,6 +182,14 @@ public sealed partial class MainWindow : Window
         {
             var context = CaptureUiOperation(expectedSelection);
             if (IsDeveloper && launch && !await ConfirmDevLaunch(context)) return;
+            if (!IsDeveloper && launch && !repair && _checkedRecommendation is { } checkedChange &&
+                LowerRecommendation() == checkedChange && context.Selection == checkedChange.Recommended)
+            {
+                var runtime = await ObservePreviousRecommendationRuntimeAsync(_selectedProject, context, checkedChange);
+                if (!_viewModel.ApplyRuntimeObservation(runtime)) return;
+                if (context != CaptureUiOperation())
+                    throw new InvalidDataException("선택한 배포가 변경되었습니다. 다시 확인해 주세요.");
+            }
             BeginOperation(launch ? LauncherUiOperation.Launch : repair ? LauncherUiOperation.Repair : LauncherUiOperation.Update);
             Progress(0); ResetSpeedTracking(); StartCancellableUiOperation(operationCancellation);
             var config = await RunConfig(repair, launch);
@@ -205,15 +213,24 @@ public sealed partial class MainWindow : Window
         if (_catalog.SelectionPolicy == CatalogRecommendation.ExplicitPolicy && _config.VersionPolicy != "exact" && SelectedCatalogRelease() is null)
         { AwaitPromotion(); return; }
         _running = true; SetBusy(true);
+        _checkedRecommendation = null;
         try
         {
             var context = CaptureUiOperation();
             BeginOperation(LauncherUiOperation.Check); _viewModel.GeneralState = GeneralLauncherState.Checking; Progress(0); Build();
             var result = await _uiBackend.CheckAsync(context, await RunConfig(false, false), CreateUiProgress());
+            ValidateUiResult(context, result);
+            var change = !IsDeveloper
+                ? RecommendationChange.Find(context.VersionPolicy, SelectedCatalogRelease(), result.Status)
+                : null;
+            if (change is not null && result.Runtime?.State == RuntimeState.Quiescent)
+                result = result with { Runtime = await ObservePreviousRecommendationRuntimeAsync(_selectedProject, context, change) };
             if (ApplyUiResult(context, result)) { _presentation.Complete(_installState); Build(); }
+            _checkedRecommendation = change;
         }
         catch (Exception ex) { MarkError(ex, "상태 확인 실패", showDialog: !suppressDialog); }
         finally { FinishUiOperation(); }
+        if (!_showStartupSkeleton && _checkedRecommendation is not null) OfferRecommendationChange();
     }
 
     private async Task TroubleshootAsync()

@@ -91,7 +91,7 @@ public sealed partial class MainWindow
     }
     private void InvalidateDisplayedInstallation()
     {
-        _selectedRuntimeConfig=null;_viewModel.ProjectStatus=null;_readOnlyRecoveryFollowUp=false;
+        _selectedRuntimeConfig=null;_viewModel.ProjectStatus=null;_readOnlyRecoveryFollowUp=false;_checkedRecommendation=null;
         _viewModel.GeneralState=GeneralLauncherState.Checking;
         _installState="확인 필요";_installDetail="배포 선택이 변경되었습니다. 설치 상태를 확인하고 있습니다.";
         _presentation.Retry=null;

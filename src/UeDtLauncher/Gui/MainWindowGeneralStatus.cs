@@ -10,7 +10,6 @@ public sealed partial class MainWindow
     private DateTimeOffset _errorTime;
     private string _errorStage = "확인";
     private bool _errorDetailsExpanded;
-    private (ReleaseSelection Recommended, ReleaseSelection Previous)? _explainedRecommendation;
     private (LauncherUiOperationContext Context, GeneralSupportDiagnostic Diagnostic)? _damageDiagnostic;
 
     private sealed record GeneralSupportDiagnostic(string Code, string Stage, string? SupportId, DateTimeOffset OccurredAt, string ComputerName);
@@ -21,27 +20,12 @@ public sealed partial class MainWindow
         { IsInstalled: true, UpdateRequired: true } status &&
         string.Equals(status.InstalledVersion, status.AvailableVersion, StringComparison.OrdinalIgnoreCase);
 
-    private (ReleaseSelection Recommended, ReleaseSelection Previous)? LowerRecommendation()
-        => LowerRecommendation(_config.VersionPolicy, SelectedCatalogRelease(), _viewModel.ProjectStatus);
-
-    private static (ReleaseSelection Recommended, ReleaseSelection Previous)? LowerRecommendation(
-        string policy, CatalogReleaseOption? selected, ManagedProjectStatus? status)
-    {
-        if (policy != "latest" || selected is not { IsLatest: true } release ||
-            status is not { IsInstalled: false, PreviousInstallation: { } previous, AvailableVersion: { } available } ||
-            !string.Equals(available, release.Version, StringComparison.OrdinalIgnoreCase) ||
-            !Version.TryParse(available.TrimStart('v', 'V'), out var recommended) ||
-            !Version.TryParse(previous.Release.Version.TrimStart('v', 'V'), out var installed) || recommended >= installed)
-            return null;
-        return (new(release.ProjectId, release.Environment, release.Channel, release.Platform, release.Version), previous.Release);
-    }
-
     private string GeneralActionText() => _viewModel.GeneralState switch
     {
         GeneralLauncherState.Checking => "상태 확인 중",
         GeneralLauncherState.NotInstalled => "설치",
         GeneralLauncherState.UpdateAvailable when SelectedInstallationDamaged => "문제 해결",
-        GeneralLauncherState.UpdateAvailable when LowerRecommendation() is { } recommendation && _explainedRecommendation != recommendation => "권장 버전 변경 안내",
+        GeneralLauncherState.UpdateAvailable when LowerRecommendation() is { } recommendation && !RecommendationExplained(recommendation) => "권장 버전 변경 안내",
         GeneralLauncherState.UpdateAvailable => "업데이트",
         GeneralLauncherState.Working => "작업 중",
         _ => _viewModel.PrimaryActionText
