@@ -41,6 +41,9 @@ public sealed record UploadProfile(string? Server = null, string? RemoteIncoming
     private void ValidateLocalOptions()
     {
         if (Port is < 1 or > 65535) throw new ArgumentException("--port must be 1..65535.");
+        // Windows UNC and device paths start with a separator, unlike drive-qualified paths.
+        if (OperatingSystem.IsWindows() && KnownHostsFile is { Length: > 0 } path && (path[0] is '\\' or '/'))
+            throw new ArgumentException("knownHostsFile must use a drive-qualified path on Windows.");
         if (IdentityFile is not null && (!File.Exists(IdentityFile) || IdentityFile.Any(char.IsControl)))
             throw new ArgumentException("--identity-file must name an existing local file.");
         if (KnownHostsFile is not null && (!Path.IsPathFullyQualified(KnownHostsFile) ||

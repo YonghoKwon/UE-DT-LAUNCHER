@@ -66,6 +66,23 @@ public sealed class UploadStatusCommandTests
         Assert.Throws<ArgumentException>(() => (profile with { KnownHostsFile = temp.Path }).Validate());
     }
 
+    [Theory]
+    [InlineData(@"\\example.invalid\share\known_hosts")]
+    [InlineData("//example.invalid/share/known_hosts")]
+    [InlineData(@"/\example.invalid/share/known_hosts")]
+    [InlineData(@"\\?\UNC\example.invalid\share\known_hosts")]
+    [InlineData(@"\\?\C:\deploy\known_hosts")]
+    [InlineData(@"\\.\C:\deploy\known_hosts")]
+    [InlineData("//./C:/deploy/known_hosts")]
+    public void DedicatedKnownHostsRejectsWindowsUncAndDevicePrefixesBeforeFileLookup(string path)
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var profile = new UploadProfile("upload@host", "/srv/incoming", KnownHostsFile: path);
+        var error = Assert.Throws<ArgumentException>(profile.Validate);
+        Assert.Contains("drive-qualified path", error.Message);
+    }
+
     [Fact]
     public async Task UsesFixedSshArgumentsAndPreservesValidatedJson()
     {

@@ -290,7 +290,7 @@ if ($LASTEXITCODE -ne 0) { throw '실패한 사전 점검 항목을 해결한 �
 | 새 버전 계획 확인 | `upload`에 두 프로필·ZIP·버전·선택 노트를 지정하고 `--dry-run` 사용 | 적용 값과 출처 및 6단계 계획 표시 |
 | 매 배포 | 동일 명령에서 `--dry-run` 제거 | ZIP 검사·외부 JSON 생성 후 B3 전송 |
 
-`knownHostsFile`에는 확인한 호스트 키가 등록된 기존 파일의 절대 경로를 지정합니다. 생략하면 OpenSSH 기본 파일을 사용합니다. 실제 전송 성공 JSON의 `statusCommand`에 같은 접속 프로필을 붙여 상태를 조회할 수 있습니다.
+`knownHostsFile`에는 확인한 호스트 키가 등록된 기존 파일의 절대 경로를 지정합니다. Windows에서는 드라이브 문자가 있는 절대 경로를 사용하며 UNC와 장치 경로는 거부합니다. 생략하면 OpenSSH 기본 파일을 사용합니다. 전용 파일을 사용하는 연결에서 SSH 종료가 255라면 서버 관리자가 제공한 지문을 대조한 뒤 지정한 파일을 갱신합니다. 실제 전송 성공 JSON의 `statusCommand`에 같은 접속 프로필을 붙여 상태를 조회할 수 있습니다.
 
 프로젝트 프로필은 [합성 예시](../../examples/ma0t10.project.json)를 참고하세요. `schemaVersion`은 1이며 생략 시 1입니다. `projectId`, `platform`, `entryPoint`는 프로필 또는 명령줄에서 지정합니다. 선택 필드는 `displayName`(프로젝트 ID), `payloadRoot`(`.`), `executablePaths`(빈 배열), `environment`(`prod`), `channel`(`stable`), `heroPath`, `thumbnailPath`입니다. 괄호 안 값은 기본값입니다. 이미지 경로는 생략할 수 있습니다. `executablePaths`는 JSON 문자열 배열이고 ZIP 파일 경로는 `payloadRoot` 기준입니다. 알 수 없는 필드와 비밀 필드는 거부합니다. 명령줄 값 > 프로젝트 프로필 > 기본값 순서로 적용하며, 버전은 매번 `--version`으로 입력합니다.
 
