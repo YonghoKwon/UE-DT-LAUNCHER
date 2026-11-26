@@ -26,6 +26,8 @@ public static class UploadFailureGuidance
 
 internal static class UploadTransport
 {
+    internal const string KnownHostsOption = "UserKnownHostsFile=";
+
     internal static List<string> Options(UploadProfile profile, bool scp)
     {
         var args = new List<string> { "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "UpdateHostKeys=no",
@@ -33,6 +35,13 @@ internal static class UploadTransport
             "-o", "PermitLocalCommand=no", "-o", "ClearAllForwardings=yes", "-o", "ControlMaster=no", "-o", "ControlPath=none",
             "-o", "ConnectTimeout=10", "-o", "ConnectionAttempts=1", scp ? "-P" : "-p", (profile.Port ?? 22).ToString(System.Globalization.CultureInfo.InvariantCulture) };
         if (profile.IdentityFile is not null) { args.Add("-i"); args.Add(Path.GetFullPath(profile.IdentityFile)); }
+        if (profile.KnownHostsFile is { } knownHostsFile)
+        {
+            if (OperatingSystem.IsWindows()) knownHostsFile = knownHostsFile.Replace('\\', '/');
+            // OpenSSH parses -o as a config line and expands percent tokens in known-host filenames.
+            var value = knownHostsFile.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("%", "%%");
+            args.AddRange(["-o", KnownHostsOption + "\"" + value + "\""]);
+        }
         return args;
     }
     internal static UploadStep Ssh(UploadProfile profile, string name, string command, bool closeInput = false)

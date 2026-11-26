@@ -112,6 +112,7 @@ Windows PowerShell에서 처음 한 번 접속 프로필과 프로젝트 프로�
 .\UeDtLauncher.exe upload init --output upload.profile.json
 .\UeDtLauncher.exe upload project-init --output ma0t10.project.json
 # 접속 프로필과 프로젝트 프로필을 실제 대상에 맞게 편집
+# 전용 호스트 키 파일을 쓸 경우 접속 프로필에 "knownHostsFile": "C:/deploy/ssh/known_hosts" 추가
 .\UeDtLauncher.exe upload check --profile upload.profile.json
 .\UeDtLauncher.exe upload --profile upload.profile.json --project-profile ma0t10.project.json --zip Windows.zip --version 1.4.0 --notes-file notes.md --dry-run
 # 계획 확인 후 매 배포는 같은 명령에서 --dry-run을 빼고 실행
@@ -124,6 +125,8 @@ upload는 키 인증 전용(BatchMode)으로 비밀번호를 묻지 않습니다
 명령줄 값이 프로젝트 프로필보다 우선하고, 생략한 선택 값에는 기본값을 적용합니다. `--notes-file`은 BOM을 포함해 최대 64 KiB인 UTF-8 텍스트입니다. `--notes`와 함께 지정하면 종료2입니다. 노트 옵션은 `release-metadata`에서도 사용할 수 있습니다. 프로젝트 프로필의 필드와 작성 방법은 [기능 지도 B2](docs/reference/feature-workflow.md#b2-releasejson-만들기--개발-pc-powershell)와 [합성 예시](examples/ma0t10.project.json)를 참고하세요.
 
 업로드 JSON의 로컬 경로는 홈 기준 `~/…` 또는 파일·폴더명으로 표시합니다. 접속 프로필 오류나 ZIP 내부 경로 불일치는 작업 사본을 만들거나 원격에 연결하기 전에 종료2로 안내합니다.
+
+선택 필드 `knownHostsFile`에는 확인한 호스트 키를 등록한 기존 파일의 절대 경로를 지정합니다. 생략하면 OpenSSH의 기본 호스트 키 파일을 사용합니다. 호스트 키 확인은 항상 엄격하게 수행하며 전용 파일 경로는 출력에서 가립니다. `--format json`은 실제 전송이 성공하면 `statusCommand`에 조회 명령을 제공하므로 실행 시 같은 접속 프로필을 지정하세요.
 
 자동 업로드 ID는 릴리스 정보를 알아볼 수 있는 접두부를 길이에 맞춰 자르고 UTC 밀리초 시각·짧은 난수 접미부를 붙여 최대128자로 만듭니다. 프로젝트/버전 등 릴리스 메타데이터는 자르지 않습니다. 명시한 `--upload-id`는 그대로 검증하며 자동 수정하지 않습니다.
 

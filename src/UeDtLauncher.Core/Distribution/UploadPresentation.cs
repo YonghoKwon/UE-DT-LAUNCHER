@@ -26,7 +26,9 @@ public static class UploadPresentation
         WorkDirectory = result.WorkDirectory is null ? null : LocalPath(result.WorkDirectory),
         Steps = result.Steps.Select(step => step with
         {
-            Arguments = step.Arguments.Select(argument => Path.IsPathFullyQualified(argument) ? LocalPath(argument) : argument).ToArray()
+            Arguments = step.Arguments.Select(argument => argument.StartsWith(UploadTransport.KnownHostsOption, StringComparison.Ordinal)
+                ? UploadTransport.KnownHostsOption + "<redacted>"
+                : Path.IsPathFullyQualified(argument) ? LocalPath(argument) : argument).ToArray()
         }).ToArray()
     };
 
