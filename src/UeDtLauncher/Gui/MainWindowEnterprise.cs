@@ -160,7 +160,7 @@ public sealed partial class MainWindow
                     KeyboardNavigation.SetTabNavigation(more,KeyboardNavigationMode.Local);
                     more.PropertyChanged+=(_,e)=>{if(e.Property==Expander.IsExpandedProperty)_maintenanceExpanded=more.IsExpanded;};
                     Identify(more,"maintenance","유지보수 및 진단"); content.Children.Add(more);
-                    content.Children.Add(DeveloperVersionList(focusId));
+                    content.Children.Add(DeveloperVersionList());
                     var details=DeveloperBuildInformation(); var logs=EnterpriseLogs();
                     if(wide)
                     {
@@ -421,6 +421,8 @@ public sealed partial class MainWindow
         panel.Children.Add(actions);
         _statusText=Identify(Txt(_presentation.Title,LauncherVisualTokens.FontBody,true),"operation-status","작업 상태");
         _percentText=Muted("",LauncherVisualTokens.FontSecondary);_stageLabel=Muted("",LauncherVisualTokens.FontSecondary);
+        AutomationProperties.SetAutomationId(_percentText, "operation-percent");
+        AutomationProperties.SetAutomationId(_stageLabel, "operation-stage");
         _progress=Identify(new ProgressBar {Minimum=0,Maximum=100,Height=6,
             Background=LauncherVisualTokens.Brush(LauncherVisualTokens.MutedSurfaceColor(IsDeveloper, HighContrast)),
             Foreground=StatusBrush(LauncherStatusTone.Progress)},"operation-progress","작업 진행률");
@@ -454,6 +456,7 @@ public sealed partial class MainWindow
     }
     private Control? FindFocusTarget(string? id)
     {
+        if (FindDeveloperVersionListForFocus(id) is { } versions) return FindDeveloperVersionFocusTarget(versions);
         var controls=this.GetVisualDescendants().OfType<Control>().Where(c=>c.IsEffectivelyVisible&&c.IsEnabled&&c.Focusable).ToList();
         foreach(var candidate in new[]{id,"project-list","compact-project","status-check","card-refresh","settings"})
         {

@@ -187,7 +187,7 @@ public sealed partial class MainWindow : Window
         return row;
     }
 
-    private void SelectionChanged()
+    private void SelectionChanged(CatalogReleaseOption? focusVersionAfterCheck = null)
     {
         _presentation.Retry = null;
         _selectedRuntimeConfig = null;
@@ -198,7 +198,8 @@ public sealed partial class MainWindow : Window
         _installDetail = "배포 선택이 변경되었습니다. 상태 확인을 다시 실행하세요.";
         UpdateReleaseNotes();
         if (UsesDistributionServer && _allowAutomaticChecks)
-            Dispatcher.UIThread.Post(async () => await RefreshInstallStatusAsync(suppressDialog: true));
+            Dispatcher.UIThread.Post(async () => await RefreshInstallStatusCoreAsync(
+                suppressDialog: true, focusVersionAfterCheck));
     }
 
     private void RenderProjects()

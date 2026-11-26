@@ -230,7 +230,10 @@ public sealed partial class MainWindow : Window
         finally { FinishUiOperation(); }
     }
 
-    private async Task RefreshInstallStatusAsync(bool suppressDialog = false)
+    private Task RefreshInstallStatusAsync(bool suppressDialog = false) =>
+        RefreshInstallStatusCoreAsync(suppressDialog);
+
+    private async Task RefreshInstallStatusCoreAsync(bool suppressDialog, CatalogReleaseOption? focusVersionAfterCheck = null)
     {
         if (_running) return;
         if (!HasProject) { await RefreshCatalog(true, suppressDialog: true); return; }
@@ -239,6 +242,7 @@ public sealed partial class MainWindow : Window
         { history?.Finish(LauncherHistoryResult.Waiting); AwaitPromotion(); return; }
         _running = true; SetBusy(true);
         _checkedRecommendation = null;
+        string? focusAfterCheck = null;
         try
         {
             var context = CaptureUiOperation();
@@ -251,13 +255,23 @@ public sealed partial class MainWindow : Window
             var priorRuntime = change is not null && result.Runtime?.State == RuntimeState.Quiescent
                 ? await ObservePreviousRecommendationRuntimeAsync(_selectedProject, context, change)
                 : null;
+            focusAfterCheck = FocusAfterDeveloperVersionCheck(focusVersionAfterCheck);
             if (ApplyUiResult(context, result) && (change is null || !ApplyPreviousRuntimeBlock(priorRuntime)))
             { _presentation.Complete(_installState); Build(); }
             FinishHistoryForObservation(history, result.Runtime);
             _checkedRecommendation = change;
         }
-        catch (Exception ex) { history?.Finish(LauncherHistoryResult.Failed); MarkError(ex, "상태 확인 실패", showDialog: !suppressDialog); }
-        finally { FinishUiOperation(); }
+        catch (Exception ex)
+        {
+            focusAfterCheck ??= FocusAfterDeveloperVersionCheck(focusVersionAfterCheck);
+            history?.Finish(LauncherHistoryResult.Failed);
+            MarkError(ex, "상태 확인 실패", showDialog: !suppressDialog);
+        }
+        finally
+        {
+            if (focusAfterCheck is not null) _workspaceFocus = focusAfterCheck;
+            FinishUiOperation();
+        }
         if (!_showStartupSkeleton && _checkedRecommendation is not null) OfferRecommendationChange();
     }
 

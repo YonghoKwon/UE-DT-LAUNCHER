@@ -6,6 +6,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 namespace UeDtLauncher.Gui;
 
@@ -163,7 +164,7 @@ public sealed partial class MainWindow
         return panels;
     }
 
-    private Control DeveloperVersionList(string? focusId)
+    private Control DeveloperVersionList()
     {
         var allowed = MatchingReleases().ToArray();
         var selected = SelectedCatalogRelease();
@@ -192,7 +193,7 @@ public sealed partial class MainWindow
                 var release = allowed[args.Index];
                 if (args.Container is ListBoxItem row)
                     row.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-                Identify(args.Container, "developer-version-" + release.Version, $"{release.Version}, {DeveloperRecommendationLabel(release)}");
+                Identify(args.Container, DeveloperVersionId(release), $"{release.Version}, {DeveloperRecommendationLabel(release)}");
             };
             _selectionControls.Add(list);
             list.SelectionChanged += (_, _) =>
@@ -203,15 +204,42 @@ public sealed partial class MainWindow
                 if (!MatchingReleases().Contains(release)) return;
                 _config.VersionPolicy = "exact";
                 _config.RequestedVersion = release.Version;
-                _workspaceFocus = "developer-version-" + release.Version;
-                SelectionChanged();
+                _workspaceFocus = DeveloperVersionId(release);
+                SelectionChanged(release);
                 Build();
             };
-            if (focusId?.StartsWith("developer-version-", StringComparison.Ordinal) == true && list.SelectedItem is { } item)
-                list.Loaded += (_, _) => list.ScrollIntoView(item);
             body.Children.Add(list);
         }
         return Card(body);
+    }
+
+    private static string DeveloperVersionId(CatalogReleaseOption release) => "developer-version-" + release.Version;
+
+    private ListBox? FindDeveloperVersionListForFocus(string? id)
+    {
+        if (id?.StartsWith("developer-version-", StringComparison.Ordinal) != true) return null;
+        return this.GetVisualDescendants().OfType<ListBox>().FirstOrDefault(list =>
+            AutomationProperties.GetAutomationId(list) == "developer-version-list" &&
+            list.SelectedItem is CatalogReleaseOption release && id == DeveloperVersionId(release));
+    }
+
+    private static Control? FindDeveloperVersionFocusTarget(ListBox list)
+    {
+        if (!list.IsEffectivelyEnabled || list.SelectedItem is not CatalogReleaseOption release) return null;
+
+        // ScrollIntoView can create a temporary container while the list measures.
+        // Focus the realized row so subsequent keys and UI Automation refer to the visible item.
+        list.ScrollIntoView(release);
+        list.UpdateLayout();
+        return list.ContainerFromItem(release) ?? list;
+    }
+
+    private string? FocusAfterDeveloperVersionCheck(CatalogReleaseOption? release)
+    {
+        if (release is null || !IsVisible || !ReferenceEquals(SelectedCatalogRelease(), release)) return null;
+        if (FocusManager?.GetFocusedElement() is Control { IsEffectivelyEnabled: true } focused && focused is not Window)
+            return AutomationProperties.GetAutomationId(focused);
+        return DeveloperVersionId(release);
     }
 
     private Control DeveloperVersionRow(CatalogReleaseOption release)
