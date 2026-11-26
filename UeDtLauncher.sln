@@ -21,6 +21,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{07C2787E
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConsoleStreamHarness", "tools\ConsoleStreamHarness\ConsoleStreamHarness.csproj", "{7848B26F-C760-4B56-9482-F130244D6433}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AuthorityHarness", "tools\AuthorityHarness\AuthorityHarness.csproj", "{B4BA9C2D-8CC2-44BE-B61C-B59A29FB814A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -115,6 +117,18 @@ Global
 		{7848B26F-C760-4B56-9482-F130244D6433}.Release|x64.Build.0 = Release|Any CPU
 		{7848B26F-C760-4B56-9482-F130244D6433}.Release|x86.ActiveCfg = Release|Any CPU
 		{7848B26F-C760-4B56-9482-F130244D6433}.Release|x86.Build.0 = Release|Any CPU
+		{B4BA9C2D-8CC2-44BE-B61C-B59A29FB814A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B4BA9C2D-8CC2-44BE-B61C-B59A29FB814A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B4BA9C2D-8CC2-44BE-B61C-B59A29FB814A}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B4BA9C2D-8CC2-44BE-B61C-B59A29FB814A}.Debug|x64.Build.0 = Debug|Any CPU
+		{B4BA9C2D-8CC2-44BE-B61C-B59A29FB814A}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{B4BA9C2D-8CC2-44BE-B61C-B59A29FB814A}.Debug|x86.Build.0 = Debug|Any CPU
+		{B4BA9C2D-8CC2-44BE-B61C-B59A29FB814A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B4BA9C2D-8CC2-44BE-B61C-B59A29FB814A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B4BA9C2D-8CC2-44BE-B61C-B59A29FB814A}.Release|x64.ActiveCfg = Release|Any CPU
+		{B4BA9C2D-8CC2-44BE-B61C-B59A29FB814A}.Release|x64.Build.0 = Release|Any CPU
+		{B4BA9C2D-8CC2-44BE-B61C-B59A29FB814A}.Release|x86.ActiveCfg = Release|Any CPU
+		{B4BA9C2D-8CC2-44BE-B61C-B59A29FB814A}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -126,5 +140,6 @@ Global
 		{8A52CA44-9392-47A7-B991-8CB89F5D920A} = {C9A14734-4513-420D-8BA6-8864986F588D}
 		{38C8F27B-DE6C-4C41-A6BA-317295179DC2} = {C9A14734-4513-420D-8BA6-8864986F588D}
 		{7848B26F-C760-4B56-9482-F130244D6433} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
+		{B4BA9C2D-8CC2-44BE-B61C-B59A29FB814A} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 	EndGlobalSection
 EndGlobal
