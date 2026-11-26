@@ -10,21 +10,22 @@ internal sealed class IntakeWorkClaim : IDisposable
     private readonly Guid owner = Guid.NewGuid();
     private bool published;
 
+    internal Guid ClaimId { get; } = Guid.NewGuid();
+
     public IntakeWorkClaim(IntakeStore store, IntakeJob job, string state, string scratch, string? snapshot,
         params string[] expectedStates)
     {
         this.store = store;
         jobId = job.Id;
-        var claimId = Guid.NewGuid();
         store.Authority.Commit(current =>
         {
             var jobs = IntakeJobs.Read(current);
             var index = jobs.Jobs.FindIndex(candidate => candidate.Id == jobId && expectedStates.Contains(candidate.State));
             if (index < 0) throw new InvalidOperationException("Job state changed before claim.");
             var now = DateTimeOffset.UtcNow;
-            jobs.Jobs[index] = jobs.Jobs[index] with { State = state, Message = null, ClaimId = claimId };
+            jobs.Jobs[index] = jobs.Jobs[index] with { State = state, Message = null, ClaimId = ClaimId };
             jobs.ActiveWork.RemoveAll(work => work.Job == jobId);
-            jobs.ActiveWork.Add(new(jobId, owner, claimId, IntakeJobs.Relative(store.Root, scratch),
+            jobs.ActiveWork.Add(new(jobId, owner, ClaimId, IntakeJobs.Relative(store.Root, scratch),
                 snapshot is null ? null : IntakeJobs.Relative(store.Root, snapshot), now));
             return jobs.Plan(new AuthorityEvent(now, state, jobId));
         });

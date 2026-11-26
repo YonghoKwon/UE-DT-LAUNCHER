@@ -33,7 +33,7 @@ public sealed class ApprovedPublisher(IntakeStore store)
         // A publishing journal is committed before touching release directories. Repeating approval recovers it.
         var build = Path.Combine(store.Root, "processing", "publish-" + id + "-" + Guid.NewGuid().ToString("N"));
         using var work = new IntakeWorkClaim(store, job, "publishing", build, snapshot, "pending", "publishing");
-        var progress = store.Progress(id, observer);
+        var progress = store.Progress(id, work.ClaimId, observer);
         Directory.CreateDirectory(build);
         var payload = await SidecarPackageValidator.ValidateAndExtractAsync(Path.Combine(snapshot, metadata.PackageFile), metadata,
             Path.Combine(build, "unpacked"), store.Settings.Limits, token, progress, store.AvailableBytes);

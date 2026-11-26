@@ -120,9 +120,20 @@ internal sealed partial class AuthorityStore
 
     internal WriterLease Lock(bool exclusiveMaintenance = false)
     {
+        RequireWritableRoot();
+        return AcquireWriter(exclusiveMaintenance);
+    }
+
+    internal WriterLease LockProgress()
+    {
+        RequireWritableRoot();
+        return AcquireWriter(exclusiveMaintenance: false, waitForWriter: false);
+    }
+
+    private void RequireWritableRoot()
+    {
         if (inspectionLease is not null) throw new InvalidOperationException("This authority store was opened for read-only inspection.");
         if (!CheckRoot()) throw new AuthorityRootException(AuthorityRootKind.Damaged, "Authority HEAD is missing.");
-        return AcquireWriter(exclusiveMaintenance);
     }
 
     internal AuthorityCommitResult Commit(Func<AuthoritySnapshot, CommitPlan> makePlan)
@@ -452,18 +463,20 @@ internal sealed partial class AuthorityStore
     private static bool IsReadError(Exception error) =>
         error is IOException or UnauthorizedAccessException or InvalidDataException or JsonException or InvalidOperationException or OverflowException;
 
-    private WriterLease AcquireWriter(bool exclusiveMaintenance)
+    private WriterLease AcquireWriter(bool exclusiveMaintenance, bool waitForWriter = true)
     {
         BeforeAcquireWriter.Value?.Invoke();
         var maintenance = DistributionMaintenanceLease.Acquire(Root, exclusiveMaintenance, create: false);
-        try { return new(this, OpenWriterFile(Root), maintenance); }
+        try { return new(this, OpenWriterFile(Root, waitForWriter), maintenance); }
         catch { maintenance.Dispose(); throw; }
     }
 
-    private static FileStream OpenWriterFile(string root)
+    private static FileStream OpenWriterFile(string root, bool waitForWriter = true)
     {
         var path = SafePath.ResolveInsideChecked(root, ".writer.lock");
         using var wait = DistributionPerformance.MeasurePhase("authority-writer-wait");
+        if (!waitForWriter) return new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
         var started = Stopwatch.GetTimestamp();
         while (true)
         {

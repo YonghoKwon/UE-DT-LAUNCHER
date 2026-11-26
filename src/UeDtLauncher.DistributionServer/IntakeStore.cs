@@ -97,7 +97,7 @@ public sealed partial class IntakeStore
             var snapshot = Path.Combine(Root, "processing", id + "-" + Guid.NewGuid().ToString("N"));
             work = new IntakeWorkClaim(this, job, "validating", snapshot, snapshot, "waiting", "validating");
             job = Get(id);
-            var progress = Progress(id, observer);
+            var progress = Progress(id, work.ClaimId, observer);
             var estimate = IntakeDiskSpace.Estimate(metadata.PackageSize);
             progress.Report(new("snapshot-copy", 0, metadata.PackageSize, estimate));
             IntakeDiskSpace.Require(Root, estimate, availableBytes);
