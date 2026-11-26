@@ -1,3 +1,5 @@
+using System.IO.Pipes;
+using System.Net.Sockets;
 using UeDtLauncher.Gui;
 using Xunit;
 namespace UeDtLauncher.Tests;
@@ -86,6 +88,64 @@ public class LauncherUiOperationsTests
             model.ApplyProjectStatus(new(true,"1","1",false,0,0,false));
             Assert.False(model.ApplyRuntimeObservation(new(state,"tracked","tracked")));
             Assert.Equal(PrimaryActionKind.Disabled,model.PrimaryAction);
+        }
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task PreviousRuntimeUsesOnlyAuthorizedCatalogAndExactRuntimeRequest(bool allowed)
+    {
+        var windows = OperatingSystem.IsWindows();
+        var endpoint = windows ? "uedt-previous-" + Guid.NewGuid().ToString("N") :
+            Path.Combine(Path.GetTempPath(), "up-" + Guid.NewGuid().ToString("N"));
+        var selection = new ReleaseSelection("demo", "prod", "stable", windows ? "windows-x64" : "linux-x64", "2.0.0");
+        var context = new LauncherUiOperationContext(true, "demo", "prod", "stable", selection.Platform, "exact", selection.Version, selection);
+        var config = new LauncherConfig { DeploymentMode = "managed-agent", ProjectId = "demo", ClientProfile = "general" };
+        var catalog = new DistributionCatalog
+        {
+            SelectionPolicy = CatalogRecommendation.ExplicitPolicy,
+            Projects = [new() { ProjectId = "demo",
+                Releases = [new() { Platform = selection.Platform, Version = allowed ? selection.Version : "1.0.0" }] }]
+        };
+        var commands = new List<string>();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var listener = windows ? null : new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+        if (listener is not null) { listener.Bind(new UnixDomainSocketEndPoint(endpoint)); listener.Listen(2); }
+
+        async Task ServeAsync()
+        {
+            for (var i = 0; i < (allowed ? 2 : 1); i++)
+            {
+                await using Stream stream = windows ?
+                    new NamedPipeServerStream(endpoint, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous) :
+                    new NetworkStream(await listener!.AcceptAsync(deadline.Token), ownsSocket: true);
+                if (stream is NamedPipeServerStream pipe) await pipe.WaitForConnectionAsync(deadline.Token);
+                var request = await ManagedAgentFrameCodec.ReadAsync<ManagedAgentRequest>(stream, deadline.Token);
+                commands.Add(request.Command);
+                if (i == 1) Assert.Equal(selection, request.Selection);
+                await ManagedAgentFrameCodec.WriteAsync(stream, new ManagedAgentResponse
+                {
+                    CorrelationId = request.CorrelationId, Success = true, AgentCapabilities = [ManagedAgentProtocol.RuntimeCapability],
+                    Catalog = i == 0 ? catalog : null,
+                    Runtime = i == 1 ? new(RuntimeState.Running, "fixture", "fixture") : null
+                }, deadline.Token);
+            }
+        }
+
+        var server = ServeAsync();
+        try
+        {
+            var read = LauncherUiOperations.ReadAuthorizedRuntimeAsync(context, config, deadline.Token, new ManagedAgentClient(endpoint));
+            if (allowed) Assert.Equal(RuntimeState.Running, (await read)?.State);
+            else await Assert.ThrowsAsync<InvalidOperationException>(() => read);
+            await server;
+            Assert.Equal(allowed ? new[] { "catalog", "runtime-inspect" } : new[] { "catalog" }, commands);
+        }
+        finally
+        {
+            deadline.Cancel();
+            if (!windows) File.Delete(endpoint);
         }
     }
 }
