@@ -30,7 +30,9 @@
 ```mermaid
 flowchart LR
     buildPc["개발자 PC"] -->|"ZIP와 외부 JSON"| distribution["Linux 배포 서버"]
+    pcAdmin["PC 관리자"] -->|"공개키 등록 묶음"| operator
     operator["서버 관리자"] -->|"승인과 PC 권한"| distribution
+    pcAdmin -->|"관리형 운영 설정 배치"| updater
     distribution -->|"허용 목록과 파일"| updater["PC 업데이트 서비스"]
     launcher["일반 또는 개발자 런처"] -->|"설치와 복구 요청"| updater
     updater -->|"검증 후 설치"| installed["버전별 DT 설치본"]
@@ -62,8 +64,8 @@ flowchart LR
 |---|---:|---|---|---|
 | 처음 한 번 | A1 | 개발 담당 / 소스 저장소 | 런처·Agent·배포 서버 `dotnet publish` | OS별 실행 폴더 준비 |
 | 처음 한 번 | A2 | 관리자 / Linux 서버 | 서버 설정·통신/인증 모드·배포 서명키·서비스 구성 | 인증 없는 목록 요청은 401, 서비스 실행 중 |
-| PC 추가 시 | A3 | 관리자 / 서버와 PC | PC IP·grant 등록, 공개키 등록(기존 HTTPS는 토큰) | 그 PC의 접근 범위 확정 |
-| PC 추가 시 | A4 | 관리자 / 클라이언트 PC | Agent 운영 설정 + GUI 표시 설정 | status 성공, 게시·허용 릴리스가 있으면 check 성공 |
+| PC 추가 시 | A3 | 관리자 / 서버와 PC | 사내 HTTP `enroll prepare` → 서버 `client-enroll`; 기존 HTTPS는 토큰 | 공개키, PC IP와 허용 트랙 등록 |
+| PC 추가 시 | A4 | 관리자 / 클라이언트 PC | `enroll finish`로 운영 설정, 관리형은 별도 GUI 표시 설정과 서비스 반영 | Portable 온라인 진단, 관리형은 반영 후 진단 |
 | 버전마다 | B1 | 개발자 / Unreal·작업 PC | Windows/Linux 각각 패키징·ZIP | 완성된 ZIP |
 | 버전마다 | B2 | 개발자 / Windows PowerShell·Linux 터미널 | 쉬운 방법 `upload --zip …`가 ZIP 검사·외부 JSON 생성. 직접 실행 `release-metadata` | 새 작업 폴더의 payload.zip + release.json |
 | 버전마다 | B3 | 개발자 / 같은 PC | 같은 `upload`가 새 incoming 폴더 생성 → 두 전송 → 두 이름 변경 → 확인. 전송 뒤 `upload status --upload-id <ID> --wait` | 최종 ZIP + JSON, 상태 조회에 승인 대기 또는 이후 상태 |
@@ -136,6 +138,14 @@ curl --silent --output /dev/null --write-out '%{http_code}\n' https://updates.ex
 
 ### A3. PC 권한·토큰 등록 — 관리자
 
+| 담당 / 위치 | 입력과 명령 | 정상 결과 |
+|---|---|---|
+| PC 관리자 / Windows PowerShell·Linux 터미널 | `enroll prepare --name <이름> --key-id <ID> --client <PC ID> --output <폴더>` | PC에 기존 보호 키 유지 또는 새 키 저장, 공개키 묶음 전달 |
+| 배포 관리자 / Linux 터미널 | `client-enroll --from /dt/keys/enroll/ --grant <프로젝트:환경:채널> --config /dt/config/server.json --dry-run` 검토 후 `--dry-run`을 빼고 적용 | 새 키와 새 PC 권한 등록, 기존 PC 정책 유지 |
+| PC 관리자 / Windows PowerShell·Linux 터미널 | A4의 `enroll finish`로 공개키 사본과 운영 설정 준비 | `<output>.doctor.json` 저장 |
+
+명령 전체와 직접 지정하는 IP/CIDR 형식은 [사내 HTTP 일괄 등록](intranet-auth.md#pc-여러-대-일괄-등록)을 참고합니다. 기존 HTTPS/Bearer는 아래 토큰 방법을 사용합니다.
+
 서버 정책에 PC 식별자·실제 IP/CIDR·프로젝트/환경/채널·필요 시 버전을 기록합니다. 다음은 **예시 정책의 일부**입니다.
 
 ```json
@@ -173,6 +183,8 @@ sudo -u uedt-distribution /dt/publish/server-linux-x64/UeDtLauncher.Distribution
 분실/교체 시 서버의 `token-revoke office-pc-01`은 그 PC의 기존 토큰을 모두 폐기합니다. 이후 새로 `token-issue`하고 PC 저장소를 갱신합니다. 새 토큰 발급만으로 이전 토큰이 자동 폐기되지는 않습니다.
 
 ### A4. 런처와 Agent 설정 — PC 관리자
+
+일괄 등록 PC는 `enroll finish --server-url <origin> --project-id <ID> --platform <RID> --credential-name <이름> --signing-key-id <ID> --public-key <PEM> --output <설정 경로>`를 사용합니다. 관리형은 관리자가 시스템 Agent 설정 폴더에 보호된 `release-public.pem`을 먼저 배치하고 그 절대 경로를 지정합니다. 보호 설정을 서비스에 반영한 뒤 선택 전용 설정으로 `doctor --online`을 실행합니다. Portable은 `--storage portable`로 설정을 생성하고 같은 명령에서 온라인 진단을 저장합니다.
 
 | 파일/설정 | 정할 것 | 누가 관리 |
 |---|---|---|

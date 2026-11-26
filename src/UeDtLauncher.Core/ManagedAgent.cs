@@ -211,6 +211,11 @@ public sealed record ManagedLauncherPathLayout(
             return UnderRoot(root, root);
         }
 
+        return SystemDefault();
+    }
+
+    internal static ManagedLauncherPathLayout SystemDefault()
+    {
         if (OperatingSystem.IsWindows())
         {
             var dataRoot = Path.Combine(
