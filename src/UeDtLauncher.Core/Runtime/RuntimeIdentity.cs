@@ -11,6 +11,8 @@ public sealed record RuntimeIdentity(int Pid, string CreationId, string Executab
 
 public static class RuntimeIdentities
 {
+    private const long LinuxX64Fstat = 5;
+
     public static RuntimeIdentity Current() => Read(Environment.ProcessId);
     public static string DirectoryOwner(string path)
     {
@@ -22,7 +24,8 @@ public static class RuntimeIdentities
         var fd = open(directory.FullName, 0x10000 | 0x20000 | 0x80000);
         if (fd < 0) throw new UnauthorizedAccessException("Installation owner unavailable.");
         var buffer = Marshal.AllocHGlobal(256);
-        try { if (fstat(fd, buffer) != 0) throw new IOException("Installation owner unavailable."); return unchecked((uint)Marshal.ReadInt32(buffer,28)).ToString(); }
+        // SYS_fstat keeps the Linux x64 stat layout without glibc's public fstat symbol.
+        try { if (FstatSyscall(LinuxX64Fstat, fd, buffer) != 0) throw new IOException("Installation owner unavailable."); return unchecked((uint)Marshal.ReadInt32(buffer,28)).ToString(); }
         finally { Marshal.FreeHGlobal(buffer); _ = close(fd); }
     }
     public static RuntimeIdentity Read(int pid)
@@ -87,6 +90,7 @@ public static class RuntimeIdentities
     [DllImport("advapi32.dll", SetLastError=true)] [return:MarshalAs(UnmanagedType.Bool)] private static extern bool OpenProcessToken(SafeFileHandle process, uint access, out SafeAccessTokenHandle token);
     [DllImport("advapi32.dll", SetLastError=true)] [return:MarshalAs(UnmanagedType.Bool)] private static extern bool GetTokenInformation(SafeAccessTokenHandle token, int info, IntPtr buffer, int length, out int returned);
     [DllImport("libc", SetLastError=true)] private static extern int open(string path, int flags);
-    [DllImport("libc", SetLastError=true)] private static extern int fstat(int fd, IntPtr buffer);
+    [DllImport("libc", EntryPoint = "syscall", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+    private static extern long FstatSyscall(long number, long fd, IntPtr buffer);
     [DllImport("libc")] private static extern int close(int fd);
 }
