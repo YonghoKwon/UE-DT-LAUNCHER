@@ -53,7 +53,7 @@ public sealed record UploadProfile(string? Server = null, string? RemoteIncoming
     }
 
     public static Task InitializeAsync(string output, bool force) => JsonFiles.WriteAsync(output,
-        new UploadProfile("upload-user@server.example", "/srv/ue-dt/incoming", 22), force);
+        new UploadProfile("upload-user@server.example", "/dt/store/incoming", 22), force);
 }
 
 public interface IUploadProcessRunner

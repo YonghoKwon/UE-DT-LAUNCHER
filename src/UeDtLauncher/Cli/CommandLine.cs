@@ -88,11 +88,11 @@ public static partial class Program
         output.WriteLine();
         output.WriteLine("Current commands (distribution server mode):");
         output.WriteLine("  upload init --output upload.profile.json [--force]");
-        output.WriteLine("  upload check --profile upload.profile.json (또는 --server user@host --remote-incoming /absolute/incoming)");
-        output.WriteLine("  upload status --upload-id <ID> [--profile upload.profile.json] [--remote-status /absolute/upload-status] [--wait] [--timeout <초>] [--interval <초>] [--format text|json]");
+        output.WriteLine("  upload check --profile upload.profile.json (또는 --server user@host --remote-incoming /dt/store/incoming)");
+        output.WriteLine("  upload status --upload-id <ID> [--profile upload.profile.json] [--remote-status /dt/store/upload-status] [--wait] [--timeout <초>] [--interval <초>] [--format text|json]");
         output.WriteLine("    읽기 전용 SSH 조회. --wait 기본 제한 1800초, 간격 5초. 종료 0 성공, 1 조회 실패, 2 입력 오류, 3 검사 실패·거절, 4 제한시간 초과.");
         output.WriteLine("    키 인증 전용(BatchMode): 비밀번호를 묻지 않습니다. 최초 호스트 키 등록은 터미널 ssh로 확인하세요.");
-        output.WriteLine("  upload --zip package.zip --project-id id --version version --platform windows-x64|linux-x64 --entry-point app [--profile upload.profile.json] [--server user@host --remote-incoming /absolute/incoming] [--port 22] [--identity-file path] [--upload-id id] [--dry-run]");
+        output.WriteLine("  upload --zip package.zip --project-id id --version version --platform windows-x64|linux-x64 --entry-point app [--profile upload.profile.json] [--server user@host --remote-incoming /dt/store/incoming] [--port 22] [--identity-file path] [--upload-id id] [--dry-run]");
         output.WriteLine("    optional metadata: --payload-root --display-name --environment --channel --executable-paths --notes --hero-path --thumbnail-path (same as release-metadata)");
         output.WriteLine("    기본 출력: 한국어 요약. --format json으로 기존 JSON 출력. 진행 안내는 stderr에 표시합니다.");
         output.WriteLine("    성공 시 이번 실행의 작업 사본을 정리합니다. --keep-work로 보존할 수 있으며 실패 시에는 항상 보존합니다.");
