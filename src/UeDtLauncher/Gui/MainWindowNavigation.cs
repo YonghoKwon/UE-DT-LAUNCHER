@@ -71,7 +71,7 @@ public sealed partial class MainWindow : Window
             if (connected && LauncherUiError.IsSupportTag(displayVersion?.Replace('.', '-')))
                 serviceVersion = displayVersion;
             nextState = response.Success
-                ? LauncherDashboardViewModel.ConnectionLabel(IsDeveloper, ServiceConnectionState.Connected, displayVersion)
+                ? LauncherDashboardViewModel.ConnectionLabel(IsDeveloper, ServiceConnectionState.Connected)
                 : LauncherDashboardViewModel.ConnectionLabel(IsDeveloper, ServiceConnectionState.Error);
         }
         catch
@@ -82,11 +82,13 @@ public sealed partial class MainWindow : Window
             _agentStatusRefreshing = false;
         }
         if (!ReferenceEquals(checkedConfig, _config)) return false;
+        var versionChanged = !string.Equals(_serviceVersion, serviceVersion, StringComparison.Ordinal);
         _serviceVersion = serviceVersion;
         _lastServiceCheck = DateTimeOffset.Now;
         var stateChanged = !string.Equals(_agentState, nextState, StringComparison.Ordinal);
         _agentState = nextState;
         _settingsConnectionChanged?.Invoke();
+        if (versionChanged) RefreshDeveloperServiceVersion();
         if (stateChanged) await Dispatcher.UIThread.InvokeAsync(() => { if (_serviceLabel is not null) _serviceLabel.Text = nextState; });
         return connected;
     }
