@@ -139,6 +139,8 @@ class Client:
         row = {"kind": kind, "status": None, "bytes": 0, "startUnixNs": time.time_ns(),
                "retry": retry, "range": headers.get("Range"), "error": None}
         self.requests.append(row)
+        if kind == "file" or kind.startswith("file-"):
+            self.report.setdefault("firstFileGetUnixNs", row["startUnixNs"])
         start = time.monotonic_ns()
         try:
             self.connection.request("GET", path, headers=headers)
@@ -321,9 +323,9 @@ def download(client, path, size, plan, sink):
     return digest.hexdigest()
 
 
-def barrier(directory, participants, slot, timeout):
-    require(directory.is_dir() and 1 <= slot <= participants <= 1024, "invalid-barrier")
-    markers = [directory / f"{number}.ready" for number in range(1, participants + 1)]
+def barrier(directory, group, participants, slot, timeout):
+    require(directory.is_dir(), "invalid-barrier")
+    markers = [directory / f"{group}.{participants}.{number}.ready" for number in range(1, participants + 1)]
     with markers[slot - 1].open("xb"):
         pass
     deadline = time.monotonic() + timeout
@@ -398,6 +400,12 @@ def run(args):
         require(args.report.resolve() != args.file_out.resolve(), "report-and-sink-conflict")
     with report_file(args.report) as output:
         try:
+            if any(value is not None for value in (args.barrier_dir, args.barrier_group, args.participants, args.slot)):
+                require(args.barrier_dir is not None and args.barrier_group is not None
+                        and re.fullmatch(IDENTIFIER, args.barrier_group)
+                        and args.participants is not None and args.slot is not None
+                        and 1 <= args.slot <= args.participants <= 1024, "invalid-barrier")
+                report["barrier"] = {"groupId": args.barrier_group, "participants": args.participants, "slot": args.slot}
             require(all(re.fullmatch(IDENTIFIER, value) for value in (args.key_id, args.signing_key_id))
                     and all(re.fullmatch(RELEASE_SEGMENT, value) for value in
                             (args.project, args.environment, args.channel, args.version, args.platform)),
@@ -413,7 +421,8 @@ def run(args):
             report.update(expectedSha256=expected, expectedBytes=size)
             plan = transfer_plan(size, args.offset, args.abort_after_bytes)
             if args.barrier_dir is not None:
-                report["barrierStartUnixNs"] = barrier(args.barrier_dir, args.participants, args.slot, args.timeout)
+                report["barrierStartUnixNs"] = barrier(
+                    args.barrier_dir, args.barrier_group, args.participants, args.slot, args.timeout)
             report["transferStartUnixNs"] = time.time_ns()
             transfer_start = time.monotonic_ns()
             with args.file_out.open("xb") if args.file_out is not None else nullcontext() as sink:
@@ -435,18 +444,44 @@ def run(args):
 
 
 def barrier_summary(args):
-    require(len(set(path.resolve() for path in args.reports)) == len(args.reports),
-            "duplicate-barrier-report")
-    reports = [json.loads(path.read_text(encoding="utf-8")) for path in args.reports]
-    summary = {"participants": len(reports), "failedParticipants": sum(row["status"] != "ok" for row in reports)}
-    for field, label in (("barrierStartUnixNs", "barrierSpreadMs"), ("transferStartUnixNs", "transferSpreadMs")):
-        timestamps = [row.get(field) for row in reports]
-        summary[label] = ((max(timestamps) - min(timestamps)) / 1e6
-                          if all(type(value) is int for value in timestamps) else None)
+    require(re.fullmatch(IDENTIFIER, args.barrier_group) and 1 <= args.participants <= 1024, "invalid-barrier")
+    slots = {number: [] for number in range(1, args.participants + 1)}
+    invalid = []
+    for index, path in enumerate(args.reports, 1):
+        try:
+            report = json.loads(path.read_text(encoding="utf-8"))
+            identity = report["barrier"]
+            slot = identity["slot"]
+            if (identity["groupId"] != args.barrier_group or type(identity["participants"]) is not int
+                    or identity["participants"] != args.participants or type(slot) is not int or slot not in slots):
+                raise ValueError()
+        except (OSError, ValueError, KeyError, TypeError):
+            invalid.append(index)
+            continue
+        slots[slot].append(report)
+
+    missing, duplicate, failed, starts = [], [], [], []
+    for slot, reports in slots.items():
+        if not reports:
+            missing.append(slot)
+        elif len(reports) > 1:
+            duplicate.append(slot)
+        else:
+            report = reports[0]
+            start = report.get("firstFileGetUnixNs")
+            if type(start) is int and start > 0:
+                starts.append(start)
+            if report.get("status") != "ok" or type(start) is not int or start <= 0:
+                failed.append(slot)
+    failed_count = len(missing) + len(duplicate) + len(failed)
+    summary = {"groupId": args.barrier_group, "participants": args.participants, "failedParticipants": failed_count,
+               "missingSlots": missing, "duplicateSlots": duplicate, "failedSlots": failed, "invalidReports": invalid,
+               "firstFileGetStartsObserved": len(starts),
+               "barrierSpreadMs": (max(starts) - min(starts)) / 1e6 if len(starts) == args.participants else None}
     with report_file(args.report) as output:
         json.dump(summary, output, indent=2)
         output.write("\n")
-    return int(bool(summary["failedParticipants"]) or summary["barrierSpreadMs"] is None)
+    return int(bool(failed_count or invalid))
 
 
 def main():
@@ -471,12 +506,15 @@ def main():
     ranges.add_argument("--offset", type=int, help="Request bytes=N- after fetching and hashing any preceding bytes")
     ranges.add_argument("--abort-after-bytes", type=int, help="Close initial response after N bytes and resume with bytes=N-")
     driver.add_argument("--barrier-dir", type=Path, help="Fresh shared directory, empty before the group launches")
-    driver.add_argument("--participants", type=int, default=1)
-    driver.add_argument("--slot", type=int, default=1, help="Unique 1-based slot for this client")
+    driver.add_argument("--barrier-group", help="Shared ID, required with --barrier-dir")
+    driver.add_argument("--participants", type=int, help="Planned group size, required with --barrier-dir")
+    driver.add_argument("--slot", type=int, help="Unique 1-based slot, required with --barrier-dir")
     driver.set_defaults(handler=run)
     summary = commands.add_parser("barrier-summary", help="Combine reports from one group and calculate start spread")
     summary.add_argument("--report", required=True, type=Path)
-    summary.add_argument("reports", nargs="+", type=Path)
+    summary.add_argument("--barrier-group", required=True)
+    summary.add_argument("--participants", required=True, type=int)
+    summary.add_argument("reports", nargs="*", type=Path)
     summary.set_defaults(handler=barrier_summary)
     args = parser.parse_args()
     try:

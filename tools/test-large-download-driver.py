@@ -124,18 +124,66 @@ class DriverTests(unittest.TestCase):
             self.assertEqual(client.origin, origin)
             self.assertEqual(client.signed_origin, authority)
 
-    def test_barrier_summary_preserves_failure_and_reports_observed_spread(self):
+    def summarize(self, reports, planned=3):
         with TemporaryDirectory() as directory:
             root = Path(directory)
-            first, second, report = [root / name for name in ("first.json", "second.json", "combined.json")]
-            first.write_text(json.dumps({"status": "ok", "barrierStartUnixNs": 123, "transferStartUnixNs": 456}))
-            second.write_text(json.dumps({"status": "failed", "barrierStartUnixNs": 2_000_123}))
-            args = SimpleNamespace(report=report, reports=[first, second])
-            self.assertEqual(driver.barrier_summary(args), 1)
-            self.assertEqual(json.loads(report.read_text()), {"participants": 2, "failedParticipants": 1,
-                                                              "barrierSpreadMs": 2.0, "transferSpreadMs": None})
+            paths = []
+            for index, report in enumerate(reports, 1):
+                path = root / f"{index}.json"
+                path.write_text(json.dumps(report), encoding="utf-8")
+                paths.append(path)
+            report = root / "combined.json"
+            args = SimpleNamespace(report=report, reports=paths, barrier_group="group-1", participants=planned)
+            code = driver.barrier_summary(args)
             with self.assertRaisesRegex(driver.DriverError, "^report-already-exists$"):
                 driver.barrier_summary(args)
+            return code, json.loads(report.read_text(encoding="utf-8"))
+
+    def barrier_report(self, slot, *, group="group-1", planned=3, status="ok"):
+        return {"barrier": {"groupId": group, "participants": planned, "slot": slot},
+                "status": status, "barrierStartUnixNs": 100, "transferStartUnixNs": 200,
+                "firstFileGetUnixNs": 100 + slot * 1_000_000}
+
+    def test_barrier_summary_uses_first_file_get_for_spread(self):
+        code, result = self.summarize([self.barrier_report(slot) for slot in (3, 1, 2)])
+        self.assertEqual(code, 0)
+        self.assertEqual(result["participants"], 3)
+        self.assertEqual(result["firstFileGetStartsObserved"], 3)
+        self.assertEqual(result["barrierSpreadMs"], 2.0)
+        self.assertEqual(result["failedParticipants"], 0)
+
+    def test_barrier_summary_counts_missing_reports_from_planned_population(self):
+        for reports, missing in (([self.barrier_report(1)], [2, 3]), ([], [1, 2, 3])):
+            with self.subTest(missing=missing):
+                code, result = self.summarize(reports)
+                self.assertEqual(code, 1)
+                self.assertEqual(result["missingSlots"], missing)
+                self.assertEqual(result["failedParticipants"], len(missing))
+                self.assertIsNone(result["barrierSpreadMs"])
+
+    def test_barrier_summary_rejects_duplicate_slot(self):
+        code, result = self.summarize([self.barrier_report(slot) for slot in (1, 2, 2, 3)])
+        self.assertEqual(code, 1)
+        self.assertEqual(result["duplicateSlots"], [2])
+        self.assertEqual(result["failedParticipants"], 1)
+        self.assertIsNone(result["barrierSpreadMs"])
+
+    def test_barrier_summary_rejects_other_group_and_wrong_planned_count(self):
+        for foreign in (self.barrier_report(2, group="group-2"), self.barrier_report(2, planned=2)):
+            with self.subTest(foreign=foreign):
+                code, result = self.summarize([self.barrier_report(1), foreign, self.barrier_report(3)])
+                self.assertEqual(code, 1)
+                self.assertEqual(result["invalidReports"], [2])
+                self.assertEqual(result["missingSlots"], [2])
+                self.assertEqual(result["failedParticipants"], 1)
+
+    def test_barrier_summary_preserves_failed_slot_that_sent_a_file_get(self):
+        code, result = self.summarize([self.barrier_report(1), self.barrier_report(2, status="failed"),
+                                       self.barrier_report(3)])
+        self.assertEqual(code, 1)
+        self.assertEqual(result["failedSlots"], [2])
+        self.assertEqual(result["failedParticipants"], 1)
+        self.assertEqual(result["barrierSpreadMs"], 2.0)
 
 
 if __name__ == "__main__":
