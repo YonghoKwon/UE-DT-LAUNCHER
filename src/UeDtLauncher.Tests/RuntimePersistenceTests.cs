@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text.Json;
 using Xunit;
 namespace UeDtLauncher.Tests;
@@ -26,7 +27,7 @@ public sealed class RuntimePersistenceTests : IDisposable
         RuntimeStore.Attach(config, ticket, actor, actor.Executable);
         RuntimeStore.Report(config, ticket, actor, completed: false);
 
-        using var previous = File.Open(RuntimeStore.RecordPath(config), FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+        using var previous = Assert.IsAssignableFrom<FileStream>(RuntimeStatePersistence.OpenSnapshot(RuntimeStore.RecordPath(config)));
         RuntimeStore.Report(config, ticket, actor, completed: true);
 
         using var oldSnapshot = JsonDocument.Parse(previous);
@@ -44,12 +45,75 @@ public sealed class RuntimePersistenceTests : IDisposable
         RuntimeServiceState.RequireSelection(config, "1");
         RuntimeServiceState.Starting(config, backup: null);
 
-        using var previous = File.Open(RuntimeServiceState.SnapshotPath(config), FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+        using var previous = Assert.IsAssignableFrom<FileStream>(RuntimeStatePersistence.OpenSnapshot(RuntimeServiceState.SnapshotPath(config)));
         RuntimeServiceState.Healthy(config);
 
         using var oldSnapshot = JsonDocument.Parse(previous);
         Assert.Equal((int)ServiceRuntimePhase.StartupHealthPending, oldSnapshot.RootElement.GetProperty("phase").GetInt32());
         Assert.Equal(ServiceRuntimePhase.Ready, RuntimeServiceState.Read(config)!.Phase);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(50)]
+    [InlineData(87)]
+    [InlineData(120)]
+    public void UnsupportedWindowsReplacePreservesRunningSnapshot(int nativeError)
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var config = Config();
+        var actor = RuntimeIdentities.Current();
+        var ticket = RuntimeStore.Begin(config, actor, actor.Executable);
+        RuntimeStore.Attach(config, ticket, actor, actor.Executable);
+        RuntimeStore.Report(config, ticket, actor, completed: false);
+        var path = RuntimeStore.RecordPath(config);
+        var previous = File.ReadAllBytes(path);
+
+        RuntimeStatePersistence.WindowsRenameError.Value = nativeError;
+        try
+        {
+            // No reader is held here. A fallback to File.Move could succeed and publish completion.
+            var error = Assert.Throws<IOException>(() => RuntimeStore.Report(config, ticket, actor, completed: true));
+            Assert.Equal(nativeError, Assert.IsType<Win32Exception>(error.InnerException).NativeErrorCode);
+        }
+        finally { RuntimeStatePersistence.WindowsRenameError.Value = null; }
+
+        Assert.Equal(previous, File.ReadAllBytes(path));
+        var retained = RuntimeStore.Observe(config);
+        Assert.Equal(RuntimeState.Running, retained.State);
+        Assert.Equal(ticket.AttemptId, retained.AttemptId);
+        Assert.Empty(Directory.GetFiles(Path.GetDirectoryName(path)!, "*.tmp"));
+    }
+
+    [Fact]
+    public void LinuxDirectoryFlushFailureDoesNotAcknowledgePublication()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var config = Config();
+        var actor = RuntimeIdentities.Current();
+        var ticket = RuntimeStore.Begin(config, actor, actor.Executable);
+        RuntimeStore.Attach(config, ticket, actor, actor.Executable);
+        RuntimeStore.Report(config, ticket, actor, completed: false);
+        var path = RuntimeStore.RecordPath(config);
+        var boundaries = new List<string>();
+        RuntimeStatePersistence.Boundary.Value = (target, point) =>
+        {
+            if (target != path) return;
+            boundaries.Add(point);
+            if (point == "directory-flush") throw new IOException("Directory flush failed.");
+        };
+        try
+        {
+            var error = Assert.Throws<IOException>(() => RuntimeStore.Report(config, ticket, actor, completed: true));
+            Assert.Equal("Directory flush failed.", error.Message);
+        }
+        finally { RuntimeStatePersistence.Boundary.Value = null; }
+
+        Assert.Equal(new[] { "write", "flush", "replace", "directory-flush" }, boundaries);
+        // The rename is visible even though the caller received no durable completion acknowledgement.
+        var visible = RuntimeStore.Observe(config);
+        Assert.Equal(RuntimeState.Quiescent, visible.State);
+        Assert.Equal(ticket.AttemptId, visible.AttemptId);
     }
 
     [Theory][MemberData(nameof(Failures))]
