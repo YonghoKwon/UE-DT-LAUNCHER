@@ -27,7 +27,7 @@ import threading
 import time
 from urllib.parse import quote, urlsplit
 from benchmark_intranet_auth import run_load
-from metric_contract import sanitize
+from metric_contract import read_shutdown_aggregate
 from fixture_contract import verify, claim, inside
 from authority_fixture import read_authority_catalog
 from evidence_contract import provenance, atomic
@@ -286,19 +286,7 @@ def stop_server(server):
 
 
 def log_metrics(path):
-    summary = None
-    with path.open("r", encoding="utf-8", errors="replace") as log:
-        for line in log:
-            marker = "DistributionPerformance "
-            if marker in line:
-                try:
-                    value = json.loads(line.split(marker, 1)[1])
-                    # The aggregate contract contains numeric counters only, never identities or paths.
-                    accepted=sanitize(value)
-                    if accepted is not None:summary=accepted
-                except ValueError:
-                    pass
-    return {"gracefulShutdownAggregate": summary}
+    return {"gracefulShutdownAggregate": read_shutdown_aggregate(path)}
 
 
 def markdown(report):

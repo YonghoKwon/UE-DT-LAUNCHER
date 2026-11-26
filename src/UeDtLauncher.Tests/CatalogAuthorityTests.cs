@@ -197,6 +197,33 @@ public sealed class CatalogAuthorityTests
     }
 
     [Fact]
+    public void TypedCatalogCacheUsesVerifiedSourceByteBudget()
+    {
+        using var fixture = new CatalogFixture();
+        Assert.Empty(fixture.Publisher.List());
+        Assert.InRange(fixture.Intake.Catalog.CachedCatalogSourceBytes, 1, AuthorityAreaCache.ByteLimit);
+        var snapshot = fixture.Authority.ReadSnapshot();
+        var path = fixture.Authority.DataPath(snapshot.Head.Files["catalog"]);
+        var source = File.ReadAllBytes(path);
+        foreach (var length in new[] { AuthorityAreaCache.ByteLimit, AuthorityAreaCache.ByteLimit + 1 })
+        {
+            // JSON framing whitespace counts towards the source file budget.
+            var padded = new byte[length];
+            source.CopyTo(padded, 0);
+            padded.AsSpan(source.Length).Fill((byte)' ');
+            File.WriteAllBytes(path, padded);
+            var digests = new Dictionary<string, string>(snapshot.Head.Sha256)
+            {
+                ["catalog"] = AuthorityDocuments.Hash(padded)
+            };
+            var head = AuthorityDocuments.Seal(snapshot.Head with { Sha256 = digests });
+            File.WriteAllBytes(fixture.Authority.DataPath("HEAD"), AuthorityDocuments.Encode(head));
+            Assert.Empty(fixture.Publisher.List());
+            Assert.Equal(length == AuthorityAreaCache.ByteLimit ? length : 0, fixture.Intake.Catalog.CachedCatalogSourceBytes);
+        }
+    }
+
+    [Fact]
     public async Task ProcessesCompeteForRevisionAndSameTargetDoesNotChangeHead()
     {
         using var fixture = new CatalogFixture();

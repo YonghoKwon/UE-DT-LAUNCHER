@@ -6,7 +6,7 @@ import json
 import statistics
 from pathlib import Path
 from evidence_contract import atomic
-from metric_contract import sanitize
+from metric_contract import read_shutdown_aggregate, sanitize
 
 PROFILES = ('small', 'large', 'mixed')
 SCENARIOS = ('install', 'unchanged', 'next-version', 'repair')
@@ -33,6 +33,13 @@ def summarize(report):
             'authorityAggregate':sanitize(metrics)}
 
 
+def load_report(path):
+    report = json.loads(path.read_text(encoding='utf-8-sig'))
+    if report.get('complete') is True and 'serverMetrics' not in report:
+        report['serverMetrics'] = {'gracefulShutdownAggregate': read_shutdown_aggregate(path.with_name('server.log'))}
+    return report
+
+
 def compare(baseline, candidate):
     rows = []
     for profile in PROFILES:
@@ -49,7 +56,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('baseline','preoptimization','candidate','output'):parser.add_argument('--'+name,type=Path,required=True)
     args=parser.parse_args()
-    baseline, before, candidate = [summarize(json.loads(path.read_text(encoding='utf-8'))) for path in (args.baseline,args.preoptimization,args.candidate)]
+    baseline, before, candidate = [summarize(load_report(path)) for path in (args.baseline,args.preoptimization,args.candidate)]
     original, optimization = compare(baseline,candidate),compare(before,candidate)
     record={'schemaVersion':1,'scope':'Windows-synthetic-HTTP-signature-private-proxy-5ms',
         'warmupRuns':1,'measuredRuns':3,'cache':'fresh install/state; warm OS cache; order/ambient-load uncontrolled',

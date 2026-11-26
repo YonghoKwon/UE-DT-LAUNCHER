@@ -14,9 +14,14 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
     internal static readonly AsyncLocal<Action<AuthorityBoundary>?> PublicationBoundary = new();
     private readonly AuthorityParsedCache<ReleaseSidecar> metadataCache = new(SidecarPackageValidator.Parse, entryLimit: 512);
     private readonly object catalogCacheGate = new();
-    private ((string Path, string Digest) Key, CatalogDocument Document)? cachedCatalog;
+    private ((string Path, string Digest) Key, CatalogDocument Document, int SourceBytes)? cachedCatalog;
     private readonly object httpSetGate = new();
     private HttpCatalogSet? httpSet;
+
+    internal int CachedCatalogSourceBytes
+    {
+        get { lock (catalogCacheGate) return cachedCatalog?.SourceBytes ?? 0; }
+    }
 
     internal static PromotionMigration InspectExisting(string root)
     {
@@ -231,7 +236,8 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
             var catalog = snapshot.Get(AuthorityArea.Catalog).Deserialize<CatalogDocument>(AuthorityDocuments.Json)
                 ?? throw new InvalidDataException("Catalog authority is missing.");
             Validate(catalog);
-            cachedCatalog = (key, catalog);
+            cachedCatalog = snapshot.CatalogSourceBytes <= AuthorityAreaCache.ByteLimit
+                ? (key, catalog, snapshot.CatalogSourceBytes) : null;
             return catalog;
         }
     }

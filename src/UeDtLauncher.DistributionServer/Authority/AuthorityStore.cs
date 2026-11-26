@@ -159,7 +159,9 @@ internal sealed class AuthorityStore
             var nextAreas = AuthorityDocuments.Areas.ToDictionary(area => area,
                 area => changes.TryGetValue(area, out var updated) ? updated : snapshot.Get(area));
             var next = Publish(DirectoryPath, snapshot.Head, generation, updates, batch);
-            var nextSnapshot = new AuthoritySnapshot(this, next, nextAreas);
+            var catalogSourceBytes = updates.TryGetValue(AuthorityArea.Catalog, out var catalogBytes)
+                ? catalogBytes.Length : snapshot.CatalogSourceBytes;
+            var nextSnapshot = new AuthoritySnapshot(this, next, nextAreas, catalogSourceBytes);
             return new(generation, true, RunMaintenance(nextSnapshot));
         });
 
@@ -220,23 +222,28 @@ internal sealed class AuthorityStore
     {
         var head = ReadHead();
         AfterReadHead.Value?.Invoke(head.Generation);
+        var catalogSourceBytes = 0;
         if (request)
         {
             var requested = new Dictionary<AuthorityArea, JsonElement>
             {
-                [AuthorityArea.Auth] = ReadRequestArea(head, AuthorityArea.Auth, ref requestAuth, verifyBytes: false)
+                [AuthorityArea.Auth] = ReadRequestArea(head, AuthorityArea.Auth, ref requestAuth, verifyBytes: false, out _)
             };
             if (includeCatalog)
-                requested.Add(AuthorityArea.Catalog, ReadRequestArea(head, AuthorityArea.Catalog, ref requestCatalog, verifyCatalogBytes));
+                requested.Add(AuthorityArea.Catalog,
+                    ReadRequestArea(head, AuthorityArea.Catalog, ref requestCatalog, verifyCatalogBytes, out catalogSourceBytes));
             ValidateRequestGeneration(head, includeCatalog);
-            return new(this, head, requested);
+            return new(this, head, requested, catalogSourceBytes);
         }
 
         var areas = new Dictionary<AuthorityArea, JsonElement>();
         foreach (var area in AuthorityDocuments.Areas)
-            areas.Add(area, ReadArea(head, area));
+        {
+            areas.Add(area, ReadArea(head, area, out var size));
+            if (area == AuthorityArea.Catalog) catalogSourceBytes = size;
+        }
         VerifyCurrentEvents(head);
-        return new(this, head, areas);
+        return new(this, head, areas, catalogSourceBytes);
     }
 
     private AuthorityHead ReadHead()
@@ -269,7 +276,7 @@ internal sealed class AuthorityStore
         return cache.Parse(relative, digest, content);
     }
 
-    private JsonElement ReadRequestArea(AuthorityHead head, AuthorityArea area, ref RequestArea? slot, bool verifyBytes)
+    private JsonElement ReadRequestArea(AuthorityHead head, AuthorityArea area, ref RequestArea? slot, bool verifyBytes, out int size)
     {
         var name = AuthorityDocuments.Name(area);
         var key = (head.Files[name], head.Sha256[name]);
@@ -280,16 +287,17 @@ internal sealed class AuthorityStore
                 // Only the authenticated HEAD reference identifies the verified content.
                 // Continue checking that the selected file exists and its path is regular.
                 _ = ResolveCommittedFile(key.Item1, requireFile: true);
+                size = current.SourceBytes;
                 return current.Document;
             }
-            var document = ReadArea(head, area, out var size);
-            Volatile.Write(ref slot, size <= AuthorityAreaCache.ByteLimit ? new RequestArea(key, document) : null);
+            var document = ReadArea(head, area, out size);
+            Volatile.Write(ref slot, size <= AuthorityAreaCache.ByteLimit ? new RequestArea(key, document, size) : null);
             return document;
         }
         catch { Volatile.Write(ref slot, null); throw; }
     }
 
-    private sealed record RequestArea((string Path, string Digest) Key, JsonElement Document);
+    private sealed record RequestArea((string Path, string Digest) Key, JsonElement Document, int SourceBytes);
 
     private void ValidateRequestGeneration(AuthorityHead head, bool catalogRead)
     {

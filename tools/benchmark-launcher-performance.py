@@ -16,6 +16,7 @@ import queue
 from pathlib import Path
 import random
 import shutil
+import signal
 import socket
 import statistics
 import subprocess
@@ -30,6 +31,7 @@ from promotion_fixture_support import promote
 from benchmark_intranet_auth import run_load
 from fixture_contract import claim, seal
 from evidence_contract import provenance, atomic
+from metric_contract import read_shutdown_aggregate
 from stream_hash import sha256_stream
 
 
@@ -308,7 +310,7 @@ def main():
     with (root / "server.log").open("w", encoding="utf-8") as output:
         server = subprocess.Popen([str(x) for x in [*server_cli, "serve"]], stdout=output,
                                   stderr=subprocess.STDOUT, env=env,
-                                  creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                                  creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0)
         thread = threading.Thread(target=proxy.serve_forever, daemon=True)
         thread.start()
         try:
@@ -380,12 +382,14 @@ def main():
             proxy.server_close()
             while not proxy.connections.empty():
                 proxy.connections.get_nowait().close()
-            server.terminate()
-            try:
-                server.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                server.kill()
-                server.wait()
+            if server.poll() is None:
+                try:
+                    server.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT)
+                    server.wait(timeout=10)
+                except (OSError, subprocess.TimeoutExpired):
+                    server.kill()
+                    server.wait()
+    report["serverMetrics"] = {"gracefulShutdownAggregate": read_shutdown_aggregate(root / "server.log")}
     report['complete'] = True
     atomic(root / "results.json", report)
     lines = ["# Synthetic launcher benchmark", "", report["transport"], "", report["cacheCondition"],
