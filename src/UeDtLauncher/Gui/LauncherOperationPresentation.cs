@@ -27,6 +27,8 @@ public sealed class LauncherOperationPresentation
             _ => "배포와 설치 상태를 확인하고 있습니다."
         };
     public ObservableCollection<string> Logs { get; } = [];
+    internal ObservableCollection<LauncherHistoryEntry> History { get; } = [];
+    internal bool TracksHistory { get; set; }
     public LauncherRetryContext? Retry { get; set; }
     public static LauncherUiOperation RetryOperation(LauncherRetryContext? failed, LauncherRetryContext current, bool runtimeBlocked = false) =>
         runtimeBlocked ? LauncherUiOperation.Check : failed is null ? LauncherUiOperation.None : failed == current ? failed.Operation : LauncherUiOperation.Check;
@@ -36,6 +38,7 @@ public sealed class LauncherOperationPresentation
         ShowCompletion = Committing = false;
         InstallationNotice = null;
         Title = operation == LauncherUiOperation.Rollback ? "백업 복원 중" : "작업을 확인하고 있습니다";
+        RecordHistory(LauncherHistoryResult.Started);
     }
     internal LauncherPresentationSnapshot Capture() => new(Title,Percent,Kind,ErrorCode,SupportId,CurrentStage,Retry);
     internal void Restore(LauncherPresentationSnapshot value)
@@ -47,21 +50,48 @@ public sealed class LauncherOperationPresentation
     {
         Kind=LauncherUiOperation.Check;Percent=null;CurrentStage="재확인";ShowCompletion=Committing=false;
         ErrorCode=SupportId=null;Title=title;
+        RecordHistory(LauncherHistoryResult.Started);
     }
     public void Stage(string stage)
     {
+        var previous = CurrentStage;
         // Metadata is read before download AND written after apply. Never infer completion by enum order.
         if (stage is "Apply" or "Backup" or "Rollback") CurrentStage = "적용";
         else if (stage == "Launch") CurrentStage = "실행";
         else if (stage is "Download" or "DownloadProgress" or "Package" && CurrentStage == "확인") CurrentStage = "파일 준비";
         else if (stage is "Recovery" or "Repair") CurrentStage = "복구";
         if (stage is "Apply" or "Backup") Committing = true;
+        if (CurrentStage != previous) RecordHistory(LauncherHistoryResult.InProgress);
     }
     public void Complete(string title, bool showCompletion = true)
+        => Complete(title, showCompletion, LauncherHistoryResult.Completed);
+
+    internal void Complete(string title, bool showCompletion, LauncherHistoryResult outcome)
     {
+        RecordHistory(outcome);
         Title = title; Percent = 100; CurrentStage = "완료"; ErrorCode = SupportId = null;
         Committing = false;
         ShowCompletion = showCompletion && Kind is not (LauncherUiOperation.None or LauncherUiOperation.Check or LauncherUiOperation.Catalog);
+    }
+
+    internal void RecordHistory(LauncherHistoryResult result)
+    {
+        if (!TracksHistory) return;
+        var operation = Kind switch
+        {
+            LauncherUiOperation.Catalog => "배포 목록",
+            LauncherUiOperation.Update => "업데이트",
+            LauncherUiOperation.Repair => "복구",
+            LauncherUiOperation.Launch => "실행",
+            LauncherUiOperation.Troubleshoot => "문제 해결",
+            LauncherUiOperation.Rollback => "백업 복원",
+            LauncherUiOperation.ClearStaging => "임시 파일 정리",
+            LauncherUiOperation.PruneBackups => "백업 정리",
+            _ => "상태 확인"
+        };
+        // Summaries use only application labels, never raw log messages, IDs or paths.
+        if (History.Count == 500) History.RemoveAt(0);
+        History.Add(new(DateTimeOffset.Now, operation, CurrentStage, result));
     }
 
     internal string DownloadSteps => CurrentStage switch

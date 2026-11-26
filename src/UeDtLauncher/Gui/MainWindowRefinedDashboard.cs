@@ -102,6 +102,8 @@ public sealed partial class MainWindow : Window
         _allowAutomaticChecks = startServices;
         _preferencesPath = preferencesPath;
         if (model is not null) _viewModel = model;
+        _presentation.TracksHistory = IsDeveloper;
+        if (IsDeveloper) _presentation.History.CollectionChanged += (_, _) => RefreshDeveloperHistory();
         _preferences = preferences ?? (startServices ? LauncherUiPreferences.Load(preferencesPath) : new());
         InitializeComponent();
         if (model is null) LoadConfig(); else SelectProject();

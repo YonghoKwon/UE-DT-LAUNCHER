@@ -42,7 +42,11 @@ public sealed partial class MainWindow : Window
                 });
             });
         }
-        catch (Exception ex) { AppendLog("폴더를 열 수 없습니다: " + FriendlyError(ex), true); SetStatus("설치 폴더를 확인할 수 없습니다. 상태를 먼저 확인해 주세요."); }
+        catch (Exception ex)
+        {
+            AppendLog("폴더를 열 수 없습니다: " + FriendlyError(ex), true);
+            SetStatus("설치 폴더를 확인할 수 없습니다. 상태를 먼저 확인해 주세요.");
+        }
     }
     private async Task RunMaintenanceAsync(bool backups)
     {
@@ -82,7 +86,12 @@ public sealed partial class MainWindow : Window
     }
     private async void ClearCache() => await RunMaintenanceAsync(false);
     private async void CleanupBackups() => await RunMaintenanceAsync(true);
-    private void ClearLog() { _presentation.Logs.Clear(); if (_logBox is not null) _logBox.Text = string.Empty; }
+    private void ClearLog()
+    {
+        _presentation.Logs.Clear();
+        _presentation.History.Clear();
+        if (_logBox is not null) _logBox.Text = string.Empty;
+    }
     private string UserLogDirectory() => _config.IsManagedDeployment
         ? ManagedClientContext.UserLogRoot(ConfigPath)
         : LauncherPaths.ResolveConfigRelative(ConfigPath, _config.LogDir);

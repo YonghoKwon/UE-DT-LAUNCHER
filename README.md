@@ -24,7 +24,7 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 | 설치 | 정확한 릴리스, 버전별 설치·상태·잠금 분리, 실행 중/불명 상태의 update·repair·rollback·transaction 복구 차단 |
 | 실행 | 사용자 세션 runtime-host, Windows Job / Linux x64 subreaper, 표준 후손 종료까지 추적, 자동 kill 없음 |
 | 일반 화면 | 포스코DX 밝은 화면, 첫 확인 중 자리 표시, 상태별 주 버튼, 전송 중 진행·예상 남은 시간, 오류별 지원 정보, 프로젝트 이름 타일 |
-| 개발자 화면 | 포스코DX 다크 화면, 허용 배포/정확한 버전 선택, 검색 결과 안내·접히는 유지보수·복사 가능한 정보/로그 |
+| 개발자 화면 | 포스코DX 다크 화면, 허용 버전·현재 추천 표시, 선택 배포의 설치 상태, 한국어 작업 기록·원문·로그 ZIP |
 | 운영 | Windows/Linux Agent·IPC·CLI, 진단 내보내기, 무인 서비스 모드, MSI/RPM 제작 구성 |
 
 - 일반 `UeDtLauncher.exe`와 개발자 `UeDtLauncher.Developer.exe`는 별도 빌드이며, 설정으로 GUI 종류를 바꾸지 못합니다. 두 빌드의 CLI는 공통이고 다운로드 권한은 서버가 결정합니다.

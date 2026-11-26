@@ -39,7 +39,7 @@ public sealed partial class MainWindow
                     : "작업 취소 완료 · 다시 확인하거나 같은 작업을 다시 시도해 주세요."
             : retainedPartial == false && !IsDeveloper
                 ? "작업을 취소했습니다. 다시 시도하면 받던 파일을 처음부터 받습니다."
-                : "작업 취소 완료 · 다시 확인해 주세요.", showCompletion: false);
+                : "작업 취소 완료 · 다시 확인해 주세요.", showCompletion: false, LauncherHistoryResult.Cancelled);
         if (HasProjectCards)
         {
             _installState = "작업 취소 완료";

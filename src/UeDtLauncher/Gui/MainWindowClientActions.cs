@@ -71,6 +71,8 @@ public sealed partial class MainWindow : Window
             _presentation.ErrorCode = null; _presentation.SupportId = null;
             _catalogState = _catalog.Status;
             MergeCatalogProjects();
+            if (ownsBusy && IsDeveloper && HasProject)
+                _presentation.RecordHistory(LauncherHistoryResult.Completed);
             if (HasProject && requested != DisplaySelectionContext()) InvalidateDisplayedInstallation();
             UpdateReleaseNotes();
             return true;
@@ -169,7 +171,7 @@ public sealed partial class MainWindow : Window
         _viewModel.GeneralState = GeneralLauncherState.AwaitingPromotion;
         _installState = "실행 버전 지정 대기"; _installDetail = "관리자가 실행 버전을 지정하지 않았습니다.";
         _presentation.ErrorCode = null; _presentation.SupportId = null; _presentation.Retry = null;
-        _presentation.Complete(_installDetail, showCompletion: false); Build();
+        _presentation.Complete(_installDetail, showCompletion: false, LauncherHistoryResult.Waiting); Build();
     }
 
     private async Task RunAsync(bool repair, bool launch, ReleaseSelection? expectedSelection = null)
