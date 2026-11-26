@@ -21,7 +21,7 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 | 게시 | 관리자 승인, 디렉터리 자동 생성, Manifest·서명, 완료 전 비공개, 중단 게시 재개 |
 | 권한 | 실제 IP/CIDR + PC 요청 서명(기존 HTTPS는 Bearer), 프로젝트·환경·채널·선택적 버전 제한, 기본 거부 |
 | 전송 | 인증된 목록·Manifest·이미지·파일·Range, 서명·해시 검증, 재시도·이어받기 |
-| 배포 서버 저장소 | `server.json`의 전용 root에서 `authority/HEAD`가 접수·게시·승격·자격·순번을 함께 선택합니다. 새 배치는 빈 root에서 시작합니다. |
+| 배포 서버 저장소 | `server.json`의 전용 root에서 `authority/HEAD`가 접수·게시·승격·자격·순번을 함께 선택합니다. 전용 데이터베이스 없이 운영하며 새 배치는 빈 root에서 시작합니다. 구형·혼합·손상 root는 변경 전 거부합니다. |
 | 설치 | 정확한 릴리스, 버전별 설치·상태·잠금 분리, 실행 중/불명 상태의 update·repair·rollback·transaction 복구 차단 |
 | 실행 | 사용자 세션 runtime-host, Windows Job / Linux x64 subreaper, 표준 후손 종료까지 추적, 자동 kill 없음 |
 | 일반 화면 | 포스코DX 밝은 화면, 첫 확인 중 자리 표시, 상태별 주 버튼, 전송 중 진행·예상 남은 시간, 오류별 지원 정보, 프로젝트 이름 타일 |

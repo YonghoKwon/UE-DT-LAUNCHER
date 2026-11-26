@@ -12,6 +12,7 @@ public sealed class PublishedAssetCache
     public const long DefaultMaxBytes = 32L * 1024 * 1024;
     private readonly int maxEntries;
     private readonly long maxBytes;
+    private readonly Action<PublishedRelease>? validatePath;
     private readonly object gate = new();
     private readonly Dictionary<Key, LinkedListNode<Entry>> entries = new();
     private readonly LinkedList<Entry> lru = new();
@@ -22,14 +23,19 @@ public sealed class PublishedAssetCache
     public long RetainedBytes { get { lock (gate) return retainedBytes; } }
 
     public PublishedAssetCache(int maxEntries = DefaultMaxEntries, long maxBytes = DefaultMaxBytes)
+        : this(null, maxEntries, maxBytes) { }
+
+    internal PublishedAssetCache(Action<PublishedRelease>? validatePath, int maxEntries = DefaultMaxEntries, long maxBytes = DefaultMaxBytes)
     {
         if (maxEntries <= 0 || maxBytes <= 0) throw new ArgumentOutOfRangeException(nameof(maxEntries));
         this.maxEntries = maxEntries;
         this.maxBytes = maxBytes;
+        this.validatePath = validatePath;
     }
     public PublishedAssets Get(PublishedRelease release)
     {
         if (release.Metadata.HeroPath is null && release.Metadata.ThumbnailPath is null) return new(null, null);
+        validatePath?.Invoke(release);
         var key = new Key(release.ReleaseId, release.JobId, release.Directory, release.Metadata.HeroPath, release.Metadata.ThumbnailPath);
         lock (gate)
         {

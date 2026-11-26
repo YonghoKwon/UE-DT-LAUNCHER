@@ -17,7 +17,7 @@ internal static class FileAuthorityFixtures
         store.Save(job);
         using var claim = new IntakeWorkClaim(store, job, "publishing",
             Path.Combine(store.Root, "processing", jobId), null, "pending");
-        CatalogAuthority.For(store)!.Publish(jobId, metadata, SidecarPackageValidator.SerializeForGeneration(metadata), claim,
+        store.Catalog.Publish(jobId, metadata, SidecarPackageValidator.SerializeForGeneration(metadata), claim,
             () => Directory.CreateDirectory(Path.Combine(store.Root, "releases", metadata.ReleaseId)));
     }
 

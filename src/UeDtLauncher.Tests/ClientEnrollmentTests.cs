@@ -1,7 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
-using Microsoft.Data.Sqlite;
 using UeDtLauncher.Distribution.Authority;
 using UeDtLauncher.Distribution;
 using Xunit;
@@ -296,9 +295,6 @@ public sealed class ClientEnrollmentTests
 
         public void Dispose()
         {
-            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
-                { DataSource = Path.Combine(Settings.Root, "distribution.db") }.ToString());
-            SqliteConnection.ClearPool(connection);
             Directory.Delete(Root, recursive: true);
         }
     }

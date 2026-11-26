@@ -11,10 +11,10 @@ def publication(root):
     for role,edition in [('launcher','General'),('developer','Developer'),('agent',None),('server',None)]:
         path=root/(role+'.bin');path.write_text(role);binaries[role]={'path':str(path),'sha256':sha256(path),'edition':edition}
     synthetic=root/'synthetic.bin';synthetic.write_text('synthetic')
-    sidecar=root/'libe_sqlite3.so';sidecar.write_text('sqlite')
+    sidecar=root/'UeDtLauncher.DistributionServer.deps.json';sidecar.write_text('runtime dependencies')
     value={'schemaVersion':2,'success':True,'sourceHead':'a'*40,'productSourceHash':'b'*64,'rid':'win-x64','binaries':binaries,
            'fixtureAssets':{'synthetic':{'path':str(synthetic),'sha256':sha256(synthetic),'edition':None}},
-           'supportFiles':{'server/libe_sqlite3.so':{'path':str(sidecar),'sha256':sha256(sidecar)}}}
+           'supportFiles':{'server/UeDtLauncher.DistributionServer.deps.json':{'path':str(sidecar),'sha256':sha256(sidecar)}}}
     path=root/'cohort.json';path.write_text(json.dumps(value));return path,value
 
 class CohortTests(unittest.TestCase):
@@ -29,7 +29,7 @@ class CohortTests(unittest.TestCase):
         for failure in ('sidecar','edition','failed'):
             with self.subTest(failure=failure),tempfile.TemporaryDirectory() as temp:
                 path,value=publication(Path(temp)/'publication')
-                if failure=='sidecar':Path(value['supportFiles']['server/libe_sqlite3.so']['path']).unlink()
+                if failure=='sidecar':Path(value['supportFiles']['server/UeDtLauncher.DistributionServer.deps.json']['path']).unlink()
                 elif failure=='edition':value['binaries']['developer']['edition']='General'
                 else:value['success']=False
                 path.write_text(json.dumps(value))

@@ -29,7 +29,7 @@ public sealed partial class IntakeStore
     private IntakeJob Present(StoredIntakeJob job, AuthoritySnapshot snapshot,
         Lazy<ILookup<string, DateTimeOffset>> legacyPublicationTimes)
     {
-        if (job.State == "published" && CatalogAuthority.For(this)?.Find(job.Id, byJob: true, snapshot: snapshot) is { } release)
+        if (job.State == "published" && Catalog.Find(job.Id, byJob: true, snapshot: snapshot) is { } release)
         {
             var size = release.Metadata.PackageSize;
             var completedAt = job.PublishedAt ?? legacyPublicationTimes.Value[job.Id]

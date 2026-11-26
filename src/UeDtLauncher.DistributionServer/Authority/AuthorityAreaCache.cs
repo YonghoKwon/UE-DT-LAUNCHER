@@ -5,7 +5,7 @@ namespace UeDtLauncher.Distribution.Authority;
 internal sealed class AuthorityAreaCache() : AuthorityParsedCache<JsonElement>(
     bytes => AuthorityDocuments.ValidateArea(AuthorityDocuments.Decode<JsonElement>(bytes)));
 
-internal class AuthorityParsedCache<T>(Func<byte[], T> parse)
+internal class AuthorityParsedCache<T>(Func<byte[], T> parse, int entryLimit = 64)
 {
     internal const int EntryLimit = 64;
     internal const int ByteLimit = 16 * 1024 * 1024;
@@ -29,7 +29,7 @@ internal class AuthorityParsedCache<T>(Func<byte[], T> parse)
             var document = parse(verifiedBytes);
             if (verifiedBytes.Length > ByteLimit) return document;
 
-            while (entries.Count >= EntryLimit || bytes > ByteLimit - verifiedBytes.Length)
+            while (entries.Count >= entryLimit || bytes > ByteLimit - verifiedBytes.Length)
             {
                 var oldest = leastRecentFirst.First!.Value;
                 leastRecentFirst.RemoveFirst();

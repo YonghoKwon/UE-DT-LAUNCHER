@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using UeDtLauncher.Distribution.Authority;
@@ -7,25 +6,22 @@ namespace UeDtLauncher.Distribution;
 
 internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
 {
-    // Bound to the same authority used by intake and credential operations.
-    private static readonly ConditionalWeakTable<IntakeStore, CatalogAuthority> Bindings = new();
     private static readonly StringComparer PathComparer = OperatingSystem.IsWindows()
         ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
     private const int MaxMetadataBytes = 1024 * 1024;
+    internal const int HttpSetMaxEntries = 1024;
+    internal const long HttpSetMaxEstimatedBytes = 4L * 1024 * 1024;
     internal static readonly AsyncLocal<Action<AuthorityBoundary>?> PublicationBoundary = new();
-    private readonly AuthorityParsedCache<ReleaseSidecar> metadataCache = new(SidecarPackageValidator.Parse);
+    private readonly AuthorityParsedCache<ReleaseSidecar> metadataCache = new(SidecarPackageValidator.Parse, entryLimit: 512);
     private readonly object catalogCacheGate = new();
-    private ((string Path, string Digest) Key, CatalogDocument Document)? cachedCatalog;
+    private ((string Path, string Digest) Key, CatalogDocument Document, int SourceBytes)? cachedCatalog;
+    private readonly object httpSetGate = new();
+    private HttpCatalogSet? httpSet;
 
-    internal AuthorityStore Store => store;
-
-    internal static void Bind(IntakeStore intake, AuthorityStore authority)
+    internal int CachedCatalogSourceBytes
     {
-        if (authority != intake.Authority) throw new ArgumentException("Catalog authority must belong to the intake store.");
-        Bindings.Add(intake, new(authority, intake.Root));
+        get { lock (catalogCacheGate) return cachedCatalog?.SourceBytes ?? 0; }
     }
-
-    internal static CatalogAuthority? For(IntakeStore intake) => Bindings.TryGetValue(intake, out var authority) ? authority : null;
 
     internal static PromotionMigration InspectExisting(string root)
     {
@@ -52,15 +48,77 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
     internal PromotionSnapshot Snapshot() => Snapshot(store.ReadSnapshot());
 
     internal PromotionSnapshot Snapshot(AuthoritySnapshot snapshot)
+        => BuildSnapshot(snapshot, projectionOnly: false);
+
+    internal PromotionSnapshot RequestSnapshot(AuthoritySnapshot snapshot)
+    {
+        const string area = "catalog";
+        var key = (snapshot.Head.Files[area], snapshot.Head.Sha256[area]);
+        if (Volatile.Read(ref httpSet) is { } current && current.Key == key) return current.View;
+        lock (httpSetGate)
+        {
+            if (httpSet is { } cached && cached.Key == key) return cached.View;
+            var view = BuildSnapshot(snapshot, projectionOnly: true);
+            if (httpSet is null || httpSet.HeadGeneration <= snapshot.Generation)
+            {
+                var retained = FitsHttpSet(view) ? new HttpCatalogSet(key, snapshot.Generation, view) : null;
+                Volatile.Write(ref httpSet, retained);
+            }
+            return view;
+        }
+    }
+
+    private static bool FitsHttpSet(PromotionSnapshot view)
+    {
+        if (view.Releases.Count > HttpSetMaxEntries || view.Events.Count > HttpSetMaxEntries) return false;
+        static long Text(string? value) => 24L + 2L * (value?.Length ?? 0);
+        var releaseBytes = view.Releases.Sum(release =>
+        {
+            var m = release.Metadata;
+            return 512L + Text(release.ReleaseId) + Text(release.JobId) + Text(release.Directory) +
+                Text(m.ProjectId) + Text(m.DisplayName) + Text(m.Version) + Text(m.Environment) + Text(m.Channel) +
+                Text(m.Platform) + Text(m.Notes) + Text(m.HeroPath) + Text(m.ThumbnailPath);
+        });
+        var eventBytes = view.Events.Sum(entry => 256L + Text(entry.Track) + Text(entry.ReleaseId) +
+            Text(entry.PreviousRelease) + Text(entry.Actor) + Text(entry.AtUtc) + Text(entry.Reason) + Text(entry.Kind));
+        return 256 + releaseBytes + eventBytes <= HttpSetMaxEstimatedBytes;
+    }
+
+    internal void ValidateRequestReleasePath(PublishedRelease release) =>
+        _ = ResolveChecked(payloadRoot, "releases/" + release.ReleaseId);
+
+    internal PublishedRelease? FindForRequest(string releaseId, AuthoritySnapshot snapshot)
+    {
+        const string area = "catalog";
+        var key = (snapshot.Head.Files[area], snapshot.Head.Sha256[area]);
+        if (Volatile.Read(ref httpSet) is not { } cached || cached.Key != key)
+            return Find(releaseId, snapshot: snapshot);
+        var match = cached.View.Releases.FirstOrDefault(release => release.ReleaseId == releaseId);
+        if (match is not null) ValidateRequestReleasePath(match);
+        return match;
+    }
+
+    internal void InvalidateRequestSnapshot()
+    {
+        lock (httpSetGate) Volatile.Write(ref httpSet, null);
+    }
+
+    private PromotionSnapshot BuildSnapshot(AuthoritySnapshot snapshot, bool projectionOnly)
     {
         var catalog = ReadCatalog(snapshot);
-        return new PromotionSnapshot(catalog.PromotionReady, catalog.Releases.Select(LoadRelease).ToArray(), catalog.Promotions.ToArray());
+        // A path component shared by releases needs one reparse check in this snapshot read.
+        // Discard the directory checks before the next request.
+        var checkedDirectories = new HashSet<string>(PathComparer);
+        using var measurement = DistributionPerformance.MeasurePhase("authority-release-read");
+        return new PromotionSnapshot(catalog.PromotionReady,
+            catalog.Releases.Select(entry => LoadRelease(entry, checkedDirectories, projectionOnly)).ToArray(), catalog.Promotions.ToArray());
     }
 
     internal PublishedRelease? Find(string value, bool byJob = false, AuthoritySnapshot? snapshot = null)
     {
         var catalog = ReadCatalog(snapshot ?? store.ReadSnapshot());
         var entry = catalog.Releases.Find(row => (byJob ? row.Job : row.Id) == value);
+        using var measurement = DistributionPerformance.MeasurePhase("authority-release-read");
         return entry is null ? null : LoadRelease(entry);
     }
 
@@ -178,7 +236,8 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
             var catalog = snapshot.Get(AuthorityArea.Catalog).Deserialize<CatalogDocument>(AuthorityDocuments.Json)
                 ?? throw new InvalidDataException("Catalog authority is missing.");
             Validate(catalog);
-            cachedCatalog = (key, catalog);
+            cachedCatalog = snapshot.CatalogSourceBytes <= AuthorityAreaCache.ByteLimit
+                ? (key, catalog, snapshot.CatalogSourceBytes) : null;
             return catalog;
         }
     }
@@ -221,9 +280,9 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
         }
     }
 
-    private PublishedRelease LoadRelease(CatalogRelease entry)
+    private PublishedRelease LoadRelease(CatalogRelease entry, HashSet<string>? checkedDirectories = null, bool projectionOnly = false)
     {
-        var path = MetadataPath(entry.Id);
+        var path = ResolveChecked(store.ReleaseMetadataPath, entry.Id + ".json", checkedDirectories);
         using var input = AuthorityDisk.OpenReader(path);
         if (input.Length is <= 0 or > MaxMetadataBytes)
             throw new InvalidDataException("Published metadata has an invalid length.");
@@ -232,15 +291,18 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
         if (input.ReadByte() != -1 || AuthorityDocuments.Hash(bytes) != entry.MetadataSha256)
             throw new InvalidDataException("Published metadata checksum is invalid.");
         ReleaseSidecar metadata;
-        try { metadata = metadataCache.Parse(entry.Id + ".json", entry.MetadataSha256, bytes); }
+        try { metadata = metadataCache.Parse(path, entry.MetadataSha256, bytes); }
         catch (Exception error) when (error is ArgumentException or NullReferenceException)
         {
             throw new InvalidDataException("Published metadata has invalid fields.", error);
         }
         if (metadata.ReleaseId != entry.Id || CatalogFields.From(metadata) != entry.Fields)
             throw new InvalidDataException("Published metadata identity or catalog fields differ.");
+        var directory = ResolveChecked(payloadRoot, entry.Directory, checkedDirectories);
+        if (projectionOnly)
+            return new(entry.Id, entry.Job, directory, entry.Fields.ToRequestMetadata());
         // Public callers get their own mutable metadata object, never the cached instance.
-        return new(entry.Id, entry.Job, ResolveChecked(payloadRoot, entry.Directory), new ReleaseSidecar
+        return new(entry.Id, entry.Job, directory, new ReleaseSidecar
         {
             SchemaVersion = metadata.SchemaVersion, PackageFile = metadata.PackageFile, PackageSize = metadata.PackageSize,
             PackageSha256 = metadata.PackageSha256, ProjectId = metadata.ProjectId, DisplayName = metadata.DisplayName,
@@ -252,10 +314,33 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
 
     private string MetadataPath(string releaseId) => ResolveChecked(store.ReleaseMetadataPath, releaseId + ".json");
 
-    private static string ResolveChecked(string root, string relative)
+    private static string ResolveChecked(string root, string relative, HashSet<string>? checkedDirectories = null)
     {
-        try { return SafePath.ResolveInsideChecked(root, relative); }
+        try
+        {
+            var path = SafePath.ResolveInside(root, relative);
+            var component = path;
+            while (component.Length > root.Length)
+            {
+                var attributes = GetAttributes(component);
+                if (attributes is { } found && (found & FileAttributes.ReparsePoint) != 0)
+                    throw new InvalidOperationException("Published release path contains a link.");
+                if (checkedDirectories is not null && component != path && attributes is { } item &&
+                    (item & FileAttributes.Directory) != 0)
+                    checkedDirectories.Add(component);
+                component = Path.GetDirectoryName(component)!;
+                if (checkedDirectories?.Contains(component) == true)
+                    break;
+            }
+            return path;
+        }
         catch (InvalidOperationException error) { throw new InvalidDataException("Published release path is unsafe.", error); }
+    }
+
+    private static FileAttributes? GetAttributes(string path)
+    {
+        try { return File.GetAttributes(path); }
+        catch (Exception error) when (error is FileNotFoundException or DirectoryNotFoundException) { return null; }
     }
 
     private static CommitPlan Change(CatalogDocument catalog, AuthorityEvent audit)
@@ -272,6 +357,7 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
         [property: JsonRequired] bool PromotionReady);
 
     private sealed record CatalogRelease(string Id, string Job, string Directory, string MetadataSha256, CatalogFields Fields);
+    private sealed record HttpCatalogSet((string Path, string Digest) Key, long HeadGeneration, PromotionSnapshot View);
 
     private sealed record CatalogFields(string ProjectId, string? DisplayName, string Environment, string Channel,
         string Version, string Platform, string? Notes, string? HeroPath, string? ThumbnailPath)
@@ -281,6 +367,12 @@ internal sealed class CatalogAuthority(AuthorityStore store, string payloadRoot)
 
         internal static CatalogFields From(ReleaseSidecar metadata) => new(metadata.ProjectId, metadata.DisplayName,
             metadata.Environment, metadata.Channel, metadata.Version, metadata.Platform, metadata.Notes, metadata.HeroPath, metadata.ThumbnailPath);
+
+        internal ReleaseSidecar ToRequestMetadata() => new()
+        {
+            ProjectId = ProjectId, DisplayName = DisplayName!, Environment = Environment, Channel = Channel,
+            Version = Version, Platform = Platform, Notes = Notes, HeroPath = HeroPath, ThumbnailPath = ThumbnailPath
+        };
     }
 }
 

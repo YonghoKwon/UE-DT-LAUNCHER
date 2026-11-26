@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Text.Json;
-using Microsoft.Data.Sqlite;
 using UeDtLauncher.Distribution;
 using UeDtLauncher.Distribution.Authority;
 using Xunit;
@@ -241,13 +240,7 @@ public sealed class IntakeAuthorityTests : IDisposable
     {
         var hidden = Directory.CreateDirectory(Path.Combine(Root, ".hidden-empty"));
         if (OperatingSystem.IsWindows()) hidden.Attributes |= FileAttributes.Hidden;
-        using (var db = new SqliteConnection("Data Source=" + Path.Combine(Root, "distribution.db") + ";Pooling=False"))
-        {
-            db.Open();
-            using var sql = db.CreateCommand();
-            sql.CommandText = "CREATE TABLE jobs(id TEXT PRIMARY KEY, state TEXT); INSERT INTO jobs VALUES('old','waiting')";
-            sql.ExecuteNonQuery();
-        }
+        File.WriteAllText(Path.Combine(Root, "distribution.db"), "legacy marker");
         if (mixed)
         {
             var authority = Directory.CreateDirectory(Path.Combine(Root, "authority"));
@@ -302,16 +295,9 @@ public sealed class IntakeAuthorityTests : IDisposable
     private IntakeWorkClaim Claim(IntakeStore store, string expected) => new(store, store.Get("fixture"), "validating",
         Path.Combine(Root, "processing", "scratch"), null, expected);
 
-    private void ClearDatabasePool()
-    {
-        using var database = new SqliteConnection(new SqliteConnectionStringBuilder
-        { DataSource = Path.Combine(Root, "distribution.db") }.ToString());
-        SqliteConnection.ClearPool(database);
-    }
-
     public void Dispose()
     {
-        ClearDatabasePool();
+
         fixture.Dispose();
     }
 }

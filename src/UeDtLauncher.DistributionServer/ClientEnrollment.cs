@@ -35,7 +35,7 @@ internal static class ClientEnrollment
                 // Validate against the current keys while holding the same writer lease as client-key add.
                 plan = await BuildPlanAsync(policyPath, keys, inputs);
                 if (plan.HasChanges)
-                    await ApplyAsync(plan, policyPath, CredentialAuthority.For(store)!, writer, beforePolicyReplace);
+                    await ApplyAsync(plan, policyPath, store.Credentials, writer, beforePolicyReplace);
             }
             await WritePlanAsync(output, plan, dryRun: false);
             return 0;

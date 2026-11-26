@@ -192,16 +192,16 @@ class EvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             base=Path(temporary);root=base/'fixture';fixture=make_fixture(root)
             publish=base/'published';publish.mkdir();source=publish/'server.exe';source.write_text('server')
-            for name in ('e_sqlite3.dll','server.deps.json','server.runtimeconfig.json','server.config.json','token.keycred','server.log'):
+            for name in ('unlisted.dll','server.deps.json','server.runtimeconfig.json','server.config.json','token.keycred','server.log'):
                 (publish/name).write_text(name)
             support=copy_server_support(source,root/'server.exe')
-            self.assertEqual({'server/e_sqlite3.dll','server/server.deps.json','server/server.runtimeconfig.json'},set(support))
+            self.assertEqual({'server/server.deps.json','server/server.runtimeconfig.json'},set(support))
             self.assertFalse((root/'token.keycred').exists());self.assertFalse((root/'server.config.json').exists());self.assertFalse((root/'server.log').exists())
             fixture['supportFiles']=support;(root/'fixture.json').write_text(json.dumps(fixture))
             verify_cohort(root)
-            (root/'e_sqlite3.dll').write_text('altered')
+            (root/'server.deps.json').write_text('altered')
             with self.assertRaises(ValueError):verify_cohort(root)
-            (root/'e_sqlite3.dll').unlink()
+            (root/'server.deps.json').unlink()
             with self.assertRaises(FileNotFoundError):verify_cohort(root)
 
     def test_fixture_has_one_harness_owner(self):

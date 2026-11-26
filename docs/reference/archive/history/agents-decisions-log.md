@@ -195,3 +195,16 @@
 | R141 | 204 | 유지 | 작업·검증·커밋 |
 | R142 | 206 | 유지 | 작업·검증·커밋 |
 | — | 33–42 | 유지 | 코드 지도 표 |
+
+## 2026-11-26 파일 권위 저장소 전환 전 계약
+
+다음은 PROD-01S6 이전 규칙의 보존본입니다. 현재 보장과 대체 시험은 [AGENTS.md](../../../../AGENTS.md#파일-권위-저장소-보장과-대체-시험)를 따릅니다.
+
+- Catalog의 release/promotion은 동일 DB snapshot에서 읽는다. 새 selectionPolicy 요청은 전체 허용 목록, 구형 요청은 승격된 허용 목록만 제공한다. 인증·권한·fresh sequence·서명·요청 결속을 유지한다.
+- 기존 DB migration dry-run은 IntakeStore를 만들지 않고 read-only DB만 읽는다. apply는 서버 중지·백업·상태 재검사 후 legacy-baseline을 정확히 한 번 기록한다. DB schema4와 구 서버의 동시 사용을 금지한다.
+- Catalog sequence reservation은 exclusive 인증 서버 수명 안에서 최대64개 high-water를 commit한 뒤 발급한다. 실패/재시작으로 번호를 재사용하지 않고 overflow/잘못된 DB형식은 차단한다. 정상 예약은 복원 순번 우회가 아니며 Catalog/권한 캐시와 혼용하지 않는다. 비교의 느려진1연결·누락 지표를 숨기지 않는다.
+- DB schema5 이전 전 snapshot 백업과 구 서버 중지를 지킨다. token 관리 ID와 비밀을 분리한다. legacy 무기한을 보존하고 만료는 명시 지정한다. 수명 변경·최초 만료 latch·audit은 한 transaction이며 시계 역행으로 latch를 풀지 않는다. 권한 허용 캐시는 금지한다. 요청 한도는 opt-in, 초과 시 메모리 큐 없이429다.
+- schema6 전환 전 일관된 DB backup/서버 중지를 지킨다. incomplete legacy retention journal을 자동 채택하지 않는다. candidate directory identity와 durable move/delete intents를 유지하고 이동 후 source 재수집을 금지한다. 잔여 승인 파일만 검사·삭제하며 완료 삭제 ledger/audit를 보존한다.
+- serve/watch/긴 파일 작업/DB 변경과 offline backup/restore/정리는 동일 maintenance OS 잠금 계약을 따른다. 프로세스를 도구가 종료하지 않는다. 복원은 새 빈 root·같은 origin/signer·최신 생존 source 대조이며 staged fence 제거가 마지막이다. 순번을 임의로 올리거나 client trust 삭제, 과거 폐기/정책 재활성화는 금지한다. private key를 백업 번들에 넣지 않는다.
+- DB schema 변경 전 백업, 작업별 OS 잠금, active_work 보호를 유지합니다. 잠금 파일을 삭제하거나 긴 ZIP I/O를 공용 잠금 안에 넣지 않습니다.
+- phase 계측의 일부 시간은 겹친다. additive aggregate를 latency 합계나 native SQLite wait로 해석하지 않는다. 프로토콜/후보를 혼합하지 않으며 느려진 결과도 기록한다. 이번 PERF-03 미달과 unadopted signer pool을 실제 개선으로 보고하지 않는다.

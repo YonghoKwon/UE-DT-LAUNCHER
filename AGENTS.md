@@ -13,7 +13,7 @@
 
 기본 빌드·테스트 명령은 README를 따릅니다. 문서 전용 수정은 소스·명령·링크 대조와 diff 검사로 검증 가능하며 GUI 실행·전체 테스트를 수행한 것처럼 보고하지 않습니다.
 
-publish/bin/obj, 테스트 logs·DB·인증서·토큰, 패키지·설치 데이터는 커밋하지 않습니다. 새 테스트 없이 과거 검증 날짜·결과를 덮어쓰지 않습니다.
+publish/bin/obj, 테스트 로그·권위 저장소·인증서·토큰, 패키지·설치 데이터는 커밋하지 않습니다. 새 테스트 없이 과거 검증 날짜·결과를 덮어쓰지 않습니다.
 
 성능 변경은 [재현 절차](docs/reference/archive/validation/performance-validation.md)를 따릅니다. 준비 1회/측정 3회, 같은 publish 형식·데이터·호스트 조건으로 비교합니다. CLI 시작 비용·OS 캐시·측정 프록시 영향과 누락 지표를 구분합니다. 실패한 요청을 지연 통계에서 숨기지 않고, 악화된 시나리오를 유리한 평균으로 덮지 않습니다. 공유 CI의 시간 수치를 성능 합격 gate로 사용하지 않습니다.
 
@@ -51,7 +51,7 @@ publish/bin/obj, 테스트 logs·DB·인증서·토큰, 패키지·설치 데이
 | src/UeDtLauncher.Core/ | 공용 assembly, Distribution 메타데이터·경로·이미지 |
 | src/UeDtLauncher.Core/*.cs | 엔진·보안·transaction·IPC 소스. GUI는 Core project reference만 사용 |
 | src/UeDtLauncher.Agent/ | Windows Service/Linux systemd Agent |
-| src/UeDtLauncher.DistributionServer/ | SQLite 접수·승인·서명 게시·인증 API |
+| src/UeDtLauncher.DistributionServer/ | 파일 권위 저장소 기반 접수·승인·서명 게시·인증 API |
 | src/UeDtLauncher.Tests/, tools/test-distribution-e2e.sh | 자동화·실제 프로세스 E2E |
 | tools/ConsoleStreamHarness/ | 테스트 전용 소유 콘솔/핸들 검증. 제품·공식 publish graph에는 포함하지 않음 |
 | installer/windows/, packaging/linux/, .github/workflows/ | 설치본·nginx·서비스·CI |
@@ -71,9 +71,9 @@ publish/bin/obj, 테스트 logs·DB·인증서·토큰, 패키지·설치 데이
 - .uploading/한 파일만 도착한 상태를 게시하지 않습니다. 동일 릴리스 식별자 덮어쓰기를 허용하지 않습니다.
 - approve는 게시만 한다. 첫 버전도 명시적 promote가 필요하며 PC별 추천은 현재 허용된 승격 이력의 마지막 판이다. 프로젝트/환경/채널/플랫폼을 섞거나 미승격판으로 fallback하지 않는다.
 - 승격/감사 기록은 한 transaction, expected revision 재검사를 사용한다. same-target/current-revision은 no-op이며 승인/서버 재시작은 이력을 변경하지 않는다. 승격은 다운로드 grant·설치·실행 티켓을 변경하지 않는다.
-- Catalog의 release/promotion은 동일 DB snapshot에서 읽는다. 새 selectionPolicy 요청은 전체 허용 목록, 구형 요청은 승격된 허용 목록만 제공한다. 인증·권한·fresh sequence·서명·요청 결속을 유지한다.
-- 기존 DB migration dry-run은 IntakeStore를 만들지 않고 read-only DB만 읽는다. apply는 서버 중지·백업·상태 재검사 후 legacy-baseline을 정확히 한 번 기록한다. DB schema4와 구 서버의 동시 사용을 금지한다.
-- Catalog sequence reservation은 exclusive 인증 서버 수명 안에서 최대64개 high-water를 commit한 뒤 발급한다. 실패/재시작으로 번호를 재사용하지 않고 overflow/잘못된 DB형식은 차단한다. 정상 예약은 복원 순번 우회가 아니며 Catalog/권한 캐시와 혼용하지 않는다. 비교의 느려진1연결·누락 지표를 숨기지 않는다.
+- Catalog의 release/promotion은 동일한 authority HEAD 세대에서 읽는다. 새 selectionPolicy 요청은 전체 허용 목록, 구형 요청은 승격된 허용 목록만 제공한다. 인증·권한·fresh sequence·서명·요청 결속을 유지한다.
+- promotion migrate --dry-run/--apply는 현재 파일 형식에서 읽기 전용 no-op이다. 구형·혼합·손상 root는 변경 전 거부한다. 구형 저장소는 파일 이름으로만 판별하고 열지 않는다.
+- Catalog sequence reservation은 exclusive 인증 서버 수명 안에서 최대64개 high-water를 commit한 뒤 발급한다. 실패/재시작으로 번호를 재사용하지 않고 overflow/잘못된 순번 문서은 차단한다. 정상 예약은 복원 순번 우회가 아니며 Catalog/권한 캐시와 혼용하지 않는다. 비교의 느려진1연결·누락 지표를 숨기지 않는다.
 
 ### 인증·권한·요청 한도
 
@@ -81,18 +81,32 @@ publish/bin/obj, 테스트 logs·DB·인증서·토큰, 패키지·설치 데이
 - 요청 서명은 schema 3·별도 .keycred만 사용합니다. 개인키를 GUI에 공유하거나 임의 URL 서명 IPC를 만들지 않습니다. challenge는 monotonic 만료·재시작 무효화, 살아 있는 nonce는 용량 확보를 위해 제거하지 않습니다.
 - Catalog 요청 결속은 실제 성공한 송신 요청과 비교한 후 해석/sequence 저장합니다. nginx 이중 인증과 권한 허용 캐시는 금지합니다. 같은 root의 인증 서버는 하나만 실행합니다.
 - 기존 HTTPS/Bearer를 유지합니다. 사용자 승인한 schema 3 사내 HTTP는 요청 서명·재사용 차단·Catalog 요청 결속을 모두 요구하며 Bearer/무인증으로 후퇴하지 않습니다. Metadata 서명·해시·경로 검사를 완화하지 않습니다. 개인키·토큰·Authorization·Signature·challenge를 로그나 Git에 넣지 않습니다.
-- DB schema5 이전 전 snapshot 백업과 구 서버 중지를 지킨다. token 관리 ID와 비밀을 분리한다. legacy 무기한을 보존하고 만료는 명시 지정한다. 수명 변경·최초 만료 latch·audit은 한 transaction이며 시계 역행으로 latch를 풀지 않는다. 권한 허용 캐시는 금지한다. 요청 한도는 opt-in, 초과 시 메모리 큐 없이429다.
+- token 관리 ID와 비밀을 분리한다. 명시된 만료 이후 최초 latch를 기록하며 무기한 자격은 null을 보존한다. 수명 변경·최초 만료 latch·audit은 함께 HEAD로 게시이며 시계 역행으로 latch를 풀지 않는다. 권한 허용 캐시는 금지한다. 요청 한도는 opt-in, 초과 시 메모리 큐 없이429다.
 - limit 시간/HTTP file barrier는 내부 시험 seam만 사용한다. 정상 동시성·429·슬롯 반환·만료/audit 원자성을 actual HTTP로 검증하고 검사 우회 CLI를 만들지 않는다.
 
 ### 서버 저장·백업·복원·정리
 
 - 복원 활성화는 원본 일치만으로 충분하지 않다. 릴리스 tuple·Manifest 서명 ID/알고리즘·전체 파일 hash/inventory를 별도 검사한다. 확인할 수 없는 이전 signing identity는 staged 점검 대상으로 남긴다.
 - stage 전체 exclusive target reservation, live lease 이후 staged fence 검사, source/target canonical lock ordering을 유지한다. 필수 source/snapshot/active/release의 양방향 inventory/hash와 policy를 검증한다. incomplete retention backup·staged authority·기록 없는 누락은 거부하고 fence 제거는 마지막이다.
-- schema6 전환 전 일관된 DB backup/서버 중지를 지킨다. incomplete legacy retention journal을 자동 채택하지 않는다. candidate directory identity와 durable move/delete intents를 유지하고 이동 후 source 재수집을 금지한다. 잔여 승인 파일만 검사·삭제하며 완료 삭제 ledger/audit를 보존한다.
+- incomplete legacy retention journal을 자동 채택하지 않는다. candidate directory identity와 durable move/delete intents를 유지하고 이동 후 source 재수집을 금지한다. 잔여 승인 파일만 검사·삭제하며 완료 삭제 ledger/audit를 보존한다.
 - retention은 명시 선택 failed/rejected·참조 없는 processing 자식만 허용한다. public/모든 promotion/pending/active 보호, 고유 plan/fingerprint·참조·전체 hash 재검사, quarantine/journal을 유지한다. 완료 계획은 재생성 자료에 재사용하지 않는다. 링크/audit/history를 삭제 대상으로 확대하지 않는다.
-- serve/watch/긴 파일 작업/DB 변경과 offline backup/restore/정리는 동일 maintenance OS 잠금 계약을 따른다. 프로세스를 도구가 종료하지 않는다. 복원은 새 빈 root·같은 origin/signer·최신 생존 source 대조이며 staged fence 제거가 마지막이다. 순번을 임의로 올리거나 client trust 삭제, 과거 폐기/정책 재활성화는 금지한다. private key를 백업 번들에 넣지 않는다.
+- serve/watch/긴 파일 작업/권위 세대 변경과 offline backup/restore/정리는 동일 maintenance OS 잠금 계약을 따른다. 프로세스를 도구가 종료하지 않는다. 복원은 새 빈 root·같은 origin/signer·최신 생존 source 대조이며 staged fence 제거가 마지막이다. 순번을 임의로 올리거나 client trust 삭제, 과거 폐기/정책 재활성화는 금지한다. private key를 백업 번들에 넣지 않는다.
 - RetentionPlan schema2의 승인 파일/빈 디렉터리 신원만 삭제한다. 마지막 폴더 제거는 nonrecursive이며 새 자료가 있으면 quarantine/journal을 보존한다. schema1 적용·재귀 삭제·원본 재수집은 거부하고 새 계획/수동 정비를 요구한다.
-- DB schema 변경 전 백업, 작업별 OS 잠금, active_work 보호를 유지합니다. 잠금 파일을 삭제하거나 긴 ZIP I/O를 공용 잠금 안에 넣지 않습니다.
+- 오프라인 백업은 같은 HEAD에서 권위 파일·이벤트·감사·payload를 검사합니다. 작업별 OS 잠금과 진행 중 작업 보호를 유지합니다. 잠금 파일을 삭제하거나 긴 ZIP I/O를 공용 잠금 안에 넣지 않습니다.
+
+### 파일 권위 저장소 보장과 대체 시험
+
+| 기존 보장 | 파일 저장소 확인 |
+|---|---|
+| Catalog·promotion의 일관된 snapshot과 revision·감사 원자성 | `ReleasePromotionTests`와 `tools/test-release-promotion.py --catalog-proof`로 한 세대 조회, stale revision 거부, 동일 대상 no-op, 감사 검증 |
+| 읽기 전용 이전 미리 보기, 구형 데이터 보존 | D-NB3 적용. `ReleasePromotionTests`와 `IntakeAuthorityTests`로 현재 root no-op과 구형·혼합·손상 root의 비영 종료 또는 예외, inventory·hash 무변경 검증 |
+| 순번 예약의 원자성·재시작 내구성·소진 차단 | `CatalogSequenceAllocatorTests`와 `tools/test-catalog-sequence-restart.py`로 HEAD high-water·다음 블록 및 challenge 재시작 검증 |
+| 자격 상태와 감사 원자성, 시계 역행과 동시 만료 | `CredentialLifecycleTests`의 쓰기 경계 고장 주입, actual HTTP와 시계 seam, 만료 이벤트 수 검증 |
+| 일관된 오프라인 백업·복원, 최신 권위와 공개 펜스 | `DistributionBackupTests`와 `tools/test-distribution-maintenance.py`의 최신 source·양방향 inventory·payload 검증 및 활성화 |
+| 작업 보호, 정리 journal·감사, 복구 후 남은 변경 | `IntakeAuthorityTests`와 `RetentionMaintenanceTests`의 작업 claim, 삭제 intent, ledger, HEAD 전후 실패 검증 |
+| writer 중 snapshot 일관성 및 중단 후 복구 | `tools/AuthorityHarness`의 NTFS·ext4·XFS `platform-suite`에서 열린 독자와 저장 경계별 소유 프로세스 강제 종료 |
+
+이전 SQLite 운용 계약과 검증 결과는 [결정 이력](docs/reference/archive/history/agents-decisions-log.md)과 [승격 검증 이력](docs/reference/archive/validation/release-promotion-validation.md)에 보존한다.
 
 ### 설치·transaction·runtime 실행
 
@@ -164,7 +178,10 @@ publish/bin/obj, 테스트 logs·DB·인증서·토큰, 패키지·설치 데이
 
 ### 성능 계측
 
-- phase 계측의 일부 시간은 겹친다. additive aggregate를 latency 합계나 native SQLite wait로 해석하지 않는다. 프로토콜/후보를 혼합하지 않으며 느려진 결과도 기록한다. 이번 PERF-03 미달과 unadopted signer pool을 실제 개선으로 보고하지 않는다.
+- phase 계측의 일부 시간은 겹친다. 권위 읽기·커밋과 내부 writer 잠금 대기 등 합산 집계를 요청 latency 합계로 해석하지 않는다. 프로토콜/후보를 혼합하지 않으며 느려진 결과도 기록한다. 이번 PERF-03 미달과 unadopted signer pool을 실제 개선으로 보고하지 않는다.
+- HTTP는 요청마다 HEAD 원문을 읽어 해당 경로·digest의 권위 영역을 선택하고 권한·서명을 처리한다. Catalog 응답은 색인 파일 원문을 확인한다. 자격 영역과 개별 다운로드의 색인은 검증된 경로·digest가 유지되면 파싱 결과를 재사용하고 파일 존재·링크를 점검한다. 새 참조는 원문 검증 뒤에 사용한다. 영역별 재사용 상한은 원문 16 MiB다.
+- HTTP Catalog와 다운로드는 catalog 경로·digest에 결속해 처음 사용할 때 전수 검증한 release-meta 집합을 공유한다. 집합 하나를 최대 릴리스 1,024개·승격 1,024개 및 추정 4 MiB까지 보관한다. 다운로드는 선택한 릴리스·파일 경로를 다시 검사한다. jobs·sequence·events는 HTTP에서 새 HEAD를 선택할 때 확인하며 운영·백업·복구 읽기는 전체 원문을 확인한다.
+- 순번 전용 커밋은 동일한 writer lease, 세대·HEAD flush, 이벤트와 감사 절차를 사용한다. release-meta 고아 정리는 게시와 시작 시 복구에서 수행한다.
 
 ## UI 규칙
 

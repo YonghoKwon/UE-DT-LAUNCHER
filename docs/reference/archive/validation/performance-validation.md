@@ -120,6 +120,8 @@ python tools/benchmark-distribution-api.py --server publish/server/UeDtLauncher.
 python tools/benchmark-intake-performance.py --server publish/server/UeDtLauncher.DistributionServer.exe --launcher publish/client/UeDtLauncher.exe --fixture publish/perf-run/server/incoming/large-1.0.0 --output publish/perf-intake
 ```
 
+런처 벤치마크의 `results.json`은 서버가 정상 종료 시 기록한 허용 목록의 계측을 `serverMetrics.gracefulShutdownAggregate`에 담습니다. 이전 완료 보고서에 이 필드가 없으면 재집계 도구는 같은 실행 폴더의 `server.log`를 읽습니다. 종료 계측이 없으면 결과에 null을 기록합니다.
+
 비교용 클라이언트 실행은 `--download-concurrency 1 --hash-concurrency 1 --no-reuse`를 추가합니다. `--corrupt-source-record`는 이 새 테스트 루트의 이전 기록만 null로 바꿔 다운로드 fallback을 확인하는 결함 주입 옵션입니다. 각 실행은 고유한 테스트 서버 루트를 만들고 자신이 시작한 프로세스만 종료합니다. 동일 output으로 재실행하지 않습니다.
 
 세부 결과는 로컬 `publish/performance/{baseline-controlled,candidate-controlled,baseline-api,candidate-api-v4,intake-v4}/results.json` 및 results.md에 있습니다. 초기 탐색 실행은 동시 빌드·측정 프록시 연결 소진 영향을 받아 최종 클라이언트 비교에서 제외했습니다. 최종 비교는 upstream 연결을 재사용하는 같은 도구와 조용한 빌드 조건으로 순차 실행했습니다.

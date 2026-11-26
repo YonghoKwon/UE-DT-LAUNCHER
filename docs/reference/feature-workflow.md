@@ -16,7 +16,7 @@
 | 사용자 CLI | `operation cancel --id ID` → status로종료확인 → `operation resume --id ID` | 요청≠취소 완료. workers/복구 종료 대기, fresh 권한/Manifest 재확인 |
 | portable 사용자 | 위 control 명령에 `--config portable.json` 추가 | Agent 없이 자기 owner/session 기록만 사용. 지속 캐시는 명시 resumeCacheBytes 예산 |
 | 서버 관리자 | 새 자격 등록·연결 확인 → `token-list`/`token-revoke-id --id ...` 또는 `client-key revoke --key-id ...` | 비밀 출력 없이 개별 폐기. `--expires-at` 지정 없으면 기존 무기한 유지 |
-| 서버 관리자 | 서버/watch 중지 → `backup plan` → `backup create --output 새폴더` → `backup verify --backup 폴더` | 일관된 작업·감사 세대, 잔존 DB와 파일 hash, private key 별도 보관 |
+| 서버 관리자 | 서버/watch 중지 → `backup plan` → `backup create --output 새폴더` → `backup verify --backup 폴더` | 일관된 권위 세대, 이벤트·감사·파일 hash, private key 별도 보관 |
 | 서버 관리자 | `restore stage --backup ... --target 빈폴더` → `restore activate --target ... --confirm` | 최신 생존 원본의 보안/승격/순번/파일 대조. 불명·누락은 공개 차단 |
 | 서버 관리자 | `retention inspect` → `retention plan --jobs 실패ID --output 계획.json` → 정지후`retention apply --plan 계획.json --confirm` | public/모든승격/pending/active 보호. stale/재생성은 새확인 |
 | 회사 운영자 | disabled template 검토·명시 주기 설정 → `scheduled-check --config ...` 한 회차 | 조회·설치 상태 검사만. 자동 설치/실행/전환 없음, 현재 호스트 예약 등록0 |
@@ -112,7 +112,7 @@ $Launcher = (Resolve-Path .\publish\client-win-x64\UeDtLauncher.exe).Path
 | 접근 정책 | `/dt/config/access-policy.json` | PC별 IP와 허용 프로젝트/트랙 |
 | 업로드 경로 | `/dt/store/incoming/` | 업로더 쓰기 + 서비스 계정 읽기/폴더 접근 |
 | 업로드 상태 | `/dt/store/upload-status/` | 서비스 계정 쓰기 + 업로더 읽기/폴더 접근 |
-| 비공개 처리·보관 | 같은 root의 authority·processing·DB·releases | 서비스 계정만 쓰기 |
+| 비공개 처리·보관 | 같은 root의 authority·processing·releases | 서비스 계정만 쓰기 |
 | 서명키 | 서버 개인키, PC 공개키 | ZIP/JSON에 개인키·토큰을 넣지 않음 |
 
 서명키 생성 예시 — Windows 개발 도구에서 **처음 한 번**, 출력 파일이 없는 폴더에서 실행:
@@ -380,7 +380,7 @@ if ($LASTEXITCODE -ne 0) { throw 'JSON 이름 변경 실패. 서버 폴더 상�
 | 3 | 대기 중 검사 실패 또는 거절 |
 | 4 | 대기 제한시간 초과. 관측한 상태가 있으면 마지막 상태를 출력 |
 
-서버 투영기는 설정된 데이터 루트의 `upload-status/`에 씁니다. 실서버 배치의 데이터 루트는 `/dt/store`입니다. 서버 관리자는 서비스 계정에 `/dt/store/upload-status/` 쓰기 권한을, 업로드 계정에 상태 JSON 읽기와 경로 통과 권한을 부여합니다. `UMask=0077` 서비스 템플릿을 사용하면 이 폴더의 기본 ACL에 업로드 계정 그룹의 읽기 권한을 지정해 원자적으로 교체된 새 파일에도 상속되게 합니다. 업로드 계정의 전송 권한은 `/dt/store/incoming/`으로 한정하고 DB·비공개 검사 사본·`releases/`·서명 키에 대한 접근을 차단합니다.
+서버 투영기는 설정된 데이터 루트의 `upload-status/`에 씁니다. 실서버 배치의 데이터 루트는 `/dt/store`입니다. 서버 관리자는 서비스 계정에 `/dt/store/upload-status/` 쓰기 권한을, 업로드 계정에 상태 JSON 읽기와 경로 통과 권한을 부여합니다. `UMask=0077` 서비스 템플릿을 사용하면 이 폴더의 기본 ACL에 업로드 계정 그룹의 읽기 권한을 지정해 원자적으로 교체된 새 파일에도 상속되게 합니다. 업로드 계정의 전송 권한은 `/dt/store/incoming/`으로 한정하고 권위 저장소·비공개 검사 사본·`releases/`·서명 키에 대한 접근을 차단합니다.
 
 프로필의 `remoteStatus`를 생략하면 `remoteIncoming`과 같은 부모의 `upload-status`를 사용합니다. 실서버 예시에서 `remoteIncoming=/dt/store/incoming`이면 `/dt/store/upload-status`를 읽습니다. SSH에서 경로가 다르게 보이는 환경은 프로필의 `remoteStatus` 또는 명령의 `--remote-status`에 SSH에서 보이는 절대 경로를 지정합니다.
 
@@ -582,7 +582,7 @@ Linux는 `./UeDtLauncher`를 사용합니다. 단순 Healthy/종료0 대신 준�
 | Agent | PC 안에서 설치·복구를 대신 처리하는 업데이트 서비스 | 사용자는 서비스 상태만 확인 |
 | repair / rollback | 파일 복구 / 보관 백업 복원 | 사용자 또는 관리자 |
 
-숫자 버전도 구분합니다. 외부 release.json은 schema1이며, 신규 요청 서명 런처 설정은 schema3입니다(기존 schema1/2 HTTPS/Bearer 호환 유지). Catalog·서명·내부 DB는 각각의 형식 버전을 사용하며 서로 같은 파일이 아닙니다.
+숫자 버전도 구분합니다. 외부 release.json은 schema1이며, 신규 요청 서명 런처 설정은 schema3입니다(기존 schema1/2 HTTPS/Bearer 호환 유지). Catalog·서명·권위 저장소는 각각의 형식 버전을 사용하며 서로 같은 파일이 아닙니다.
 
 ## 5. 회사에서 쓰려면 다음에 무엇을 해야 하나요?
 

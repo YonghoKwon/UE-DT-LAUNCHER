@@ -184,9 +184,43 @@ public sealed class CatalogAuthorityTests
         var metadata = Path.Combine(fixture.Authority.ReleaseMetadataPath, release.ReleaseId + ".json");
         var captured = Path.Combine(fixture.Intake.Get(release.JobId).Snapshot!, "release.json");
         Assert.Equal(File.ReadAllBytes(captured), File.ReadAllBytes(metadata));
-        File.AppendAllText(metadata, " ");
+        var promotions = new ReleasePromotions(fixture.Intake);
+        Assert.Equal("Demo", Assert.Single(promotions.Snapshot().Releases).Metadata.DisplayName);
+        var modified = File.GetLastWriteTimeUtc(metadata);
+        var originalLength = new FileInfo(metadata).Length;
+        File.WriteAllText(metadata, File.ReadAllText(metadata).Replace("Demo", "Demi", StringComparison.Ordinal));
+        File.SetLastWriteTimeUtc(metadata, modified);
+        Assert.Equal(originalLength, new FileInfo(metadata).Length);
+        Assert.Equal(modified, File.GetLastWriteTimeUtc(metadata));
         Assert.Throws<InvalidDataException>(() => fixture.Publisher.Find(release.ReleaseId));
-        Assert.Throws<InvalidDataException>(() => new ReleasePromotions(fixture.Intake).Snapshot());
+        Assert.Throws<InvalidDataException>(() => promotions.Snapshot());
+    }
+
+    [Fact]
+    public void TypedCatalogCacheUsesVerifiedSourceByteBudget()
+    {
+        using var fixture = new CatalogFixture();
+        Assert.Empty(fixture.Publisher.List());
+        Assert.InRange(fixture.Intake.Catalog.CachedCatalogSourceBytes, 1, AuthorityAreaCache.ByteLimit);
+        var snapshot = fixture.Authority.ReadSnapshot();
+        var path = fixture.Authority.DataPath(snapshot.Head.Files["catalog"]);
+        var source = File.ReadAllBytes(path);
+        foreach (var length in new[] { AuthorityAreaCache.ByteLimit, AuthorityAreaCache.ByteLimit + 1 })
+        {
+            // JSON framing whitespace counts towards the source file budget.
+            var padded = new byte[length];
+            source.CopyTo(padded, 0);
+            padded.AsSpan(source.Length).Fill((byte)' ');
+            File.WriteAllBytes(path, padded);
+            var digests = new Dictionary<string, string>(snapshot.Head.Sha256)
+            {
+                ["catalog"] = AuthorityDocuments.Hash(padded)
+            };
+            var head = AuthorityDocuments.Seal(snapshot.Head with { Sha256 = digests });
+            File.WriteAllBytes(fixture.Authority.DataPath("HEAD"), AuthorityDocuments.Encode(head));
+            Assert.Empty(fixture.Publisher.List());
+            Assert.Equal(length == AuthorityAreaCache.ByteLimit ? length : 0, fixture.Intake.Catalog.CachedCatalogSourceBytes);
+        }
     }
 
     [Fact]

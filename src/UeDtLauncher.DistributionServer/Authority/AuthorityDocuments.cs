@@ -61,11 +61,13 @@ internal sealed record AuthorityEventBatch(
 internal sealed class AuthoritySnapshot(
     AuthorityStore store,
     AuthorityHead head,
-    IReadOnlyDictionary<AuthorityArea, JsonElement> areas)
+    IReadOnlyDictionary<AuthorityArea, JsonElement> areas,
+    int catalogSourceBytes)
 {
     internal AuthorityStore Store { get; } = store;
     internal AuthorityHead Head { get; } = head;
     internal long Generation => Head.Generation;
+    internal int CatalogSourceBytes { get; } = catalogSourceBytes;
     internal JsonElement Get(AuthorityArea area) => areas[area];
 }
 

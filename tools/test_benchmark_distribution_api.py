@@ -1,11 +1,10 @@
 """Fast supplemental benchmark contracts; no published processes or real HTTP connections."""
 import base64
-from contextlib import closing
+import hashlib
 import importlib.util
 import itertools
 import json
 from pathlib import Path
-import sqlite3
 import tempfile
 import unittest
 from unittest import mock
@@ -16,7 +15,13 @@ benchmark = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(benchmark)
 
 
+def config_server():
+    return Path(__file__).resolve()
+
+
 def fixture(root):
+    from fixture_contract import claim
+    claim(root)
     server = root / "server"
     directory = server / "releases/bench-small/prod/stable/1.0.0/windows-x64"
     (directory / "files").mkdir(parents=True)
@@ -29,10 +34,23 @@ def fixture(root):
     benchmark.write_json(root / "server.json", {
         "root": str(server), "policyPath": str(root / "policy.json"), "signingKeyPath": str(root / "key.pem"),
         "publicUrl": "http://127.0.0.1:15000", "listenUrl": "http://127.0.0.1:15001"})
-    with closing(sqlite3.connect(server / "distribution.db")) as db:
-        db.execute("CREATE TABLE releases(id TEXT, directory TEXT, metadata TEXT)")
-        db.execute("INSERT INTO releases VALUES(?,?,?)", ("bench-small/prod/stable/1.0.0/windows-x64", str(directory), '{"projectId":"bench-small"}'))
-        db.commit()
+    authority = server / "authority"
+    release_id = "bench-small/prod/stable/1.0.0/windows-x64"
+    metadata = authority / "release-meta" / (release_id + ".json")
+    metadata.parent.mkdir(parents=True)
+    benchmark.write_json(metadata, {"projectId": "bench-small"})
+    (authority / "catalog").mkdir()
+    catalog = authority / "catalog/000001.json"
+    sha256 = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+    benchmark.write_json(catalog, {"schemaVersion": 1, "promotionReady": True, "releases": [
+        {"id": release_id, "directory": "releases/" + release_id, "metadataSha256": sha256(metadata)}]})
+    head = {"schema": 1, "generation": 1, "files": {"catalog": "catalog/000001.json", "events": "events/000001.json"},
+            "sha256": {"catalog": sha256(catalog)}, "headSha256": ""}
+    encode = lambda: json.dumps(head, separators=(",", ":")).encode()
+    head["headSha256"] = hashlib.sha256(encode()).hexdigest()
+    (authority / "HEAD").write_bytes(encode())
+    from fixture_contract import seal
+    seal(root, {"server": config_server()}, root / "server.json")
     return root / "server.json", directory
 
 
@@ -42,7 +60,7 @@ class DistributionApiBenchmarkTests(unittest.TestCase):
             root = Path(temp).resolve()
             config, _ = fixture(root)
             before = {str(path): path.read_bytes() for path in root.rglob("*") if path.is_file()}
-            settings, selection = benchmark.validate_fixture(config)
+            settings, selection = benchmark.validate_fixture(config, config_server())
             self.assertEqual(settings["root"], str(root / "server"))
             self.assertEqual(selection["rangeHeader"], "bytes=0-1023")
             self.assertEqual(selection["contentRange"], "bytes 0-1023/2048")
@@ -57,14 +75,14 @@ class DistributionApiBenchmarkTests(unittest.TestCase):
             report["api"] = []
             benchmark.write_json(root / "results.json", report)
             with self.assertRaises(ValueError):
-                benchmark.validate_fixture(config)
+                benchmark.validate_fixture(config, config_server())
             report["api"] = [{}]
             benchmark.write_json(root / "results.json", report)
             policy = benchmark.read_json(root / "policy.json")
             policy["clients"][0]["id"] = "company-pc"
             benchmark.write_json(root / "policy.json", policy)
             with self.assertRaises(ValueError):
-                benchmark.validate_fixture(config)
+                benchmark.validate_fixture(config, config_server())
 
     def test_external_root_and_traversing_manifest_are_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -73,13 +91,16 @@ class DistributionApiBenchmarkTests(unittest.TestCase):
             settings = benchmark.read_json(config)
             settings["root"] = str(root)
             benchmark.write_json(config, settings)
+            from fixture_contract import seal
+            seal(root, {"server": config_server()}, config)
             with self.assertRaises(ValueError):
-                benchmark.validate_fixture(config)
+                benchmark.validate_fixture(config, config_server())
             settings["root"] = str(root / "server")
             benchmark.write_json(config, settings)
+            seal(root, {"server": config_server()}, config)
             benchmark.write_json(directory / "manifest.json", {"files": [{"path": "../secret", "size": 1}]})
             with self.assertRaises(ValueError):
-                benchmark.validate_fixture(config)
+                benchmark.validate_fixture(config, config_server())
 
     def test_document_size_limit(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -156,11 +177,9 @@ class DistributionApiBenchmarkTests(unittest.TestCase):
     def test_missing_shutdown_metrics_are_null_not_zero(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "server.log"
-            path.write_text("SQLite Error 5: database is locked\n", encoding="utf-8")
+            path.write_text("Server exited before emitting aggregates\n", encoding="utf-8")
             result = benchmark.log_metrics(path)
-            self.assertEqual(result["busyErrorLogLines"], 1)
             self.assertIsNone(result["gracefulShutdownAggregate"])
-            self.assertIsNone(result["nativeSqliteWaitMs"])
             path.write_text('DistributionPerformance {"requests": 3, "sequenceWaitMs": 1.5}\n', encoding="utf-8")
             self.assertEqual(benchmark.log_metrics(path)["gracefulShutdownAggregate"]["requests"], 3)
 

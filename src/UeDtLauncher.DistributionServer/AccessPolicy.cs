@@ -3,7 +3,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Collections.Frozen;
-using Microsoft.Data.Sqlite;
 
 namespace UeDtLauncher.Distribution;
 
@@ -159,59 +158,20 @@ public sealed class DistributionTokens(IntakeStore store, TimeProvider? clock = 
     {
         ReleaseSidecar.Segment(client); using var gate = store.Lock();
         var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
-        if (CredentialAuthority.For(store) is { } authority)
-        {
-            authority.IssueToken(Hash(token), client, CredentialLifecycle.Expiry(expiresAt), gate);
-            return token;
-        }
-        using var database = store.DatabaseWrite();
-        using var db = store.Open(); using var tx = db.BeginTransaction(); using var command = db.CreateCommand(); command.Transaction = tx;
-        var id = Guid.NewGuid().ToString("N");
-        command.CommandText = "INSERT INTO tokens(hash,client,management_id,expires_at) VALUES($hash,$client,$id,$expiry)";
-        command.Parameters.AddWithValue("$hash", Hash(token)); command.Parameters.AddWithValue("$client", client);
-        command.Parameters.AddWithValue("$id", id); command.Parameters.AddWithValue("$expiry", (object?)CredentialLifecycle.Expiry(expiresAt) ?? DBNull.Value);
-        command.ExecuteNonQuery(); CredentialLifecycle.Audit(db, tx, "token-issued", id); tx.Commit(); return token;
+        store.Credentials.IssueToken(Hash(token), client, CredentialLifecycle.Expiry(expiresAt), gate);
+        return token;
     }
-    public void Revoke(string client)
-    {
-        if (CredentialAuthority.For(store) is { } authority)
-        {
-            authority.RevokeClientTokens(client);
-            return;
-        }
-        using var gate = store.Lock(); using var database = store.DatabaseWrite();
-        using var db = store.Open(); using var tx = db.BeginTransaction(); using var command = db.CreateCommand(); command.Transaction = tx;
-        command.CommandText = "UPDATE tokens SET revoked=1 WHERE client=$client";
-        command.Parameters.AddWithValue("$client", client); command.ExecuteNonQuery(); CredentialLifecycle.Audit(db, tx, "tokens-revoked", client); tx.Commit();
-    }
+    public void Revoke(string client) => store.Credentials.RevokeClientTokens(client);
+
     public string? Authenticate(string? token)
     {
         if (string.IsNullOrWhiteSpace(token) || token.Length > 1024) return null;
-        var metadata = CredentialAuthority.FindToken(store, Hash(token));
+        var metadata = store.Credentials.FindToken(Hash(token));
         if (metadata is null || metadata.Revoked || metadata.Expired) return null;
         if (!CredentialLifecycle.Due(metadata.ExpiresAtUtc, (clock ?? TimeProvider.System).GetUtcNow())) return metadata.Client;
         CredentialLifecycle.LatchExpiry(store, false, metadata.Id); return null;
     }
-    public IReadOnlyList<CredentialMetadata> List()
-    {
-        if (CredentialAuthority.For(store) is { } authority) return authority.ListTokens();
-        using var read = store.DatabaseRead(); using var db = store.Open(); using var q = db.CreateCommand();
-        q.CommandText = "SELECT management_id,client,revoked,expires_at,expired FROM tokens ORDER BY rowid";
-        using var r = q.ExecuteReader(); var result = new List<CredentialMetadata>();
-        while (r.Read()) result.Add(new(r.GetString(0), r.GetString(1), r.GetBoolean(2), r.IsDBNull(3) ? null : r.GetString(3), r.GetBoolean(4))); return result;
-    }
-    public void RevokeId(string id)
-    {
-        if (CredentialAuthority.For(store) is { } authority)
-        {
-            authority.RevokeToken(id);
-            return;
-        }
-        using var gate = store.Lock(); using var write = store.DatabaseWrite(); using var db = store.Open(); using var tx = db.BeginTransaction();
-        using var q = db.CreateCommand(); q.Transaction = tx; q.CommandText = "UPDATE tokens SET revoked=1 WHERE management_id=$id";
-        q.Parameters.AddWithValue("$id", id);
-        if (q.ExecuteNonQuery() != 1) throw new InvalidDataException("Unknown token management ID.");
-        CredentialLifecycle.Audit(db, tx, "token-revoked", id); tx.Commit();
-    }
+    public IReadOnlyList<CredentialMetadata> List() => store.Credentials.ListTokens();
+    public void RevokeId(string id) => store.Credentials.RevokeToken(id);
     private static string Hash(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
 }

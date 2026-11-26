@@ -29,8 +29,8 @@ public static class DistributionHttp
     internal static WebApplication CreateApplicationCore(IntakeStore store,TestHooks? hooks)
     {
         if (File.Exists(Path.Combine(store.Root, "restore-staged.json"))) throw new InvalidDataException("Restored root is staged; reconcile current security records before serving.");
-        var promotions = new ReleasePromotions(store);
-        if (!promotions.Snapshot().Ready) throw new InvalidDataException("The configured promotion store is unready. Inspect the root offline before serving.");
+        if (!store.Catalog.RequestSnapshot(store.Authority.ReadRequestSnapshot(includeCatalog: true)).Ready)
+            throw new InvalidDataException("The configured promotion store is unready. Inspect the root offline before serving.");
         if (!Uri.TryCreate(store.Settings.ListenUrl, UriKind.Absolute, out var listen) ||
             !IPAddress.TryParse(listen.Host, out var ip) || !IPAddress.IsLoopback(ip))
             throw new InvalidDataException("Distribution API must bind to loopback behind nginx.");
@@ -53,7 +53,7 @@ public static class DistributionHttp
         var publisher = new ApprovedPublisher(store);
         var tokens = new DistributionTokens(store,hooks?.Clock);
         var deviceKeys = new DistributionDeviceKeys(store,hooks?.Clock);
-        var assets = new PublishedAssetCache();
+        var assets = new PublishedAssetCache(store.Catalog.ValidateRequestReleasePath);
         var limits = new DistributionRequestLimits(store.Settings,hooks?.Clock);
         var sequences = new CatalogSequenceAllocator(store);
         IAccessPolicyProvider provider = new FileAccessPolicyProvider(store.Settings.PolicyPath);
@@ -94,7 +94,9 @@ public static class DistributionHttp
             try
             {
                 using var authMeasurement = DistributionPerformance.MeasureAuthentication();
-                authority = store.Authority.ReadSnapshot();
+                authority = store.Authority.ReadRequestSnapshot(
+                    !signedRequests || context.Request.Path != "/internal/authorize",
+                    verifyCatalogBytes: context.Request.Path == "/api/v1/catalog");
                 if (context.Request.Path == "/api/v1/catalog") hooks?.AfterCatalogSnapshotRead?.Invoke(authority.Generation);
                 CredentialAuthority.RequestSnapshot.Value = authority;
                 if (signedRequests)
@@ -132,7 +134,7 @@ public static class DistributionHttp
             catch (Exception ex) when (ex is InvalidDataException or ArgumentException or FormatException or CryptographicException)
             { context.Response.StatusCode = 401; return; }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            { AuthorityUnavailable(context); return; }
+            { store.Catalog.InvalidateRequestSnapshot(); AuthorityUnavailable(context); return; }
             finally { CredentialAuthority.RequestSnapshot.Value = previous; }
             if (clientId is null) { context.Response.StatusCode = 401; return; }
             bool ConsumeProof()
@@ -161,7 +163,7 @@ public static class DistributionHttp
                     var query = context.Request.Query;
                     if (query.Count > 1 || (query.Count == 1 && (query["selectionPolicy"].Count != 1 || query["selectionPolicy"].ToString() != PromotionCatalog.SelectionPolicy)))
                     { context.Response.StatusCode = 400; return; }
-                    var snapshot = ReadReleaseAuthority(() => CatalogAuthority.For(store)!.Snapshot(authority));
+                    var snapshot = ReadReleaseAuthority(() => store.Catalog.RequestSnapshot(authority));
                     context.Items["promotion-snapshot"] = snapshot;
                     context.Items["allowed"] = snapshot.Releases.Where(r => client.AllowsRelease(r.Metadata)).ToList();
                     if (!ConsumeProof()) return;
@@ -175,7 +177,7 @@ public static class DistributionHttp
                 }
                 PublishedRelease? release = null;
                 if (TryGetReleaseId(path, out var releaseId))
-                    release = ReadReleaseAuthority(() => CatalogAuthority.For(store)!.Find(releaseId, snapshot: authority));
+                    release = ReadReleaseAuthority(() => store.Catalog.FindForRequest(releaseId, authority));
                 if (release is null || !client.AllowsRelease(release.Metadata))
                 {
                     try { store.Audit("download-denied", clientId); }
