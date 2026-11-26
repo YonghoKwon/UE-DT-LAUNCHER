@@ -1,0 +1,76 @@
+{
+  "verifiedSourceHead": "1687616006cb0ec2570ab9ea3d8167b9e30f6013",
+  "publications": [
+    {
+      "rid": "linux-x64",
+      "sourceHead": "1687616006cb0ec2570ab9ea3d8167b9e30f6013",
+      "productSourceHash": "4822dee5863dae0ed60beb636b859eb56357a1150af4e447e9df4de1522244fd",
+      "success": true
+    },
+    {
+      "rid": "win-x64",
+      "sourceHead": "1687616006cb0ec2570ab9ea3d8167b9e30f6013",
+      "productSourceHash": "4822dee5863dae0ed60beb636b859eb56357a1150af4e447e9df4de1522244fd",
+      "success": true
+    }
+  ],
+  "reviewBase": {
+    "commit": "0b34e419ae1195a817b5550fe54adaf30bed5c35",
+    "firstParent": "1687616006cb0ec2570ab9ea3d8167b9e30f6013",
+    "pullRequest": "https://github.com/YonghoKwon/UE-DT-LAUNCHER/pull/39"
+  },
+  "reviewReranDocker": false,
+  "scope": "local Docker synthetic execution, 2026-11-27 KST",
+  "gates": {
+    "G1": "N/A",
+    "G2": "PASS",
+    "G3": "PASS",
+    "G4": "PASS",
+    "G5": "PASS",
+    "G6": "PASS",
+    "G7": "PASS",
+    "G8": "PASS",
+    "G9": "PASS",
+    "G10": "NOT_RUN",
+    "G11": "PASS"
+  },
+  "catalogHttp": [
+    200,
+    200,
+    200,
+    403,
+    401
+  ],
+  "verifiedCatalogReleaseCounts": [
+    1,
+    1,
+    0
+  ],
+  "matchingInstalledFiles": [
+    2,
+    2
+  ],
+  "policy": {
+    "ownerGroupMode": "root:uedt-distribution 640",
+    "serveReadExit": 0,
+    "temporaryFiles": 0,
+    "extendedAclProd06b": "NOT_RUN",
+    "separateRocky84Verification": "https://github.com/YonghoKwon/UE-DT-LAUNCHER/pull/34"
+  },
+  "invalidBatchExit": 1,
+  "sameBatchAddedKeysAndAuditEntries": [
+    0,
+    0
+  ],
+  "revocationRecoveryHttp": [
+    401,
+    200,
+    401
+  ],
+  "supplementalIpMoveHttp": [
+    403,
+    200
+  ],
+  "dockerInventoryChangedResources": 0,
+  "ownedDockerResourcesRemaining": 0
+}
