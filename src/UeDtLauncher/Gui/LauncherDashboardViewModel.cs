@@ -137,12 +137,22 @@ public sealed class LauncherDashboardViewModel : INotifyPropertyChanged
     public void ApplyProjectStatus(ManagedProjectStatus status)
     {
         ProjectStatus = status;
-        GeneralState = !status.IsInstalled && (IsDeveloper || status.PreviousInstallation is null)
+        GeneralState = InstallationState(status, IsDeveloper);
+    }
+
+    internal static GeneralLauncherState InstallationState(ManagedProjectStatus status, bool developer) =>
+        !status.IsInstalled && (developer || status.PreviousInstallation is null)
             ? GeneralLauncherState.NotInstalled
             : status.UpdateRequired
                 ? GeneralLauncherState.UpdateAvailable
                 : GeneralLauncherState.Ready;
-    }
+
+    internal static string InstallationLabel(GeneralLauncherState state) => state switch
+    {
+        GeneralLauncherState.NotInstalled => "설치 필요",
+        GeneralLauncherState.UpdateAvailable => "업데이트 가능",
+        _ => "최신 상태"
+    };
 
     public static RuntimeObservation RequireRuntimeObservation(RuntimeObservation? runtime) => runtime ??
         new(RuntimeState.Unknown, "runtime-observation-missing", "실행 상태 확인이 필요합니다. 업데이트 서비스 연결을 다시 확인해 주세요.");
@@ -152,10 +162,13 @@ public sealed class LauncherDashboardViewModel : INotifyPropertyChanged
         var observed = RequireRuntimeObservation(runtime);
         if (observed.State == RuntimeState.Quiescent) return true;
         GeneralState = GeneralLauncherState.RuntimeBlocked;
-        InstallState = observed.State == RuntimeState.Running ? "실행 중" : "실행 상태 확인 필요";
+        InstallState = RuntimeLabel(observed.State);
         InstallDetail = observed.Message;
         return false;
     }
+
+    internal static string RuntimeLabel(RuntimeState state) =>
+        state == RuntimeState.Running ? "실행 중" : "실행 상태 확인 필요";
 
     public void RequireRuntimeQuiescent(RuntimeObservation? runtime)
     {

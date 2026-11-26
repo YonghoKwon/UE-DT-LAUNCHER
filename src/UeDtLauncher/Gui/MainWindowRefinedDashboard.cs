@@ -116,6 +116,7 @@ public sealed partial class MainWindow : Window
         if (startServices && _config.IsManagedDeployment && _configurationError is null) _agentStatusTimer.Start();
         Closed += (_, _) =>
         {
+            _projectCardLifetime.Cancel();
             _agentStatusTimer.Stop();
             if (_colorValuesChanged is not null && PlatformSettings is not null) PlatformSettings.ColorValuesChanged -= _colorValuesChanged;
             foreach (var bitmap in _projectVisualCache.Values) bitmap.Dispose();
@@ -172,7 +173,7 @@ public sealed partial class MainWindow : Window
                 return;
             }
             if (await RefreshCatalog(false, suppressDialog: true) && HasProject)
-                await RefreshInstallStatusAsync(suppressDialog: true);
+                await RefreshAuthorizedSelectionAsync(suppressDialog: true);
         }
         finally { HideStartupSkeleton(); }
     }
@@ -181,7 +182,7 @@ public sealed partial class MainWindow : Window
     {
         if (!_showStartupSkeleton) return;
         _showStartupSkeleton = false;
-        if (IsVisible) Build();
+        if (IsVisible && !ShowsProjectCards) Build();
     }
 
     private void LoadConfig() => ApplyDisplayConfig(ReadDisplayConfig(ConfigPath));
@@ -210,6 +211,7 @@ public sealed partial class MainWindow : Window
     private void ApplyDisplayConfig((LauncherConfig Config, Exception? Error) display)
     {
         (_config, _configurationError) = display;
+        ResetProjectCards();
         if (_configurationError is { } failure)
         {
             var missing = failure is FileNotFoundException;
