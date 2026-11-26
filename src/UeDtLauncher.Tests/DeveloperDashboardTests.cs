@@ -249,6 +249,42 @@ public class DeveloperDashboardTests
 
     private static string Platform => OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64";
 
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AutomaticVersionCheckRestoresFocusUnlessTheUserMovesIt(bool moveFocusDuringCheck)
+    {
+        var pending = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var backend = new Backend { WaitForCheck = pending.Task };
+        using var fixture = new Fixture([Release("1.0.0", true), Release("2.0.0", false)], backend: backend);
+        var window = fixture.Window;
+        SetField(window, "_allowAutomaticChecks", true);
+        var list = Find<ListBox>(window, "developer-version-list");
+        list.BringIntoView();
+        Dispatcher.UIThread.RunJobs();
+        var first = Assert.IsType<ListBoxItem>(list.ContainerFromIndex(0));
+        Assert.True(first.Focus(NavigationMethod.Tab));
+        try
+        {
+            window.KeyPressQwerty(PhysicalKey.ArrowDown, RawInputModifiers.None);
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(1, backend.Checks);
+            Assert.Equal("2.0.0", fixture.Model.Config.RequestedVersion);
+            Assert.False(Find<ListBox>(window, "developer-version-list").IsEnabled);
+            if (moveFocusDuringCheck)
+                Assert.True(Find<Button>(window, "settings").Focus(NavigationMethod.Tab));
+        }
+        finally { pending.TrySetResult(); }
+
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (fixture.Model.Running) await Task.Delay(10, deadline.Token);
+        Dispatcher.UIThread.RunJobs();
+        var finalList = Find<ListBox>(window, "developer-version-list");
+        var expected = moveFocusDuringCheck ? (Control)Find<Button>(window, "settings")
+            : Assert.IsType<ListBoxItem>(finalList.ContainerFromItem(finalList.SelectedItem!));
+        Assert.Same(expected, window.FocusManager!.GetFocusedElement());
+    }
+
     private static CatalogReleaseOption Release(string version, bool latest, string? notes = null,
         string project = "demo", string channel = "stable", string environment = "prod", string? platform = null) =>
         new() { ProjectId = project, Environment = environment, Channel = channel, Platform = platform ?? Platform,
@@ -280,18 +316,20 @@ public class DeveloperDashboardTests
     private sealed class Backend : ILauncherUiBackend
     {
         public string? DownloadMessage { get; init; }
+        public Task? WaitForCheck { get; init; }
         public Exception? CheckError { get; init; }
         public RuntimeState Runtime { get; init; } = RuntimeState.Quiescent;
         public LauncherUiCompletion Completion { get; init; } = LauncherUiCompletion.Completed;
         public int Checks { get; private set; }
         public int Executions { get; private set; }
 
-        public Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext context, LauncherConfig config,
+        public async Task<LauncherUiOperationResult> CheckAsync(LauncherUiOperationContext context, LauncherConfig config,
             Action<LauncherProgress> progress, CancellationToken token = default)
         {
             Checks++;
-            return CheckError is { } error ? Task.FromException<LauncherUiOperationResult>(error)
-                : Task.FromResult(Result(context, config, LauncherUiCompletion.Checked));
+            if (WaitForCheck is { } wait) await wait.WaitAsync(token);
+            if (CheckError is { } error) throw error;
+            return Result(context, config, LauncherUiCompletion.Checked);
         }
 
         public Task<LauncherUiOperationResult> ExecuteAsync(LauncherUiOperationContext context, LauncherConfig config,
