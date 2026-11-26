@@ -212,6 +212,28 @@ public sealed class IntakeAuthorityTests : IDisposable
             store.Authority.ReadAudit(store.Authority.ReadSnapshot()).Select(entry => entry.Action));
     }
 
+    [Fact]
+    public void SavePreservesAndReplacesAllProgressFieldsWithoutAnActiveClaim()
+    {
+        var store = Open();
+        var original = Job() with
+        {
+            Phase = "snapshot-copy", ProcessedBytes = 4, TotalBytes = 16,
+            EstimatedAdditionalDiskBytes = 64, ProgressUpdatedAt = "2026-11-26T00:12:00.0000000+00:00"
+        };
+        store.Save(original);
+        Assert.Equal(original, Open().Get(original.Id));
+        Assert.Equal(original, Assert.Single(store.List()));
+        var replacement = Job() with { TotalBytes = 1024 };
+        store.Save(replacement);
+        Assert.Equal(replacement, store.Get(original.Id));
+        Assert.Equal(replacement, Assert.Single(Open().List()));
+        store.Save(Job());
+        Assert.Equal(Job(), store.Get(original.Id));
+        Assert.Equal(Job(), Assert.Single(Open().List()));
+        Assert.Empty(IntakeJobs.Read(store.Authority.ReadSnapshot()).ActiveWork);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

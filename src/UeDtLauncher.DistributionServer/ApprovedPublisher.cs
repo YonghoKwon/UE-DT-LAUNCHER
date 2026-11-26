@@ -108,7 +108,7 @@ public sealed class ApprovedPublisher(IntakeStore store)
             existing = Find(metadata.ReleaseId);
             if (existing is not null)
             {
-                if (existing.JobId != id) throw PublicationConflict(id);
+                if (existing.JobId != id) throw PublicationConflict(id, gate);
                 if (!store.ChangeState(id, "publishing", "published", writer: gate)) throw new InvalidOperationException("Job state changed.");
                 return existing;
             }
@@ -138,11 +138,11 @@ public sealed class ApprovedPublisher(IntakeStore store)
         return new(metadata.ReleaseId, id, final, metadata);
     }
 
-    private IOException PublicationConflict(string id)
+    private IOException PublicationConflict(string id, IDisposable? writer = null)
     {
         const string message = "Release version already belongs to another publication; use a new version.";
         // A known losing publisher is not a recoverable activation journal. Keep retry available.
-        store.ChangeState(id, "publishing", "failed", message: message);
+        store.ChangeState(id, "publishing", "failed", message: message, writer: writer);
         return new IOException(message);
     }
 

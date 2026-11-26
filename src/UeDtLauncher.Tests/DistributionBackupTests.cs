@@ -36,6 +36,27 @@ public sealed class DistributionBackupTests : IDisposable
         File.AppendAllText(Path.Combine(backup, "content/incoming/private-upload.txt"), "changed");
         await Assert.ThrowsAsync<InvalidDataException>(() => DistributionBackup.VerifyAsync(backup));
     }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task BackupRejectsRootWithoutHeadBeforeCreatingLocks(bool legacy)
+    {
+        var input = Directory.CreateDirectory(Path.Combine(root, "without-head")).FullName;
+        var hidden = Directory.CreateDirectory(Path.Combine(input, ".hidden-empty"));
+        if (OperatingSystem.IsWindows()) hidden.Attributes |= FileAttributes.Hidden;
+        if (legacy) File.WriteAllText(Path.Combine(input, "distribution.db"), "legacy fixture");
+        var destination = Path.Combine(root, "must-not-back-up");
+        string[] Inventory() => Directory.EnumerateFileSystemEntries(input, "*", SearchOption.AllDirectories)
+            .Order(StringComparer.Ordinal)
+            .Select(path => (File.GetAttributes(path), path))
+            .Select(item => $"{Path.GetRelativePath(input, item.path)}|{item.Item1}|" +
+                (item.Item1.HasFlag(FileAttributes.Directory) ? "" : Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(item.path)))))
+            .ToArray();
+        var before = Inventory();
+        await Assert.ThrowsAsync<AuthorityRootException>(() => DistributionBackup.CreateAsync(new() { Root = input }, destination));
+        Assert.Equal(before, Inventory());
+        Assert.False(Directory.Exists(destination));
+    }
     [Fact]
     public async Task StagedRootIsBlockedAndActivationUsesLatestRevocationsAndSequence()
     {

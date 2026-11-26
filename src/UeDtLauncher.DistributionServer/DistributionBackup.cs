@@ -88,14 +88,15 @@ public static class DistributionBackup
     };
     public static async Task<DistributionBackupManifest> CreateAsync(DistributionSettings settings, string destination)
     {
-        using var lease = DistributionMaintenanceLease.Acquire(settings.Root, true, create: false);
-        using var oldServer = new AuthenticationProcessLease(settings.Root);
-        foreach(var journal in Directory.EnumerateFiles(settings.Root,"retention-*.json"))
-            if(new FileInfo(journal).Length>64*1024*1024 || (await JsonFiles.ReadAsync<RetentionJournal>(journal)).Phase!="Completed")
-                throw new InvalidDataException("Complete interrupted retention before backup.");
         var root = Path.GetFullPath(settings.Root); destination = Path.GetFullPath(destination);
         if (Directory.Exists(destination) || Inside(root, destination)) throw new IOException("Backup needs a new directory outside server root.");
+        _ = AuthorityStore.ReadAlongsideSqlite(root, validateHistory: true);
+        using var lease = DistributionMaintenanceLease.Acquire(root, true, create: false);
         var authority = AuthorityStore.ReadAlongsideSqlite(root, validateHistory: true);
+        using var oldServer = new AuthenticationProcessLease(root);
+        foreach(var journal in Directory.EnumerateFiles(root,"retention-*.json"))
+            if(new FileInfo(journal).Length>64*1024*1024 || (await JsonFiles.ReadAsync<RetentionJournal>(journal)).Phase!="Completed")
+                throw new InvalidDataException("Complete interrupted retention before backup.");
         MaintenanceStorage.PrivateDirectory(destination);
         var content = Path.Combine(destination, "content"); Directory.CreateDirectory(content);
         foreach (var name in new[] { "incoming", "processing", "releases", "archive" })

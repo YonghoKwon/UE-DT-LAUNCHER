@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using UeDtLauncher.Distribution.Authority;
 
 namespace UeDtLauncher.Distribution;
@@ -30,18 +31,29 @@ public sealed partial class IntakeStore
     private void SaveJob(IntakeJob job, bool resetClaim)
     {
         ReleaseSidecar.Segment(job.Id);
-        Authority.Commit(snapshot =>
+        var hasProgress = job.Phase is not null || job.ProgressUpdatedAt is not null ||
+            job.ProcessedBytes != 0 || job.TotalBytes != 0 || job.EstimatedAdditionalDiskBytes != 0;
+        StoredProgress? savedProgress = null;
+        using var writer = LockWriter();
+        Authority.CommitUnderHeldLock(writer, snapshot =>
         {
             var jobs = IntakeJobs.Read(snapshot);
             var index = jobs.Jobs.FindIndex(current => current.Id == job.Id);
             var previous = index < 0 ? null : jobs.Jobs[index];
+            var claim = resetClaim ? null : previous?.ClaimId;
+            // A direct Save can supply display progress without starting an active job.
+            if (!resetClaim && hasProgress && claim is null) claim = Guid.NewGuid();
+            if (claim is { } binding)
+                savedProgress = new(job.Id, binding, job.Phase, job.ProcessedBytes, job.TotalBytes,
+                    job.EstimatedAdditionalDiskBytes, job.ProgressUpdatedAt);
             var next = new StoredIntakeJob(job.Id, previous?.Source ?? IntakeJobs.Relative(Root, job.Source),
                 job.State, job.Snapshot is null ? null : IntakeJobs.Relative(Root, job.Snapshot), job.Message,
-                resetClaim ? null : previous?.ClaimId);
+                claim);
             if (index < 0) jobs.Jobs.Add(next);
             else jobs.Jobs[index] = next;
             return jobs.Plan(new AuthorityEvent(DateTimeOffset.UtcNow, job.State, job.Id));
         });
+        if (savedProgress is not null) WriteProgress(savedProgress);
     }
 
     public IDisposable Lock() => LockWriter();
@@ -78,8 +90,14 @@ public sealed partial class IntakeStore
 
     internal Func<string, long>? AvailableBytes => availableBytes;
 
-    private sealed record StoredProgress(string Job, Guid ClaimId, string Phase, long ProcessedBytes,
-        long TotalBytes, long EstimatedAdditionalDiskBytes, string UpdatedAt);
+    private sealed record StoredProgress(
+        [property: JsonRequired] string Job,
+        [property: JsonRequired] Guid ClaimId,
+        [property: JsonRequired] string? Phase,
+        [property: JsonRequired] long ProcessedBytes,
+        [property: JsonRequired] long TotalBytes,
+        [property: JsonRequired] long EstimatedAdditionalDiskBytes,
+        [property: JsonRequired] string? UpdatedAt);
 
     internal ThrottledPackageProgress Progress(string id, IProgress<PackageWorkProgress>? observer = null)
     {
@@ -112,10 +130,7 @@ public sealed partial class IntakeStore
             using var stream = AuthorityDisk.OpenReader(ProgressFile(job.Id, claim));
             if (stream.Length > 65536) return null;
             var progress = JsonSerializer.Deserialize<StoredProgress>(stream, AuthorityDocuments.Json);
-            return progress is not null && progress.Job == job.Id && progress.ClaimId == claim &&
-                !string.IsNullOrWhiteSpace(progress.Phase) && DateTimeOffset.TryParse(progress.UpdatedAt, out _) &&
-                progress.ProcessedBytes >= 0 && progress.TotalBytes >= 0 && progress.EstimatedAdditionalDiskBytes >= 0
-                ? progress : null;
+            return progress is not null && progress.Job == job.Id && progress.ClaimId == claim ? progress : null;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException)
         {

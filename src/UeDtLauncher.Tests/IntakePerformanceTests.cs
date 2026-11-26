@@ -159,6 +159,52 @@ public sealed class IntakePerformanceTests : IDisposable
     }
 
     [Fact]
+    public async Task ConcurrentActivationFailsTheLosingJobUnderItsHeldWriter()
+    {
+        var store = new IntakeStore(new() { Root = root, SigningKeyPath = Path.Combine(root, "key.pem") });
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        File.WriteAllText(store.Settings.SigningKeyPath, key.ExportECPrivateKeyPem());
+        var loser = await store.IngestAsync(await Package(store, "loser"));
+        var winner = await store.IngestAsync(await Package(store, "winner"));
+        var publisher = new ApprovedPublisher(store);
+        using var reached = new ManualResetEventSlim();
+        using var resume = new ManualResetEventSlim();
+        var writerAcquisitions = 0;
+        var approval = Task.Run(async () =>
+        {
+            try
+            {
+                return await publisher.ApproveAsync(loser.Id, observer: new InlineProgress(progress =>
+                {
+                    if (progress.Phase != "activate") return;
+                    reached.Set();
+                    Assert.True(resume.Wait(TimeSpan.FromSeconds(15)));
+                    AuthorityStore.BeforeAcquireWriter.Value = () =>
+                        Assert.InRange(Interlocked.Increment(ref writerAcquisitions), 1, 2);
+                }));
+            }
+            finally { AuthorityStore.BeforeAcquireWriter.Value = null; }
+        });
+        try
+        {
+            Assert.True(reached.Wait(TimeSpan.FromSeconds(10)));
+            Assert.Equal("publishing", store.Get(loser.Id).State);
+            Assert.Equal(winner.Id, (await publisher.ApproveAsync(winner.Id)).JobId);
+        }
+        finally { resume.Set(); }
+        var error = await Assert.ThrowsAsync<IOException>(async () =>
+            await approval.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.Contains("another publication", error.Message);
+        Assert.Equal(2, writerAcquisitions); // Activation and claim release. Conflict recording borrows the writer.
+        Assert.Equal(winner.Id, Assert.Single(publisher.List()).JobId);
+        Assert.Equal("failed", store.Get(loser.Id).State);
+        Assert.Equal("published", store.Get(winner.Id).State);
+        var snapshot = store.Authority.ReadSnapshot();
+        Assert.Single(store.Authority.ReadAudit(snapshot), entry => entry.Job == loser.Id && entry.Action == "failed");
+        Assert.Empty(IntakeJobs.Read(snapshot).ActiveWork);
+    }
+
+    [Fact]
     public async Task DeadWorkRecordIsReclaimedWithoutDeletingRetainedSnapshot()
     {
         var store = new IntakeStore(new() { Root = root });
