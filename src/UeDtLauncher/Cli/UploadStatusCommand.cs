@@ -50,7 +50,7 @@ public static partial class Program
     }
 
     internal static async Task<int> UploadStatusAsync(string[] args, TextWriter output, TextWriter errors,
-        IUploadProcessRunner runner)
+        IUploadProcessRunner runner, TimeProvider? timeProvider = null)
     {
         UploadStatusRequest request;
         try { request = await ReadUploadStatusRequestAsync(args); }
@@ -61,16 +61,28 @@ public static partial class Program
             return 2;
         }
 
-        using var deadline = new CancellationTokenSource(request.Timeout);
+        var clock = timeProvider ?? TimeProvider.System;
+        var started = clock.GetTimestamp();
+        using var deadline = new CancellationTokenSource(request.Timeout, clock);
+        TimeSpan RemainingOrTimeout()
+        {
+            var remaining = request.Timeout - clock.GetElapsedTime(started);
+            // A timer callback can arrive after an already-due polling continuation.
+            if (remaining <= TimeSpan.Zero) deadline.Cancel();
+            deadline.Token.ThrowIfCancellationRequested();
+            return remaining;
+        }
+
         UploadStatusObservation? last = null;
         var consecutiveFailures = 0;
         try
         {
             while (true)
             {
+                RemainingOrTimeout();
                 var response = await runner.CaptureAsync(request.Step.Executable, request.Step.Arguments,
                     UploadStatus.MaximumBytes, deadline.Token);
-                deadline.Token.ThrowIfCancellationRequested();
+                RemainingOrTimeout();
                 if (response.ExitCode == UploadStatusNotReady && request.Wait)
                 {
                     consecutiveFailures = 0;
@@ -102,7 +114,13 @@ public static partial class Program
                         return exit;
                     }
                 }
-                await Task.Delay(request.Interval, deadline.Token);
+                var remaining = RemainingOrTimeout();
+                // If no poll fits before the deadline, only wait for cancellation. A finite
+                // delay to the deadline can wake early because timer delays use whole milliseconds.
+                if (request.Interval >= remaining)
+                    await Task.Delay(Timeout.InfiniteTimeSpan, deadline.Token);
+                else
+                    await Task.Delay(request.Interval, clock, deadline.Token);
             }
         }
         catch (OperationCanceledException) when (deadline.IsCancellationRequested)
