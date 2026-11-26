@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+using UeDtLauncher.Distribution.Authority;
 
 namespace UeDtLauncher.Distribution;
 
@@ -7,39 +7,61 @@ internal sealed class IntakeWorkClaim : IDisposable
 {
     private readonly IntakeStore store;
     private readonly string jobId;
-    private readonly string owner = Guid.NewGuid().ToString("N");
+    private readonly Guid owner = Guid.NewGuid();
+    private bool published;
 
     public IntakeWorkClaim(IntakeStore store, IntakeJob job, string state, string scratch, string? snapshot,
         params string[] expectedStates)
     {
-        this.store = store; jobId = job.Id;
-        using var gate = store.Lock();
-        using var database = store.DatabaseWrite();
-        using var db = store.Open(); using var transaction = db.BeginTransaction();
-        using var command = db.CreateCommand(); command.Transaction = transaction;
-        var parameters = expectedStates.Select((_, i) => "$state" + i).ToArray();
-        command.CommandText = "UPDATE jobs SET state=$next,message=NULL WHERE id=$id AND state IN (" + string.Join(',', parameters) + ")";
-        command.Parameters.AddWithValue("$next", state); command.Parameters.AddWithValue("$id", job.Id);
-        for (var i = 0; i < parameters.Length; i++) command.Parameters.AddWithValue(parameters[i], expectedStates[i]);
-        if (command.ExecuteNonQuery() != 1) throw new InvalidOperationException("Job state changed before claim.");
-        command.Parameters.Clear();
-        command.CommandText = """
-            INSERT INTO active_work(job,owner,scratch,snapshot,started_at) VALUES($id,$owner,$scratch,$snapshot,$at)
-            ON CONFLICT(job) DO UPDATE SET owner=$owner,scratch=$scratch,snapshot=$snapshot,started_at=$at;
-            INSERT INTO audit(at,action,job) VALUES($at,$action,$id);
-            """;
-        command.Parameters.AddWithValue("$id", job.Id); command.Parameters.AddWithValue("$owner", owner);
-        command.Parameters.AddWithValue("$scratch", scratch); command.Parameters.AddWithValue("$snapshot", (object?)snapshot ?? DBNull.Value);
-        command.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O")); command.Parameters.AddWithValue("$action", state);
-        command.ExecuteNonQuery(); transaction.Commit();
+        this.store = store;
+        jobId = job.Id;
+        var claimId = Guid.NewGuid();
+        store.Authority.Commit(current =>
+        {
+            var jobs = IntakeJobs.Read(current);
+            var index = jobs.Jobs.FindIndex(candidate => candidate.Id == jobId && expectedStates.Contains(candidate.State));
+            if (index < 0) throw new InvalidOperationException("Job state changed before claim.");
+            var now = DateTimeOffset.UtcNow;
+            jobs.Jobs[index] = jobs.Jobs[index] with { State = state, Message = null, ClaimId = claimId };
+            jobs.ActiveWork.RemoveAll(work => work.Job == jobId);
+            jobs.ActiveWork.Add(new(jobId, owner, claimId, IntakeJobs.Relative(store.Root, scratch),
+                snapshot is null ? null : IntakeJobs.Relative(store.Root, snapshot), now));
+            return jobs.Plan(new AuthorityEvent(now, state, jobId));
+        });
     }
+
+    internal void CompletePublication(IntakeJobs jobs, DateTimeOffset completedAt)
+    {
+        var index = PublishingIndex(jobs);
+        jobs.Jobs[index] = jobs.Jobs[index] with { State = "published", ClaimId = null, PublishedAt = completedAt };
+        jobs.ActiveWork.RemoveAll(work => work.Job == jobId && work.Owner == owner);
+    }
+
+    internal void RejectConflictingPublication(IntakeJobs jobs)
+    {
+        var index = PublishingIndex(jobs);
+        jobs.Jobs[index] = jobs.Jobs[index] with { State = "failed", Message = ApprovedPublisher.PublicationConflictMessage };
+    }
+
+    private int PublishingIndex(IntakeJobs jobs)
+    {
+        var index = jobs.Jobs.FindIndex(job => job.Id == jobId && job.State == "publishing");
+        if (index < 0 || !jobs.ActiveWork.Exists(work =>
+            work.Job == jobId && work.Owner == owner && work.ClaimId == jobs.Jobs[index].ClaimId))
+            throw new InvalidOperationException("Publication claim no longer owns the job.");
+        return index;
+    }
+
+    internal void MarkPublished() => published = true;
 
     public void Dispose()
     {
-        using var gate = store.Lock(); using var database = store.DatabaseWrite();
-        using var db = store.Open(); using var command = db.CreateCommand();
-        command.CommandText = "DELETE FROM active_work WHERE job=$id AND owner=$owner";
-        command.Parameters.AddWithValue("$id", jobId); command.Parameters.AddWithValue("$owner", owner);
-        command.ExecuteNonQuery();
+        if (published) return;
+        store.Authority.Commit(snapshot =>
+        {
+            var jobs = IntakeJobs.Read(snapshot);
+            return jobs.ActiveWork.RemoveAll(work => work.Job == jobId && work.Owner == owner) == 0
+                ? CommitPlan.Audit() : jobs.Plan();
+        });
     }
 }

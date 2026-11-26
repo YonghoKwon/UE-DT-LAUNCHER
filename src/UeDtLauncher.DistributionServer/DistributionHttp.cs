@@ -1,9 +1,9 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using Microsoft.Data.Sqlite;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Http.Features;
+using UeDtLauncher.Distribution.Authority;
 
 namespace UeDtLauncher.Distribution;
 
@@ -20,12 +20,17 @@ public static class DistributionHttp
 
     public static WebApplication CreateApplication(IntakeStore store)
         =>CreateApplicationCore(store,null);
-    internal sealed class TestHooks{internal Func<HttpContext,Task>? BeforeFile;internal TimeProvider? Clock;}
+    internal sealed class TestHooks
+    {
+        internal Func<HttpContext, Task>? BeforeFile;
+        internal TimeProvider? Clock;
+        internal Action<long>? AfterCatalogSnapshotRead;
+    }
     internal static WebApplication CreateApplicationCore(IntakeStore store,TestHooks? hooks)
     {
         if (File.Exists(Path.Combine(store.Root, "restore-staged.json"))) throw new InvalidDataException("Restored root is staged; reconcile current security records before serving.");
         var promotions = new ReleasePromotions(store);
-        if (!promotions.Snapshot().Ready) throw new InvalidDataException("Stop the server and apply promotion migration before serving.");
+        if (!promotions.Snapshot().Ready) throw new InvalidDataException("The configured promotion store is unready. Inspect the root offline before serving.");
         if (!Uri.TryCreate(store.Settings.ListenUrl, UriKind.Absolute, out var listen) ||
             !IPAddress.TryParse(listen.Host, out var ip) || !IPAddress.IsLoopback(ip))
             throw new InvalidDataException("Distribution API must bind to loopback behind nginx.");
@@ -51,12 +56,9 @@ public static class DistributionHttp
         var assets = new PublishedAssetCache();
         var limits = new DistributionRequestLimits(store.Settings,hooks?.Clock);
         var sequences = new CatalogSequenceAllocator(store);
-        var databaseGate = store.DatabaseGate;
         IAccessPolicyProvider provider = new FileAccessPolicyProvider(store.Settings.PolicyPath);
         app.Lifetime.ApplicationStopped.Register(() => app.Logger.LogInformation("DistributionPerformance {Metrics}",
             JsonSerializer.Serialize(DistributionPerformance.Snapshot())));
-        // Let shared-store coordination be collected: forced shutdown must not dispose a gate while an
-        // in-flight synchronous SQLite commit is still about to release it.
         app.Use(async (context, next) =>
         {
             using var measurement = DistributionPerformance.MeasureRequest();
@@ -87,11 +89,14 @@ public static class DistributionHttp
             string? clientId = null;
             RequestSignatureContext? proof = null;
             long challengeDeadline = 0;
-            // SQLite's rollback journal lets short readers delay writer commit. Coordinate only this
-            // server's SQL intervals to avoid native busy-poll delays, never caching authorization.
+            AuthoritySnapshot authority;
+            var previous = CredentialAuthority.RequestSnapshot.Value;
             try
             {
                 using var authMeasurement = DistributionPerformance.MeasureAuthentication();
+                authority = store.Authority.ReadSnapshot();
+                if (context.Request.Path == "/api/v1/catalog") hooks?.AfterCatalogSnapshotRead?.Invoke(authority.Generation);
+                CredentialAuthority.RequestSnapshot.Value = authority;
                 if (signedRequests)
                 {
                     if (context.Request.ContentLength is > 0 || context.Request.Headers.ContainsKey("Transfer-Encoding") ||
@@ -126,7 +131,9 @@ public static class DistributionHttp
             }
             catch (Exception ex) when (ex is InvalidDataException or ArgumentException or FormatException or CryptographicException)
             { context.Response.StatusCode = 401; return; }
-            catch (SqliteException) { context.Response.StatusCode = 503; return; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            { AuthorityUnavailable(context); return; }
+            finally { CredentialAuthority.RequestSnapshot.Value = previous; }
             if (clientId is null) { context.Response.StatusCode = 401; return; }
             bool ConsumeProof()
             {
@@ -136,9 +143,17 @@ public static class DistributionHttp
                 context.Response.StatusCode = error == "auth-capacity" ? 429 : 401;
                 context.Response.Headers["X-UE-DT-Auth-Error"] = error; return false;
             }
+            CompiledAccessPolicy policy;
+            try { policy = await provider.LoadCompiledAsync(context.RequestAborted); }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or FormatException or JsonException or UnauthorizedAccessException)
+            {
+                DistributionPerformance.RecordPolicyUnavailable();
+                context.Response.StatusCode = 503;
+                return;
+            }
+
             try
             {
-                var policy = await provider.LoadCompiledAsync(context.RequestAborted);
                 var client = policy.FindClient(clientId);
                 if (client is null || address is null || !client.AllowsAddress(address)) { context.Response.StatusCode = 403; return; }
                 if (context.Request.Path == "/api/v1/catalog")
@@ -146,7 +161,7 @@ public static class DistributionHttp
                     var query = context.Request.Query;
                     if (query.Count > 1 || (query.Count == 1 && (query["selectionPolicy"].Count != 1 || query["selectionPolicy"].ToString() != PromotionCatalog.SelectionPolicy)))
                     { context.Response.StatusCode = 400; return; }
-                    var snapshot = promotions.Snapshot();
+                    var snapshot = ReadReleaseAuthority(() => CatalogAuthority.For(store)!.Snapshot(authority));
                     context.Items["promotion-snapshot"] = snapshot;
                     context.Items["allowed"] = snapshot.Releases.Where(r => client.AllowsRelease(r.Metadata)).ToList();
                     if (!ConsumeProof()) return;
@@ -160,32 +175,35 @@ public static class DistributionHttp
                 }
                 PublishedRelease? release = null;
                 if (TryGetReleaseId(path, out var releaseId))
-                {
-                    databaseGate.EnterReadLock();
-                    try { release = publisher.Find(releaseId); }
-                    finally { databaseGate.ExitReadLock(); }
-                }
+                    release = ReadReleaseAuthority(() => CatalogAuthority.For(store)!.Find(releaseId, snapshot: authority));
                 if (release is null || !client.AllowsRelease(release.Metadata))
                 {
-                    databaseGate.EnterWriteLock();
                     try { store.Audit("download-denied", clientId); }
-                    finally { databaseGate.ExitWriteLock(); }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    { AuthorityUnavailable(context); return; }
                     context.Response.StatusCode = 403; return;
                 }
                 context.Items["release"] = release;
                 if (!ConsumeProof()) return;
                 await next();
             }
+            catch (AuthorityStoreException) { AuthorityUnavailable(context); }
             catch (Exception ex) when (ex is IOException or InvalidDataException or FormatException or JsonException or UnauthorizedAccessException)
             {
-                context.Response.StatusCode = 503; // Invalid/unavailable policy never grants access.
+                context.Response.StatusCode = 503;
             }
         });
         if(hooks?.BeforeFile is not null)app.Use(async(context,next)=>{if(context.Request.Path.Value?.Contains("/files/",StringComparison.Ordinal)==true)await hooks.BeforeFile(context);await next();});
         app.MapMethods("/api/v1/catalog", new[] { "GET", "HEAD" }, async (HttpContext context) =>
         {
             var releases = (List<PublishedRelease>)context.Items["allowed"]!;
-            var sequence = await sequences.NextAsync(context.RequestAborted);
+            long sequence;
+            try { sequence = await sequences.NextAsync(context.RequestAborted); }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+            {
+                DistributionPerformance.RecordAuthorityUnavailable();
+                return Results.StatusCode(503);
+            }
             var now = DateTimeOffset.UtcNow;
             using var catalogMeasurement=DistributionPerformance.MeasurePhase("catalog-build");
             var catalog = PromotionCatalog.Build((PromotionSnapshot)context.Items["promotion-snapshot"]!, releases,
@@ -220,6 +238,22 @@ public static class DistributionHttp
             });
         return app;
     }
+    private static T ReadReleaseAuthority<T>(Func<T> read)
+    {
+        try { return read(); }
+        catch (Exception error) when (error is IOException or InvalidDataException or JsonException
+            or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
+        {
+            throw new AuthorityStoreException("Could not read published release authority.", error);
+        }
+    }
+
+    private static void AuthorityUnavailable(HttpContext context)
+    {
+        DistributionPerformance.RecordAuthorityUnavailable();
+        context.Response.StatusCode = 503;
+    }
+
     public static bool TryGetReleaseId(string path, out string releaseId)
     {
         releaseId = "";

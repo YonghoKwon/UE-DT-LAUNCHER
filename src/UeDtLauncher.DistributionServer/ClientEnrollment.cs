@@ -30,13 +30,13 @@ internal static class ClientEnrollment
             }
 
             beforeWriterLease?.Invoke();
-            await store.WithEnrollmentWriterAsync(async writerStore =>
+            using (var writer = store.LockWriter())
             {
                 // Validate against the current keys while holding the same writer lease as client-key add.
                 plan = await BuildPlanAsync(policyPath, keys, inputs);
                 if (plan.HasChanges)
-                    await ApplyAsync(plan, policyPath, new DistributionDeviceKeys(writerStore), beforePolicyReplace);
-            });
+                    await ApplyAsync(plan, policyPath, CredentialAuthority.For(store)!, writer, beforePolicyReplace);
+            }
             await WritePlanAsync(output, plan, dryRun: false);
             return 0;
         }
@@ -156,7 +156,8 @@ internal static class ClientEnrollment
         return await EnrollmentInputs.ReadBoundedAsync(path, FileAccessPolicyProvider.MaxPolicyBytes);
     }
 
-    private static async Task ApplyAsync(EnrollmentPlan plan, string policyPath, DistributionDeviceKeys keys, Action? beforePolicyReplace)
+    private static async Task ApplyAsync(EnrollmentPlan plan, string policyPath, CredentialAuthority credentials,
+        Authority.AuthorityStore.WriterLease writer, Action? beforePolicyReplace)
     {
         string? temporary = null;
         LinuxFileAccess.Metadata? originalAccess = null;
@@ -178,11 +179,12 @@ internal static class ClientEnrollment
                 await VerifyPolicyReplacementAsync(plan, policyPath, temporary, originalAccess);
             }
 
-            foreach (var row in plan.Rows.Where(row => row.AddKey))
+            var registrations = plan.Rows.Where(row => row.AddKey).Select(row =>
             {
                 var bundle = row.Candidate.Bundle;
-                keys.Add(bundle.ClientId, new DevicePublicKey(bundle.SchemaVersion, bundle.KeyId, bundle.PublicKeyPem));
-            }
+                return (bundle.ClientId, new DevicePublicKey(bundle.SchemaVersion, bundle.KeyId, bundle.PublicKeyPem), (DateTimeOffset?)null);
+            });
+            credentials.AddDeviceKeys(registrations, writer);
             if (temporary is null) return;
             beforePolicyReplace?.Invoke();
             await VerifyPolicyReplacementAsync(plan, policyPath, temporary, originalAccess);

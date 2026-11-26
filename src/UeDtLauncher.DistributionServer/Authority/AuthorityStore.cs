@@ -8,10 +8,12 @@ internal sealed class AuthorityStore
     internal const int ReadRetries = 3;
     internal const int PriorGenerationsToKeep = 8;
     internal static readonly AsyncLocal<Action<long>?> AfterReadHead = new();
+    internal static readonly AsyncLocal<Action?> BeforeAcquireWriter = new();
 
     private readonly AuthorityAreaCache cache = new();
     private readonly AuthorityAuditProjection projection;
     private readonly AuthorityLayout layout;
+    private readonly bool coexistWithSqlite;
     private readonly DistributionMaintenanceLease? inspectionLease;
     private readonly string[] generationDirectories;
     private readonly string[] dataDirectories;
@@ -21,10 +23,12 @@ internal sealed class AuthorityStore
     internal string ProgressPath => DataPath(layout.ProgressDirectory);
     internal Exception? OpenMaintenanceError { get; private set; }
 
-    private AuthorityStore(string root, AuthorityLayout layout, DistributionMaintenanceLease? inspectionLease = null)
+    private AuthorityStore(string root, AuthorityLayout layout, DistributionMaintenanceLease? inspectionLease = null,
+        bool coexistWithSqlite = false)
     {
         Root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
         this.inspectionLease = inspectionLease;
+        this.coexistWithSqlite = coexistWithSqlite;
         this.layout = layout with
         {
             ExistingDistributionMarkers = layout.ExistingDistributionMarkers?.ToArray()
@@ -37,15 +41,33 @@ internal sealed class AuthorityStore
         projection = new(this);
     }
 
-    internal static AuthorityStore Open(string root, AuthorityLayout? layout = null)
+    internal static AuthorityStore Open(string root, AuthorityLayout? layout = null,
+        Action<AuthoritySnapshot>? validate = null) =>
+        OpenCore(new(root, layout ?? AuthorityLayout.Default), validate);
+
+    // Transitional storage during PROD-01S2–S5. Remove with SQLite in PROD-01S6.
+    internal static AuthorityStore OpenAlongsideSqlite(string root) =>
+        OpenCore(new(root, AuthorityLayout.Default, coexistWithSqlite: true));
+
+    private static AuthorityStore OpenCore(AuthorityStore store, Action<AuthoritySnapshot>? validate = null)
     {
-        var store = new AuthorityStore(root, layout ?? AuthorityLayout.Default);
         // Validation precedes creation of even the maintenance/writer locks.
-        if (!store.CheckRoot(validateHistory: true)) store.Initialize();
+        if (!store.CheckRoot(validateHistory: true, out var previous)) store.Initialize();
+        else validate?.Invoke(previous!);
         using var writer = store.AcquireWriter(exclusiveMaintenance: false);
-        if (!store.CheckRoot()) throw new AuthorityRootException(AuthorityRootKind.Damaged, "Authority HEAD is missing.");
+        if (!store.CheckRoot(validateHistory: false, out var current))
+            throw new AuthorityRootException(AuthorityRootKind.Damaged, "Authority HEAD is missing.");
+        if (previous?.Head.HeadSha256 != current!.Head.HeadSha256) validate?.Invoke(current);
         store.OpenMaintenanceError = store.Recover(writer);
         return store;
+    }
+
+    internal static AuthoritySnapshot ReadAlongsideSqlite(string root, bool validateHistory = false)
+    {
+        var store = new AuthorityStore(root, AuthorityLayout.Default, coexistWithSqlite: true);
+        return store.CheckRoot(validateHistory, out var snapshot)
+            ? snapshot!
+            : throw new AuthorityRootException(AuthorityRootKind.Damaged, "Authority HEAD is missing.");
     }
 
     internal static AuthorityStore OpenReadOnly(string root, DistributionMaintenanceLease exclusiveLease, AuthorityLayout? layout = null)
@@ -60,12 +82,22 @@ internal sealed class AuthorityStore
         });
     }
 
+    // CLI inspection must reject old, mixed, and damaged roots without creating any file or lock.
+    internal static AuthoritySnapshot InspectExisting(string root, bool validateHistory = true)
+    {
+        var store = new AuthorityStore(root, AuthorityLayout.Default);
+        return store.CheckRoot(validateHistory, out var snapshot)
+            ? snapshot!
+            : throw new AuthorityRootException(AuthorityRootKind.Damaged, "Authority HEAD is missing.");
+    }
+
     internal AuthoritySnapshot ReadSnapshot() => inspectionLease is null
         ? ReadSnapshotCore()
         : inspectionLease.UseExclusive(Root, ReadSnapshotCore);
 
     private AuthoritySnapshot ReadSnapshotCore()
     {
+        using var measurement = DistributionPerformance.MeasureAuthorityRead();
         for (var attempt = 0; ; attempt++)
         {
             try { return LoadSnapshot(); }
@@ -73,7 +105,15 @@ internal sealed class AuthorityStore
             {
                 if (attempt == ReadRetries)
                     throw new AuthorityStoreException("Could not read a valid authority snapshot after three retries.", error);
-                Thread.Yield();
+                DistributionPerformance.RecordAuthorityReadRetry();
+                if (error is FileNotFoundException or DirectoryNotFoundException ||
+                    OperatingSystem.IsWindows() && (error.HResult & 0xFFFF) is 32 or 33)
+                {
+                    // Missing or sharing-conflicted entries can become visible after a concurrent
+                    // rename or cleanup. Space out the same three HEAD re-reads.
+                    Thread.Sleep(4 << attempt);
+                }
+                else Thread.Yield();
             }
         }
     }
@@ -91,9 +131,17 @@ internal sealed class AuthorityStore
         return CommitUnderHeldLock(writer, makePlan);
     }
 
+    internal AuthorityCommitResult CommitOffline(DistributionMaintenanceLease maintenance, Func<AuthoritySnapshot, CommitPlan> makePlan) =>
+        maintenance.UseExclusive(Root, () =>
+        {
+            using var writer = new WriterLease(this, OpenWriterFile(Root), null);
+            return CommitUnderHeldLock(writer, makePlan);
+        });
+
     internal AuthorityCommitResult CommitUnderHeldLock(WriterLease writer, Func<AuthoritySnapshot, CommitPlan> makePlan) =>
         writer.Use<AuthorityCommitResult>(this, () =>
         {
+            using var measurement = DistributionPerformance.MeasureAuthorityCommit();
             var snapshot = ReadSnapshot();
             PrepareCleanup(snapshot);
             var plan = makePlan(snapshot);
@@ -147,7 +195,7 @@ internal sealed class AuthorityStore
         var relative = AuthorityDocuments.RelativeFile(layout.EventsDirectory, generation);
         try
         {
-            var bytes = ReadFile(DataPath(relative));
+            var bytes = ReadCommittedFile(relative);
             if (generation == snapshot.Generation)
                 VerifyHash(bytes, snapshot.Head.Sha256[AuthorityDocuments.Events]);
             return DecodeBatch(bytes, generation);
@@ -167,7 +215,7 @@ internal sealed class AuthorityStore
 
     private AuthoritySnapshot LoadSnapshot()
     {
-        var bytes = ReadFile(DataPath("HEAD"));
+        var bytes = ReadCommittedFile("HEAD");
         var head = AuthorityDocuments.Decode<AuthorityHead>(bytes);
         AuthorityDocuments.Validate(head, layout);
         if (!bytes.AsSpan().SequenceEqual(AuthorityDocuments.Encode(head)))
@@ -179,11 +227,11 @@ internal sealed class AuthorityStore
             var name = AuthorityDocuments.Name(area);
             var relative = head.Files[name];
             var digest = head.Sha256[name];
-            var content = ReadFile(DataPath(relative));
+            var content = ReadCommittedFile(relative);
             VerifyHash(content, digest);
             areas.Add(area, cache.Parse(relative, digest, content));
         }
-        var events = ReadFile(DataPath(head.Files[AuthorityDocuments.Events]));
+        var events = ReadCommittedFile(head.Files[AuthorityDocuments.Events]);
         VerifyHash(events, head.Sha256[AuthorityDocuments.Events]);
         DecodeBatch(events, head.Generation);
         return new(this, AuthorityDocuments.Freeze(head), areas);
@@ -203,6 +251,16 @@ internal sealed class AuthorityStore
             throw new InvalidDataException("Authority generation checksum is invalid.");
     }
 
+    private byte[] ReadCommittedFile(string relative)
+    {
+        var path = SafePath.ResolveInside(DirectoryPath, relative);
+        // A single attribute lookup checks each component. File.Exists followed by GetAttributes
+        // performs the same probe twice and suppresses access errors on the first probe.
+        for (var component = path; component.Length > DirectoryPath.Length; component = Path.GetDirectoryName(component)!)
+            RejectLink(component);
+        return ReadFile(path);
+    }
+
     private static byte[] ReadFile(string path)
     {
         using var stream = AuthorityDisk.OpenReader(path);
@@ -212,8 +270,11 @@ internal sealed class AuthorityStore
         return bytes;
     }
 
-    private bool CheckRoot(bool validateHistory = false)
+    private bool CheckRoot(bool validateHistory = false) => CheckRoot(validateHistory, out _);
+
+    private bool CheckRoot(bool validateHistory, out AuthoritySnapshot? validatedSnapshot)
     {
+        validatedSnapshot = null;
         try
         {
             var existingDirectory = Root;
@@ -228,14 +289,24 @@ internal sealed class AuthorityStore
             if (existingDirectory != Root) return false;
 
             var names = Directory.EnumerateFileSystemEntries(Root).Select(path => Path.GetFileName(path)!).ToArray();
+            var hasAuthority = Attributes(DirectoryPath) is not null;
             foreach (var file in names)
                 if (file.Equals("distribution.db", StringComparison.OrdinalIgnoreCase) ||
+                    (file.Equals("distribution.db-shm", StringComparison.OrdinalIgnoreCase) ||
+                        file.Equals("distribution.db-journal", StringComparison.OrdinalIgnoreCase)) ||
                     file.EndsWith(".db-wal", StringComparison.OrdinalIgnoreCase) ||
                     file.StartsWith("distribution.pre-v6-", StringComparison.OrdinalIgnoreCase) &&
                     file.EndsWith(".db", StringComparison.OrdinalIgnoreCase))
-                    throw new AuthorityRootException(AuthorityRootKind.LegacyDatabase, "Legacy distribution database detected.");
+                {
+                    if (!coexistWithSqlite || !hasAuthority || !IsTransitionalDatabaseFile(file))
+                        throw new AuthorityRootException(AuthorityRootKind.LegacyDatabase, "Legacy distribution database detected.");
+                    var databasePath = Path.Combine(Root, file);
+                    RejectLink(databasePath);
+                    if (Directory.Exists(databasePath))
+                        throw new AuthorityRootException(AuthorityRootKind.LegacyDatabase, "Invalid transitional database file.");
+                }
 
-            if (Attributes(DirectoryPath) is null)
+            if (!hasAuthority)
             {
                 foreach (var marker in layout.ExistingDistributionMarkers ?? AuthorityLayout.Default.ExistingDistributionMarkers!)
                     if (Attributes(SafePath.ResolveInsideChecked(Root, marker)) is not null)
@@ -243,7 +314,7 @@ internal sealed class AuthorityStore
                 if (names.Length != 0)
                 {
                     // A concurrent initializer can publish authority between enumeration and this probe.
-                    if (Attributes(DirectoryPath) is not null) return CheckRoot(validateHistory);
+                    if (Attributes(DirectoryPath) is not null) return CheckRoot(validateHistory, out validatedSnapshot);
                     throw new AuthorityRootException(AuthorityRootKind.UnrecognizedLayout, "Existing files use an unrecognized distribution layout.");
                 }
                 return false;
@@ -260,6 +331,7 @@ internal sealed class AuthorityStore
             if (validateHistory)
                 for (long generation = 0; generation < snapshot.Generation; generation++)
                     ReadBatch(snapshot, generation);
+            validatedSnapshot = snapshot;
             return true;
         }
         catch (AuthorityRootException) { throw; }
@@ -271,6 +343,16 @@ internal sealed class AuthorityStore
         {
             throw new AuthorityRootException(AuthorityRootKind.Damaged, "Distribution authority root is damaged or inaccessible.", error);
         }
+    }
+
+    private static bool IsTransitionalDatabaseFile(string name)
+    {
+        if (name is "distribution.db" or "distribution.db-wal" or "distribution.db-shm" or "distribution.db-journal")
+            return true;
+        const string prefix = "distribution.pre-v6-";
+        return name.Length == prefix.Length + 21 + 3 && name.StartsWith(prefix, StringComparison.Ordinal) &&
+            name.EndsWith(".db", StringComparison.Ordinal) &&
+            name.AsSpan(prefix.Length, 21).IndexOfAnyExceptInRange('0', '9') < 0;
     }
 
     private static FileAttributes? Attributes(string path)
@@ -330,18 +412,21 @@ internal sealed class AuthorityStore
 
     private WriterLease AcquireWriter(bool exclusiveMaintenance)
     {
+        BeforeAcquireWriter.Value?.Invoke();
         var maintenance = DistributionMaintenanceLease.Acquire(Root, exclusiveMaintenance, create: false);
-        var started = Stopwatch.GetTimestamp();
-        try
-        {
-            var path = SafePath.ResolveInsideChecked(Root, ".writer.lock");
-            while (true)
-            {
-                try { return new(this, new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None), maintenance); }
-                catch (IOException) when (Stopwatch.GetElapsedTime(started) < TimeSpan.FromSeconds(30)) { Thread.Sleep(20); }
-            }
-        }
+        try { return new(this, OpenWriterFile(Root), maintenance); }
         catch { maintenance.Dispose(); throw; }
+    }
+
+    internal static FileStream OpenWriterFile(string root)
+    {
+        var path = SafePath.ResolveInsideChecked(root, ".writer.lock");
+        var started = Stopwatch.GetTimestamp();
+        while (true)
+        {
+            try { return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
+            catch (IOException) when (Stopwatch.GetElapsedTime(started) < TimeSpan.FromSeconds(30)) { Thread.Sleep(20); }
+        }
     }
 
     private AuthorityHead Publish(string directory, AuthorityHead? previous, long generation,
@@ -404,8 +489,15 @@ internal sealed class AuthorityStore
                 id.ValueKind != JsonValueKind.String || string.IsNullOrEmpty(id.GetString())) return;
             live.Add(id.GetString()! + ".json");
         }
-        foreach (var file in Directory.EnumerateFiles(ReleaseMetadataPath))
-            if (IsTemporary(file) || file.EndsWith(".json", StringComparison.Ordinal) && !live.Contains(Path.GetFileName(file)))
+        var files = Directory.EnumerateFiles(ReleaseMetadataPath, "*", new EnumerationOptions
+        {
+            RecurseSubdirectories = true,
+            AttributesToSkip = FileAttributes.ReparsePoint,
+            IgnoreInaccessible = false
+        });
+        foreach (var file in files)
+            if (IsTemporary(file) || file.EndsWith(".json", StringComparison.Ordinal) &&
+                !live.Contains(Path.GetRelativePath(ReleaseMetadataPath, file).Replace(Path.DirectorySeparatorChar, '/')))
                 AuthorityDisk.TryDelete(file);
     }
 
@@ -438,7 +530,7 @@ internal sealed class AuthorityStore
         catch (Exception error) when (IsReadError(error)) { return error; }
     }
 
-    internal sealed class WriterLease(AuthorityStore owner, FileStream writer, IDisposable maintenance) : IDisposable
+    internal sealed class WriterLease(AuthorityStore owner, FileStream writer, IDisposable? maintenance) : IDisposable
     {
         private readonly object gate = new();
         private bool disposed;
@@ -464,7 +556,7 @@ internal sealed class AuthorityStore
                 if (inUse) throw new InvalidOperationException("Cannot release an active authority writer lease.");
                 disposed = true;
                 try { writer.Dispose(); }
-                finally { maintenance.Dispose(); }
+                finally { maintenance?.Dispose(); }
             }
         }
     }

@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+using UeDtLauncher.Distribution.Authority;
 using System.Net;
 using System.Security.Cryptography;
 using UeDtLauncher.Distribution;
@@ -12,7 +12,7 @@ public sealed class CredentialLifecycleTests : IDisposable
     private readonly IntakeStore store;
     private sealed class Clock : TimeProvider { public DateTimeOffset Now = DateTimeOffset.Parse("2030-01-01T00:00:00Z"); public override DateTimeOffset GetUtcNow() => Now; }
     public CredentialLifecycleTests() => store = new(new() { Root = root });
-    public void Dispose() { SqliteConnection.ClearAllPools(); Directory.Delete(root, true); }
+    public void Dispose() { Directory.Delete(root, true); }
     [Fact]
     public void ExpiryIsInclusiveDurableAndNeverRevivesAfterClockRollback()
     {
@@ -36,10 +36,13 @@ public sealed class CredentialLifecycleTests : IDisposable
     public void AuditFailureRollsBackIssueAndRevoke()
     {
         var tokens = new DistributionTokens(store); var token = tokens.Issue("pc"); var id = tokens.List().Single().Id;
-        using var db = store.Open(); using var q = db.CreateCommand();
-        q.CommandText = "CREATE TRIGGER deny_audit BEFORE INSERT ON audit BEGIN SELECT RAISE(ABORT,'injected'); END"; q.ExecuteNonQuery();
-        Assert.Throws<SqliteException>(() => tokens.RevokeId(id)); Assert.Equal("pc", tokens.Authenticate(token));
-        Assert.Throws<SqliteException>(() => tokens.Issue("pc")); Assert.Single(tokens.List());
+        AuthorityDisk.Boundary.Value = FileAuthorityFixtures.FailBeforeHead;
+        try
+        {
+            Assert.Throws<IOException>(() => tokens.RevokeId(id)); Assert.Equal("pc", tokens.Authenticate(token));
+            Assert.Throws<IOException>(() => tokens.Issue("pc")); Assert.Single(tokens.List());
+        }
+        finally { AuthorityDisk.Boundary.Value = null; }
     }
     [Fact]
     public void DeviceExpiryIsLatchedAndKeyIdCanNeverBeReused()
@@ -49,17 +52,18 @@ public sealed class CredentialLifecycleTests : IDisposable
         var registration = new DevicePublicKey(1, "pc-key", key.ExportSubjectPublicKeyInfoPem());
         keys.Add("pc", registration, clock.Now); Assert.True(keys.Find("pc-key")!.Expired);
         clock.Now = clock.Now.AddDays(-1); Assert.True(keys.Find("pc-key")!.Revoked);
-        Assert.Throws<SqliteException>(() => keys.Add("another", registration));
+        Assert.Throws<InvalidDataException>(() => keys.Add("another", registration));
     }
     [Fact]
     public void ExpiryAuditFailureNeverPartiallyCommitsAndConcurrentLatchIsOnce()
     {
         var clock=new Clock();var tokens=new DistributionTokens(store,clock);var token=tokens.Issue("pc",clock.Now);
-        using(var db=store.Open()){using var q=db.CreateCommand();q.CommandText="CREATE TRIGGER fail_expiry BEFORE INSERT ON audit WHEN NEW.action='credential-expired' BEGIN SELECT RAISE(ABORT,'injected'); END";q.ExecuteNonQuery();}
-        Assert.Throws<SqliteException>(()=>tokens.Authenticate(token));Assert.False(tokens.List().Single().Expired);
-        using(var db=store.Open()){using var q=db.CreateCommand();q.CommandText="DROP TRIGGER fail_expiry";q.ExecuteNonQuery();}
+        AuthorityDisk.Boundary.Value = FileAuthorityFixtures.FailBeforeHead;
+        try { Assert.Throws<IOException>(() => tokens.Authenticate(token)); }
+        finally { AuthorityDisk.Boundary.Value = null; }
+        Assert.False(tokens.List().Single().Expired);
         Parallel.For(0,10,_=>Assert.Null(tokens.Authenticate(token)));
-        using var check=store.Open();using var count=check.CreateCommand();count.CommandText="SELECT COUNT(*) FROM audit WHERE action='credential-expired'";Assert.Equal(1L,count.ExecuteScalar());
+        Assert.Single(FileAuthorityFixtures.Audit(store, "credential-expired"));
     }
     [Fact]
     public void CanonicalAddressRejectsDuplicateMalformedProxyValuesAndNeverTrustsRemoteHeaders()

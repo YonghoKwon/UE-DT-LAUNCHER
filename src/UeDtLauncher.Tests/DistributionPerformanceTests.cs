@@ -5,14 +5,43 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.Data.Sqlite;
 using UeDtLauncher.Distribution;
+using UeDtLauncher.Distribution.Authority;
 using Xunit;
 
 namespace UeDtLauncher.Tests;
 
 public sealed class DistributionPerformanceTests
 {
+    [Fact]
+    public async Task DownloadDenialPublishesOnlyAuditAndReturns503WhenAuthorityUnavailable()
+    {
+        await using var server = await ServerFixture.CreateAsync();
+        var authority = server.Store.Authority;
+        var before = authority.ReadSnapshot();
+        const string resource = "/releases/demo/prod/stable/9.0.0/windows-x64/manifest.json";
+        using (var denied = await server.GetAsync(resource, "a"))
+            Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        var after = authority.ReadSnapshot();
+        Assert.Equal(before.Generation + 1, after.Generation);
+        foreach (var area in AuthorityDocuments.Areas.Select(AuthorityDocuments.Name))
+        {
+            Assert.Equal(before.Head.Files[area], after.Head.Files[area]);
+            Assert.Equal(before.Head.Sha256[area], after.Head.Sha256[area]);
+        }
+        var entry = Assert.Single(authority.ReadBatch(after, after.Generation).Events);
+        Assert.Equal(("download-denied", "a"), (entry.Action, entry.Job));
+        var head = authority.DataPath("HEAD");
+        var bytes = File.ReadAllBytes(head);
+        try
+        {
+            File.WriteAllText(head, "fixture unavailable authority");
+            using var unavailable = await server.GetAsync(resource, "a");
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+        }
+        finally { File.WriteAllBytes(head, bytes); }
+        Assert.Equal(after.Generation, authority.ReadSnapshot().Generation);
+    }
     [Fact]
     public async Task PolicyReusesOnlyIdenticalBytesAndFailsClosedAfterEdits()
     {
@@ -259,7 +288,7 @@ public sealed class DistributionPerformanceTests
                 Assert.Equal("1.0.0", Assert.Single(Assert.Single(catalog.Projects).Releases).Version);
                 sequences.Add(catalog.Sequence);
                 using var denied = await server.GetAsync("/releases/demo/prod/stable/9.0.0/windows-x64/manifest.json", "a");
-                Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode); // Nested HTTP writer -> Audit writer.
+                Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
             }
             return sequences;
         }).ToArray();
@@ -269,12 +298,14 @@ public sealed class DistributionPerformanceTests
         Assert.Equal(144, sequences.Count);
         Assert.Equal(sequences.Count, sequences.Distinct().Count());
         Assert.True(progressCount >= 8 * 4);
-        Assert.Equal(8, server.Store.List().Count);
-        Assert.All(server.Store.List(), job => Assert.Equal("published", job.State));
+        var jobs = server.Store.List();
+        Assert.Equal(10, jobs.Count);
+        Assert.All(jobs, job => Assert.Equal("published", job.State));
+        var expectedSources = uploads.Concat(new[] { "1.0.0", "2.0.0" }
+            .Select(version => Path.Combine(server.Store.Root, "incoming", version))).Order(StringComparer.Ordinal);
+        Assert.Equal(expectedSources, jobs.Select(job => job.Source).Order(StringComparer.Ordinal));
         Assert.Equal(10, new ApprovedPublisher(server.Store).List().Count);
-        using var db = server.Store.Open(); using var query = db.CreateCommand();
-        query.CommandText = "SELECT COUNT(*) FROM active_work";
-        Assert.Equal(0L, query.ExecuteScalar());
+        Assert.Empty(IntakeJobs.Read(server.Store.Authority.ReadSnapshot()).ActiveWork);
     }
 
     private sealed class InlinePackageProgress(Action<PackageWorkProgress> callback) : IProgress<PackageWorkProgress>
@@ -343,13 +374,11 @@ public sealed class DistributionPerformanceTests
         using var wrongIp = await server.GetAsync(prefix + "manifest.json", "a", ip: "10.0.0.1");
         Assert.Equal(HttpStatusCode.Forbidden, wrongIp.StatusCode);
 
-        // A corrupt unrelated DB row would fail a full List(); file paths must use exact parameterized lookup.
-        using (var db = server.Store.Open())
-        using (var command = db.CreateCommand())
-        {
-            command.CommandText = "INSERT INTO releases VALUES('unrelated','unused','unused','{')";
-            command.ExecuteNonQuery();
-        }
+        // An unrelated metadata failure breaks a full catalog read but file authorization needs the exact release.
+        var unrelated = Metadata("3.0.0");
+        FileAuthorityFixtures.SeedRelease(server.Store, unrelated, "unrelated");
+        var unrelatedPath = Path.Combine(server.Store.Authority.ReleaseMetadataPath, unrelated.ReleaseId + ".json");
+        File.WriteAllText(unrelatedPath, "{");
         using var exact = await server.GetAsync(prefix + "manifest.json", "a");
         Assert.Equal(HttpStatusCode.OK, exact.StatusCode);
         var modified = File.GetLastWriteTimeUtc(server.Store.Settings.PolicyPath);
@@ -451,7 +480,7 @@ public sealed class DistributionPerformanceTests
     {
         public string Path { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "distribution-perf-" + Guid.NewGuid().ToString("N"));
         public TemporaryDirectory() => Directory.CreateDirectory(Path);
-        public void Dispose() { SqliteConnection.ClearAllPools(); Directory.Delete(Path, true); }
+        public void Dispose() { Directory.Delete(Path, true); }
     }
     private sealed class ServerFixture : IAsyncDisposable
     {
@@ -481,10 +510,10 @@ public sealed class DistributionPerformanceTests
                 SigningKeyPath = Path.Combine(directory.Path, "signing.pem"), ListenUrl = "http://127.0.0.1:0"
             };
             configure?.Invoke(settings);
+            var store = new IntakeStore(settings);
             using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             await File.WriteAllTextAsync(settings.SigningKeyPath, key.ExportECPrivateKeyPem());
             await JsonFiles.WriteAsync(settings.PolicyPath, Policy("1.0.0"));
-            var store = new IntakeStore(settings);
             foreach (var version in new[] { "2.0.0", "1.0.0" })
             {
                 var metadata = Metadata(version);
@@ -493,13 +522,7 @@ public sealed class DistributionPerformanceTests
                 await JsonFiles.WriteAsync(Path.Combine(releaseDirectory, "manifest.json"), Manifest(version));
                 await File.WriteAllTextAsync(Path.Combine(releaseDirectory, "manifest.json.sig"), "signature");
                 await File.WriteAllTextAsync(Path.Combine(releaseDirectory, "files", "game.bin"), "abcdefghij", new UTF8Encoding(false));
-                using var db = store.Open(); using var command = db.CreateCommand();
-                command.CommandText = "INSERT INTO releases VALUES($id,$job,$directory,$metadata)";
-                command.Parameters.AddWithValue("$id", metadata.ReleaseId);
-                command.Parameters.AddWithValue("$job", version);
-                command.Parameters.AddWithValue("$directory", releaseDirectory);
-                command.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(metadata, JsonFiles.Options));
-                command.ExecuteNonQuery();
+                FileAuthorityFixtures.SeedRelease(store, metadata, version);
             }
             var promotion = new ReleasePromotions(store);
             var first = promotion.Promote(new("demo", "prod", "stable", "windows-x64", "2.0.0"), 0, "test fixture");

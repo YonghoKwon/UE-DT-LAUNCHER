@@ -1,11 +1,15 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using UeDtLauncher;
+using UeDtLauncher.Distribution;
 using UeDtLauncher.Distribution.Authority;
 
 if (args.Length < 2) return 2;
 
 try
 {
+    if (args[0] is "intake-crash" or "intake-reopen") return RunIntake(args);
+    if (args[0] == "intake-claim-barrier") return await RunIntakeClaimBarrier(args);
     if (await PlatformChecks.RunCommand(args) is { } platformExit) return platformExit;
     if (args[0] == "crash-init")
         AuthorityDisk.Boundary.Value = PauseAt(Enum.Parse<AuthorityBoundary>(args[2]));
@@ -52,6 +56,10 @@ try
             throw new InvalidOperationException("The requested boundary was not reached.");
         case "crash-init":
             throw new InvalidOperationException("The requested initialization boundary was not reached.");
+        case "catalog-approve":
+        case "catalog-promote":
+        case "catalog-serve":
+            return await RunCatalogCommand(args);
         default:
             return 2;
     }
@@ -69,6 +77,83 @@ catch (Exception error)
 }
 
 static void Print<T>(T value) => Console.WriteLine(JsonSerializer.Serialize(value, AuthorityDocuments.Json));
+
+static async Task<int> RunCatalogCommand(string[] args)
+{
+    var settings = await JsonFiles.ReadAsync<DistributionSettings>(args[2]);
+    var intake = new IntakeStore(settings);
+    if (args[0] == "catalog-serve")
+    {
+        await DistributionHttp.RunAsync(intake);
+        return 0;
+    }
+    if (args[0] == "catalog-promote")
+    {
+        Console.WriteLine("READY");
+        if (Console.ReadLine() != "START") return 2;
+        var selection = new ReleaseSelection("demo", "prod", "stable", "windows-x64", args[3]);
+        Print(new ReleasePromotions(intake).Promote(selection, long.Parse(args[4], System.Globalization.CultureInfo.InvariantCulture), "test"));
+        return 0;
+    }
+
+    if (args.Length >= 5)
+    {
+        var boundary = Enum.Parse<AuthorityBoundary>(args[4]);
+        var occurrence = boundary is AuthorityBoundary.GenerationWrite or AuthorityBoundary.GenerationFlush
+            or AuthorityBoundary.GenerationRename or AuthorityBoundary.GenerationDirectoryFlush ? 3 : 1;
+        CatalogAuthority.PublicationBoundary.Value = PauseAt(boundary, occurrence);
+    }
+    Print(await new ApprovedPublisher(intake).ApproveAsync(args[3]));
+    return 0;
+}
+
+static async Task<int> RunIntakeClaimBarrier(string[] args)
+{
+    var store = new IntakeStore(new() { Root = args[1] });
+    // Hashing starts after the durable claim and private ZIP copy. The actual intake still
+    // owns the OS job lock and has a scratch directory when the harness pauses it.
+    await store.IngestAsync(args[2], observer: new IntakeClaimBarrier());
+    throw new InvalidOperationException("Intake exited before reporting the claimed copy phase.");
+}
+
+static int RunIntake(string[] args)
+{
+    var store = new IntakeStore(new() { Root = args[1] });
+    var authority = store.Authority;
+    if (authority.OpenMaintenanceError is { } error) throw error;
+    if (args[0] == "intake-reopen")
+    {
+        var snapshot = authority.ReadSnapshot();
+        var events = authority.ReadAudit(snapshot).ToArray();
+        var projected = File.ReadLines(authority.DataPath("audit.jsonl"))
+            .Select(line => JsonSerializer.Deserialize<StoredAuthorityEvent>(line, AuthorityDocuments.Json));
+        if (!events.SequenceEqual(projected!)) throw new InvalidDataException("Reopened audit projection differs from authority.");
+        Print(new { snapshot.Generation, jobs = snapshot.Get(AuthorityArea.Jobs), events });
+        return 0;
+    }
+
+    var boundary = Enum.Parse<AuthorityBoundary>(args[2]);
+    var occurrence = boundary is AuthorityBoundary.GenerationWrite or AuthorityBoundary.GenerationFlush or
+        AuthorityBoundary.GenerationRename or AuthorityBoundary.GenerationDirectoryFlush ? 2 : 1;
+    AuthorityDisk.Boundary.Value = PauseAt(boundary, occurrence);
+    const string id = "fixture";
+    using var jobLock = store.LockJob(id);
+    switch (args[3])
+    {
+        case "X1":
+            store.Save(new(id, Path.Combine(store.Root, "incoming", id), "pending", null, "updated"));
+            break;
+        case "X2":
+            store.ChangeState(id, "failed", "waiting", reset: true);
+            break;
+        case "X3":
+            _ = new IntakeWorkClaim(store, store.Get(id), "validating", Path.Combine(store.Root, "processing", "scratch"), null, "waiting");
+            break;
+        default:
+            return 2;
+    }
+    throw new InvalidOperationException("The requested intake boundary was not reached.");
+}
 
 static Action<AuthorityBoundary> PauseAt(AuthorityBoundary boundary, int remaining = 1) => reached =>
 {
@@ -96,4 +181,16 @@ static CommitPlan MakeCrashPlan(AuthoritySnapshot snapshot, string kind)
     if (kind == "area") changed.Add(AuthorityArea.Sequence,
         JsonSerializer.SerializeToElement(new { schemaVersion = 1, highWater = 42 }));
     return new(changed, kind == "area" ? [] : [new(DateTimeOffset.UnixEpoch, "crash-commit", kind)]);
+}
+
+
+file sealed class IntakeClaimBarrier : IProgress<PackageWorkProgress>
+{
+    public void Report(PackageWorkProgress value)
+    {
+        if (value.Phase != "hash") return;
+        Console.WriteLine("CLAIMED");
+        Console.Out.Flush();
+        Thread.Sleep(Timeout.Infinite);
+    }
 }

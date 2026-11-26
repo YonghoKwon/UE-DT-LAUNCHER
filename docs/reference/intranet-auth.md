@@ -4,7 +4,7 @@
 
 ## A. 최초 준비 — 관리자 작업
 
-서버 CLI 수명 관리: `client-key add ... --expires-at 2030-01-01T00:00:00Z`, `token-issue pc --expires-at ...`, `token-list`, `token-revoke-id --id 관리ID`. 생략하면 기존처럼 무기한이다. 새 자격 등록·실제 연결 성공 후 이전 자격을 폐기한다. 현재 내부 DB schema6 전환 전 서버/watch/작업을 중지하며 일관된 snapshot 백업이 생성된다. 관리 목록에는 token/hash를 출력하지 않는다. `maxApiRequestsPerSecond`/`maxConcurrentDownloads`는 기본 null(비활성), 명시한 양수 한도 초과는429/Retry-After다. 실제 HTTP 슬롯 반환·만료/audit 원자성의 로컬 검증과 회사 계정/프록시 인수를 구분한다.
+서버 CLI 수명 관리: `client-key add ... --expires-at 2030-01-01T00:00:00Z`, `token-issue pc --expires-at ...`, `token-list`, `token-revoke-id --id 관리ID`. 생략하면 기존처럼 무기한이다. 새 자격 등록·실제 연결 성공 후 이전 자격을 폐기한다. 폐기·만료와 감사 이벤트는 HEAD 세대 하나에서 반영된다. 서버는 요청마다 같은 HEAD의 자격과 릴리스 색인을 확인한다. 정책 파일과 파일 저장소의 장애는 모두 503으로 응답하며 운영 계측에서는 원인을 구분한다. 관리 목록에는 token/hash를 출력하지 않는다. `maxApiRequestsPerSecond`/`maxConcurrentDownloads`는 기본 null(비활성), 명시한 양수 한도 초과는429/Retry-After다. 실제 HTTP 슬롯 반환·만료/audit 원자성의 로컬 검증과 회사 계정/프록시 인수를 구분한다.
 
 ### PC 여러 대 일괄 등록
 

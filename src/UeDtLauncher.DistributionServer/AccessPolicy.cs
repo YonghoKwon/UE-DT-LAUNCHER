@@ -159,6 +159,11 @@ public sealed class DistributionTokens(IntakeStore store, TimeProvider? clock = 
     {
         ReleaseSidecar.Segment(client); using var gate = store.Lock();
         var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+        if (CredentialAuthority.For(store) is { } authority)
+        {
+            authority.IssueToken(Hash(token), client, CredentialLifecycle.Expiry(expiresAt), gate);
+            return token;
+        }
         using var database = store.DatabaseWrite();
         using var db = store.Open(); using var tx = db.BeginTransaction(); using var command = db.CreateCommand(); command.Transaction = tx;
         var id = Guid.NewGuid().ToString("N");
@@ -169,6 +174,11 @@ public sealed class DistributionTokens(IntakeStore store, TimeProvider? clock = 
     }
     public void Revoke(string client)
     {
+        if (CredentialAuthority.For(store) is { } authority)
+        {
+            authority.RevokeClientTokens(client);
+            return;
+        }
         using var gate = store.Lock(); using var database = store.DatabaseWrite();
         using var db = store.Open(); using var tx = db.BeginTransaction(); using var command = db.CreateCommand(); command.Transaction = tx;
         command.CommandText = "UPDATE tokens SET revoked=1 WHERE client=$client";
@@ -177,22 +187,14 @@ public sealed class DistributionTokens(IntakeStore store, TimeProvider? clock = 
     public string? Authenticate(string? token)
     {
         if (string.IsNullOrWhiteSpace(token) || token.Length > 1024) return null;
-        using var measurement = DistributionPerformance.MeasureDatabase("token-authenticate");
-        CredentialMetadata? metadata;
-        using (var database = store.DatabaseRead())
-        using (var db = store.Open())
-        using (var command = db.CreateCommand())
-        {
-            command.CommandText = "SELECT management_id,client,revoked,expires_at,expired FROM tokens WHERE hash=$hash";
-            command.Parameters.AddWithValue("$hash", Hash(token)); using var r = command.ExecuteReader();
-            metadata = r.Read() ? new(r.GetString(0), r.GetString(1), r.GetBoolean(2), r.IsDBNull(3) ? null : r.GetString(3), r.GetBoolean(4)) : null;
-        }
+        var metadata = CredentialAuthority.FindToken(store, Hash(token));
         if (metadata is null || metadata.Revoked || metadata.Expired) return null;
         if (!CredentialLifecycle.Due(metadata.ExpiresAtUtc, (clock ?? TimeProvider.System).GetUtcNow())) return metadata.Client;
         CredentialLifecycle.LatchExpiry(store, false, metadata.Id); return null;
     }
     public IReadOnlyList<CredentialMetadata> List()
     {
+        if (CredentialAuthority.For(store) is { } authority) return authority.ListTokens();
         using var read = store.DatabaseRead(); using var db = store.Open(); using var q = db.CreateCommand();
         q.CommandText = "SELECT management_id,client,revoked,expires_at,expired FROM tokens ORDER BY rowid";
         using var r = q.ExecuteReader(); var result = new List<CredentialMetadata>();
@@ -200,6 +202,11 @@ public sealed class DistributionTokens(IntakeStore store, TimeProvider? clock = 
     }
     public void RevokeId(string id)
     {
+        if (CredentialAuthority.For(store) is { } authority)
+        {
+            authority.RevokeToken(id);
+            return;
+        }
         using var gate = store.Lock(); using var write = store.DatabaseWrite(); using var db = store.Open(); using var tx = db.BeginTransaction();
         using var q = db.CreateCommand(); q.Transaction = tx; q.CommandText = "UPDATE tokens SET revoked=1 WHERE management_id=$id";
         q.Parameters.AddWithValue("$id", id);

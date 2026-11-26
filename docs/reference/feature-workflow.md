@@ -16,7 +16,7 @@
 | 사용자 CLI | `operation cancel --id ID` → status로종료확인 → `operation resume --id ID` | 요청≠취소 완료. workers/복구 종료 대기, fresh 권한/Manifest 재확인 |
 | portable 사용자 | 위 control 명령에 `--config portable.json` 추가 | Agent 없이 자기 owner/session 기록만 사용. 지속 캐시는 명시 resumeCacheBytes 예산 |
 | 서버 관리자 | 새 자격 등록·연결 확인 → `token-list`/`token-revoke-id --id ...` 또는 `client-key revoke --key-id ...` | 비밀 출력 없이 개별 폐기. `--expires-at` 지정 없으면 기존 무기한 유지 |
-| 서버 관리자 | 서버/watch 중지 → `backup plan` → `backup create --output 새폴더` → `backup verify --backup 폴더` | 일관된 DB/파일 hash, private key 별도 보관 |
+| 서버 관리자 | 서버/watch 중지 → `backup plan` → `backup create --output 새폴더` → `backup verify --backup 폴더` | 일관된 작업·감사 세대, 잔존 DB와 파일 hash, private key 별도 보관 |
 | 서버 관리자 | `restore stage --backup ... --target 빈폴더` → `restore activate --target ... --confirm` | 최신 생존 원본의 보안/승격/순번/파일 대조. 불명·누락은 공개 차단 |
 | 서버 관리자 | `retention inspect` → `retention plan --jobs 실패ID --output 계획.json` → 정지후`retention apply --plan 계획.json --confirm` | public/모든승격/pending/active 보호. stale/재생성은 새확인 |
 | 회사 운영자 | disabled template 검토·명시 주기 설정 → `scheduled-check --config ...` 한 회차 | 조회·설치 상태 검사만. 자동 설치/실행/전환 없음, 현재 호스트 예약 등록0 |
@@ -112,7 +112,7 @@ $Launcher = (Resolve-Path .\publish\client-win-x64\UeDtLauncher.exe).Path
 | 접근 정책 | `/dt/config/access-policy.json` | PC별 IP와 허용 프로젝트/트랙 |
 | 업로드 경로 | `/dt/store/incoming/` | 업로더 쓰기 + 서비스 계정 읽기/폴더 접근 |
 | 업로드 상태 | `/dt/store/upload-status/` | 서비스 계정 쓰기 + 업로더 읽기/폴더 접근 |
-| 비공개 처리·보관 | 같은 root의 processing·DB·releases | 업로더가 검사 snapshot·키·DB를 바꾸지 못함 |
+| 비공개 처리·보관 | 같은 root의 authority·processing·DB·releases | 서비스 계정만 쓰기 |
 | 서명키 | 서버 개인키, PC 공개키 | ZIP/JSON에 개인키·토큰을 넣지 않음 |
 
 서명키 생성 예시 — Windows 개발 도구에서 **처음 한 번**, 출력 파일이 없는 폴더에서 실행:
@@ -124,7 +124,7 @@ New-Item -ItemType Directory -Force "$env:USERPROFILE\DT-Deploy\keys" | Out-Null
 
 개인키는 서버 관리자가 안전한 경로로 받아 예시 배치의 `/dt/keys/signing.pem`에 저장하고 서버 서비스/승인 운영자만 읽도록 보호합니다. 공개키만 PC에 전달합니다. 이미 운영 중인 키를 배포할 때마다 새로 만들지 않습니다. TLS 인증서와 이 배포 서명키는 서로 다른 용도입니다.
 
-서버 설정 JSON 전문·정책 예시는 [통합 운영 가이드](distribution-workflow.md)를 사용합니다. 서비스 파일은 `packaging/linux/ue-dt-distribution.service`, nginx 예시는 `packaging/linux/distribution-nginx.conf`입니다. 서버 관리자가 서비스 사본의 `ExecStart`에 `/dt/publish/server-linux-x64/UeDtLauncher.DistributionServer serve --config /dt/config/server.json`을, `ReadWritePaths`에 `/dt/store`를 지정합니다. nginx의 도메인·TLS 경로를 실제 값으로 정하고 설정을 배치한 **후** 다음을 실행합니다.
+서버 설정 JSON 전문·정책 예시는 [통합 운영 가이드](distribution-workflow.md)를 사용합니다. 빈 전용 root에 설정을 연결하고 서비스 계정으로 `/dt/publish/server-linux-x64/UeDtLauncher.DistributionServer list --config /dt/config/server.json`을 최초 한 번 실행합니다. 작업 목록 `[]`와 `/dt/store/authority/HEAD`를 확인한 뒤 업로더 권한을 적용합니다. 서비스 파일은 `packaging/linux/ue-dt-distribution.service`, nginx 예시는 `packaging/linux/distribution-nginx.conf`입니다. 서버 관리자가 서비스 사본의 `ExecStart`에 `/dt/publish/server-linux-x64/UeDtLauncher.DistributionServer serve --config /dt/config/server.json`을, `ReadWritePaths`에 `/dt/store`를 지정합니다. nginx의 도메인·TLS 경로를 실제 값으로 정하고 설정을 배치한 **후** 다음을 실행합니다.
 
 ```bash
 sudo systemctl daemon-reload
@@ -455,7 +455,7 @@ sudo -u uedt-distribution /dt/publish/server-linux-x64/UeDtLauncher.Distribution
 ./UeDtLauncher.DistributionServer promote --project-id demo --environment prod --channel stable --platform windows-x64 --version 1.2.0 --expected-revision N --reason '개발자 검증 통과' --config /dt/config/server.json
 ```
 
-N은 inspect 결과로 치환합니다. 승격은 자동 설치나 실행 전환이 아니며, 사용자는 다음 상태 확인 후 주 버튼으로 작업합니다. [기존 DB 이전·권한별 추천](distribution-workflow.md)
+N은 inspect 결과로 치환합니다. 승격은 자동 설치나 실행 전환이 아니며, 사용자는 다음 상태 확인 후 주 버튼으로 작업합니다. [권한별 추천과 파일 저장소 초기화](distribution-workflow.md)
 
 ## C. 사용자 PC: 상태 확인 → 설치 → 실행
 

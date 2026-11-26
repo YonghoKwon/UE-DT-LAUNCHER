@@ -5,7 +5,6 @@ import argparse
 import json
 import os
 from pathlib import Path
-import sqlite3
 import subprocess
 import time
 from fixture_contract import claim, inside, verify
@@ -99,8 +98,12 @@ def main():
     run('retention','plan','--temporary',temporary_name,'--output',plan)
     run('retention','apply','--plan',plan,'--confirm')
     if temporary.exists():raise RuntimeError('Confirmed cleanup failed')
-    with sqlite3.connect(target/'distribution.db') as db:
-        if db.execute('SELECT revoked FROM tokens WHERE management_id=?',(metadata['id'],)).fetchone()!=(1,):raise RuntimeError('Restore resurrected credential')
+    inspection=subprocess.run([executable,'token-list','--config',str(target_config)],capture_output=True,check=True,timeout=30,creationflags=flags)
+    if not any(row['id']==metadata['id'] and row['revoked'] for row in json.loads(inspection.stdout)):
+        raise RuntimeError('Restore resurrected credential')
+    for authority_root in (Path(settings['root']),target,backup/'content'):
+        if not (authority_root/'authority'/'HEAD').is_file() or any(authority_root.rglob('*.db*')):
+            raise RuntimeError('Maintenance used an unexpected storage format')
     summary={'schemaVersion':1,'backup_verified':True,'live_exclusion':True,'staged_fence':True,'latest_revocation_preserved':True,
              'private_key_included':False,'source_loss_recovery_tested':False,'stale_retention_plan_rejected':True,'confirmed_temp_cleanup':True,'restored_authenticated_install':restored_authenticated}
     (args.output/'summary.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')

@@ -1,4 +1,3 @@
-using Microsoft.Data.Sqlite;
 using UeDtLauncher.Distribution;
 using Xunit;
 
@@ -8,7 +7,7 @@ public sealed class RetentionMaintenanceTests : IDisposable
     private readonly string root=Path.Combine(Path.GetTempPath(),"retention-"+Guid.NewGuid().ToString("N"));
     private readonly IntakeStore store;
     public RetentionMaintenanceTests()=>store=new(new(){Root=root});
-    public void Dispose(){RetentionMaintenance.Boundary.Value=null;SqliteConnection.ClearAllPools();Directory.Delete(root,true);}
+    public void Dispose(){RetentionMaintenance.Boundary.Value=null;Directory.Delete(root,true);}
     private string Failed()
     {
         var source=Path.Combine(root,"incoming/failed");Directory.CreateDirectory(source);File.WriteAllText(Path.Combine(source,"payload"),"failed");
@@ -27,7 +26,7 @@ public sealed class RetentionMaintenanceTests : IDisposable
         await Assert.ThrowsAnyAsync<Exception>(()=>RetentionMaintenance.ApplyAsync(store.Settings,plan,true));
         var journal=await JsonFiles.ReadAsync<RetentionJournal>(Path.Combine(root,"retention-"+plan.Fingerprint+".json"));
         Assert.Equal("DeleteIntent",Assert.Single(journal.Items!).Phase);Assert.NotEqual("Completed",journal.Phase);
-        using var db=store.Open();using var q=db.CreateCommand();q.CommandText="SELECT COUNT(*) FROM maintenance_deletions";Assert.Equal(0L,q.ExecuteScalar());
+        Assert.Empty(IntakeJobs.Read(store.Authority.ReadSnapshot()).MaintenanceDeletions);
     }
     [Fact]
     public async Task ApprovedOriginalEmptyDirectoriesCanBeRemovedWithoutRecursiveDeletion()
@@ -62,7 +61,7 @@ public sealed class RetentionMaintenanceTests : IDisposable
         var path=Failed();store.Save(new("failed",path,"pending",null,null));
         await Assert.ThrowsAsync<InvalidDataException>(()=>RetentionMaintenance.PlanAsync(store.Settings,["failed"],[]));
         var temp=Path.Combine(root,"processing/active");Directory.CreateDirectory(temp);
-        using(var db=store.Open()){using var q=db.CreateCommand();q.CommandText="INSERT INTO active_work VALUES('active','owner',$path,NULL,'now')";q.Parameters.AddWithValue("$path",temp);q.ExecuteNonQuery();}
+        IntakeAuthorityTests.AddAbandonedWork(store, "active", temp);
         await Assert.ThrowsAsync<InvalidDataException>(()=>RetentionMaintenance.PlanAsync(store.Settings,[],["processing/active"]));
         await Assert.ThrowsAsync<InvalidDataException>(()=>RetentionMaintenance.PlanAsync(store.Settings,[],["releases/demo"]));
     }
@@ -91,7 +90,7 @@ public sealed class RetentionMaintenanceTests : IDisposable
         Directory.CreateDirectory(path);File.WriteAllText(Path.Combine(path,"payload"),"failed");
         RetentionMaintenance.Boundary.Value=null;await RetentionMaintenance.ApplyAsync(store.Settings,plan,true);
         Assert.Equal("failed",File.ReadAllText(Path.Combine(path,"payload")));
-        using var db=store.Open();using var q=db.CreateCommand();q.CommandText="SELECT COUNT(*) FROM maintenance_deletions";Assert.Equal(1L,q.ExecuteScalar());
+        Assert.Single(IntakeJobs.Read(store.Authority.ReadSnapshot()).MaintenanceDeletions);
     }
     [Fact]
     public async Task RecreatedSourceBeforeMovementIsRejectedEvenWithSameBytes()

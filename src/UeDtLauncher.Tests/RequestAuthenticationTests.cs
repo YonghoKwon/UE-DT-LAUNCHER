@@ -4,13 +4,13 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.Data.Sqlite;
 using UeDtLauncher.Distribution;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace UeDtLauncher.Tests;
 
-public sealed class RequestAuthenticationTests
+public sealed class RequestAuthenticationTests(ITestOutputHelper output)
 {
     [Theory]
     [InlineData(false)]
@@ -120,7 +120,7 @@ public sealed class RequestAuthenticationTests
         await fixture.Policy(true);
         new DistributionDeviceKeys(fixture.Store).Revoke("pc-key");
         using var revoked = await fixture.Send(fixture.Proof(path), challenge); Assert.Equal(HttpStatusCode.Unauthorized, revoked.StatusCode);
-        Assert.Throws<SqliteException>(() => new DistributionDeviceKeys(fixture.Store).Add("other", fixture.Public));
+        Assert.Throws<InvalidDataException>(() => new DistributionDeviceKeys(fixture.Store).Add("other", fixture.Public));
     }
 
     [Theory]
@@ -266,6 +266,132 @@ public sealed class RequestAuthenticationTests
         clock.Utc=clock.Utc.AddDays(-1);
         using var reversed=await f.Send(proof with{Nonce=RequestSignatures.NewNonce()},challenge);Assert.Equal(HttpStatusCode.Unauthorized,reversed.StatusCode);
     }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CredentialStorage_SignedHttpMatrix(bool reopen)
+    {
+        var clock = new MonotonicClock();
+        var expiry = clock.Utc.AddMinutes(1);
+        await using var fixture = await Fixture.CreateAsync(settings => settings.MaxApiRequestsPerSecond = 2,
+            new() { Clock = clock }, expiry, reopen);
+        const string catalog = "/api/v1/catalog";
+        var otherId = "revocable";
+        var keys = new DistributionDeviceKeys(fixture.Store);
+        keys.Add("pc", fixture.Public with { KeyId = otherId });
+        var challenge = await fixture.Challenge();
+        var proof = fixture.Proof(catalog);
+        CheckCredentialResponse("valid", await fixture.Send(proof, challenge), 200);
+        CheckCredentialResponse("rate limit", await fixture.Send(fixture.Proof(catalog), challenge), 429, retryAfter: "1");
+        clock.Advance(1);
+        CheckCredentialResponse("unregistered", await fixture.Send(fixture.Proof(catalog) with { KeyId = "unregistered" }, challenge), 401);
+        CheckCredentialResponse("IP outside policy", await fixture.Send(fixture.Proof(catalog), challenge, ip: "10.200.0.99"), 403);
+        clock.Advance(1);
+        CheckCredentialResponse("stale challenge", await fixture.Send(fixture.Proof(catalog), "fixture-stale"), 401, authError: "stale-challenge");
+
+        var policy = fixture.Store.Settings.PolicyPath;
+        await File.WriteAllTextAsync(policy, "invalid policy");
+        CheckCredentialResponse("policy unavailable", await fixture.Send(fixture.Proof(catalog), challenge), 503);
+        await fixture.Policy(true);
+
+        clock.Advance(1);
+        var otherChallenge = await fixture.Challenge(otherId);
+        CheckCredentialResponse("before revocation",
+            await fixture.Send(fixture.Proof(catalog) with { KeyId = otherId }, otherChallenge), 200);
+        keys.Revoke(otherId);
+        clock.Advance(1);
+        CheckCredentialResponse("immediately revoked",
+            await fixture.Send(fixture.Proof(catalog) with { KeyId = otherId }, otherChallenge), 401);
+        clock.Utc = expiry;
+        CheckCredentialResponse("immediately expired", await fixture.Send(fixture.Proof(catalog), challenge), 401);
+        clock.Advance(1);
+        clock.Utc = expiry.AddDays(-1);
+        CheckCredentialResponse("after clock rollback", await fixture.Send(fixture.Proof(catalog), challenge), 401);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CredentialStorage_BearerHttpMatrix(bool reopen)
+    {
+        var clock = new MonotonicClock();
+        await using var fixture = await Fixture.CreateAsync(settings =>
+        {
+            settings.AuthenticationMode = "bearer";
+            settings.PublicUrl = "https://127.0.0.1:18500";
+        }, new() { Clock = clock }, reopen: reopen);
+        var tokens = new DistributionTokens(fixture.Store);
+        var token = tokens.Issue("pc");
+        CheckCredentialResponse("valid bearer", await Send(token), 200);
+        CheckCredentialResponse("unregistered bearer", await Send("unregistered-fixture-token"), 401);
+        var id = Assert.Single(tokens.List()).Id;
+        tokens.RevokeId(id);
+        CheckCredentialResponse("immediately revoked by id", await Send(token), 401);
+
+        var another = tokens.Issue("pc");
+        CheckCredentialResponse("before client revocation", await Send(another), 200);
+        tokens.Revoke("pc");
+        CheckCredentialResponse("immediately revoked by client", await Send(another), 401);
+
+        var expiry = clock.Utc.AddSeconds(1);
+        var expiring = tokens.Issue("pc", expiry);
+        CheckCredentialResponse("before expiry", await Send(expiring), 200);
+        clock.Utc = expiry;
+        CheckCredentialResponse("immediately expired", await Send(expiring), 401);
+        clock.Utc = expiry.AddDays(-1);
+        CheckCredentialResponse("after clock rollback", await Send(expiring), 401);
+
+        if (!reopen)
+        {
+            var snapshot = fixture.Store.Authority.ReadSnapshot();
+            var authPath = snapshot.Store.DataPath(snapshot.Head.Files["auth"]);
+            File.Delete(authPath);
+            CheckCredentialResponse("credential store unavailable", await Send(expiring), 503);
+        }
+
+        async Task<HttpResponseMessage> Send(string credential)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/catalog");
+            request.Headers.Authorization = new("Bearer", credential);
+            return await fixture.Http.SendAsync(request);
+        }
+    }
+
+    [Fact]
+    public async Task CredentialStorage_ConcurrentSignedExpiryLatchesOnce()
+    {
+        var clock = new MonotonicClock();
+        var expiry = clock.Utc.AddSeconds(1);
+        await using var fixture = await Fixture.CreateAsync(hooks: new() { Clock = clock }, expiresAt: expiry);
+        var authority = fixture.Store.Authority;
+        const string catalog = "/api/v1/catalog";
+        var challenge = await fixture.Challenge();
+        CheckCredentialResponse("before expiry", await fixture.Send(fixture.Proof(catalog), challenge), 200);
+        var beforeExpiry = authority.ReadSnapshot().Generation;
+        clock.Utc = expiry;
+        await Task.WhenAll(Enumerable.Range(0, 10).Select(async _ =>
+            CheckCredentialResponse("concurrent expiry", await fixture.Send(fixture.Proof(catalog), challenge), 401)));
+        var snapshot = authority.ReadSnapshot();
+        Assert.Equal(beforeExpiry + 1, snapshot.Generation);
+        Assert.Equal("pc-key", Assert.Single(authority.ReadAudit(snapshot), entry => entry.Action == "credential-expired").Job);
+        clock.Utc = expiry.AddDays(-1);
+        CheckCredentialResponse("after clock rollback", await fixture.Send(fixture.Proof(catalog), challenge), 401);
+        Assert.Equal(snapshot.Generation, authority.ReadSnapshot().Generation);
+    }
+
+    private void CheckCredentialResponse(string name, HttpResponseMessage response, int status,
+        string? authError = null, string? retryAfter = null)
+    {
+        using (response)
+        {
+            var actual = ((int)response.StatusCode, Header("X-UE-DT-Auth-Error"), Header("Retry-After"),
+                Header("Cache-Control"), Header("WWW-Authenticate"));
+            output.WriteLine($"HTTP\t{name}\t{actual.Item1}\t{actual.Item2}\t{actual.Item3}\t{actual.Item4}\t{actual.Item5}");
+            Assert.True(actual == (status, authError, retryAfter, "no-store", null), $"{name}: {actual}");
+        }
+        string? Header(string header) => response.Headers.TryGetValues(header, out var values) ? Assert.Single(values) : null;
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         public string Root { get; } = Path.Combine(Path.GetTempPath(), "uedt-auth-" + Guid.NewGuid().ToString("N"));
@@ -275,33 +401,32 @@ public sealed class RequestAuthenticationTests
         public string Private = "";
         public HttpClient Http = null!;
         private WebApplication app = null!;
-        public static async Task<Fixture> CreateAsync(Action<DistributionSettings>? configure=null,DistributionHttp.TestHooks? hooks=null,DateTimeOffset? expiresAt=null)
+        public static async Task<Fixture> CreateAsync(Action<DistributionSettings>? configure=null,DistributionHttp.TestHooks? hooks=null,
+            DateTimeOffset? expiresAt=null, bool reopen=false)
         {
             var f = new Fixture(); Directory.CreateDirectory(f.Root);
             var settings = new DistributionSettings { Root = f.Root, AuthenticationMode = "request-signature-v1", PublicUrl = "http://127.0.0.1:18500", ListenUrl = "http://127.0.0.1:0", PolicyPath = Path.Combine(f.Root, "policy.json"), SigningKeyPath = Path.Combine(f.Root, "release.pem") };
             configure?.Invoke(settings);
+            f.Store = new(settings);
             using var releaseKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             await File.WriteAllTextAsync(settings.SigningKeyPath, releaseKey.ExportPkcs8PrivateKeyPem());
             var publicPath = Path.Combine(f.Root, "public.pem"); await File.WriteAllTextAsync(publicPath, releaseKey.ExportSubjectPublicKeyInfoPem());
-            f.Store = new(settings); await f.Policy(true);
+            await f.Policy(true);
             f.Config = new(); f.Config.Security.TrustedSigningKeys.Add(new() { KeyId = settings.SigningKeyId, PublicKeyPath = publicPath });
             using var device = ECDsa.Create(ECCurve.NamedCurves.nistP256); f.Private = device.ExportPkcs8PrivateKeyPem();
             f.Public = new(1, "pc-key", device.ExportSubjectPublicKeyInfoPem()); new DistributionDeviceKeys(f.Store).Add("pc", f.Public,expiresAt);
             var metadata = new ReleaseSidecar { ProjectId = "demo", Version = "1.0.0" };
             var directory = Path.Combine(f.Root, "releases", metadata.ReleaseId);
             Directory.CreateDirectory(Path.Combine(directory, "files")); await File.WriteAllTextAsync(Path.Combine(directory, "files", "game.bin"), "abcdefghij");
-            using (var db = f.Store.Open())
-            using (var command = db.CreateCommand())
-            {
-                command.CommandText = "INSERT INTO releases VALUES($id,'test',$dir,$metadata)";
-                command.Parameters.AddWithValue("$id", metadata.ReleaseId); command.Parameters.AddWithValue("$dir", directory); command.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(metadata, JsonFiles.Options)); command.ExecuteNonQuery();
-            }
+            FileAuthorityFixtures.SeedRelease(f.Store, metadata, "test");
             new ReleasePromotions(f.Store).Promote(new(metadata.ProjectId, metadata.Environment, metadata.Channel, metadata.Platform, metadata.Version), 0, "test fixture");
+            if (reopen) f.Store = new(settings);
             f.app = DistributionHttp.CreateApplicationCore(f.Store,hooks); await f.app.StartAsync();
             f.Http = new() { BaseAddress = new Uri(f.app.Urls.Single()) }; return f;
         }
         public Task Policy(bool allowed) => JsonFiles.WriteAsync(Store.Settings.PolicyPath, new AccessPolicy { Clients = [new ClientAccess { Id = "pc", Addresses = ["127.0.0.0/8"], Grants = allowed ? [new ReleaseGrant { ProjectId = "demo", Environment = "prod", Channel = "stable" }] : [] }] });
-        public async Task<string> Challenge() => (await Http.GetFromJsonAsync<AuthChallenge>("/api/v1/auth/challenge?keyId=pc-key", JsonFiles.Options))!.Challenge;
+        public async Task<string> Challenge(string keyId = "pc-key") =>
+            (await Http.GetFromJsonAsync<AuthChallenge>("/api/v1/auth/challenge?keyId=" + keyId, JsonFiles.Options))!.Challenge;
         public RequestSignatureContext Proof(string path) => new("pc-key", RequestSignatures.NewNonce(), "GET", Store.Settings.PublicUrl + path);
         public HttpRequestMessage Message(RequestSignatureContext proof, string challenge, string? range = null, string? ip = null)
         {
@@ -315,6 +440,6 @@ public sealed class RequestAuthenticationTests
         public async Task<HttpResponseMessage> Send(RequestSignatureContext proof, string challenge, string? range = null, string? ip = null)
         { using var message = Message(proof, challenge, range, ip); return await Http.SendAsync(message); }
         public async ValueTask DisposeAsync()
-        { Http.Dispose(); await app.StopAsync(); await app.DisposeAsync(); SqliteConnection.ClearAllPools(); Directory.Delete(Root, true); }
+        { Http.Dispose(); await app.StopAsync(); await app.DisposeAsync(); Directory.Delete(Root, true); }
     }
 }

@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using System.Security.Cryptography;
 using System.Text.Json;
+using UeDtLauncher.Distribution.Authority;
 
 namespace UeDtLauncher.Distribution;
 
@@ -82,18 +83,27 @@ public static class DistributionBackup
     public static object Plan(DistributionSettings settings) => new
     {
         Root = Path.GetFullPath(settings.Root), Mode = "offline-manual", PrivateSigningKeyIncluded = false,
-        Directories = new[] { "incoming", "processing", "releases", "archive" },
+        Directories = new[] { "incoming", "processing", "releases", "archive", "authority" },
         Requirement = "Stop serve/watch/workers; run as server owner/admin. Complete-source-loss recovery is excluded."
     };
+    private static AuthoritySnapshot ReadValidatedAuthority(string root)
+    {
+        var snapshot = AuthorityStore.InspectExisting(root);
+        CatalogAuthority.ValidateRoot(snapshot, root);
+        return snapshot;
+    }
+
     public static async Task<DistributionBackupManifest> CreateAsync(DistributionSettings settings, string destination)
     {
-        using var lease = DistributionMaintenanceLease.Acquire(settings.Root, true, create: false);
-        using var oldServer = new AuthenticationProcessLease(settings.Root);
-        foreach(var journal in Directory.EnumerateFiles(settings.Root,"retention-*.json"))
-            if(new FileInfo(journal).Length>64*1024*1024 || (await JsonFiles.ReadAsync<RetentionJournal>(journal)).Phase!="Completed")
-                throw new InvalidDataException("Complete interrupted retention before backup.");
         var root = Path.GetFullPath(settings.Root); destination = Path.GetFullPath(destination);
         if (Directory.Exists(destination) || Inside(root, destination)) throw new IOException("Backup needs a new directory outside server root.");
+        _ = ReadValidatedAuthority(root);
+        using var lease = DistributionMaintenanceLease.Acquire(root, true, create: false);
+        var authority = ReadValidatedAuthority(root);
+        using var oldServer = new AuthenticationProcessLease(root);
+        foreach(var journal in Directory.EnumerateFiles(root,"retention-*.json"))
+            if(new FileInfo(journal).Length>64*1024*1024 || (await JsonFiles.ReadAsync<RetentionJournal>(journal)).Phase!="Completed")
+                throw new InvalidDataException("Complete interrupted retention before backup.");
         MaintenanceStorage.PrivateDirectory(destination);
         var content = Path.Combine(destination, "content"); Directory.CreateDirectory(content);
         foreach (var name in new[] { "incoming", "processing", "releases", "archive" })
@@ -106,9 +116,7 @@ public static class DistributionBackup
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!); File.Copy(file, target, false);
             }
         }
-        using (var source = Open(root, true))
-        using (var target = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Path.Combine(content, "distribution.db"), Pooling = false }.ToString()))
-        { target.Open(); source.BackupDatabase(target); }
+        CopyAuthority(authority, content);
         var policy = await File.ReadAllBytesAsync(settings.PolicyPath); await File.WriteAllBytesAsync(Path.Combine(destination, "policy.json"), policy);
         var entries = new List<BackupFile>();
         foreach (var path in Files(content)) entries.Add(new(Path.GetRelativePath(content, path).Replace('\\', '/'), new FileInfo(path).Length, await Hashing.Sha256FileAsync(path)));
@@ -131,9 +139,112 @@ public static class DistributionBackup
         }
         if (!expected.SetEquals(Files(content).Select(Path.GetFullPath))) throw new InvalidDataException("Backup contains unlisted files.");
         if (Digest(await File.ReadAllBytesAsync(Path.Combine(directory, "policy.json"))) != manifest.PolicySha256) throw new InvalidDataException("Backup policy mismatch.");
-        using var db = Open(content, true); using var q = db.CreateCommand(); q.CommandText = "PRAGMA integrity_check";
-        if ((string?)q.ExecuteScalar() != "ok") throw new InvalidDataException("Backup database is corrupt.");
+        ValidateAudit(ReadValidatedAuthority(content));
         return manifest;
+    }
+
+    private static string PrepareAuthorityDirectories(string target)
+    {
+        var layout = AuthorityLayout.Default;
+        var directory = SafePath.ResolveInsideChecked(target, layout.AuthorityDirectory);
+        Directory.CreateDirectory(directory);
+        foreach (var name in AuthorityDocuments.Areas.Select(area => layout.DirectoryFor(AuthorityDocuments.Name(area)))
+            .Concat([layout.EventsDirectory, layout.ReleaseMetadataDirectory, layout.ProgressDirectory]))
+            Directory.CreateDirectory(SafePath.ResolveInsideChecked(directory, name));
+        AuthorityDisk.FlushDirectory(directory);
+        AuthorityDisk.FlushDirectory(target);
+        return directory;
+    }
+
+    // The source lease freezes HEAD and its files. The destination remains fenced during activation.
+    private static void CopyAuthority(AuthoritySnapshot snapshot, string target, bool activating = false)
+    {
+        var directory = PrepareAuthorityDirectories(target);
+        IEnumerable<string> FilesInSnapshot()
+        {
+            foreach (var path in snapshot.Head.Files.Values) yield return path;
+            for (long generation = 0; generation < snapshot.Generation; generation++)
+                yield return AuthorityDocuments.RelativeFile(AuthorityLayout.Default.EventsDirectory, generation);
+            var catalog = new CatalogAuthority(snapshot.Store, Path.GetDirectoryName(snapshot.Store.DirectoryPath)!);
+            foreach (var release in catalog.Snapshot(snapshot).Releases)
+                yield return AuthorityLayout.Default.ReleaseMetadataDirectory + "/" + release.ReleaseId + ".json";
+        }
+        foreach (var path in FilesInSnapshot())
+        {
+            var bytes = File.ReadAllBytes(snapshot.Store.DataPath(path));
+            var destination = SafePath.ResolveInsideChecked(directory, path);
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            if (!File.Exists(destination)) AuthorityDisk.Write(destination, bytes);
+            else
+            {
+                using var existing = new FileStream(destination, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
+                if (existing.Length != bytes.Length)
+                    throw new InvalidDataException("Staged authority has a conflicting immutable generation file.");
+                var copied = new byte[bytes.Length];
+                existing.ReadExactly(copied);
+                if (!bytes.AsSpan().SequenceEqual(copied))
+                    throw new InvalidDataException("Staged authority has a conflicting immutable generation file.");
+                existing.Flush(flushToDisk: true);
+                AuthorityDisk.FlushDirectory(Path.GetDirectoryName(destination)!);
+            }
+        }
+        ValidateAudit(snapshot);
+        CopyProjection(snapshot.Store.DataPath("audit.jsonl"), SafePath.ResolveInsideChecked(directory, "audit.jsonl"));
+        if (activating) Boundary.Value?.Invoke("authority-files-copied");
+        var head = SafePath.ResolveInsideChecked(directory, "HEAD");
+        AuthorityDisk.Write(head, File.ReadAllBytes(snapshot.Store.DataPath("HEAD")), head: true);
+        AuthorityDisk.CompleteHeadPublication(directory, snapshot.Generation);
+        if (activating) Boundary.Value?.Invoke("authority-head-replaced");
+        ValidateAudit(ReadValidatedAuthority(target));
+    }
+
+    private static void CopyProjection(string source, string destination)
+    {
+        var temporary = AuthorityDisk.Temporary(destination);
+        try
+        {
+            using var input = AuthorityDisk.OpenReader(source);
+            using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                input.CopyTo(output);
+                output.Flush(true);
+            }
+            AuthorityDisk.Rename(temporary, destination, replace: true);
+            AuthorityDisk.FlushDirectory(Path.GetDirectoryName(destination)!);
+        }
+        finally { AuthorityDisk.TryDelete(temporary); }
+    }
+
+    private static void ValidateAudit(AuthoritySnapshot snapshot)
+    {
+        using var input = AuthorityDisk.OpenReader(snapshot.Store.DataPath("audit.jsonl"));
+        foreach (var entry in snapshot.Store.ReadAudit(snapshot))
+        {
+            var expected = AuthorityDocuments.Encode(entry);
+            var line = new byte[expected.Length];
+            input.ReadExactly(line);
+            if (!expected.AsSpan().SequenceEqual(line) || input.ReadByte() != (byte)'\n')
+                throw new InvalidDataException("Audit projection differs from committed events.");
+        }
+        if (input.ReadByte() != -1)
+            throw new InvalidDataException("Audit projection contains data beyond committed events.");
+    }
+
+    private static void RebaseReleaseDirectories(SqliteConnection db, string original, string target)
+    {
+        using var tx = db.BeginTransaction();
+        using var q = db.CreateCommand(); q.Transaction = tx; q.CommandText = "SELECT rowid,directory FROM releases";
+        var rows = new List<(long Id, string Path)>();
+        using (var r = q.ExecuteReader()) while (r.Read()) rows.Add((r.GetInt64(0), r.GetString(1)));
+        foreach (var row in rows)
+        {
+            var old = Path.GetFullPath(row.Path);
+            if (!Inside(original, old)) throw new InvalidDataException("Backup DB references a path outside its original server root.");
+            q.CommandText = "UPDATE releases SET directory=$path WHERE rowid=$id"; q.Parameters.Clear();
+            q.Parameters.AddWithValue("$path", SafePath.ResolveInsideChecked(target, Path.GetRelativePath(original, old)));
+            q.Parameters.AddWithValue("$id", row.Id); q.ExecuteNonQuery();
+        }
+        tx.Commit();
     }
     internal static SqliteConnection Open(string root, bool readOnly)
     {
@@ -149,50 +260,40 @@ public static class DistributionBackup
         MaintenanceStorage.PrivateDirectory(target);
         using var targetLease=DistributionMaintenanceLease.Acquire(target,true);
         if(Directory.EnumerateFileSystemEntries(target).Any(path=>Path.GetFileName(path)!=".maintenance.lock"))throw new IOException("Restore target changed before reservation.");
-        // Fence is persisted BEFORE any DB/file copy. Interrupted staging cannot be served.
+        // Fence is persisted before copying any authority or payload. Interrupted staging cannot be served.
         await JsonFiles.WriteAsync(Path.Combine(target, "restore-staged.json"), manifest);
         var content = Path.Combine(backup, "content");
         foreach (var file in manifest.Files)
         { var path = SafePath.ResolveInsideChecked(target, file.Path); Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.Copy(SafePath.ResolveInsideChecked(content, file.Path), path, false); }
         foreach(var file in manifest.Files)
             if(!await Hashing.Sha256MatchesAsync(SafePath.ResolveInsideChecked(target,file.Path),file.Sha256))throw new InvalidDataException("Restored staging changed during copy.");
-        using var db = Open(target, false); using var tx = db.BeginTransaction();
-        foreach (var (table, column) in new[] { ("jobs", "source"), ("jobs", "snapshot"), ("releases", "directory"), ("active_work", "scratch"), ("active_work", "snapshot") })
-        {
-            using var q = db.CreateCommand(); q.Transaction = tx; q.CommandText = $"SELECT rowid,{column} FROM {table} WHERE {column} IS NOT NULL";
-            var rows = new List<(long Id, string Path)>(); using (var r = q.ExecuteReader()) while (r.Read()) rows.Add((r.GetInt64(0), r.GetString(1)));
-            foreach (var row in rows)
-            {
-                var old = Path.GetFullPath(row.Path);
-                if (!Inside(manifest.SourceRoot, old)) throw new InvalidDataException("Backup DB references a path outside its original server root.");
-                q.CommandText = $"UPDATE {table} SET {column}=$path WHERE rowid=$id"; q.Parameters.Clear();
-                q.Parameters.AddWithValue("$path", SafePath.ResolveInsideChecked(target, Path.GetRelativePath(manifest.SourceRoot, old))); q.Parameters.AddWithValue("$id", row.Id); q.ExecuteNonQuery();
-            }
-        }
-        tx.Commit(); return new { Staged = true, Public = false, Target = target, Next = "restore activate --target ... --confirm with surviving current source; private key remains separate" };
+        PrepareAuthorityDirectories(target);
+        foreach (var name in new[] { "incoming", "processing", "releases", "archive", ".job-locks" })
+            Directory.CreateDirectory(SafePath.ResolveInsideChecked(target, name));
+        ValidateAudit(ReadValidatedAuthority(target));
+        return new { Staged = true, Public = false, Target = target, Next = "restore activate --target ... --confirm with surviving current source; private key remains separate" };
     }
     public static async Task<object> ActivateAsync(string target, DistributionSettings current, bool confirm)
     {
         if (!confirm) throw new ArgumentException("Restore activation requires --confirm.");
         target=Path.GetFullPath(target);var original=Path.GetFullPath(current.Root);
         if(Inside(original,target)||Inside(target,original))throw new InvalidDataException("Restore source and target overlap.");
+        _ = AuthorityStore.InspectExisting(original);
+        _ = AuthorityStore.InspectExisting(target);
         var ordered=new[]{original,target}.Order(OperatingSystem.IsWindows()?StringComparer.OrdinalIgnoreCase:StringComparer.Ordinal).ToArray();
         using var firstLease=DistributionMaintenanceLease.Acquire(ordered[0],true,create:false);
         using var secondLease=DistributionMaintenanceLease.Acquire(ordered[1],true,create:false);
+        var authority = ReadValidatedAuthority(original);
+        _ = ReadValidatedAuthority(target);
         using var oldServer = new AuthenticationProcessLease(current.Root);
         if(File.Exists(Path.Combine(current.Root,"restore-staged.json")))throw new InvalidDataException("Staged source is not current authority.");
         var fence = Path.Combine(target, "restore-staged.json");
         var manifest = await JsonFiles.ReadAsync<DistributionBackupManifest>(fence);
         if (Path.GetFullPath(target) == Path.GetFullPath(current.Root)) throw new InvalidDataException("Cannot activate over source root.");
         if (manifest.Origin != current.PublicUrl.TrimEnd('/') || manifest.SigningKeyId != current.SigningKeyId || manifest.SigningPublicKeySha256 != Signer(current)) throw new InvalidDataException("Current origin/signer changed.");
-        // Current source is the authority, not the historical backup. Every current release must be present.
-        using var source = Open(current.Root, true); using var staged = Open(target, false);
-        using(var integrity=source.CreateCommand()){integrity.CommandText="PRAGMA integrity_check";if((string?)integrity.ExecuteScalar()!="ok")throw new InvalidDataException("Current authority DB is corrupt.");}
-        var deletionPaths=new HashSet<string>(OperatingSystem.IsWindows()?StringComparer.OrdinalIgnoreCase:StringComparer.Ordinal);
-        using(var q=source.CreateCommand())
-        {
-            q.CommandText="SELECT path FROM maintenance_deletions";using var r=q.ExecuteReader();while(r.Read())deletionPaths.Add(r.GetString(0).Replace('\\','/'));
-        }
+        var intake = IntakeJobs.Read(authority);
+        var deletionPaths = intake.MaintenanceDeletions.Select(item => item.Path).ToHashSet(IntakeJobs.PathComparer);
+        var catalog = new CatalogAuthority(authority.Store, original).Snapshot(authority);
         async Task MatchDirectory(string directory)
         {
             var relative=Path.GetRelativePath(original,Path.GetFullPath(directory));var destination=SafePath.ResolveInsideChecked(target,relative);
@@ -209,78 +310,29 @@ public static class DistributionBackup
             foreach(var file in originals)
             {var counterpart=SafePath.ResolveInsideChecked(destination,Path.GetRelativePath(directory,file));if(new FileInfo(file).Length!=new FileInfo(counterpart).Length || await Hashing.Sha256FileAsync(file)!=await Hashing.Sha256FileAsync(counterpart))throw new InvalidDataException("Restored file changed.");}
         }
-        using(var q=source.CreateCommand())
+        var required = intake.Jobs.SelectMany(job => new[] { job.Source, job.Snapshot })
+            .Concat(intake.ActiveWork.SelectMany(work => new[] { work.Scratch, work.Snapshot }))
+            .OfType<string>().Distinct(IntakeJobs.PathComparer);
+        foreach (var path in required) await MatchDirectory(IntakeJobs.Resolve(original, path));
+        // Check the entire public tree in both directions, then independently verify each signed release.
+        await MatchDirectory(SafePath.ResolveInsideChecked(original, "releases"));
+        foreach (var release in catalog.Releases)
         {
-            q.CommandText="SELECT source FROM jobs UNION SELECT scratch FROM active_work WHERE scratch IS NOT NULL UNION SELECT snapshot FROM active_work WHERE snapshot IS NOT NULL";
-            var directories=new List<string>();using(var r=q.ExecuteReader())while(r.Read())directories.Add(r.GetString(0));
-            foreach(var directory in directories)await MatchDirectory(directory);
+            var restored = SafePath.ResolveInsideChecked(target, Path.GetRelativePath(original, release.Directory));
+            await VerifyPublishedReleaseAsync(restored, release.ReleaseId, release.Metadata, current);
         }
-        using (var q = source.CreateCommand())
-        {
-            q.CommandText = "SELECT snapshot FROM jobs WHERE snapshot IS NOT NULL"; using var r = q.ExecuteReader();
-            while (r.Read())
-            {
-                var snapshot = r.GetString(0);
-                await MatchDirectory(snapshot);
-                if(!Directory.Exists(snapshot))continue;
-                var path = SafePath.ResolveInsideChecked(target, Path.GetRelativePath(Path.GetFullPath(current.Root), Path.GetFullPath(snapshot)));
-                if (!Directory.Exists(path)) throw new InvalidDataException("Current intake snapshot is absent; keep restore staged.");
-                foreach (var file in Files(snapshot))
-                {
-                    var restored = SafePath.ResolveInsideChecked(path, Path.GetRelativePath(snapshot, file));
-                    if (!File.Exists(restored) || await Hashing.Sha256FileAsync(file) != await Hashing.Sha256FileAsync(restored))
-                        throw new InvalidDataException("Current snapshot changed; keep restore staged.");
-                }
-            }
-        }
-        using (var q = source.CreateCommand())
-        {
-            q.CommandText = "SELECT directory,id,metadata FROM releases"; using var r = q.ExecuteReader();
-            while (r.Read())
-            {
-                var directory = r.GetString(0); var relative = Path.GetRelativePath(Path.GetFullPath(current.Root), Path.GetFullPath(directory));
-                await MatchDirectory(directory);
-                var restored = SafePath.ResolveInsideChecked(target, relative);
-                var metadata = JsonSerializer.Deserialize<ReleaseSidecar>(r.GetString(2), JsonFiles.Options)
-                    ?? throw new InvalidDataException("Missing release metadata.");
-                await VerifyPublishedReleaseAsync(restored, r.GetString(1), metadata, current);
-                foreach (var file in Files(directory))
-                {
-                    var counterpart = SafePath.ResolveInsideChecked(restored, Path.GetRelativePath(directory, file));
-                    if (!File.Exists(counterpart) || new FileInfo(file).Length != new FileInfo(counterpart).Length ||
-                        await Hashing.Sha256FileAsync(file) != await Hashing.Sha256FileAsync(counterpart)) throw new InvalidDataException("Latest source release is absent/different; keep restore staged.");
-                }
-            }
-        }
-        // Copy authority DB into a temporary snapshot, rebase it via another stage, then atomically replace.
-        // Never invent sequence floors or resurrect old revocations. Keep exact current DB bytes logically.
-        var refreshed = Path.Combine(target, ".authority-refresh-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(refreshed);
-        using (var snapshot = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Path.Combine(refreshed, "distribution.db"), Pooling = false }.ToString()))
-        { snapshot.Open(); source.BackupDatabase(snapshot); }
+
+        Boundary.Value?.Invoke("restored-releases-verified");
         Boundary.Value?.Invoke("authority-snapshot");
-        staged.Close(); source.Close();
-        // Use the same verified rebase rules; preserve old staged DB until the new snapshot is ready.
-        using (var db = Open(refreshed, false))
-        using (var tx = db.BeginTransaction())
-        {
-            foreach (var (table, column) in new[] { ("jobs", "source"), ("jobs", "snapshot"), ("releases", "directory"), ("active_work", "scratch"), ("active_work", "snapshot") })
-            {
-                using var q = db.CreateCommand(); q.Transaction = tx; q.CommandText = $"SELECT rowid,{column} FROM {table} WHERE {column} IS NOT NULL";
-                var rows = new List<(long Id, string Path)>(); using (var r = q.ExecuteReader()) while (r.Read()) rows.Add((r.GetInt64(0), r.GetString(1)));
-                foreach (var row in rows) { var path = SafePath.ResolveInsideChecked(target, Path.GetRelativePath(Path.GetFullPath(current.Root), Path.GetFullPath(row.Path))); q.CommandText = $"UPDATE {table} SET {column}=$path WHERE rowid=$id"; q.Parameters.Clear(); q.Parameters.AddWithValue("$path", path); q.Parameters.AddWithValue("$id", row.Id); q.ExecuteNonQuery(); }
-            }
-            tx.Commit();
-        }
-        Boundary.Value?.Invoke("authority-rebased");
-        var policy=await new FileAccessPolicyProvider(current.PolicyPath).LoadAsync(CancellationToken.None);_=CompiledAccessPolicy.Create(policy);
-        await JsonFiles.WriteAsync(Path.Combine(target,"restored-policy.json"),policy);
+        var policy = await new FileAccessPolicyProvider(current.PolicyPath).LoadAsync(CancellationToken.None);
+        _ = CompiledAccessPolicy.Create(policy);
+        await JsonFiles.WriteAsync(Path.Combine(target, "restored-policy.json"), policy);
         Boundary.Value?.Invoke("policy-written");
-        using (var pooled = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Path.Combine(Path.GetFullPath(target), "distribution.db") }.ToString()))
-            SqliteConnection.ClearPool(pooled); // Stopped root only: release idle constructor/inspection handles before atomic replacement.
-        File.Move(Path.Combine(refreshed, "distribution.db"), Path.Combine(target, "distribution.db"), true);
-        Boundary.Value?.Invoke("database-replaced");
+        CopyAuthority(authority, target, activating: true);
+        Boundary.Value?.Invoke("restored-authority-verified");
         Boundary.Value?.Invoke("before-public-fence");
         File.Delete(fence); // Final public fence transition; failures before this stay blocked.
+        AuthorityDisk.FlushDirectory(target);
         return new { Activated = true, Target = target, PolicyPath = Path.Combine(target, "restored-policy.json"), PrivateKeyIncluded = false };
     }
 }

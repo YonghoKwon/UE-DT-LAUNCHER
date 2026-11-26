@@ -11,18 +11,16 @@ catalog signatures and Range content are verified; this is not HTTPS/UE/RHEL.
 Generated data is retained for inspection. Never use a company server directory.
 """
 import argparse
-from contextlib import closing
 import concurrent.futures
-import contextlib
 import hashlib
 import http.client
 import json
 import math
 import os
 from pathlib import Path
+import re
 import shutil
 import socket
-import sqlite3
 import statistics
 import subprocess
 import threading
@@ -117,18 +115,59 @@ def release_upload(upload, package_name):
     (upload / "release.json.uploading").rename(upload / "release.json")
 
 
-def open_readonly_database(path):
-    connection = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True,
-                                 isolation_level=None, timeout=.05)
-    connection.execute("PRAGMA query_only=ON")
-    return connection
+class SnapshotAdvanced(Exception):
+    """A newer HEAD retired the jobs generation while the observer was reading it."""
 
 
-def intake_states(connection, sources):
-    markers = ",".join("?" for _ in sources)
-    # Exact generated source paths, not all jobs: the prepublished seed is excluded.
-    return dict(connection.execute(f"SELECT source,state FROM jobs WHERE source IN ({markers})",
-                                   [str(source.resolve()) for source in sources]).fetchall())
+def read_authority_file(path):
+    if os.name != "nt":
+        return path.read_bytes()
+
+    # Like AuthorityDisk.OpenReader, permit deletion and atomic replacement while reading.
+    import ctypes
+    from ctypes import wintypes
+    import msvcrt
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    open_file = kernel.CreateFileW
+    open_file.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
+                          wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    open_file.restype = wintypes.HANDLE
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    generic_read, share_read_delete, open_existing = 0x80000000, 0x5, 3
+    handle = open_file(str(path), generic_read, share_read_delete, None, open_existing, 0, None)
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        descriptor = msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
+    except BaseException:
+        kernel.CloseHandle(handle)
+        raise
+    with os.fdopen(descriptor, "rb") as source:
+        return source.read()
+
+
+def intake_states(root, sources):
+    authority = root / "authority"
+    head_path = authority / "HEAD"
+    raw_head = read_authority_file(head_path)
+    head = json.loads(raw_head)
+    relative = head["files"]["jobs"]
+    if head["schema"] != 1 or not re.fullmatch(r"jobs/[0-9]{6,}\.json", relative):
+        raise ValueError("Invalid jobs reference in authority HEAD")
+    try:
+        raw_jobs = read_authority_file(authority / relative)
+    except FileNotFoundError:
+        if read_authority_file(head_path) != raw_head:
+            raise SnapshotAdvanced() from None
+        raise
+    if hashlib.sha256(raw_jobs).hexdigest() != head["sha256"]["jobs"]:
+        raise ValueError("Jobs generation checksum differs from authority HEAD")
+    jobs = json.loads(raw_jobs)
+    if jobs["schemaVersion"] != 1:
+        raise ValueError("Unsupported authority jobs schema")
+    requested = {source.relative_to(root).as_posix(): str(source) for source in sources}
+    return {requested[job["source"]]: job["state"] for job in jobs["jobs"] if job["source"] in requested}
 
 
 def wait_http_ready(server, origin, device, deadline):
@@ -258,6 +297,9 @@ def measure_run(args, root, workers, iteration, package, metadata, probe, probe_
                "authenticationMode": "request-signature-v1"})
     seal(run_root, {'server': args.server, 'launcher': args.launcher}, run_root / 'server.json')
     command = [args.server, "--config", run_root / "server.json"]
+    if json.loads(cli([*command, "list"], run_root / "initial-intake.json", env)) != []:
+        raise RuntimeError("Fresh server root did not initialize with an empty job list")
+    intake_states(server_root, ())  # Verify the observer format before preparing the seed.
     incoming = server_root / "incoming"
     seed = prepare_upload(incoming, "seed", package, metadata, "0.0.0", platform, held=False)
     job = json.loads(cli([*command, "ingest", seed], run_root / "seed-ingest.json", env))
@@ -277,54 +319,51 @@ def measure_run(args, root, workers, iteration, package, metadata, probe, probe_
     start, stop = threading.Event(), threading.Event()
     ready = threading.Barrier(CLIENTS + 1)
     result = {"workers": workers, "iteration": iteration, "warmup": iteration == 0, "jobs": JOBS,
-              "clients": CLIENTS, "completedJobs": 0, "observerSqliteBusyRetries": 0}
+              "clients": CLIENTS, "completedJobs": 0, "observerSnapshotRetries": 0}
     with (run_root / "server.log").open("w", encoding="utf-8") as log:
         try:
             server = subprocess.Popen([str(part) for part in [*command, "serve"]], stdout=log,
                                       stderr=subprocess.STDOUT, env=env,
                                       creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
             wait_http_ready(server, base, device, time.monotonic() + 30)
-            with contextlib.closing(open_readonly_database(server_root / "distribution.db")) as database:
-                with concurrent.futures.ThreadPoolExecutor(max_workers=CLIENTS) as pool:
-                    futures = [pool.submit(traffic_worker, base, device, file_path, expected, probe_size,
-                                           start, stop, ready, args.request_pause_ms / 1000) for _ in range(CLIENTS)]
-                    try:
-                        ready.wait(timeout=30)
-                        sampler = ProcessSampler(server.pid)
-                        sampler.start()
-                        began = time.perf_counter()
-                        start.set()
-                        for source in sources:
-                            release_upload(source, package.name)
-                        deadline = time.monotonic() + args.timeout_seconds
-                        while time.monotonic() < deadline:
-                            if server.poll() is not None:
-                                raise RuntimeError("Published server exited during intake")
-                            try:
-                                states = intake_states(database, sources)
-                            except sqlite3.OperationalError as error:
-                                if getattr(error, "sqlite_errorcode", None) not in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
-                                    raise
-                                result["observerSqliteBusyRetries"] += 1
-                                time.sleep(.05)
-                                continue
-                            result["completedJobs"] = sum(state == "pending" for state in states.values())
-                            if any(state in ("failed", "rejected") for state in states.values()):
-                                raise RuntimeError("At least one measured intake job failed; inspect retained run data")
-                            if result["completedJobs"] == JOBS:
-                                break
+            with concurrent.futures.ThreadPoolExecutor(max_workers=CLIENTS) as pool:
+                futures = [pool.submit(traffic_worker, base, device, file_path, expected, probe_size,
+                                       start, stop, ready, args.request_pause_ms / 1000) for _ in range(CLIENTS)]
+                try:
+                    ready.wait(timeout=30)
+                    sampler = ProcessSampler(server.pid)
+                    sampler.start()
+                    began = time.perf_counter()
+                    start.set()
+                    for source in sources:
+                        release_upload(source, package.name)
+                    deadline = time.monotonic() + args.timeout_seconds
+                    while time.monotonic() < deadline:
+                        if server.poll() is not None:
+                            raise RuntimeError("Published server exited during intake")
+                        try:
+                            states = intake_states(server_root, sources)
+                        except SnapshotAdvanced:
+                            result["observerSnapshotRetries"] += 1
                             time.sleep(.05)
-                        if result["completedJobs"] != JOBS:
-                            raise TimeoutError("Timed out waiting for four pending intake jobs")
-                        result["wallMs"] = (time.perf_counter() - began) * 1000
-                    finally:
-                        stop.set()
-                        start.set()  # Release waiting traffic workers on any preparation failure.
-                        if sampler is not None:
-                            result.update(sampler.finish())
-                    samples = [sample for future in futures for sample in future.result()]
-                    result["traffic"] = traffic_summary(samples)
-                    result["trafficJoinOverheadMs"] = max(0, (time.perf_counter() - began) * 1000 - result["wallMs"])
+                            continue
+                        result["completedJobs"] = sum(state == "pending" for state in states.values())
+                        if any(state in ("failed", "rejected") for state in states.values()):
+                            raise RuntimeError("At least one measured intake job failed; inspect retained run data")
+                        if result["completedJobs"] == JOBS:
+                            break
+                        time.sleep(.05)
+                    if result["completedJobs"] != JOBS:
+                        raise TimeoutError("Timed out waiting for four pending intake jobs")
+                    result["wallMs"] = (time.perf_counter() - began) * 1000
+                finally:
+                    stop.set()
+                    start.set()  # Release waiting traffic workers on any preparation failure.
+                    if sampler is not None:
+                        result.update(sampler.finish())
+                samples = [sample for future in futures for sample in future.result()]
+                result["traffic"] = traffic_summary(samples)
+                result["trafficJoinOverheadMs"] = max(0, (time.perf_counter() - began) * 1000 - result["wallMs"])
         finally:
             stop.set()
             start.set()
@@ -354,7 +393,7 @@ def aggregate(measurements, workers):
             "medianCatalogP95Ms": median_available("catalog"),
             "medianRangeP95Ms": median_available("range"),
             "errors": sum(row["traffic"]["all"]["errors"] for row in rows),
-            "observerSqliteBusyRetries": sum(row["observerSqliteBusyRetries"] for row in rows)}
+            "observerSnapshotRetries": sum(row["observerSnapshotRetries"] for row in rows)}
 
 
 def save_report(root, report):
@@ -376,8 +415,8 @@ def save_report(root, report):
               "Watcher scan latency (up to its 2-second interval), hash/copy/extraction and concurrent HTTP load are included.",
               "Seed approval/promotion, fixture copying, device-key setup and process startup are excluded.",
               "CPU/RSS use 20-ms samples of the server process only; API p95 includes failed requests and in-flight completions.",
-              "SQLite observation is read-only with a 50-ms poll/busy timeout; observer retries are not server busy duration.",
-              "Workers are configured values; older published binaries may ignore intakeWorkers. Do not label those as a 1-vs-2 comparison.",
+              "The read-only observer checks HEAD and its jobs generation at 50-ms intervals. It separately counts retired-generation retries.",
+              "The file-authority observer has different costs from the previous SQLite observer. Compare timings taken with the same observer.",
               "Warmup results are retained but excluded above. Generated roots are retained; no existing installations are touched.",
               "No real UE, RHEL, WAN, cold-OS-cache or production SLA claim is made."]
     if not report.get("complete"):
@@ -391,7 +430,7 @@ def main():
     parser.add_argument("--server", required=True, type=Path)
     parser.add_argument("--launcher", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path, help="Must not already exist")
-    parser.add_argument("--workers", default="1,2", help="1,2 by default; use 1 alone for an old binary that ignores the setting")
+    parser.add_argument("--workers", default="1,2", help="1,2 by default")
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--timeout-seconds", type=float, default=600)
     parser.add_argument("--request-pause-ms", type=float, default=10)
@@ -411,7 +450,8 @@ def main():
     root.mkdir(parents=True, exist_ok=False)
     claim(root)
     platform = "windows-x64" if os.name == "nt" else "linux-x64"
-    report = {"schemaVersion": 1, "complete": False, "platform": platform, "warmups": 1, "runs": args.runs,
+    report = {"schemaVersion": 2, "complete": False, "platform": platform, "warmups": 1, "runs": args.runs,
+              "observer": "file-authority-head",
               "transport": "Loopback HTTP request-signature-v1; catalog signature/binding/sequence and Range bytes verified.",
               **provenance({'launcher': args.launcher, 'server': args.server}),
               "cacheCondition": "Fresh server root per iteration; OS cache is not flushed; fixture ZIP content is identical.",

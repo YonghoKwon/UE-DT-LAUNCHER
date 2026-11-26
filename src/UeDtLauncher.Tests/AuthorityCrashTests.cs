@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using UeDtLauncher.Distribution.Authority;
@@ -102,11 +103,13 @@ public sealed class AuthorityCrashTests(ITestOutputHelper output)
         var boundary = Enum.Parse<AuthorityBoundary>(point);
         using var reached = new ManualResetEventSlim();
         using var readDone = new ManualResetEventSlim();
+        var boundaryReached = 0L;
         var writer = Task.Factory.StartNew(() =>
         {
             AuthorityDisk.Boundary.Value = step =>
             {
                 if (step != boundary || --occurrence != 0) return;
+                Volatile.Write(ref boundaryReached, Stopwatch.GetTimestamp());
                 reached.Set();
                 if (!readDone.Wait(TimeSpan.FromSeconds(30))) throw new TimeoutException("Concurrent reader did not finish.");
                 throw new IOException("Injected authority failure.");
@@ -123,20 +126,34 @@ public sealed class AuthorityCrashTests(ITestOutputHelper output)
             finally { AuthorityDisk.Boundary.Value = null; }
         }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
+        var completedReads = 0;
+        var start = 0L;
+        var readTicks = 0L;
+        var auditTicks = 0L;
         try
         {
             Assert.True(reached.Wait(TimeSpan.FromSeconds(15)));
+            start = Stopwatch.GetTimestamp();
             for (var index = 0; index < 1000; index++)
             {
+                var phase = Stopwatch.GetTimestamp();
                 var snapshot = store.ReadSnapshot();
+                readTicks += Stopwatch.GetTimestamp() - phase;
                 Assert.Equal(1, snapshot.Generation);
                 Assert.False(snapshot.Get(AuthorityArea.Catalog).TryGetProperty("counter", out _));
+                phase = Stopwatch.GetTimestamp();
                 Assert.False(store.HasAudit(snapshot, "audit", "must-not-publish"));
+                auditTicks += Stopwatch.GetTimestamp() - phase;
+                completedReads++;
             }
         }
         finally
         {
             readDone.Set();
+            if (start != 0)
+                output.WriteLine($"Reader phases ({point}): iterations={completedReads}, startDelayMs={Stopwatch.GetElapsedTime(Volatile.Read(ref boundaryReached), start).TotalMilliseconds:F1}, " +
+                    $"elapsedMs={Stopwatch.GetElapsedTime(start).TotalMilliseconds:F1}, snapshotMs={Stopwatch.GetElapsedTime(0, readTicks).TotalMilliseconds:F1}, " +
+                    $"auditMs={Stopwatch.GetElapsedTime(0, auditTicks).TotalMilliseconds:F1}");
             await writer.WaitAsync(TimeSpan.FromSeconds(30));
         }
         Assert.Equal(head, File.ReadAllBytes(store.DataPath("HEAD")));

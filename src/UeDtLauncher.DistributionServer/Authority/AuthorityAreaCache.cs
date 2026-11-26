@@ -2,7 +2,10 @@ using System.Text.Json;
 
 namespace UeDtLauncher.Distribution.Authority;
 
-internal sealed class AuthorityAreaCache
+internal sealed class AuthorityAreaCache() : AuthorityParsedCache<JsonElement>(
+    bytes => AuthorityDocuments.ValidateArea(AuthorityDocuments.Decode<JsonElement>(bytes)));
+
+internal class AuthorityParsedCache<T>(Func<byte[], T> parse)
 {
     internal const int EntryLimit = 64;
     internal const int ByteLimit = 16 * 1024 * 1024;
@@ -11,7 +14,7 @@ internal sealed class AuthorityAreaCache
     private readonly LinkedList<Entry> leastRecentFirst = [];
     private int bytes;
 
-    internal JsonElement Parse(string path, string hash, byte[] verifiedBytes)
+    internal T Parse(string path, string hash, byte[] verifiedBytes)
     {
         // The caller has already verified bytes. A warm cache must not hide a missing or changed file.
         lock (gate)
@@ -23,7 +26,7 @@ internal sealed class AuthorityAreaCache
                 leastRecentFirst.AddLast(hit);
                 return hit.Value.Document;
             }
-            var document = AuthorityDocuments.ValidateArea(AuthorityDocuments.Decode<JsonElement>(verifiedBytes));
+            var document = parse(verifiedBytes);
             if (verifiedBytes.Length > ByteLimit) return document;
 
             while (entries.Count >= EntryLimit || bytes > ByteLimit - verifiedBytes.Length)
@@ -39,5 +42,5 @@ internal sealed class AuthorityAreaCache
         }
     }
 
-    private sealed record Entry((string Path, string Hash) Key, JsonElement Document, int Bytes);
+    private sealed record Entry((string Path, string Hash) Key, T Document, int Bytes);
 }

@@ -17,10 +17,11 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 
 | 영역 | 내용 |
 |---|---|
-| 접수 | 업로드 폴더별 ZIP + 외부 release.json, 크기·SHA-256·안전한 ZIP 검사, SQLite 작업 기록 |
+| 접수 | 업로드 폴더별 ZIP + 외부 release.json, 크기·SHA-256·안전한 ZIP 검사, 파일 세대로 작업 상태·감사 기록 |
 | 게시 | 관리자 승인, 디렉터리 자동 생성, Manifest·서명, 완료 전 비공개, 중단 게시 재개 |
 | 권한 | 실제 IP/CIDR + PC 요청 서명(기존 HTTPS는 Bearer), 프로젝트·환경·채널·선택적 버전 제한, 기본 거부 |
 | 전송 | 인증된 목록·Manifest·이미지·파일·Range, 서명·해시 검증, 재시도·이어받기 |
+| 배포 서버 저장소 | `server.json`의 전용 root에서 `authority/HEAD`가 접수·게시·승격·자격·순번을 함께 선택합니다. 새 배치는 빈 root에서 시작합니다. |
 | 설치 | 정확한 릴리스, 버전별 설치·상태·잠금 분리, 실행 중/불명 상태의 update·repair·rollback·transaction 복구 차단 |
 | 실행 | 사용자 세션 runtime-host, Windows Job / Linux x64 subreaper, 표준 후손 종료까지 추적, 자동 kill 없음 |
 | 일반 화면 | 포스코DX 밝은 화면, 첫 확인 중 자리 표시, 상태별 주 버튼, 전송 중 진행·예상 남은 시간, 오류별 지원 정보, 프로젝트 이름 타일 |
@@ -177,7 +178,7 @@ payloadRoot는 ZIP 내부 프로그램 루트, entryPoint는 그 기준 경로�
 
 ## 검증 범위와 제약
 
-- latest는 같은 환경/채널/OS에서 해당 PC에 허용된 승격 이력의 마지막 판입니다. 승인만으로 추천이 바뀌지 않고, 첫 버전도 promote가 필요합니다. 개발자는 허용된 미승격판을 exact로 선택할 수 있습니다. [승격·기존 서버 이전](docs/reference/distribution-workflow.md)
+- latest는 같은 환경/채널/OS에서 해당 PC에 허용된 승격 이력의 마지막 판입니다. 승인만으로 추천이 바뀌지 않고, 첫 버전도 promote가 필요합니다. 개발자는 허용된 미승격판을 exact로 선택할 수 있습니다. `promotion migrate`는 초기화된 파일 저장소의 형식을 읽기 전용으로 확인합니다. [승격·파일 저장소 확인](docs/reference/distribution-workflow.md)
 - 신규 프로젝트 게시가 PC 권한을 자동 부여하지 않습니다.
 - cleanup은 임시 작업 폴더 대상이며 공개 버전·참조 원본은 삭제하지 않습니다.
 - `Agent migrate --apply`의 동일 설치 공유는 현재 안전상 차단합니다. dry-run만 지원하며 소유권 이전은 별도 계획이 필요합니다. 기존 설치의 복사는 명시적 import-install입니다. UE 사용자 데이터는 실제 저장 경로에 맞춰 별도 보존합니다.

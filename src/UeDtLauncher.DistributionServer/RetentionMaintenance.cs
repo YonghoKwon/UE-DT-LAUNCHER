@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using UeDtLauncher.Distribution.Authority;
 
 namespace UeDtLauncher.Distribution;
 
@@ -48,27 +49,33 @@ public static class RetentionMaintenance
     private sealed record RetentionReferences(List<(string Id, string Source, string State, string? Snapshot)> Jobs, HashSet<string> Referenced, string Hash);
     private static RetentionReferences References(string root)
     {
-        using var db = DistributionBackup.Open(root, true); using var tx = db.BeginTransaction(deferred: true); using var q = db.CreateCommand(); q.Transaction = tx;
         var references = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         var jobs = new List<(string, string, string, string?)>(); var proof = new List<string>();
-        q.CommandText = "SELECT id,source,state,snapshot FROM jobs ORDER BY id";
-        using (var r = q.ExecuteReader()) while (r.Read())
+        var snapshot = AuthorityStore.InspectExisting(root, validateHistory: false);
+        var intake = IntakeJobs.Read(snapshot);
+        var catalog = new CatalogAuthority(snapshot.Store, root).Snapshot(snapshot);
+        foreach (var entry in intake.Jobs.OrderBy(job => job.Id, StringComparer.Ordinal))
         {
-            var job = (r.GetString(0), r.GetString(1), r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3)); jobs.Add(job);
+            var job = (entry.Id, IntakeJobs.Resolve(root, entry.Source), entry.State,
+                IntakeJobs.ResolveOptional(root, entry.Snapshot)); jobs.Add(job);
             proof.Add(Hash(new{Id=job.Item1,Source=job.Item2,State=job.Item3,Snapshot=job.Item4}));
             if (job.Item3 is not ("failed" or "rejected")) { references.Add(job.Item2); if (job.Item4 is not null) references.Add(job.Item4); }
         }
-        foreach (var sql in new[] { "SELECT id,directory FROM releases ORDER BY id", "SELECT CAST(id AS TEXT),release_id FROM promotions ORDER BY id", "SELECT job,COALESCE(scratch,''),COALESCE(snapshot,'') FROM active_work ORDER BY job" })
+        foreach (var release in catalog.Releases.OrderBy(release => release.ReleaseId, StringComparer.Ordinal))
         {
-            q.CommandText = sql; using var r = q.ExecuteReader();
-            while (r.Read())
-            {
-                var values=Enumerable.Range(1,r.FieldCount-1).Select(r.GetString).ToArray();
-                proof.Add(Hash(new{Id=r.GetString(0),Values=values}));
-                foreach(var path in values)if(Path.IsPathRooted(path))references.Add(Path.GetFullPath(path));
-            }
+            references.Add(release.Directory);
+            proof.Add(Hash(new { release.ReleaseId, release.Directory }));
         }
-        tx.Commit(); return new(jobs, references, Hash(proof));
+        foreach (var promotion in catalog.Events)
+            proof.Add(Hash(promotion));
+        foreach (var work in intake.ActiveWork.OrderBy(work => work.Job, StringComparer.Ordinal))
+        {
+            var values = new[] { IntakeJobs.ResolveOptional(root, work.Scratch) ?? "",
+                IntakeJobs.ResolveOptional(root, work.Snapshot) ?? "" };
+            proof.Add(Hash(new { Id = work.Job, Values = values }));
+            foreach (var path in values.Where(Path.IsPathRooted)) references.Add(path);
+        }
+        return new(jobs, references, Hash(proof));
     }
     public static object Inspect(DistributionSettings settings)
     {
@@ -168,7 +175,9 @@ public static class RetentionMaintenance
             throw new InvalidDataException("Cleanup requires a new schema 2 plan with approved directory identities; preserve old journals for review.");
         if (!confirm || !Guid.TryParseExact(plan.PlanId,"N",out _) || Path.GetFullPath(settings.Root) != plan.Root || Hash(plan with { Fingerprint = "" }) != plan.Fingerprint)
             throw new InvalidDataException("Valid plan and explicit --confirm are required.");
+        _ = AuthorityStore.InspectExisting(settings.Root, validateHistory: false);
         using var maintenance = ApplyMaintenanceLease(settings.Root);
+        var authority = AuthorityStore.InspectExisting(settings.Root).Store;
         using var oldServer = ApplyAuthenticationLease(settings.Root);
         var journalPath = SafePath.ResolveInsideChecked(settings.Root,"retention-" + plan.Fingerprint + ".json");
         RetentionJournal journal;
@@ -250,22 +259,28 @@ public static class RetentionMaintenance
                 Boundary.Value?.Invoke("delete");await Transition("Deleted");
             }
             if(item.Phase!="Deleted")throw new InvalidDataException("Unknown cleanup phase.");
-            using(var db=DistributionBackup.Open(settings.Root,false))
-            using(var tx=db.BeginTransaction())
+            authority.CommitOffline(maintenance, snapshot =>
             {
-                using var q=db.CreateCommand();q.Transaction=tx;q.CommandText="INSERT OR IGNORE INTO maintenance_deletions(id,path,job,tree_hash,at) VALUES($id,$path,$job,$hash,$at)";
-                q.Parameters.AddWithValue("$id",plan.PlanId+":"+index);q.Parameters.AddWithValue("$path",candidate.Path);q.Parameters.AddWithValue("$job",(object?)candidate.JobId??DBNull.Value);q.Parameters.AddWithValue("$hash",Hash(candidate.Files));q.Parameters.AddWithValue("$at",DateTimeOffset.UtcNow.ToString("O"));q.ExecuteNonQuery();tx.Commit();
-            }
+                var jobs = IntakeJobs.Read(snapshot);
+                var id = $"{plan.PlanId}:{index}";
+                var existing = jobs.MaintenanceDeletions.Find(item => item.Id == id);
+                var treeHash = Hash(candidate.Files);
+                if (existing is not null)
+                {
+                    if (existing.Path != candidate.Path || existing.Job != candidate.JobId || existing.TreeHash != treeHash)
+                        throw new InvalidDataException("Retention ledger conflicts with the confirmed deletion.");
+                    return CommitPlan.Audit();
+                }
+
+                var now = DateTimeOffset.UtcNow;
+                jobs.MaintenanceDeletions.Add(new(id, candidate.Path, candidate.JobId, treeHash, now));
+                return jobs.Plan(new AuthorityEvent(now, "retention-deleted", id));
+            });
             journal=journal with {NextIndex=index+1,Phase="Deleting"};await JsonFiles.WriteAsync(journalPath,journal);
         }
-        using(var db=DistributionBackup.Open(settings.Root,false))
-        using(var tx=db.BeginTransaction())
-        {
-            using var q=db.CreateCommand();q.Transaction=tx;
-            q.CommandText="SELECT COUNT(*) FROM audit WHERE action='retention-applied' AND job=$id";q.Parameters.AddWithValue("$id",plan.Fingerprint);
-            if(Convert.ToInt64(q.ExecuteScalar())==0)CredentialLifecycle.Audit(db,tx,"retention-applied",plan.Fingerprint);
-            tx.Commit();
-        }
+        authority.CommitOffline(maintenance, snapshot =>
+            authority.HasAudit(snapshot, "retention-applied", plan.Fingerprint) ? CommitPlan.Audit()
+                : CommitPlan.Audit(new AuthorityEvent(DateTimeOffset.UtcNow, "retention-applied", plan.Fingerprint)));
         await JsonFiles.WriteAsync(journalPath,journal with {Phase="Completed"});
         return new {Completed=true,DeletedDirectories=plan.Candidates.Count,Bytes=plan.Candidates.Sum(c=>c.Bytes),PublicReleasesDeleted=0};
     }

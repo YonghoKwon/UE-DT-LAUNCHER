@@ -16,8 +16,9 @@ internal sealed class UploadStatusProjection(IntakeStore store, Action<Exception
             var lockPath = SafePath.ResolveInsideChecked(directory, ".projection.lock");
             using var writer = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
             var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
-            var jobs = store.List().ToLookup(job => job.Source, comparer);
-            var published = new Lazy<ProjectionPublications>(() => new(new ReleasePromotions(store).Snapshot()));
+            var snapshot = store.Authority.ReadSnapshot();
+            var jobs = store.List(snapshot).ToLookup(job => job.Source, comparer);
+            var published = new Lazy<ProjectionPublications>(() => new(CatalogAuthority.For(store)!.Snapshot(snapshot)));
             var incoming = SafePath.ResolveInsideChecked(store.Root, "incoming");
             foreach (var source in Directory.EnumerateDirectories(incoming))
             {

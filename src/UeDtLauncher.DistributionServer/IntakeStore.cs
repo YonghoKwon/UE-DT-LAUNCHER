@@ -1,9 +1,8 @@
 using Microsoft.Data.Sqlite;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
-using System.Diagnostics;
 using System.Threading.Channels;
+using UeDtLauncher.Distribution.Authority;
 
 namespace UeDtLauncher.Distribution;
 
@@ -26,54 +25,32 @@ public sealed class DistributionSettings
     public int? MaxConcurrentDownloads { get; set; }
 }
 
-public sealed class IntakeStore
+public sealed partial class IntakeStore
 {
     private readonly Func<string, long>? availableBytes;
-    private readonly string? enrollmentDatabasePath;
-    private readonly WriterLease? enrollmentWriter;
     private string? scanCursor;
-    private const string JobColumns = "id,source,state,snapshot,message,phase,processed_bytes,total_bytes,estimated_disk_bytes,progress_at";
+    internal AuthorityStore Authority { get; }
     public DistributionSettings Settings { get; }
     internal ReaderWriterLockSlim DatabaseGate { get; }
     internal IDisposable DatabaseRead() => DistributionDatabaseCoordinator.Read(DatabaseGate);
     internal IDisposable DatabaseWrite() => DistributionDatabaseCoordinator.Write(DatabaseGate);
-    public string Root => Settings.Root;
-
-    // Temporary bootstrap for enrollment validation until the authentication store exposes its own read API.
+    public string Root { get; }
     internal static IntakeStore OpenForEnrollmentValidation(DistributionSettings settings)
     {
-        if (settings.IntakeWorkers is < 1 or > 2) throw new InvalidDataException("IntakeWorkers must be 1 or 2.");
-        settings.Root = Path.GetFullPath(settings.Root);
-        var path = SafePath.ResolveInsideChecked(settings.Root, "distribution.db");
-        if (File.Exists(SafePath.ResolveInsideChecked(settings.Root, "restore-staged.json")))
+        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(settings.Root));
+        if (File.Exists(SafePath.ResolveInsideChecked(root, "restore-staged.json")))
             throw new InvalidDataException("Staged restored root rejects enrollment.");
-        using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-        // This store uses rollback journaling. A WAL reader can create shared-memory files,
-        // even with SQLite's read-only flag, so refuse an externally changed journal mode.
-        Span<byte> header = stackalloc byte[64];
-        file.ReadExactly(header);
-        if (!header[..16].SequenceEqual("SQLite format 3\0"u8) || header[18] != 1 || header[19] != 1)
-            throw new InvalidDataException("Enrollment validation requires the existing rollback-journal store format.");
-        // SQLite stores PRAGMA user_version at header offset 60. Enrollment never migrates a store.
-        if (System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(header[60..]) != 6)
-            throw new InvalidDataException("Enrollment requires the current server store schema.");
-        return new(settings, path);
+        return new(settings, AuthorityStore.InspectExisting(root, validateHistory: false).Store);
     }
 
-    private IntakeStore(DistributionSettings settings, string databasePath, WriterLease? enrollmentWriter = null)
+    private IntakeStore(DistributionSettings settings, AuthorityStore authority)
     {
+        if (settings.IntakeWorkers is < 1 or > 2) throw new InvalidDataException("IntakeWorkers must be 1 or 2.");
         Settings = settings;
-        enrollmentDatabasePath = databasePath;
-        this.enrollmentWriter = enrollmentWriter;
+        Root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(settings.Root));
+        Authority = authority;
         DatabaseGate = DistributionDatabaseCoordinator.ForRoot(Root);
-    }
-
-    internal async Task WithEnrollmentWriterAsync(Func<IntakeStore, Task> action)
-    {
-        if (enrollmentDatabasePath is null || enrollmentWriter is not null)
-            throw new InvalidOperationException("Enrollment writer requires the validated existing store.");
-        using var lease = AcquireWriter();
-        await action(new IntakeStore(Settings, enrollmentDatabasePath, lease));
+        CredentialAuthority.Bind(this, Authority);
     }
 
     public IntakeStore(DistributionSettings settings, Func<string, long>? availableBytes = null)
@@ -81,28 +58,39 @@ public sealed class IntakeStore
         this.availableBytes = availableBytes;
         if (settings.IntakeWorkers is < 1 or > 2) throw new ArgumentOutOfRangeException(nameof(settings.IntakeWorkers), "IntakeWorkers must be 1 or 2.");
         Settings = settings;
-        settings.Root = Path.GetFullPath(settings.Root);
-        using var initialization = DistributionMaintenanceLease.Acquire(settings.Root, false);
-        DatabaseGate = DistributionDatabaseCoordinator.ForRoot(settings.Root);
-        foreach (var directory in new[] { "incoming", "processing", "releases", "archive", ".job-locks" })
-            Directory.CreateDirectory(Path.Combine(Root, directory));
-        using var gate = new FileStream(Path.Combine(Root, ".writer.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-        var existed = File.Exists(Path.Combine(Root, "distribution.db"));
-        using var database = DatabaseWrite();
-        using var db = Open();
+        Root = settings.Root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(settings.Root));
+        if (File.Exists(Path.Combine(Root, "restore-staged.json")))
+            throw new InvalidDataException("Staged restored root rejects live operations.");
+        Authority = AuthorityStore.Open(Root, validate: snapshot => CatalogAuthority.ValidateRoot(snapshot, Root));
+        CredentialAuthority.Bind(this, Authority);
+        CatalogAuthority.Bind(this, Authority);
+        DatabaseGate = DistributionDatabaseCoordinator.ForRoot(Root);
+        using (Authority.Lock())
+            foreach (var directory in new[] { "incoming", "processing", "releases", "archive", ".job-locks" })
+                Directory.CreateDirectory(Path.Combine(Root, directory));
+    }
+
+    // Legacy SQLite implementation is retained until PROD-01S6. File roots never call it.
+    internal static void InitializeRemainingDatabase(string root)
+    {
+        using var initialization = DistributionMaintenanceLease.Acquire(root, false);
+        using var gate = AuthorityStore.OpenWriterFile(root);
+        var existed = File.Exists(Path.Combine(root, "distribution.db"));
+        using var database = DistributionDatabaseCoordinator.Write(DistributionDatabaseCoordinator.ForRoot(root));
+        using var db = OpenDatabase(root);
         using var command = db.CreateCommand();
         command.CommandText = "PRAGMA user_version";
         var version = Convert.ToInt32(command.ExecuteScalar());
         if (version > 6) throw new InvalidDataException("Distribution database schema is newer than this server.");
         if (version == 6) return;
         initialization.Dispose();
-        using var maintenance = DistributionMaintenanceLease.Acquire(Root, true);
-        using var offline = new AuthenticationProcessLease(Root);
+        using var maintenance = DistributionMaintenanceLease.Acquire(root, true);
+        using var offline = new AuthenticationProcessLease(root);
         // SQLite's backup API captures a consistent image, including committed WAL pages, before any schema change.
         if (existed)
         {
             using var backup = new SqliteConnection(new SqliteConnectionStringBuilder
-            { DataSource = Path.Combine(Root, "distribution.pre-v6-" + DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmssfffffff") + ".db"), Pooling = false }.ToString());
+            { DataSource = Path.Combine(root, "distribution.pre-v6-" + DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmssfffffff") + ".db"), Pooling = false }.ToString());
             backup.Open(); db.BackupDatabase(backup);
         }
         using var transaction = db.BeginTransaction(); command.Transaction = transaction;
@@ -152,145 +140,17 @@ public sealed class IntakeStore
             """;
         command.ExecuteNonQuery(); transaction.Commit();
     }
-    public SqliteConnection Open()
+    public SqliteConnection Open() =>
+        throw new InvalidOperationException("SQLite cannot be opened from a file authority intake store.");
+
+    private static SqliteConnection OpenDatabase(string root)
     {
         using var measurement = DistributionPerformance.MeasureDatabase("open");
-        var options = new SqliteConnectionStringBuilder { DataSource = Path.Combine(Root, "distribution.db") };
-        if (enrollmentDatabasePath is not null)
-        {
-            options.DataSource = enrollmentDatabasePath;
-            enrollmentWriter?.VerifyActive();
-            options.Mode = enrollmentWriter is null ? SqliteOpenMode.ReadOnly : SqliteOpenMode.ReadWrite;
-            options.Pooling = false;
-        }
-        var db = new SqliteConnection(options.ToString());
+        var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Path.Combine(root, "distribution.db") }.ToString());
         try { db.Open(); }
         catch (SqliteException ex) { db.Dispose(); DistributionPerformance.RecordDatabaseBusy(ex.SqliteErrorCode); throw; }
         return db;
     }
-    public List<IntakeJob> List()
-    {
-        using var measurement = DistributionPerformance.MeasureDatabase("jobs-list");
-        using var database = DatabaseRead();
-        using var db = Open(); using var command = db.CreateCommand();
-        command.CommandText = "SELECT " + JobColumns + " FROM jobs ORDER BY rowid";
-        using var reader = command.ExecuteReader(); var list = new List<IntakeJob>();
-        while (reader.Read()) list.Add(ReadJob(reader));
-        return list;
-    }
-    public IntakeJob? Find(string id)
-    {
-        using var measurement = DistributionPerformance.MeasureDatabase("job-find");
-        using var database = DatabaseRead();
-        using var db = Open(); using var command = db.CreateCommand();
-        command.CommandText = "SELECT " + JobColumns + " FROM jobs WHERE id=$id";
-        command.Parameters.AddWithValue("$id", id);
-        using var reader = command.ExecuteReader(); return reader.Read() ? ReadJob(reader) : null;
-    }
-    public IntakeJob Get(string id) => Find(id) ?? throw new InvalidOperationException("Job not found.");
-    private static IntakeJob ReadJob(SqliteDataReader reader) => new(reader.GetString(0), reader.GetString(1), reader.GetString(2),
-        reader.IsDBNull(3) ? null : reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4),
-        reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetInt64(6), reader.GetInt64(7), reader.GetInt64(8),
-        reader.IsDBNull(9) ? null : reader.GetString(9));
-    public void Save(IntakeJob job)
-    {
-        using var measurement = DistributionPerformance.MeasureDatabase("job-save");
-        using var database = DatabaseWrite();
-        using var db = Open(); using var transaction = db.BeginTransaction();
-        using var command = db.CreateCommand(); command.Transaction = transaction;
-        command.CommandText = """
-            INSERT INTO jobs(id,source,state,snapshot,message,phase,processed_bytes,total_bytes,estimated_disk_bytes,progress_at)
-            VALUES($id,$source,$state,$snapshot,$message,$phase,$processed,$total,$disk,$progressAt)
-            ON CONFLICT(id) DO UPDATE SET state=$state,snapshot=$snapshot,message=$message,
-                phase=$phase,processed_bytes=$processed,total_bytes=$total,estimated_disk_bytes=$disk,progress_at=$progressAt;
-            INSERT INTO audit(at,action,job) VALUES($at,$state,$id);
-            """;
-        command.Parameters.AddWithValue("$id", job.Id); command.Parameters.AddWithValue("$source", job.Source);
-        command.Parameters.AddWithValue("$state", job.State); command.Parameters.AddWithValue("$snapshot", (object?)job.Snapshot ?? DBNull.Value);
-        command.Parameters.AddWithValue("$message", (object?)job.Message ?? DBNull.Value);
-        command.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O"));
-        AddProgressParameters(command, job);
-        command.ExecuteNonQuery(); transaction.Commit();
-    }
-    private static void AddProgressParameters(SqliteCommand command, IntakeJob job)
-    {
-        command.Parameters.AddWithValue("$phase", (object?)job.Phase ?? DBNull.Value);
-        command.Parameters.AddWithValue("$processed", job.ProcessedBytes);
-        command.Parameters.AddWithValue("$total", job.TotalBytes);
-        command.Parameters.AddWithValue("$disk", job.EstimatedAdditionalDiskBytes);
-        command.Parameters.AddWithValue("$progressAt", (object?)job.ProgressUpdatedAt ?? DBNull.Value);
-    }
-    internal ThrottledPackageProgress Progress(string id, IProgress<PackageWorkProgress>? observer = null) => new(value =>
-    {
-        using (var database = DatabaseWrite())
-        {
-            using var db = Open(); using var command = db.CreateCommand();
-            command.CommandText = "UPDATE jobs SET phase=$phase,processed_bytes=$processed,total_bytes=$total,estimated_disk_bytes=$disk,progress_at=$progressAt WHERE id=$id";
-            command.Parameters.AddWithValue("$id", id);
-            AddProgressParameters(command, new(id, "", "", null, null, value.Phase, value.ProcessedBytes, value.TotalBytes,
-                value.EstimatedAdditionalDiskBytes, DateTimeOffset.UtcNow.ToString("O")));
-            command.ExecuteNonQuery();
-        }
-        observer?.Report(value); // Observers may perform I/O; never call them while holding the SQL gate.
-    });
-    internal Func<string, long>? AvailableBytes => availableBytes;
-    public IDisposable Lock()
-    {
-        if (enrollmentWriter is null) return AcquireWriter();
-        // Only the writer-scoped store used by enrollment may borrow this lease for Add.
-        enrollmentWriter.VerifyActive();
-        return BorrowedWriterLease.Instance;
-    }
-    private WriterLease AcquireWriter()
-    {
-        var operationLease = DistributionMaintenanceLease.Acquire(Root, false);
-        var started = Stopwatch.GetTimestamp();
-        while (true)
-        {
-            try { return new WriterLease(new FileStream(Path.Combine(Root, ".writer.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None), operationLease); }
-            catch (IOException) when (Stopwatch.GetElapsedTime(started) < TimeSpan.FromSeconds(30)) { Thread.Sleep(20); }
-            catch { operationLease.Dispose(); throw; }
-        }
-    }
-    private sealed class WriterLease(FileStream writer, IDisposable operation) : IDisposable
-    {
-        private bool disposed;
-        internal void VerifyActive() => ObjectDisposedException.ThrowIf(disposed, this);
-        public void Dispose() { disposed = true; writer.Dispose(); operation.Dispose(); }
-    }
-    private sealed class BorrowedWriterLease : IDisposable
-    {
-        internal static BorrowedWriterLease Instance { get; } = new();
-        public void Dispose() { }
-    }
-    public IDisposable LockJob(string id)
-    {
-        ReleaseSidecar.Segment(id);
-        // Keep the inode/path stable: deleting lock files can split ownership on Unix.
-        return new FileStream(Path.Combine(Root, ".job-locks", id + ".lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-    }
-    internal bool ChangeState(string id, string expected, string next, bool reset = false, string? message = null)
-    {
-        using var database = DatabaseWrite();
-        using var db = Open(); using var transaction = db.BeginTransaction(); using var command = db.CreateCommand(); command.Transaction = transaction;
-        command.CommandText = "UPDATE jobs SET state=$next,message=$message" + (reset ? ",snapshot=NULL,phase=NULL,processed_bytes=0,total_bytes=0,estimated_disk_bytes=0,progress_at=NULL" : "") + " WHERE id=$id AND state=$expected";
-        command.Parameters.AddWithValue("$id", id); command.Parameters.AddWithValue("$expected", expected); command.Parameters.AddWithValue("$next", next);
-        command.Parameters.AddWithValue("$message", (object?)message ?? DBNull.Value);
-        if (command.ExecuteNonQuery() != 1) return false;
-        command.Parameters.Clear(); command.CommandText = "INSERT INTO audit(at,action,job) VALUES($at,$action,$id)";
-        command.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O")); command.Parameters.AddWithValue("$action", next); command.Parameters.AddWithValue("$id", id);
-        command.ExecuteNonQuery(); transaction.Commit(); return true;
-    }
-    public void Audit(string action, string subject)
-    {
-        using var database = DatabaseWrite();
-        using var db = Open(); using var command = db.CreateCommand();
-        command.CommandText = "INSERT INTO audit(at,action,job) VALUES($at,$action,$subject)";
-        command.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O"));
-        command.Parameters.AddWithValue("$action", action); command.Parameters.AddWithValue("$subject", subject);
-        command.ExecuteNonQuery();
-    }
-
     public async Task<IntakeJob> IngestAsync(string directory, CancellationToken token = default,
         IProgress<PackageWorkProgress>? observer = null)
     {
@@ -304,7 +164,7 @@ public sealed class IntakeStore
         var previous = Find(id);
         if (previous is { State: "pending" or "published" or "rejected" or "failed" or "publishing" }) return previous;
         var job = new IntakeJob(id, source, "waiting", null, null);
-        using (var gate = Lock()) Save(job);
+        SaveJob(job, resetClaim: true);
         IntakeWorkClaim? work = null;
         try
         {
@@ -353,7 +213,7 @@ public sealed class IntakeStore
         finally
         {
             // Make a successful snapshot durable before removing its active-work protection.
-            try { using var gate = Lock(); Save(job); }
+            try { Save(job); }
             finally { work?.Dispose(); }
         }
         return job;
@@ -361,12 +221,12 @@ public sealed class IntakeStore
 
     public void Reject(string id)
     {
-        using var jobLock = LockJob(id); using var gate = Lock();
+        using var jobLock = LockJob(id);
         if (!ChangeState(id, "pending", "rejected")) throw new InvalidOperationException("Only pending jobs can be rejected.");
     }
     public void Retry(string id)
     {
-        using var jobLock = LockJob(id); using var gate = Lock();
+        using var jobLock = LockJob(id);
         if (!ChangeState(id, "failed", "waiting", reset: true)) throw new InvalidOperationException("Only failed jobs can be retried.");
     }
     public async Task ScanAsync(CancellationToken token)

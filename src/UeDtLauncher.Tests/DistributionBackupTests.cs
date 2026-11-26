@@ -1,6 +1,7 @@
-using Microsoft.Data.Sqlite;
 using System.Security.Cryptography;
+using System.Text.Json;
 using UeDtLauncher.Distribution;
+using UeDtLauncher.Distribution.Authority;
 using Xunit;
 
 namespace UeDtLauncher.Tests;
@@ -18,7 +19,7 @@ public sealed class DistributionBackupTests : IDisposable
         settings = new() { Root = Path.Combine(root, "server"), SigningKeyPath = Path.Combine(root, "private.pem"), PolicyPath = Path.Combine(root, "policy.json"), AuthenticationMode = "request-signature-v1" };
         store = new(settings); File.WriteAllText(Path.Combine(settings.Root, "incoming", "private-upload.txt"), "payload");
     }
-    public void Dispose() { SqliteConnection.ClearAllPools(); Directory.Delete(root, true); }
+    public void Dispose() { Directory.Delete(root, true); }
     [Fact]
     public void MaintenanceExcludesLiveOperationsWithoutStoppingThem()
     {
@@ -35,6 +36,27 @@ public sealed class DistributionBackupTests : IDisposable
         File.AppendAllText(Path.Combine(backup, "content/incoming/private-upload.txt"), "changed");
         await Assert.ThrowsAsync<InvalidDataException>(() => DistributionBackup.VerifyAsync(backup));
     }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task BackupRejectsRootWithoutHeadBeforeCreatingLocks(bool legacy)
+    {
+        var input = Directory.CreateDirectory(Path.Combine(root, "without-head")).FullName;
+        var hidden = Directory.CreateDirectory(Path.Combine(input, ".hidden-empty"));
+        if (OperatingSystem.IsWindows()) hidden.Attributes |= FileAttributes.Hidden;
+        if (legacy) File.WriteAllText(Path.Combine(input, "distribution.db"), "legacy fixture");
+        var destination = Path.Combine(root, "must-not-back-up");
+        string[] Inventory() => Directory.EnumerateFileSystemEntries(input, "*", SearchOption.AllDirectories)
+            .Order(StringComparer.Ordinal)
+            .Select(path => (File.GetAttributes(path), path))
+            .Select(item => $"{Path.GetRelativePath(input, item.path)}|{item.Item1}|" +
+                (item.Item1.HasFlag(FileAttributes.Directory) ? "" : Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(item.path)))))
+            .ToArray();
+        var before = Inventory();
+        await Assert.ThrowsAsync<AuthorityRootException>(() => DistributionBackup.CreateAsync(new() { Root = input }, destination));
+        Assert.Equal(before, Inventory());
+        Assert.False(Directory.Exists(destination));
+    }
     [Fact]
     public async Task StagedRootIsBlockedAndActivationUsesLatestRevocationsAndSequence()
     {
@@ -44,10 +66,77 @@ public sealed class DistributionBackupTests : IDisposable
         var targetSettings = new DistributionSettings { Root = target, SigningKeyPath = settings.SigningKeyPath, PolicyPath = settings.PolicyPath, AuthenticationMode = settings.AuthenticationMode };
         Assert.Throws<InvalidDataException>(() => DistributionHttp.CreateApplication(new(targetSettings)));
         tokens.RevokeId(id);
-        using (var db = store.Open()) { using var q = db.CreateCommand(); q.CommandText = "UPDATE sequence SET value=1000"; q.ExecuteNonQuery(); }
+        FileAuthorityFixtures.SetSequence(store, 1000L);
         await DistributionBackup.ActivateAsync(target, settings, true);
         var restored = new IntakeStore(targetSettings); Assert.Null(new DistributionTokens(restored).Authenticate(token));
-        using var check = restored.Open(); using var sequence = check.CreateCommand(); sequence.CommandText = "SELECT value FROM sequence"; Assert.Equal(1000L, sequence.ExecuteScalar());
+        Assert.Equal(1000L, FileAuthorityFixtures.HighWater(restored));
+        Assert.False(File.Exists(Path.Combine(target, "restore-staged.json")));
+    }
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    public async Task ActivateRejectsSemanticallyInvalidAuthorityAndPreservesFence(bool damageTarget, bool damageAuth)
+    {
+        var backup = Path.Combine(root, "backup");
+        var target = Path.Combine(root, "restored");
+        await DistributionBackup.CreateAsync(settings, backup);
+        await DistributionBackup.StageAsync(backup, target, settings);
+
+        var damagedRoot = damageTarget ? target : settings.Root;
+        var authority = AuthorityStore.InspectExisting(damagedRoot).Store;
+        using (var lease = DistributionMaintenanceLease.Acquire(damagedRoot, true, create: false))
+        {
+            var area = damageAuth ? AuthorityArea.Auth : AuthorityArea.Sequence;
+            var invalid = damageAuth
+                ? JsonSerializer.SerializeToElement(new { schemaVersion = 1, tokens = (object?)null, deviceKeys = Array.Empty<object>() })
+                : JsonSerializer.SerializeToElement(new { schemaVersion = 1, highWater = -1 });
+            authority.CommitOffline(lease, _ => new(new Dictionary<AuthorityArea, JsonElement> { [area] = invalid }, []));
+        }
+
+        var head = Path.Combine(target, "authority", "HEAD");
+        var before = File.ReadAllBytes(head);
+        var error = await Assert.ThrowsAsync<AuthorityRootException>(() => DistributionBackup.ActivateAsync(target, settings, true));
+        Assert.Equal(AuthorityRootKind.Damaged, error.Kind);
+        Assert.True(File.Exists(Path.Combine(target, "restore-staged.json")));
+        Assert.False(File.Exists(Path.Combine(target, "restored-policy.json")));
+        Assert.Equal(before, File.ReadAllBytes(head));
+    }
+
+    [Theory]
+    [InlineData("authority-files-copied", false)]
+    [InlineData("authority-head-replaced", true)]
+    public async Task RestorePublishesLatestJobAndAuditTogetherBeforeOpeningFence(string boundary, bool headPublished)
+    {
+        var source = Path.Combine(settings.Root, "incoming", "waiting");
+        Directory.CreateDirectory(source);
+        File.WriteAllText(Path.Combine(source, "package.zip"), "fixture");
+        var job = new IntakeJob("fixture", source, "waiting", null, null);
+        store.Save(job);
+        var backup = Path.Combine(root, "job-backup");
+        await DistributionBackup.CreateAsync(settings, backup);
+        var target = Path.Combine(root, "job-target");
+        await DistributionBackup.StageAsync(backup, target, settings);
+        store.Save(job with { State = "pending" });
+        DistributionBackup.Boundary.Value = phase =>
+        {
+            if (phase == boundary) throw new IOException("owned authority copy fault");
+        };
+        try { await Assert.ThrowsAsync<IOException>(() => DistributionBackup.ActivateAsync(target, settings, true)); }
+        finally { DistributionBackup.Boundary.Value = null; }
+        Assert.True(File.Exists(Path.Combine(target, "restore-staged.json")));
+        Assert.Throws<InvalidDataException>(() => new IntakeStore(new() { Root = target }));
+        var staged = AuthorityStore.InspectExisting(target);
+        var expected = headPublished ? new[] { "waiting", "pending" } : ["waiting"];
+        Assert.Equal(expected[^1], Assert.Single(IntakeJobs.Read(staged).Jobs).State);
+        Assert.Equal(expected, staged.Store.ReadAudit(staged).Select(entry => entry.Action));
+        await DistributionBackup.ActivateAsync(target, settings, true);
+        var restored = new IntakeStore(new() { Root = target });
+        var latest = restored.Authority.ReadSnapshot();
+        Assert.Equal("pending", restored.Get(job.Id).State);
+        Assert.Equal(Path.Combine(target, "incoming", "waiting"), restored.Get(job.Id).Source);
+        Assert.Equal(new[] { "waiting", "pending" }, restored.Authority.ReadAudit(latest).Select(entry => entry.Action));
         Assert.False(File.Exists(Path.Combine(target, "restore-staged.json")));
     }
     [Fact]
@@ -63,9 +152,9 @@ public sealed class DistributionBackupTests : IDisposable
     }
     [Theory]
     [InlineData("authority-snapshot")]
-    [InlineData("authority-rebased")]
+    [InlineData("restored-releases-verified")]
     [InlineData("policy-written")]
-    [InlineData("database-replaced")]
+    [InlineData("restored-authority-verified")]
     [InlineData("before-public-fence")]
     public async Task ActivationFailureLeavesFenceAndRetryRechecksLatestAuthority(string boundary)
     {
@@ -80,11 +169,11 @@ public sealed class DistributionBackupTests : IDisposable
         Assert.Throws<InvalidDataException>(()=>new IntakeStore(new(){Root=target}));
         Assert.Equal(original,await Hashing.Sha256FileAsync(Path.Combine(settings.Root,"incoming/private-upload.txt")));
         credential.RevokeId(id);
-        using(var db=store.Open())using(var command=db.CreateCommand()){command.CommandText="UPDATE sequence SET value=1201";command.ExecuteNonQuery();}
+        FileAuthorityFixtures.SetSequence(store, 1201L);
         await DistributionBackup.ActivateAsync(target,settings,true);
         var restored=new IntakeStore(new(){Root=target,PolicyPath=Path.Combine(target,"restored-policy.json"),SigningKeyPath=settings.SigningKeyPath,AuthenticationMode=settings.AuthenticationMode});
         Assert.Null(new DistributionTokens(restored).Authenticate(token));
-        using var check=restored.Open();using var sequence=check.CreateCommand();sequence.CommandText="SELECT value FROM sequence";Assert.Equal(1201L,sequence.ExecuteScalar());
+        Assert.Equal(1201L, FileAuthorityFixtures.HighWater(restored));
         Assert.False(File.Exists(Path.Combine(target,"restore-staged.json")));
     }
     [Fact]
