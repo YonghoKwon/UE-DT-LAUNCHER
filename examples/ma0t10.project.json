@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "projectId": "ma0t10-demo",
+  "displayName": "합성 DT 데모",
+  "platform": "windows-x64",
+  "payloadRoot": "Windows",
+  "entryPoint": "Demo.exe",
+  "executablePaths": [],
+  "environment": "prod",
+  "channel": "stable"
+}

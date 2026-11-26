@@ -39,6 +39,7 @@ public static partial class Program
         "--mode",
         "--name",
         "--notes",
+        "--notes-file",
         "--operation-id",
         "--output",
         "--package-dir",
@@ -48,6 +49,7 @@ public static partial class Program
         "--profile",
         "--project",
         "--project-id",
+        "--project-profile",
         "--public-key",
         "--public-out",
         "--resume-id",
@@ -88,15 +90,21 @@ public static partial class Program
         output.WriteLine();
         output.WriteLine("Current commands (distribution server mode):");
         output.WriteLine("  upload init --output upload.profile.json [--force]");
+        output.WriteLine("  upload project-init --output ma0t10.project.json [--force]");
         output.WriteLine("  upload check --profile upload.profile.json (또는 --server user@host --remote-incoming /absolute/incoming)");
         output.WriteLine("    키 인증 전용(BatchMode): 비밀번호를 묻지 않습니다. 최초 호스트 키 등록은 터미널 ssh로 확인하세요.");
         output.WriteLine("  upload --zip package.zip --project-id id --version version --platform windows-x64|linux-x64 --entry-point app [--profile upload.profile.json] [--server user@host --remote-incoming /absolute/incoming] [--port 22] [--identity-file path] [--upload-id id] [--dry-run]");
-        output.WriteLine("    optional metadata: --payload-root --display-name --environment --channel --executable-paths --notes --hero-path --thumbnail-path (same as release-metadata)");
+        output.WriteLine("  upload --profile upload.profile.json --project-profile ma0t10.project.json --zip Windows.zip --version 1.4.0 --notes-file notes.md --dry-run");
+        output.WriteLine("    실제 접속 정보를 준비한 뒤 --dry-run을 빼면 전송합니다.");
+        output.WriteLine("    명령줄 > 프로젝트 프로필 > 기본값. --project-profile만 주는 dry-run은 예시 접속 정보를 사용합니다.");
+        output.WriteLine("    공통 메타데이터: --payload-root --display-name --environment --channel --executable-paths --hero-path --thumbnail-path");
+        output.WriteLine("    --notes 또는 --notes-file <UTF-8 파일, 최대 64 KiB> 중 하나를 사용합니다.");
         output.WriteLine("    기본 출력: 한국어 요약. --format json으로 기존 JSON 출력. 진행 안내는 stderr에 표시합니다.");
         output.WriteLine("    성공 시 이번 실행의 작업 사본을 정리합니다. --keep-work로 보존할 수 있으며 실패 시에는 항상 보존합니다.");
         output.WriteLine("  runtime inspect --config <file> [--version <exact version>]");
         output.WriteLine("  runtime recover --config <file> --dry-run|--confirm-stopped [--version <exact version>] [--service-selection]");
         output.WriteLine("  release-metadata --zip <zip> --project-id <id> --version <version> --platform <platform> --entry-point <path> [--payload-root <path>] [--output <release.json>]");
+        output.WriteLine("  release-metadata --project-profile ma0t10.project.json --zip Windows.zip --version 1.4.0 [--notes-file notes.md] [--output release.json]");
         output.WriteLine("  gui                 (also: --gui forces GUI; --cli forces CLI -> defaults to 'run')");
         output.WriteLine("  sample-config --output launcher.config.json [--mode distribution|managed-client|legacy-catalog] [--force]");
         output.WriteLine("    managed-client: --project-id id [--platform windows-x64|linux-x64] [--environment prod|dev] [--channel stable|beta|dev] [--version-policy latest|exact] [--version exact-version]");

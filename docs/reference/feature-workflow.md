@@ -211,10 +211,11 @@ Agent 운영 설정은 보통 `C:\ProgramData\UE-DT Launcher\config\launcher.con
 
 ```mermaid
 flowchart TD
-    package["B1 개발자: ZIP 준비"] --> preflight["개발자: upload check 조회"]
+    setup["개발자: 최초 접속·프로젝트 프로필 준비"] --> preflight["개발자: upload check 조회"]
     preflight --> checked{"ssh/scp·키 인증·incoming 확인?"}
     checked -->|"실패: 원인 해결 후 조회 재시도"| preflight
-    checked -->|"통과"| metadata["B2 upload: ZIP 검사·공간 확인·외부 JSON 생성"]
+    checked -->|"통과"| package["B1 개발자: ZIP 준비"]
+    package --> metadata["B2 upload: 프로젝트 값 적용·ZIP 검사·공간 확인·외부 JSON 생성"]
     metadata --> upload["B3 같은 upload: 두 전송 후 두 이름 변경"]
     upload --> paired{"최종 두 파일 확인?"}
     paired -->|"아니오"| waiting["서버: 파일 대기"]
@@ -242,26 +243,39 @@ flowchart TD
   Windows.zip
 ```
 
-ZIP을 열자마자 `Demo.exe`가 보인다면 다음 단계에서 `--payload-root .`로 지정합니다. Windows와 Linux는 서로 다른 업로드 폴더를 사용합니다.
+ZIP을 열자마자 `Demo.exe`가 보인다면 프로젝트 프로필의 `payloadRoot`를 `.`으로 지정할 수 있습니다. Windows와 Linux는 서로 다른 업로드 폴더를 사용합니다.
 
 ### B2. release.json 만들기 — 개발 PC PowerShell
 
 #### 쉬운 방법: B2~B3를 upload 한 명령으로
 
-담당자는 개발자이며 Windows PowerShell에서 실행합니다. 최초1회 OpenSSH `ssh`/`scp`, 기존 known-host 등록, incoming 쓰기 권한과 서버 서비스 계정의 읽기 권한을 준비합니다. 프로필은 서버/계정·원격 incoming·포트·identity **경로**만 보관하며 비밀번호·키 내용은 저장하지 않습니다.
+담당자는 개발자이며 Windows PowerShell에서 실행합니다. 최초1회 OpenSSH `ssh`/`scp`, 기존 known-host 등록, incoming 쓰기 권한과 서버 서비스 계정의 읽기 권한을 준비합니다. 업로드 접속 프로필은 서버/계정·원격 incoming·포트·identity **경로**를 보관합니다. 프로젝트 프로필은 프로젝트와 ZIP에 관한 값을 보관합니다. 두 프로필에 비밀번호·키 내용은 넣지 않습니다.
 
 키 인증 전용(BatchMode)이므로 비밀번호를 묻지 않습니다. 최초 호스트 키 등록은 터미널 `ssh 계정@호스트`로 직접 확인합니다. 아래 `upload check`는 접속·키 인증 및 `test -d`/`test -w` 조회만 하며 원격 파일·폴더를 만들지 않습니다. 호스트 키를 자동 등록하지 않으며 원격 출력은 버립니다.
 
 ```powershell
 $Launcher = (Resolve-Path .\publish\client-win-x64\UeDtLauncher.exe).Path
-& $Launcher upload init --output .\upload.profile.json | Out-Host
-# 생성한 프로필의 server=user@host, remoteIncoming=/절대/경로/incoming 등을 실제 회사값으로 편집
-& $Launcher upload check --profile .\upload.profile.json | Out-Host
+& $Launcher upload init --output upload.profile.json | Out-Host
+# server=user@host, remoteIncoming=/절대/경로/incoming 등을 실제 회사값으로 편집
+& $Launcher upload project-init --output ma0t10.project.json | Out-Host
+# 프로젝트 프로필을 ZIP 내부 경로와 프로젝트에 맞게 편집
+& $Launcher upload check --profile upload.profile.json | Out-Host
 if ($LASTEXITCODE -ne 0) { throw '실패한 사전 점검 항목을 해결한 뒤 다시 확인하세요.' }
-& $Launcher upload --profile .\upload.profile.json --zip .\Windows.zip --project-id demo --display-name 'DT Simulator' --version 1.2.0 --platform windows-x64 --payload-root Windows --entry-point Demo.exe --dry-run | Out-Host
+& $Launcher upload --profile upload.profile.json --project-profile ma0t10.project.json --zip Windows.zip --version 1.4.0 --notes-file notes.md --dry-run | Out-Host
 # 계획을 확인한 다음 전송 (버전마다 반복)
-& $Launcher upload --profile .\upload.profile.json --zip .\Windows.zip --project-id demo --display-name 'DT Simulator' --version 1.2.0 --platform windows-x64 --payload-root Windows --entry-point Demo.exe | Out-Host
+& $Launcher upload --profile upload.profile.json --project-profile ma0t10.project.json --zip Windows.zip --version 1.4.0 --notes-file notes.md | Out-Host
 ```
+
+| 시점 | 개발자 입력 | 정상 결과 |
+|---|---|---|
+| 최초 준비 | `upload init`, `upload project-init` 후 각 프로필 편집 | 접속 프로필과 프로젝트 프로필 각 한 개. 기존 파일을 교체하려면 `--force` 지정 |
+| 최초 연결·진단 | `upload check --profile upload.profile.json` | ssh/scp·접속·incoming 권한 조회 성공 |
+| 새 버전 계획 확인 | `upload`에 두 프로필·ZIP·버전·선택 노트를 지정하고 `--dry-run` 사용 | 적용 값과 출처 및 6단계 계획 표시 |
+| 매 배포 | 동일 명령에서 `--dry-run` 제거 | ZIP 검사·외부 JSON 생성 후 B3 전송 |
+
+프로젝트 프로필은 [합성 예시](../../examples/ma0t10.project.json)를 참고하세요. `schemaVersion`은 1이며 생략 시 1입니다. `projectId`, `platform`, `entryPoint`는 프로필 또는 명령줄에서 지정합니다. 선택 필드는 `displayName`(프로젝트 ID), `payloadRoot`(`.`), `executablePaths`(빈 배열), `environment`(`prod`), `channel`(`stable`), `heroPath`, `thumbnailPath`입니다. 괄호 안 값은 기본값입니다. 이미지 경로는 생략할 수 있습니다. `executablePaths`는 JSON 문자열 배열이고 ZIP 파일 경로는 `payloadRoot` 기준입니다. 알 수 없는 필드와 비밀 필드는 거부합니다. 명령줄 값 > 프로젝트 프로필 > 기본값 순서로 적용하며, 버전은 매번 `--version`으로 입력합니다.
+
+`--notes-file`은 BOM을 포함해 최대 64 KiB인 UTF-8 파일입니다. `--notes`와 함께 지정할 수 없습니다. 생성되는 `release.json`은 1 MiB까지 허용됩니다. 접속 프로필과 서버 옵션을 모두 생략하고 프로젝트 프로필로 dry-run하면 예시 목적지로 ZIP과 메타데이터를 점검할 수 있습니다. 실제 전송에는 접속 정보가 필요합니다.
 
 Linux 개발 PC의 터미널에서는 같은 옵션에 `./UeDtLauncher`를 사용하며 `Out-Host`는 붙이지 않습니다:
 
@@ -270,15 +284,17 @@ Linux 개발 PC의 터미널에서는 같은 옵션에 `./UeDtLauncher`를 사�
 ./UeDtLauncher upload --zip ./Linux.zip --project-id demo --version 1.2.0 --platform linux-x64 --payload-root Linux --entry-point Demo.sh --executable-paths Demo.sh,Demo/Binaries/Linux/Demo --server uploader@updates.example.com --remote-incoming /srv/ue-dt-distribution/incoming --dry-run
 ```
 
-위 Linux 예시는 계획만 확인합니다. 실제 전송은 검토 후 `--dry-run`을 제거합니다. 명령줄 값이 프로필보다 우선합니다. 선택 옵션은 `--environment`, `--channel`, `--notes`, `--hero-path`, `--thumbnail-path`, `--port`, `--identity-file`, `--upload-id`이며 메타데이터 옵션은 아래 직접 실행과 같습니다. 프로필은 `--force` 없이 덮어쓰지 않습니다.
+위 Linux 예시는 메타데이터와 접속 값을 직접 지정해 계획을 확인합니다. 실제 전송은 검토 후 `--dry-run`을 제거합니다. 접속 옵션 `--port`, `--identity-file`과 식별자 옵션 `--upload-id`도 지정할 수 있습니다.
 
 정상 결과는 새 로컬 `upload-work/<ID>-<고유값>/payload.zip`과 외부 `release.json`, 원격 `<incoming>/<ID>/`의 최종 두 파일 확인 및 운영자 승인 안내입니다. 자동 ID는 프로젝트-버전-플랫폼 접두부를 필요할 때 자르고 UTC 밀리초 시각·난수16자리 hex를 붙여 최대128자로 만듭니다. 릴리스의 프로젝트/버전 값 자체는 바꾸지 않으며 명시한 `--upload-id`는 자르지 않고 기존 Segment 규칙으로 검증합니다. `mkdir` 실패 시 기존 폴더를 재사용하지 않습니다. 전송 실패 뒤에는 이름을 바꾸지 않으며 실패 단계·남을 수 있는 `.uploading`과 다음 조치를 출력합니다. `mv -n` 뒤 실제 원본 이름 소멸도 확인합니다. `--dry-run`은 네트워크·폴더·파일을 만들지 않습니다. 업로드 계정은 DB를 읽을 수 없으므로 검사 결과를 기다리거나 자동 승인하지 않습니다.
 
-기본 출력은 한국어 요약(업로드 ID·원격 폴더·단계별 완료/실패/미실행·남은 상태·다음 할 일)이고 stderr에는 `[3/6] ZIP 전송 중 (3 GB) — 큰 파일은 오래 걸릴 수 있습니다` 같은 안내가 나옵니다. 기존 JSON이 필요한 도구는 `--format json`을 붙입니다. 프로필 생성과 doctor 등 다른 명령의 JSON 계약은 바꾸지 않습니다. 숫자가 아닌 `--port`는 입력 오류로 종료2입니다.
+기본 출력은 한국어 요약(업로드 ID·원격 폴더·단계별 결과·적용 프로젝트 값·노트 본문 UTF-8 바이트 수·출처)이고 stderr에는 `[3/6] ZIP 전송 중 (3 GB) — 큰 파일은 오래 걸릴 수 있습니다` 같은 안내가 나옵니다. 도구 연동에 `--format json`을 붙이면 기존 결과 필드와 `project`, `sources`가 나오며 dry-run에는 생성 예정 설명 파일의 해시 `sidecarSha256`도 포함됩니다. 예시 목적지로 검증했으면 `placeholderDestination`이 `true`입니다. JSON의 로컬 경로는 홈 기준 `~/…` 또는 파일·폴더명으로 표시하며, 실제 전송은 입력한 경로를 사용합니다. 필수 메타데이터 누락, 노트 충돌·형식 오류, 접속 프로필 오류와 ZIP 내부 경로 불일치는 종료2입니다.
 
 성공하면 이번 실행의 작업 사본만 지웁니다. `--keep-work`는 성공 사본도 보존하며, 실패 시에는 보존된 경로를 안내합니다. 원본 ZIP·다른 작업 폴더·예상 밖에 추가된 자료는 삭제하지 않습니다. 사본 생성 전 ZIP 크기+64 MB 예비 공간을 조회하지만 실제 공간 예약은 아닙니다. 원본/사본 hash를 비교하고 ZIP 검증을 유지합니다. 종료255는 주소·포트·키 인증·호스트 키 등록을 확인하고, mkdir 오류는 기존 ID/쓰기 권한, 전송 오류는 네트워크·디스크 부족을 확인한 뒤 새 ID로 재시도합니다. OpenSSH 미설치는 Windows 선택 기능의 OpenSSH 클라이언트를 준비합니다.
 
 #### 직접 실행: release-metadata로 JSON 생성
+
+`release-metadata`도 동일한 프로젝트 프로필과 노트 옵션을 사용합니다. 예를 들어 `release-metadata --project-profile ma0t10.project.json --zip Windows.zip --version 1.4.0 --notes-file notes.md --output release.json`으로 파일을 생성할 수 있습니다.
 
 B2~B3는 같은 PowerShell 창에서 실행합니다. 새 창이면 아래 변수를 다시 정의합니다. 소스 저장소 루트 기준입니다.
 
