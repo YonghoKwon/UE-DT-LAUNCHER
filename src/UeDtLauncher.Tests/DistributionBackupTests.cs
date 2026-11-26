@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using System.Security.Cryptography;
 using UeDtLauncher.Distribution;
+using UeDtLauncher.Distribution.Authority;
 using Xunit;
 
 namespace UeDtLauncher.Tests;
@@ -48,6 +49,41 @@ public sealed class DistributionBackupTests : IDisposable
         await DistributionBackup.ActivateAsync(target, settings, true);
         var restored = new IntakeStore(targetSettings); Assert.Null(new DistributionTokens(restored).Authenticate(token));
         using var check = restored.Open(); using var sequence = check.CreateCommand(); sequence.CommandText = "SELECT value FROM sequence"; Assert.Equal(1000L, sequence.ExecuteScalar());
+        Assert.False(File.Exists(Path.Combine(target, "restore-staged.json")));
+    }
+    [Theory]
+    [InlineData("authority-files-copied", false)]
+    [InlineData("authority-head-replaced", true)]
+    public async Task RestorePublishesLatestJobAndAuditTogetherBeforeOpeningFence(string boundary, bool headPublished)
+    {
+        var source = Path.Combine(settings.Root, "incoming", "waiting");
+        Directory.CreateDirectory(source);
+        File.WriteAllText(Path.Combine(source, "package.zip"), "fixture");
+        var job = new IntakeJob("fixture", source, "waiting", null, null);
+        store.Save(job);
+        var backup = Path.Combine(root, "job-backup");
+        await DistributionBackup.CreateAsync(settings, backup);
+        var target = Path.Combine(root, "job-target");
+        await DistributionBackup.StageAsync(backup, target, settings);
+        store.Save(job with { State = "pending" });
+        DistributionBackup.Boundary.Value = phase =>
+        {
+            if (phase == boundary) throw new IOException("owned authority copy fault");
+        };
+        try { await Assert.ThrowsAsync<IOException>(() => DistributionBackup.ActivateAsync(target, settings, true)); }
+        finally { DistributionBackup.Boundary.Value = null; }
+        Assert.True(File.Exists(Path.Combine(target, "restore-staged.json")));
+        Assert.Throws<InvalidDataException>(() => new IntakeStore(new() { Root = target }));
+        var staged = AuthorityStore.ReadAlongsideSqlite(target, validateHistory: true);
+        var expected = headPublished ? new[] { "waiting", "pending" } : ["waiting"];
+        Assert.Equal(expected[^1], Assert.Single(IntakeJobs.Read(staged).Jobs).State);
+        Assert.Equal(expected, staged.Store.ReadAudit(staged).Select(entry => entry.Action));
+        await DistributionBackup.ActivateAsync(target, settings, true);
+        var restored = new IntakeStore(new() { Root = target });
+        var latest = restored.Authority.ReadSnapshot();
+        Assert.Equal("pending", restored.Get(job.Id).State);
+        Assert.Equal(Path.Combine(target, "incoming", "waiting"), restored.Get(job.Id).Source);
+        Assert.Equal(new[] { "waiting", "pending" }, restored.Authority.ReadAudit(latest).Select(entry => entry.Action));
         Assert.False(File.Exists(Path.Combine(target, "restore-staged.json")));
     }
     [Fact]

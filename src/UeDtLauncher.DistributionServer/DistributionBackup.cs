@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using System.Security.Cryptography;
 using System.Text.Json;
+using UeDtLauncher.Distribution.Authority;
 
 namespace UeDtLauncher.Distribution;
 
@@ -82,7 +83,7 @@ public static class DistributionBackup
     public static object Plan(DistributionSettings settings) => new
     {
         Root = Path.GetFullPath(settings.Root), Mode = "offline-manual", PrivateSigningKeyIncluded = false,
-        Directories = new[] { "incoming", "processing", "releases", "archive" },
+        Directories = new[] { "incoming", "processing", "releases", "archive", "authority" },
         Requirement = "Stop serve/watch/workers; run as server owner/admin. Complete-source-loss recovery is excluded."
     };
     public static async Task<DistributionBackupManifest> CreateAsync(DistributionSettings settings, string destination)
@@ -94,6 +95,7 @@ public static class DistributionBackup
                 throw new InvalidDataException("Complete interrupted retention before backup.");
         var root = Path.GetFullPath(settings.Root); destination = Path.GetFullPath(destination);
         if (Directory.Exists(destination) || Inside(root, destination)) throw new IOException("Backup needs a new directory outside server root.");
+        var authority = AuthorityStore.ReadAlongsideSqlite(root, validateHistory: true);
         MaintenanceStorage.PrivateDirectory(destination);
         var content = Path.Combine(destination, "content"); Directory.CreateDirectory(content);
         foreach (var name in new[] { "incoming", "processing", "releases", "archive" })
@@ -109,6 +111,7 @@ public static class DistributionBackup
         using (var source = Open(root, true))
         using (var target = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Path.Combine(content, "distribution.db"), Pooling = false }.ToString()))
         { target.Open(); source.BackupDatabase(target); }
+        CopyAuthority(authority, content);
         var policy = await File.ReadAllBytesAsync(settings.PolicyPath); await File.WriteAllBytesAsync(Path.Combine(destination, "policy.json"), policy);
         var entries = new List<BackupFile>();
         foreach (var path in Files(content)) entries.Add(new(Path.GetRelativePath(content, path).Replace('\\', '/'), new FileInfo(path).Length, await Hashing.Sha256FileAsync(path)));
@@ -133,7 +136,74 @@ public static class DistributionBackup
         if (Digest(await File.ReadAllBytesAsync(Path.Combine(directory, "policy.json"))) != manifest.PolicySha256) throw new InvalidDataException("Backup policy mismatch.");
         using var db = Open(content, true); using var q = db.CreateCommand(); q.CommandText = "PRAGMA integrity_check";
         if ((string?)q.ExecuteScalar() != "ok") throw new InvalidDataException("Backup database is corrupt.");
+        _ = AuthorityStore.ReadAlongsideSqlite(content, validateHistory: true);
         return manifest;
+    }
+
+    private static string PrepareAuthorityDirectories(string target)
+    {
+        var layout = AuthorityLayout.Default;
+        var directory = SafePath.ResolveInsideChecked(target, layout.AuthorityDirectory);
+        Directory.CreateDirectory(directory);
+        foreach (var name in AuthorityDocuments.Areas.Select(area => layout.DirectoryFor(AuthorityDocuments.Name(area)))
+            .Concat([layout.EventsDirectory, layout.ReleaseMetadataDirectory, layout.ProgressDirectory]))
+            Directory.CreateDirectory(SafePath.ResolveInsideChecked(directory, name));
+        AuthorityDisk.FlushDirectory(directory);
+        AuthorityDisk.FlushDirectory(target);
+        return directory;
+    }
+
+    // The source lease freezes HEAD and its files. The destination remains fenced during activation.
+    private static void CopyAuthority(AuthoritySnapshot snapshot, string target, bool activating = false)
+    {
+        var directory = PrepareAuthorityDirectories(target);
+        IEnumerable<string> FilesInSnapshot()
+        {
+            foreach (var path in snapshot.Head.Files.Values) yield return path;
+            for (long generation = 0; generation < snapshot.Generation; generation++)
+                yield return AuthorityDocuments.RelativeFile(AuthorityLayout.Default.EventsDirectory, generation);
+        }
+        foreach (var path in FilesInSnapshot())
+        {
+            var bytes = File.ReadAllBytes(snapshot.Store.DataPath(path));
+            var destination = SafePath.ResolveInsideChecked(directory, path);
+            if (!File.Exists(destination)) AuthorityDisk.Write(destination, bytes);
+            else
+            {
+                using var existing = new FileStream(destination, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
+                if (existing.Length != bytes.Length)
+                    throw new InvalidDataException("Staged authority has a conflicting immutable generation file.");
+                var copied = new byte[bytes.Length];
+                existing.ReadExactly(copied);
+                if (!bytes.AsSpan().SequenceEqual(copied))
+                    throw new InvalidDataException("Staged authority has a conflicting immutable generation file.");
+                existing.Flush(flushToDisk: true);
+                AuthorityDisk.FlushDirectory(Path.GetDirectoryName(destination)!);
+            }
+        }
+        if (activating) Boundary.Value?.Invoke("authority-files-copied");
+        var head = SafePath.ResolveInsideChecked(directory, "HEAD");
+        AuthorityDisk.Write(head, File.ReadAllBytes(snapshot.Store.DataPath("HEAD")), head: true);
+        AuthorityDisk.CompleteHeadPublication(directory, snapshot.Generation);
+        if (activating) Boundary.Value?.Invoke("authority-head-replaced");
+        _ = AuthorityStore.ReadAlongsideSqlite(target, validateHistory: true);
+    }
+
+    private static void RebaseReleaseDirectories(SqliteConnection db, string original, string target)
+    {
+        using var tx = db.BeginTransaction();
+        using var q = db.CreateCommand(); q.Transaction = tx; q.CommandText = "SELECT rowid,directory FROM releases";
+        var rows = new List<(long Id, string Path)>();
+        using (var r = q.ExecuteReader()) while (r.Read()) rows.Add((r.GetInt64(0), r.GetString(1)));
+        foreach (var row in rows)
+        {
+            var old = Path.GetFullPath(row.Path);
+            if (!Inside(original, old)) throw new InvalidDataException("Backup DB references a path outside its original server root.");
+            q.CommandText = "UPDATE releases SET directory=$path WHERE rowid=$id"; q.Parameters.Clear();
+            q.Parameters.AddWithValue("$path", SafePath.ResolveInsideChecked(target, Path.GetRelativePath(original, old)));
+            q.Parameters.AddWithValue("$id", row.Id); q.ExecuteNonQuery();
+        }
+        tx.Commit();
     }
     internal static SqliteConnection Open(string root, bool readOnly)
     {
@@ -156,20 +226,11 @@ public static class DistributionBackup
         { var path = SafePath.ResolveInsideChecked(target, file.Path); Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.Copy(SafePath.ResolveInsideChecked(content, file.Path), path, false); }
         foreach(var file in manifest.Files)
             if(!await Hashing.Sha256MatchesAsync(SafePath.ResolveInsideChecked(target,file.Path),file.Sha256))throw new InvalidDataException("Restored staging changed during copy.");
-        using var db = Open(target, false); using var tx = db.BeginTransaction();
-        foreach (var (table, column) in new[] { ("jobs", "source"), ("jobs", "snapshot"), ("releases", "directory"), ("active_work", "scratch"), ("active_work", "snapshot") })
-        {
-            using var q = db.CreateCommand(); q.Transaction = tx; q.CommandText = $"SELECT rowid,{column} FROM {table} WHERE {column} IS NOT NULL";
-            var rows = new List<(long Id, string Path)>(); using (var r = q.ExecuteReader()) while (r.Read()) rows.Add((r.GetInt64(0), r.GetString(1)));
-            foreach (var row in rows)
-            {
-                var old = Path.GetFullPath(row.Path);
-                if (!Inside(manifest.SourceRoot, old)) throw new InvalidDataException("Backup DB references a path outside its original server root.");
-                q.CommandText = $"UPDATE {table} SET {column}=$path WHERE rowid=$id"; q.Parameters.Clear();
-                q.Parameters.AddWithValue("$path", SafePath.ResolveInsideChecked(target, Path.GetRelativePath(manifest.SourceRoot, old))); q.Parameters.AddWithValue("$id", row.Id); q.ExecuteNonQuery();
-            }
-        }
-        tx.Commit(); return new { Staged = true, Public = false, Target = target, Next = "restore activate --target ... --confirm with surviving current source; private key remains separate" };
+        PrepareAuthorityDirectories(target);
+        _ = AuthorityStore.ReadAlongsideSqlite(target, validateHistory: true);
+        using var db = Open(target, false);
+        RebaseReleaseDirectories(db, manifest.SourceRoot, target);
+        return new { Staged = true, Public = false, Target = target, Next = "restore activate --target ... --confirm with surviving current source; private key remains separate" };
     }
     public static async Task<object> ActivateAsync(string target, DistributionSettings current, bool confirm)
     {
@@ -187,6 +248,8 @@ public static class DistributionBackup
         if (manifest.Origin != current.PublicUrl.TrimEnd('/') || manifest.SigningKeyId != current.SigningKeyId || manifest.SigningPublicKeySha256 != Signer(current)) throw new InvalidDataException("Current origin/signer changed.");
         // Current source is the authority, not the historical backup. Every current release must be present.
         using var source = Open(current.Root, true); using var staged = Open(target, false);
+        var authority = AuthorityStore.ReadAlongsideSqlite(original, validateHistory: true);
+        var intake = IntakeJobs.Read(authority);
         using(var integrity=source.CreateCommand()){integrity.CommandText="PRAGMA integrity_check";if((string?)integrity.ExecuteScalar()!="ok")throw new InvalidDataException("Current authority DB is corrupt.");}
         var deletionPaths=new HashSet<string>(OperatingSystem.IsWindows()?StringComparer.OrdinalIgnoreCase:StringComparer.Ordinal);
         using(var q=source.CreateCommand())
@@ -209,30 +272,10 @@ public static class DistributionBackup
             foreach(var file in originals)
             {var counterpart=SafePath.ResolveInsideChecked(destination,Path.GetRelativePath(directory,file));if(new FileInfo(file).Length!=new FileInfo(counterpart).Length || await Hashing.Sha256FileAsync(file)!=await Hashing.Sha256FileAsync(counterpart))throw new InvalidDataException("Restored file changed.");}
         }
-        using(var q=source.CreateCommand())
-        {
-            q.CommandText="SELECT source FROM jobs UNION SELECT scratch FROM active_work WHERE scratch IS NOT NULL UNION SELECT snapshot FROM active_work WHERE snapshot IS NOT NULL";
-            var directories=new List<string>();using(var r=q.ExecuteReader())while(r.Read())directories.Add(r.GetString(0));
-            foreach(var directory in directories)await MatchDirectory(directory);
-        }
-        using (var q = source.CreateCommand())
-        {
-            q.CommandText = "SELECT snapshot FROM jobs WHERE snapshot IS NOT NULL"; using var r = q.ExecuteReader();
-            while (r.Read())
-            {
-                var snapshot = r.GetString(0);
-                await MatchDirectory(snapshot);
-                if(!Directory.Exists(snapshot))continue;
-                var path = SafePath.ResolveInsideChecked(target, Path.GetRelativePath(Path.GetFullPath(current.Root), Path.GetFullPath(snapshot)));
-                if (!Directory.Exists(path)) throw new InvalidDataException("Current intake snapshot is absent; keep restore staged.");
-                foreach (var file in Files(snapshot))
-                {
-                    var restored = SafePath.ResolveInsideChecked(path, Path.GetRelativePath(snapshot, file));
-                    if (!File.Exists(restored) || await Hashing.Sha256FileAsync(file) != await Hashing.Sha256FileAsync(restored))
-                        throw new InvalidDataException("Current snapshot changed; keep restore staged.");
-                }
-            }
-        }
+        var required = intake.Jobs.SelectMany(job => new[] { job.Source, job.Snapshot })
+            .Concat(intake.ActiveWork.SelectMany(work => new[] { work.Scratch, work.Snapshot }))
+            .OfType<string>().Distinct(IntakeJobs.PathComparer);
+        foreach (var path in required) await MatchDirectory(IntakeJobs.Resolve(original, path));
         using (var q = source.CreateCommand())
         {
             q.CommandText = "SELECT directory,id,metadata FROM releases"; using var r = q.ExecuteReader();
@@ -261,16 +304,7 @@ public static class DistributionBackup
         staged.Close(); source.Close();
         // Use the same verified rebase rules; preserve old staged DB until the new snapshot is ready.
         using (var db = Open(refreshed, false))
-        using (var tx = db.BeginTransaction())
-        {
-            foreach (var (table, column) in new[] { ("jobs", "source"), ("jobs", "snapshot"), ("releases", "directory"), ("active_work", "scratch"), ("active_work", "snapshot") })
-            {
-                using var q = db.CreateCommand(); q.Transaction = tx; q.CommandText = $"SELECT rowid,{column} FROM {table} WHERE {column} IS NOT NULL";
-                var rows = new List<(long Id, string Path)>(); using (var r = q.ExecuteReader()) while (r.Read()) rows.Add((r.GetInt64(0), r.GetString(1)));
-                foreach (var row in rows) { var path = SafePath.ResolveInsideChecked(target, Path.GetRelativePath(Path.GetFullPath(current.Root), Path.GetFullPath(row.Path))); q.CommandText = $"UPDATE {table} SET {column}=$path WHERE rowid=$id"; q.Parameters.Clear(); q.Parameters.AddWithValue("$path", path); q.Parameters.AddWithValue("$id", row.Id); q.ExecuteNonQuery(); }
-            }
-            tx.Commit();
-        }
+            RebaseReleaseDirectories(db, original, target);
         Boundary.Value?.Invoke("authority-rebased");
         var policy=await new FileAccessPolicyProvider(current.PolicyPath).LoadAsync(CancellationToken.None);_=CompiledAccessPolicy.Create(policy);
         await JsonFiles.WriteAsync(Path.Combine(target,"restored-policy.json"),policy);
@@ -279,6 +313,7 @@ public static class DistributionBackup
             SqliteConnection.ClearPool(pooled); // Stopped root only: release idle constructor/inspection handles before atomic replacement.
         File.Move(Path.Combine(refreshed, "distribution.db"), Path.Combine(target, "distribution.db"), true);
         Boundary.Value?.Invoke("database-replaced");
+        CopyAuthority(authority, target, activating: true);
         Boundary.Value?.Invoke("before-public-fence");
         File.Delete(fence); // Final public fence transition; failures before this stay blocked.
         return new { Activated = true, Target = target, PolicyPath = Path.Combine(target, "restored-policy.json"), PrivateKeyIncluded = false };

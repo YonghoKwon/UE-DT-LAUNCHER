@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Data.Sqlite;
 using UeDtLauncher.Distribution;
+using UeDtLauncher.Distribution.Authority;
 using Xunit;
 
 namespace UeDtLauncher.Tests;
@@ -62,8 +63,13 @@ public sealed class IntakePerformanceTests : IDisposable
             command.CommandText = "CREATE TABLE jobs(id TEXT PRIMARY KEY,source TEXT NOT NULL,state TEXT NOT NULL,snapshot TEXT,message TEXT); INSERT INTO jobs VALUES('old','source','waiting',NULL,NULL)";
             command.ExecuteNonQuery();
         }
-        var store = new IntakeStore(new() { Root = root });
-        Assert.Equal("waiting", store.Get("old").State);
+        IntakeStore.InitializeRemainingDatabase(root);
+        using (var upgraded = DistributionBackup.Open(root, true))
+        using (var row = upgraded.CreateCommand())
+        {
+            row.CommandText = "SELECT state FROM jobs WHERE id='old'";
+            Assert.Equal("waiting", row.ExecuteScalar());
+        }
         var backup = Assert.Single(Directory.GetFiles(root, "distribution.pre-v*.db"));
         using var original = new SqliteConnection("Data Source=" + backup); original.Open();
         using var query = original.CreateCommand(); query.CommandText = "PRAGMA user_version";
@@ -158,20 +164,13 @@ public sealed class IntakePerformanceTests : IDisposable
         var store = new IntakeStore(new() { Root = root });
         var job = await store.IngestAsync(await Package(store));
         var scratch = Path.Combine(root, "processing", "crashed-build"); Directory.CreateDirectory(scratch);
-        using (var db = store.Open())
-        using (var command = db.CreateCommand())
-        {
-            command.CommandText = "INSERT INTO active_work VALUES($id,'dead-process',$scratch,$snapshot,'2000-01-01')";
-            command.Parameters.AddWithValue("$id", job.Id); command.Parameters.AddWithValue("$scratch", scratch); command.Parameters.AddWithValue("$snapshot", job.Snapshot);
-            command.ExecuteNonQuery();
-        }
+        IntakeAuthorityTests.AddAbandonedWork(store, job.Id, scratch, job.Snapshot);
         var reopened = new IntakeStore(store.Settings);
         StorageMaintenance.Cleanup(reopened, false); Assert.True(Directory.Exists(scratch));
         StorageMaintenance.Cleanup(reopened, true); Assert.False(Directory.Exists(scratch));
         Assert.True(Directory.Exists(job.Snapshot));
         Assert.Equal("pending", reopened.Get(job.Id).State);
-        using var check = reopened.Open(); using var query = check.CreateCommand(); query.CommandText = "SELECT COUNT(*) FROM active_work";
-        Assert.Equal(0L, query.ExecuteScalar());
+        Assert.Empty(IntakeJobs.Read(reopened.Authority.ReadSnapshot()).ActiveWork);
     }
 
     [Fact]
@@ -199,8 +198,8 @@ public sealed class IntakePerformanceTests : IDisposable
             var started = Stopwatch.GetTimestamp();
             while (!child.HasExited && Stopwatch.GetElapsedTime(started) < TimeSpan.FromSeconds(15))
             {
-                using var db = store.Open(); using var query = db.CreateCommand(); query.CommandText = "SELECT COUNT(*) FROM active_work";
-                if (Convert.ToInt64(query.ExecuteScalar()) > 0) { claimed = true; child.Kill(true); break; }
+                if (IntakeJobs.Read(store.Authority.ReadSnapshot()).ActiveWork.Count > 0)
+                { claimed = true; child.Kill(true); break; }
                 await Task.Delay(5);
             }
             Assert.True(claimed, "Child process must be killed after its durable work claim.");
@@ -224,14 +223,51 @@ public sealed class IntakePerformanceTests : IDisposable
         using (var db = store.Open())
         using (var command = db.CreateCommand())
         {
-            command.CommandText = "DELETE FROM releases; UPDATE jobs SET state='publishing' WHERE id=$id";
-            command.Parameters.AddWithValue("$id", job.Id); command.ExecuteNonQuery();
+            command.CommandText = "DELETE FROM releases"; command.ExecuteNonQuery();
         }
+        store.Authority.Commit(snapshot =>
+        {
+            var jobs = IntakeJobs.Read(snapshot);
+            jobs.Jobs[0] = Assert.Single(jobs.Jobs) with { State = "publishing" };
+            return jobs.Plan();
+        });
         var reopened = new IntakeStore(store.Settings);
         var recovered = await new ApprovedPublisher(reopened).ApproveAsync(job.Id);
         Assert.Equal(first.ReleaseId, recovered.ReleaseId);
         Assert.Equal("published", reopened.Get(job.Id).State);
         Assert.Single(new ApprovedPublisher(reopened).List());
+    }
+
+    [Fact]
+    public async Task ApprovalRetryCompletesFileAuthorityAfterReleaseDatabaseCommit()
+    {
+        var store = new IntakeStore(new() { Root = root, SigningKeyPath = Path.Combine(root, "key.pem") });
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        File.WriteAllText(store.Settings.SigningKeyPath, key.ExportECPrivateKeyPem());
+        var job = await store.IngestAsync(await Package(store));
+        var publisher = new ApprovedPublisher(store);
+        var armed = false;
+        var observer = new InlineProgress(progress =>
+        {
+            if (progress.Phase != "activate") return;
+            armed = true;
+            AuthorityDisk.Boundary.Value = boundary =>
+            {
+                if (!armed || boundary != AuthorityBoundary.BeforeHeadRename) return;
+                armed = false;
+                throw new IOException("owned X4 boundary");
+            };
+        });
+        var error = await Assert.ThrowsAsync<IOException>(() => publisher.ApproveAsync(job.Id, observer: observer));
+        Assert.Equal("owned X4 boundary", error.Message);
+        Assert.Equal("publishing", store.Get(job.Id).State);
+        var release = Assert.Single(publisher.List());
+        Assert.DoesNotContain(store.Authority.ReadAudit(store.Authority.ReadSnapshot()), entry => entry.Action == "published");
+
+        var reopened = new IntakeStore(store.Settings);
+        Assert.Equal(release.ReleaseId, (await new ApprovedPublisher(reopened).ApproveAsync(job.Id)).ReleaseId);
+        Assert.Equal("published", reopened.Get(job.Id).State);
+        Assert.Single(reopened.Authority.ReadAudit(reopened.Authority.ReadSnapshot()), entry => entry.Action == "published");
     }
 
     [Fact]

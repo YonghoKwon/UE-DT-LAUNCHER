@@ -48,7 +48,7 @@ public sealed class ApprovedPublisher(IntakeStore store)
         {
             if (existing.JobId != id) throw PublicationConflict(id);
             using var gate = store.Lock();
-            if (!store.ChangeState(id, job.State, "published")) throw new InvalidOperationException("Job state changed.");
+            if (!store.ChangeState(id, job.State, "published", writer: gate)) throw new InvalidOperationException("Job state changed.");
             return existing;
         }
         // A publishing journal is committed before touching release directories. Repeating approval recovers it.
@@ -109,7 +109,7 @@ public sealed class ApprovedPublisher(IntakeStore store)
             if (existing is not null)
             {
                 if (existing.JobId != id) throw PublicationConflict(id);
-                if (!store.ChangeState(id, "publishing", "published")) throw new InvalidOperationException("Job state changed.");
+                if (!store.ChangeState(id, "publishing", "published", writer: gate)) throw new InvalidOperationException("Job state changed.");
                 return existing;
             }
             if (store.Get(id).State != "publishing") throw new InvalidOperationException("Job state changed before activation.");
@@ -120,19 +120,19 @@ public sealed class ApprovedPublisher(IntakeStore store)
             }
             else Directory.Move(staged, final);
 
-            using var database = store.DatabaseWrite();
-            using var db = store.Open(); using var transaction = db.BeginTransaction(); using var command = db.CreateCommand();
-            command.Transaction = transaction;
-            command.CommandText = """
-                INSERT INTO releases(id,job,directory,metadata) VALUES($id,$job,$dir,$metadata);
-                UPDATE jobs SET state='published',phase='published',processed_bytes=$size,total_bytes=$size,estimated_disk_bytes=0,progress_at=$at WHERE id=$job AND state='publishing';
-                INSERT INTO audit(at,action,job) VALUES($at,'published',$job);
-                """;
-            command.Parameters.AddWithValue("$id", metadata.ReleaseId); command.Parameters.AddWithValue("$job", id);
-            command.Parameters.AddWithValue("$dir", final); command.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(metadata, JsonFiles.Options));
-            command.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O"));
-            command.Parameters.AddWithValue("$size", metadata.PackageSize);
-            command.ExecuteNonQuery(); transaction.Commit();
+            using (var database = store.DatabaseWrite())
+            using (var db = store.Open())
+            using (var transaction = db.BeginTransaction())
+            using (var command = db.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText = "INSERT INTO releases(id,job,directory,metadata) VALUES($id,$job,$dir,$metadata)";
+                command.Parameters.AddWithValue("$id", metadata.ReleaseId); command.Parameters.AddWithValue("$job", id);
+                command.Parameters.AddWithValue("$dir", final); command.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(metadata, JsonFiles.Options));
+                command.ExecuteNonQuery(); transaction.Commit();
+            }
+            // Until PROD-01S5 integrates X4, a committed release can be reconciled by the existing approval retry.
+            if (!store.ChangeState(id, "publishing", "published", writer: gate)) throw new InvalidOperationException("Job state changed.");
         }
         progress.Report(new("published", metadata.PackageSize, metadata.PackageSize, 0));
         return new(metadata.ReleaseId, id, final, metadata);

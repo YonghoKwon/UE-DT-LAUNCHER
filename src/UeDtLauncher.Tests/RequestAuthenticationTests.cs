@@ -280,10 +280,11 @@ public sealed class RequestAuthenticationTests
             var f = new Fixture(); Directory.CreateDirectory(f.Root);
             var settings = new DistributionSettings { Root = f.Root, AuthenticationMode = "request-signature-v1", PublicUrl = "http://127.0.0.1:18500", ListenUrl = "http://127.0.0.1:0", PolicyPath = Path.Combine(f.Root, "policy.json"), SigningKeyPath = Path.Combine(f.Root, "release.pem") };
             configure?.Invoke(settings);
+            f.Store = new(settings);
             using var releaseKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             await File.WriteAllTextAsync(settings.SigningKeyPath, releaseKey.ExportPkcs8PrivateKeyPem());
             var publicPath = Path.Combine(f.Root, "public.pem"); await File.WriteAllTextAsync(publicPath, releaseKey.ExportSubjectPublicKeyInfoPem());
-            f.Store = new(settings); await f.Policy(true);
+            await f.Policy(true);
             f.Config = new(); f.Config.Security.TrustedSigningKeys.Add(new() { KeyId = settings.SigningKeyId, PublicKeyPath = publicPath });
             using var device = ECDsa.Create(ECCurve.NamedCurves.nistP256); f.Private = device.ExportPkcs8PrivateKeyPem();
             f.Public = new(1, "pc-key", device.ExportSubjectPublicKeyInfoPem()); new DistributionDeviceKeys(f.Store).Add("pc", f.Public,expiresAt);

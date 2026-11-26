@@ -167,9 +167,7 @@ public static class DistributionHttp
                 }
                 if (release is null || !client.AllowsRelease(release.Metadata))
                 {
-                    databaseGate.EnterWriteLock();
-                    try { store.Audit("download-denied", clientId); }
-                    finally { databaseGate.ExitWriteLock(); }
+                    store.Audit("download-denied", clientId);
                     context.Response.StatusCode = 403; return;
                 }
                 context.Items["release"] = release;

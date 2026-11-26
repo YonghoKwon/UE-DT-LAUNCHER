@@ -37,6 +37,7 @@ def main():
     write(root/'server.json',{'root':str(root/'server'),'publicUrl':'https://localhost:19443','listenUrl':'http://127.0.0.1:'+str(port),
         'signingKeyPath':str(root/'sign.pem'),'policyPath':str(root/'policy.json')})
     config=['--config',root/'server.json']
+    assert json.loads(run(server,'list',*config)) == []
     track=['--project-id','demo','--environment','prod','--channel','stable','--platform','windows-x64']
     def publish(version):
         upload=root/'server'/'incoming'/f'upload-{version}'; upload.mkdir(parents=True); archive=upload/'Windows.zip'
@@ -82,10 +83,12 @@ def main():
             finally:
                 process.terminate(); process.wait(timeout=15)
     # Exercise offline schema3 migration with published CLI, preserving approved order.
-    legacy=root/'legacy'; legacy.mkdir(); legacy_db=legacy/'distribution.db'
+    legacy=root/'legacy'; legacy_db=legacy/'distribution.db'
+    legacy_config=root/'legacy-server.json'; write(legacy_config,{'root':str(legacy)})
+    # This fixture models only the remaining SQLite schema upgrade in a valid authority root.
+    assert json.loads(run(server,'list','--config',legacy_config)) == []
     with sqlite3.connect(db) as source, sqlite3.connect(legacy_db) as target: source.backup(target)
     with sqlite3.connect(legacy_db) as target: target.executescript('DROP TABLE promotions; DROP TABLE promotion_state; PRAGMA user_version=3;')
-    legacy_config=root/'legacy-server.json'; write(legacy_config,{'root':str(legacy)})
     before=hashlib.sha256(legacy_db.read_bytes()).hexdigest()
     plan=json.loads(run(server,'promotion','migrate','--dry-run','--config',legacy_config))
     assert plan['applyRequired'] and before==hashlib.sha256(legacy_db.read_bytes()).hexdigest()
