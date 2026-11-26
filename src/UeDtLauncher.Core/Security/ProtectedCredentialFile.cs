@@ -15,6 +15,7 @@ internal static class ProtectedCredentialFile
     private const int NoFollow = 0x20000, CloseOnExec = 0x80000, DirectoryFlag = 0x10000;
     private const int Create = 0x40, Exclusive = 0x80, WriteOnly = 1;
     private const int MaxBytes = 64 * 1024;
+    private const long LinuxX64Fstat = 5;
 
     public static void Write(string path, byte[] plain, bool managed, bool replace)
     {
@@ -154,7 +155,9 @@ internal static class ProtectedCredentialFile
         var buffer = Marshal.AllocHGlobal(256);
         try
         {
-            if (fstat(fd, buffer) != 0) ThrowNative();
+            // Linux x64 writes the same stat layout through SYS_fstat on glibc 2.28,
+            // which lacks the public fstat symbol. Keep the lookup tied to the open fd.
+            if (FstatSyscall(LinuxX64Fstat, fd, buffer) != 0) ThrowNative();
             return (unchecked((uint)Marshal.ReadInt32(buffer, 24)), unchecked((uint)Marshal.ReadInt32(buffer, 28)), unchecked((uint)Marshal.ReadInt32(buffer, 32)), unchecked((ulong)Marshal.ReadInt64(buffer, 16)));
         }
         finally { Marshal.FreeHGlobal(buffer); }
@@ -238,7 +241,8 @@ internal static class ProtectedCredentialFile
     [DllImport("libc", SetLastError = true)] private static extern int open(string path, int flags, uint mode);
     [DllImport("libc", SetLastError = true)] private static extern int openat(int dir, string path, int flags, uint mode);
     [DllImport("libc", SetLastError = true)] private static extern int mkdir(string path, uint mode);
-    [DllImport("libc", SetLastError = true)] private static extern int fstat(int fd, IntPtr buffer);
+    [DllImport("libc", EntryPoint = "syscall", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+    private static extern long FstatSyscall(long number, long fd, IntPtr buffer);
     [DllImport("libc", SetLastError = true)] private static extern int fchmod(int fd, uint mode);
     [DllImport("libc", SetLastError = true)] private static extern int fchown(int fd, uint uid, uint gid);
     [DllImport("libc", SetLastError = true)] private static extern int fsync(int fd);

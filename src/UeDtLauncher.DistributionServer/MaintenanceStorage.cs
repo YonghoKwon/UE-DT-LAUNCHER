@@ -7,6 +7,8 @@ namespace UeDtLauncher.Distribution;
 
 internal static class MaintenanceStorage
 {
+    private const long LinuxX64Fstat = 5;
+
     internal static void PrivateDirectory(string path)
     {
         var existed=Directory.Exists(path);Directory.CreateDirectory(path);
@@ -47,13 +49,15 @@ internal static class MaintenanceStorage
         if(!OperatingSystem.IsLinux() || RuntimeInformation.ProcessArchitecture!=Architecture.X64)throw new PlatformNotSupportedException();
         var fd=open(path,0x200000|0x20000|0x80000);if(fd<0)throw new IOException("Directory identity unavailable.");
         var stat=Marshal.AllocHGlobal(256);
-        try{if(fstat(fd,stat)!=0)throw new IOException("Directory identity unavailable.");return "linux:"+Marshal.ReadInt64(stat,0)+":"+Marshal.ReadInt64(stat,8);}
+        // SYS_fstat uses the same Linux x64 stat layout without glibc's public fstat symbol.
+        try{if(FstatSyscall(LinuxX64Fstat,fd,stat)!=0)throw new IOException("Directory identity unavailable.");return "linux:"+Marshal.ReadInt64(stat,0)+":"+Marshal.ReadInt64(stat,8);}
         finally{Marshal.FreeHGlobal(stat);close(fd);}
     }
     [StructLayout(LayoutKind.Sequential)]private struct FileInfoNative{public uint Attributes,CreationLow,CreationHigh,AccessLow,AccessHigh,WriteLow,WriteHigh,Volume,SizeHigh,SizeLow,Links,IndexHigh,IndexLow;}
     [DllImport("kernel32.dll",EntryPoint="CreateFileW",CharSet=CharSet.Unicode,SetLastError=true)]private static extern SafeFileHandle CreateFile(string path,uint access,uint share,IntPtr security,uint disposition,uint flags,IntPtr template);
     [DllImport("kernel32.dll",SetLastError=true)][return:MarshalAs(UnmanagedType.Bool)]private static extern bool GetFileInformationByHandle(SafeFileHandle handle,out FileInfoNative info);
     [DllImport("libc",SetLastError=true)]private static extern int open(string path,int flags);
-    [DllImport("libc",SetLastError=true)]private static extern int fstat(int fd,IntPtr buffer);
+    [DllImport("libc", EntryPoint = "syscall", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+    private static extern long FstatSyscall(long number, long fd, IntPtr buffer);
     [DllImport("libc")]private static extern int close(int fd);
 }

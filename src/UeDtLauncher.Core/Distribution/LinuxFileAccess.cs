@@ -16,6 +16,7 @@ public static class LinuxFileAccess
     }
 
     private const uint TypeMask = 0xf000, RegularFile = 0x8000;
+    private const long LinuxX64Fstat = 5;
     private const string AccessAcl = "system.posix_acl_access", SelinuxLabel = "security.selinux";
 
     public static FileStream OpenRegularRead(string path)
@@ -38,7 +39,8 @@ public static class LinuxFileAccess
         var data = Marshal.AllocHGlobal(256);
         try
         {
-            if (fstat(handle, data) != 0) throw NativeError();
+            // SYS_fstat keeps the Linux x64 stat layout on glibc 2.28, which has no public fstat symbol.
+            if (FstatSyscall(LinuxX64Fstat, handle, data) != 0) throw NativeError();
             return new(unchecked((ulong)Marshal.ReadInt64(data, 0)), unchecked((ulong)Marshal.ReadInt64(data, 8)),
                 unchecked((uint)Marshal.ReadInt32(data, 28)), unchecked((uint)Marshal.ReadInt32(data, 32)), unchecked((uint)Marshal.ReadInt32(data, 24)));
         }
@@ -80,7 +82,8 @@ public static class LinuxFileAccess
     private static IOException NativeError() => new("Cannot inspect or preserve Linux file access metadata.", new Win32Exception(Marshal.GetLastPInvokeError()));
 
     [DllImport("libc", SetLastError = true)] private static extern int open(string path, int flags);
-    [DllImport("libc", SetLastError = true)] private static extern int fstat(SafeFileHandle fd, IntPtr data);
+    [DllImport("libc", EntryPoint = "syscall", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+    private static extern long FstatSyscall(long number, SafeFileHandle fd, IntPtr data);
     [DllImport("libc", SetLastError = true)] private static extern int fchown(SafeFileHandle fd, uint uid, uint gid);
     [DllImport("libc", SetLastError = true)] private static extern int fchmod(SafeFileHandle fd, uint mode);
     [DllImport("libc", SetLastError = true)] private static extern nint fgetxattr(SafeFileHandle fd, string name, [Out] byte[]? value, nuint size);
