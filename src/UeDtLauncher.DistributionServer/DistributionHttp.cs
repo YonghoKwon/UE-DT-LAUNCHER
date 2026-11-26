@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Http.Features;
+using UeDtLauncher.Distribution.Authority;
 
 namespace UeDtLauncher.Distribution;
 
@@ -20,12 +21,17 @@ public static class DistributionHttp
 
     public static WebApplication CreateApplication(IntakeStore store)
         =>CreateApplicationCore(store,null);
-    internal sealed class TestHooks{internal Func<HttpContext,Task>? BeforeFile;internal TimeProvider? Clock;}
+    internal sealed class TestHooks
+    {
+        internal Func<HttpContext, Task>? BeforeFile;
+        internal TimeProvider? Clock;
+        internal Action<long>? AfterCatalogHeadRead;
+    }
     internal static WebApplication CreateApplicationCore(IntakeStore store,TestHooks? hooks)
     {
         if (File.Exists(Path.Combine(store.Root, "restore-staged.json"))) throw new InvalidDataException("Restored root is staged; reconcile current security records before serving.");
         var promotions = new ReleasePromotions(store);
-        if (!promotions.Snapshot().Ready) throw new InvalidDataException("Stop the server and apply promotion migration before serving.");
+        if (!promotions.Snapshot().Ready) throw new InvalidDataException("The configured promotion store is unready. Inspect the root offline before serving.");
         if (!Uri.TryCreate(store.Settings.ListenUrl, UriKind.Absolute, out var listen) ||
             !IPAddress.TryParse(listen.Host, out var ip) || !IPAddress.IsLoopback(ip))
             throw new InvalidDataException("Distribution API must bind to loopback behind nginx.");
@@ -51,7 +57,6 @@ public static class DistributionHttp
         var assets = new PublishedAssetCache();
         var limits = new DistributionRequestLimits(store.Settings,hooks?.Clock);
         var sequences = new CatalogSequenceAllocator(store);
-        var databaseGate = store.DatabaseGate;
         IAccessPolicyProvider provider = new FileAccessPolicyProvider(store.Settings.PolicyPath);
         app.Lifetime.ApplicationStopped.Register(() => app.Logger.LogInformation("DistributionPerformance {Metrics}",
             JsonSerializer.Serialize(DistributionPerformance.Snapshot())));
@@ -146,7 +151,7 @@ public static class DistributionHttp
                     var query = context.Request.Query;
                     if (query.Count > 1 || (query.Count == 1 && (query["selectionPolicy"].Count != 1 || query["selectionPolicy"].ToString() != PromotionCatalog.SelectionPolicy)))
                     { context.Response.StatusCode = 400; return; }
-                    var snapshot = promotions.Snapshot();
+                    var snapshot = ReadCatalogSnapshot(promotions, hooks?.AfterCatalogHeadRead);
                     context.Items["promotion-snapshot"] = snapshot;
                     context.Items["allowed"] = snapshot.Releases.Where(r => client.AllowsRelease(r.Metadata)).ToList();
                     if (!ConsumeProof()) return;
@@ -160,11 +165,7 @@ public static class DistributionHttp
                 }
                 PublishedRelease? release = null;
                 if (TryGetReleaseId(path, out var releaseId))
-                {
-                    databaseGate.EnterReadLock();
-                    try { release = publisher.Find(releaseId); }
-                    finally { databaseGate.ExitReadLock(); }
-                }
+                    release = publisher.Find(releaseId);
                 if (release is null || !client.AllowsRelease(release.Metadata))
                 {
                     store.Audit("download-denied", clientId);
@@ -218,6 +219,15 @@ public static class DistributionHttp
             });
         return app;
     }
+    private static PromotionSnapshot ReadCatalogSnapshot(ReleasePromotions promotions, Action<long>? afterHeadRead)
+    {
+        if (afterHeadRead is null) return promotions.Snapshot();
+        var previous = AuthorityStore.AfterReadHead.Value;
+        AuthorityStore.AfterReadHead.Value = afterHeadRead;
+        try { return promotions.Snapshot(); }
+        finally { AuthorityStore.AfterReadHead.Value = previous; }
+    }
+
     public static bool TryGetReleaseId(string path, out string releaseId)
     {
         releaseId = "";

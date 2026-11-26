@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using UeDtLauncher;
 using UeDtLauncher.Distribution;
 using UeDtLauncher.Distribution.Authority;
 
@@ -53,6 +54,10 @@ try
             throw new InvalidOperationException("The requested boundary was not reached.");
         case "crash-init":
             throw new InvalidOperationException("The requested initialization boundary was not reached.");
+        case "catalog-approve":
+        case "catalog-promote":
+        case "catalog-serve":
+            return await RunCatalogCommand(store, args);
         default:
             return 2;
     }
@@ -70,6 +75,36 @@ catch (Exception error)
 }
 
 static void Print<T>(T value) => Console.WriteLine(JsonSerializer.Serialize(value, AuthorityDocuments.Json));
+
+static async Task<int> RunCatalogCommand(AuthorityStore authority, string[] args)
+{
+    var settings = await JsonFiles.ReadAsync<DistributionSettings>(args[2]);
+    var intake = new IntakeStore(settings);
+    CatalogAuthority.Bind(intake, authority);
+    if (args[0] == "catalog-serve")
+    {
+        await DistributionHttp.RunAsync(intake);
+        return 0;
+    }
+    if (args[0] == "catalog-promote")
+    {
+        Console.WriteLine("READY");
+        if (Console.ReadLine() != "START") return 2;
+        var selection = new ReleaseSelection("demo", "prod", "stable", "windows-x64", args[3]);
+        Print(new ReleasePromotions(intake).Promote(selection, long.Parse(args[4], System.Globalization.CultureInfo.InvariantCulture), "test"));
+        return 0;
+    }
+
+    if (args.Length >= 5)
+    {
+        var boundary = Enum.Parse<AuthorityBoundary>(args[4]);
+        var occurrence = boundary is AuthorityBoundary.GenerationWrite or AuthorityBoundary.GenerationFlush
+            or AuthorityBoundary.GenerationRename or AuthorityBoundary.GenerationDirectoryFlush ? 2 : 1;
+        CatalogAuthority.PublicationBoundary.Value = PauseAt(boundary, occurrence);
+    }
+    Print(await new ApprovedPublisher(intake).ApproveAsync(args[3]));
+    return 0;
+}
 
 static int RunIntake(string[] args)
 {

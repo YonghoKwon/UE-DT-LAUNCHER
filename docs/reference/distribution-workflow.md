@@ -102,15 +102,18 @@ upload는 셸 없이 ArgumentList로 ssh/scp를 호출합니다. 원격 경로·
 
 프로젝트/환경/채널/플랫폼마다 독립적으로 지정합니다. Linux 판은 platform=linux-x64로 실행합니다. 승격은 파일·사용 중 앱·PC 권한을 변경하지 않습니다. v2 권한이 없는 PC는 허용된 이전 승격판을 추천받고, 승격 이력이 전혀 없는 PC는 지정 대기 안내를 봅니다. 이미 최신인 대상과 현재 revision으로 반복하면 no-op입니다. revision 변경 오류가 나면 inspect를 다시 확인한 후 판단합니다.
 
-### 3.2 이전 SQLite 승격 데이터 점검
+### 3.2 파일 저장소의 승격 형식 확인
 
-이 통합 빌드의 운영 준비는 새 빈 root에서 시작합니다. 이전 SQLite 전용 루트의 승격 기록이 필요하면 아래 읽기 전용 명령으로 점검할 수 있습니다. 구형 루트의 schema4 이전 절차는 [과거 검증 기록](archive/validation/release-promotion-validation.md)에 보존합니다.
+이 통합 빌드의 운영 준비는 새 빈 root에서 시작합니다. 관리자는 서버 터미널에서 이미 초기화한 순수 파일 저장소의 설정으로 아래 명령을 실행할 수 있습니다. 두 명령은 모두 조회만 수행합니다.
 
 ```bash
 ./UeDtLauncher.DistributionServer promotion migrate --dry-run --config /dt/config/server.json
+./UeDtLauncher.DistributionServer promotion migrate --apply --config /dt/config/server.json
 ```
 
-통합 호환 시험은 유효 HEAD를 가진 루트에 잔존 SQLite를 두고 `promotion migrate --apply`를 검증합니다. schema6 미만의 DB는 변경 전에 `distribution.pre-v6-*.db`로 백업되며, 기존 공개판 순서를 한 번만 legacy-baseline으로 기록합니다. 새 빈 루트의 추천 이력은 비어 있습니다. 관리자가 첫 판을 명시적으로 승격합니다.
+정상 파일 저장소는 `ready=true`, `applyRequired=false`로 종료합니다. 구형 SQLite 저장소, 혼합 루트, 손상된 루트는 파일을 변경하기 전에 오류로 종료합니다. 이전 승격 이력이 필요한 운영 데이터는 기존 배치와 백업을 보존합니다.
+
+PROD-01S3에서는 파일 저장소를 명시적으로 주입한 경로에서 게시·승격·Catalog·순번을 검증합니다. 게시된 서버의 일반 승인·승격·serve 진입점과 백업·복원·정리는 PROD-01S5에서 함께 연결합니다. Catalog는 요청마다 HEAD를 읽고 릴리스와 승격 이력을 한 스냅샷에서 가져옵니다. 경로와 SHA-256이 같은 불변 문서의 파싱 결과를 재사용하며, 권한은 매 요청에서 판정합니다.
 
 API v1의 `?selectionPolicy=explicit-promotion-v1` 요청은 전체 허용 승인 목록·추천을 받습니다. query 없는 구형 요청은 승격된 허용 목록만 받습니다. 서명/권한/Range·Catalog freshness 형식은 유지합니다. [검증·호환 범위](archive/validation/release-promotion-validation.md)
 

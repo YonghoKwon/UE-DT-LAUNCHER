@@ -173,7 +173,7 @@ payloadRoot는 ZIP 내부 프로그램 루트, entryPoint는 그 기준 경로�
 
 ## 검증 범위와 제약
 
-- latest는 같은 환경/채널/OS에서 해당 PC에 허용된 승격 이력의 마지막 판입니다. 승인만으로 추천이 바뀌지 않고, 첫 버전도 promote가 필요합니다. 개발자는 허용된 미승격판을 exact로 선택할 수 있습니다. [승격·서버 준비](docs/reference/distribution-workflow.md)
+- latest는 같은 환경/채널/OS에서 해당 PC에 허용된 승격 이력의 마지막 판입니다. 승인만으로 추천이 바뀌지 않고, 첫 버전도 promote가 필요합니다. 개발자는 허용된 미승격판을 exact로 선택할 수 있습니다. `promotion migrate`는 초기화된 파일 저장소의 형식을 읽기 전용으로 확인합니다. [승격·파일 저장소 확인](docs/reference/distribution-workflow.md)
 - 신규 프로젝트 게시가 PC 권한을 자동 부여하지 않습니다.
 - cleanup은 임시 작업 폴더 대상이며 공개 버전·참조 원본은 삭제하지 않습니다.
 - `Agent migrate --apply`의 동일 설치 공유는 현재 안전상 차단합니다. dry-run만 지원하며 소유권 이전은 별도 계획이 필요합니다. 기존 설치의 복사는 명시적 import-install입니다. UE 사용자 데이터는 실제 저장 경로에 맞춰 별도 보존합니다.

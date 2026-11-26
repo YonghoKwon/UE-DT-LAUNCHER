@@ -68,7 +68,7 @@ public sealed partial class IntakeStore
     }
 
     internal bool ChangeState(string id, string expected, string next, bool reset = false, string? message = null,
-        IDisposable? writer = null)
+        IDisposable? writer = null, bool recordAudit = true)
     {
         CommitPlan Plan(AuthoritySnapshot snapshot)
         {
@@ -78,7 +78,7 @@ public sealed partial class IntakeStore
             var job = jobs.Jobs[index] with { State = next, Message = message };
             if (reset) job = job with { Snapshot = null, ClaimId = null };
             jobs.Jobs[index] = job;
-            return jobs.Plan(new AuthorityEvent(DateTimeOffset.UtcNow, next, id));
+            return recordAudit ? jobs.Plan(new AuthorityEvent(DateTimeOffset.UtcNow, next, id)) : jobs.Plan();
         }
 
         return (writer is null ? Authority.Commit(Plan)

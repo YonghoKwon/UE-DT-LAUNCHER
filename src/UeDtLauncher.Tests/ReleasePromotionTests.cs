@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using System.Security.Cryptography;
 using System.Text.Json;
 using UeDtLauncher.Distribution;
+using UeDtLauncher.Distribution.Authority;
 using Xunit;
 
 namespace UeDtLauncher.Tests;
@@ -74,25 +75,47 @@ public sealed class ReleasePromotionTests : IDisposable
         start.Set(); Assert.Single(await Task.WhenAll(tasks), v => v); Assert.Single(new ReleasePromotions(store).Snapshot().Events);
     }
     [Fact]
-    public void MigrationDryRunIsReadOnlyAndApplyPreservesOrderExactlyOnce()
+    public void MigrationRejectsLegacyWithoutWriting()
     {
         Publish("2.0.0"); Publish("1.0.0");
         using (var db = store.Open()) { using var q = db.CreateCommand(); q.CommandText = "DROP TABLE promotions; DROP TABLE promotion_state; PRAGMA user_version=3"; q.ExecuteNonQuery(); }
         SqliteConnection.ClearAllPools(); var before = Snapshot(root);
-        var preview = ReleasePromotions.PreviewMigration(store.Settings); Assert.True(preview.ApplyRequired); Assert.Equal(before, Snapshot(root));
-        var upgraded = new IntakeStore(store.Settings); Assert.Single(Directory.GetFiles(root, "distribution.pre-v6-*.db"));
-        var p = new ReleasePromotions(upgraded); Assert.False(p.Snapshot().Ready);
-        Assert.Throws<InvalidOperationException>(() => p.Promote(Selection("1.0.0"), 0, "before migration"));
-        p.Migrate(); var current = p.Inspect(Selection("1.0.0")); Assert.Equal(Selection("1.0.0").ReleaseId, current.RecommendedRelease);
-        Assert.Equal(2, current.History.Count); Assert.All(current.History, e => Assert.Equal("legacy-baseline", e.Kind));
-        p.Migrate(); Assert.Equal(2, p.Snapshot().Events.Count);
+        Assert.Equal(AuthorityRootKind.LegacyDatabase,
+            Assert.Throws<AuthorityRootException>(() => ReleasePromotions.PreviewMigration(store.Settings)).Kind);
+        Assert.Throws<AuthorityRootException>(() => new ReleasePromotions(store).Migrate());
+        Assert.Equal(before, Snapshot(root));
     }
     [Fact]
-    public void MigrationApplyRejectsLiveServerLease()
+    public void MigrationOnFileRootIsReadOnlyEvenWhenLive()
     {
-        using var server = new AuthenticationProcessLease(root);
-        Assert.Throws<IOException>(() => new ReleasePromotions(store).Migrate());
+        var fresh = Path.Combine(root, "file-root");
+        AuthorityStore.Open(fresh);
+        using (new AuthenticationProcessLease(fresh)) { }
+        var before = Snapshot(fresh);
+        PromotionMigration result;
+        using (new AuthenticationProcessLease(fresh))
+            result = ReleasePromotions.PreviewMigration(new() { Root = fresh });
+        Assert.True(result.Ready);
+        Assert.False(result.ApplyRequired);
+        Assert.Empty(result.BaselineReleases);
+        Assert.Equal(before, Snapshot(fresh));
     }
-    private static string[] Snapshot(string folder) => Directory.GetFiles(folder, "*", SearchOption.AllDirectories).OrderBy(p => p)
-        .Select(p => Path.GetRelativePath(folder, p)+":"+Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(p)))).ToArray();
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void MigrationRejectsMixedOrDamagedRootWithoutWriting(bool mixed)
+    {
+        var path = Path.Combine(root, "file-root");
+        var authority = AuthorityStore.Open(path);
+        File.WriteAllText(mixed ? Path.Combine(path, "distribution.db") : authority.DataPath("HEAD"), "invalid");
+        var before = Snapshot(path);
+        Assert.Equal(mixed ? AuthorityRootKind.LegacyDatabase : AuthorityRootKind.Damaged,
+            Assert.Throws<AuthorityRootException>(() => ReleasePromotions.PreviewMigration(new() { Root = path })).Kind);
+        Assert.Equal(before, Snapshot(path));
+    }
+
+    private static string[] Snapshot(string folder) => Directory.GetFileSystemEntries(folder, "*", SearchOption.AllDirectories).OrderBy(p => p)
+        .Select(p => Path.GetRelativePath(folder, p) + ":" +
+            (Directory.Exists(p) ? "directory" : Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(p))))).ToArray();
 }
