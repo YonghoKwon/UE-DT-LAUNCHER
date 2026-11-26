@@ -122,7 +122,17 @@ switch (action)
         using (var cancel = new CancellationTokenSource())
         {
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancel.Cancel(); };
-            try { while (!cancel.IsCancellationRequested) { await store.ScanAsync(cancel.Token); await Task.Delay(2000, cancel.Token); } }
+            var projection = new UploadStatusProjection(store,
+                error => Console.Error.WriteLine($"업로드 상태 파일을 갱신할 수 없습니다. 서버 상태 폴더를 확인하세요. ({error.GetType().Name})"));
+            try
+            {
+                while (!cancel.IsCancellationRequested)
+                {
+                    await store.ScanAsync(cancel.Token);
+                    await projection.RefreshAsync(cancel.Token);
+                    await Task.Delay(2000, cancel.Token);
+                }
+            }
             catch (OperationCanceledException) { }
         }
         break;

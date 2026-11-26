@@ -8,6 +8,8 @@ public static partial class Program
     {
         output ??= Console.Out;
         errors ??= Console.Error;
+        if (args.FirstOrDefault() == "status")
+            return await UploadStatusAsync(args, output, errors, runner ?? new OpenSshProcessRunner());
         var format = Get(args, "--format") ?? "text";
         if (format is not ("text" or "json")) throw new CliArgumentException("--format은 text 또는 json을 지정하세요.");
         int? port = null;
@@ -23,8 +25,7 @@ public static partial class Program
             output.WriteLine("업로드 프로필을 만들었습니다. 서버/계정·원격 경로·포트·identity 경로를 실제 값으로 편집하세요. 비밀번호·키 내용은 저장하지 않습니다. 키 인증 전용(BatchMode)으로 비밀번호를 묻지 않습니다. upload check로 먼저 점검하세요.");
             return 0;
         }
-        var profile = Get(args, "--profile") is { } path ? await JsonFiles.ReadAsync<UploadProfile>(path) : new();
-        profile = profile.Override(new(Get(args, "--server"), Get(args, "--remote-incoming"), port, Get(args, "--identity-file")));
+        var profile = await ReadUploadProfileAsync(args, port);
         if (args.FirstOrDefault() == "check")
         {
             var check = await new UploadPreflight(runner ?? new OpenSshProcessRunner()).CheckAsync(profile);
@@ -51,7 +52,20 @@ public static partial class Program
             profile, Get(args, "--upload-id"), Path.Combine(Environment.CurrentDirectory, "upload-work"), Has(args, "--dry-run"),
             progress: value => UploadPresentation.Progress(errors, value), keepWork: Has(args, "--keep-work"));
         if (format == "json") output.WriteLine(JsonSerializer.Serialize(result, JsonFiles.Options));
-        else UploadPresentation.Write(output, result);
+        else
+        {
+            UploadPresentation.Write(output, result);
+            if (result.Success && !result.DryRun)
+                output.WriteLine("상태 조회: upload status --upload-id " + HumanText.Safe(result.UploadId) +
+                    " --wait (같은 SSH 프로필 또는 서버 옵션 사용)");
+        }
         return result.Success ? 0 : 1;
+    }
+
+    private static async Task<UploadProfile> ReadUploadProfileAsync(string[] args, int? port, string? remoteStatus = null)
+    {
+        var profile = Get(args, "--profile") is { } path ? await JsonFiles.ReadAsync<UploadProfile>(path) : new();
+        return profile.Override(new(Get(args, "--server"), Get(args, "--remote-incoming"), port,
+            Get(args, "--identity-file"), remoteStatus));
     }
 }

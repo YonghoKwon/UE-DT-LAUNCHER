@@ -89,6 +89,7 @@ dotnet publish src/UeDtLauncher.DistributionServer -c Release -r linux-x64 --sel
 | 1 | 개발자 | Windows/Linux ZIP을 각각 준비 |
 | 2 | 개발자 | 쉬운 방법: `upload`로 ZIP 검사·새 작업 폴더의 외부 JSON 생성 |
 | 3 | 개발자 | 같은 명령이 incoming/새업로드ID/에 두 파일 전송 후 최종 이름 확인. 직접 실행은 release-metadata + SSH/SCP |
+| 3 이후 | 개발자 | 출력된 업로드 ID로 `upload status --wait`를 실행해 서버 접수·승인 대기 상태 확인 |
 | 4 | 서버 | 파일 쌍·해시·ZIP 검사 후 승인 대기 |
 | 5 | 관리자 | 서버 `console` 1·2에서 번호로 snapshot 확인 → 3승인·화면의 버전 재입력. 직접 실행은 list / inspect / approve |
 | 6 | 서버 | 서명·디렉터리 생성 후 배포 목록 공개 |
@@ -107,11 +108,15 @@ Windows PowerShell의 쉬운 방법은 다음과 같습니다. OpenSSH와 기존
 .\UeDtLauncher.exe upload check --profile .\upload.profile.json
 .\UeDtLauncher.exe upload --profile .\upload.profile.json --zip .\Windows.zip --project-id demo --version 1.2.0 --platform windows-x64 --payload-root Windows --entry-point Demo.exe --dry-run
 # 계획 확인 후 같은 입력에서 --dry-run을 빼면 전송
+# 전송 완료 출력에 표시된 업로드 ID를 지정
+.\UeDtLauncher.exe upload status --profile .\upload.profile.json --upload-id upload-001 --wait
 ```
 
 upload는 키 인증 전용(BatchMode)으로 비밀번호를 묻지 않습니다. 최초 호스트 키 등록은 터미널 `ssh 계정@호스트`로 직접 확인합니다. `upload check`는 ssh/scp 존재·접속·incoming 디렉터리/쓰기 권한만 조회하며 원격 파일·폴더를 만들지 않습니다. 기본 한국어 요약과 stderr 진행 안내를 사용하고, 도구 연동은 `--format json`을 명시합니다. 성공 후 이번 작업 폴더만 정리하며 `--keep-work` 또는 실패 시 보존합니다. 종료255는 주소·포트·키 인증·호스트 키 확인, 전송 실패는 네트워크·디스크 점검 후 새 ID로 재시도합니다.
 
 자동 업로드 ID는 릴리스 정보를 알아볼 수 있는 접두부를 길이에 맞춰 자르고 UTC 밀리초 시각·짧은 난수 접미부를 붙여 최대128자로 만듭니다. 프로젝트/버전 등 릴리스 메타데이터는 자르지 않습니다. 명시한 `--upload-id`는 그대로 검증하며 자동 수정하지 않습니다.
+
+`upload status`는 SSH로 서버의 상태 파일을 조회합니다. `--wait`는 기본 5초마다 최대 30분간 조회하며 승인 대기·게시 처리 중·게시됨·현재 추천판에 도달하면 종료합니다. 이후 상태는 같은 ID로 다시 확인할 수 있습니다. 서버 관리자는 `upload-status/`에 업로더 읽기 권한과 서버 서비스 쓰기 권한을 부여합니다. [B3 상태 조회 옵션·권한 설정](docs/reference/feature-workflow.md#b3-서버로-두-파일-올리기--개발-pc)
 
 서버 운영자는 Linux 터미널에서 `./UeDtLauncher.DistributionServer console --config /etc/ue-dt-distribution/server.json`을 실행합니다. 운영 콘솔은 터미널 입력만 허용하며 승인과 승격은 별도 확인입니다. [B2~B6 전체 명령·결과](docs/reference/feature-workflow.md)
 
