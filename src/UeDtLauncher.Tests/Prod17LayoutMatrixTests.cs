@@ -28,6 +28,39 @@ public class Prod17LayoutMatrixTests
         from screen in new[] { "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "D1", "D2", "D3" }
         select new object[] { size.Item1, size.Item2, textScale, screen };
 
+    [AvaloniaFact]
+    public void FixedFooterOnlyOverlapsTheVisiblePartOfTheWorkspace()
+    {
+        var body = new Border { Width = 110, Height = 40 };
+        Canvas.SetLeft(body, 15);
+        Canvas.SetTop(body, 40);
+        var footer = new Border
+        {
+            Width = 110, Height = 30, Margin = new Thickness(15, 70, 0, 0),
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top
+        };
+        var scroll = new ScrollViewer
+        {
+            Height = 60, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+            Content = new Canvas { Height = 160, Children = { body } }
+        };
+        var window = new Window { Width = 400, Height = 300, Content = new Grid { Children = { scroll, footer } } };
+        window.Show();
+        try
+        {
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(BoundsIn(body, window).Intersect(BoundsIn(footer, window)).Height > Tolerance);
+            AssertNoVisibleOverlap(window, [body, footer]);
+
+            footer.Margin = new Thickness(15, 50, 0, 0);
+            Dispatcher.UIThread.RunJobs();
+            var error = Assert.Throws<Xunit.Sdk.TrueException>(() => AssertNoVisibleOverlap(window, [body, footer]));
+            Assert.Contains("overlaps", error.Message);
+        }
+        finally { window.Close(); }
+    }
+
     [AvaloniaTheory]
     [MemberData(nameof(Cases))]
     public void RequiredContentFitsOrCanBeScrolledIntoView(int width, int height, double textScale, string screen)
@@ -66,7 +99,8 @@ public class Prod17LayoutMatrixTests
                     Check((Window)Call(window, "ShowFirstRunGuide", window)!, ["guide-start"], ["dialog-body"]);
                     break;
                 case "S2":
-                    Check(window, ["settings", "primary-action", "status-check", "project-install-status", "operation-status"], ["workspace-scroll"]);
+                    Check(window, ["settings", "workspace-scroll", "action-details", "primary-action", "status-check",
+                        "project-install-status", "operation-status"], ["workspace-scroll"]);
                     break;
                 case "S3":
                     Field(window, "_hasAuthorizedCatalog").SetValue(window, true);
@@ -81,7 +115,14 @@ public class Prod17LayoutMatrixTests
                     operation.Percent = 42;
                     operation.Title = "다운로드 1.2 GB / 2.8 GB · 47 MB/s · 남은 시간 약 34초";
                     Call(window, "StartCancellableUiOperation", cancellation);
-                    Check(window, ["cancel-operation", "operation-status", "operation-progress", "cancel-guidance"]);
+                    Dispatcher.UIThread.RunJobs();
+                    var stage = Find<TextBlock>(window, "operation-stage");
+                    var percent = Find<TextBlock>(window, "operation-percent");
+                    Assert.Equal("● 다운로드  ○ 검증  ○ 설치  ○ 완료", stage.Text);
+                    Assert.Equal("42%", percent.Text);
+                    Check(window, ["workspace-scroll", "action-details", "cancel-operation", "operation-status",
+                        "operation-stage", "operation-percent", "operation-progress", "cancel-guidance"], ["workspace-scroll"]);
+                    AssertCanShow(window, stage, () => AssertEntirelyVisible(window, percent));
                     break;
                 case "S5":
                     model.GeneralState = GeneralLauncherState.RecoverableError;
@@ -122,7 +163,7 @@ public class Prod17LayoutMatrixTests
                     Check(Assert.Single(window.OwnedWindows), ["recommendation-later", "recommendation-change"], ["dialog-body"]);
                     break;
                 case "D1":
-                    Check(window, ["filter-환경", "filter-채널", "filter-버전 정책", "filter-요청 버전",
+                    Check(window, ["workspace-scroll", "action-details", "filter-환경", "filter-채널", "filter-버전 정책", "filter-요청 버전",
                         "primary-action", "update", "status-check", "open-folder"], ["developer-release-filters",
                         "release-info", "developer-installation"]);
                     break;
@@ -184,6 +225,8 @@ public class Prod17LayoutMatrixTests
     {
         var targets = named.Concat(labels).Distinct().ToArray();
         Assert.NotEmpty(targets);
+        void CheckSnapshot() => AssertNoVisibleOverlap(window, targets);
+        CheckSnapshot();
         foreach (var target in targets)
         {
             var label = Describe(target);
@@ -195,25 +238,45 @@ public class Prod17LayoutMatrixTests
                     AssertTextFits(caption);
             }
             if (target is TextBlock text) AssertTextFits(text);
-            AssertCanShow(window, target);
+            AssertCanShow(window, target, CheckSnapshot);
         }
+    }
 
-        // Project each rectangle to its shared ancestor before comparing. Scrolling can
-        // move independent panels, so don't compare content in different scroll surfaces.
-        for (var index = 0; index < targets.Length; index++)
-        foreach (var other in targets.Skip(index + 1))
+    private static void AssertNoVisibleOverlap(Window window, IReadOnlyList<Control> targets)
+    {
+        // Measure every target at this scroll position, including controls in other viewports.
+        var visible = targets.Select(target => (Target: target, Bounds: VisibleBounds(window, target)))
+            .Where(item => item.Bounds.Width > Tolerance && item.Bounds.Height > Tolerance).ToArray();
+        for (var index = 0; index < visible.Length; index++)
+        foreach (var other in visible.Skip(index + 1))
         {
-            var target = targets[index];
-            var ancestors = target.GetVisualAncestors().ToArray();
-            var otherAncestors = other.GetVisualAncestors().ToArray();
-            if (ancestors.Contains(other) || otherAncestors.Contains(target) ||
-                ancestors.OfType<ScrollContentPresenter>().FirstOrDefault() !=
-                otherAncestors.OfType<ScrollContentPresenter>().FirstOrDefault()) continue;
-            var shared = ancestors.First(otherAncestors.Contains);
-            var overlap = BoundsIn(target, shared).Intersect(BoundsIn(other, shared));
+            var item = visible[index];
+            if (item.Target.GetVisualAncestors().Contains(other.Target) ||
+                other.Target.GetVisualAncestors().Contains(item.Target)) continue;
+            var overlap = item.Bounds.Intersect(other.Bounds);
             Assert.True(overlap.Width <= Tolerance || overlap.Height <= Tolerance,
-                $"{Describe(target)} overlaps {Describe(other)} by {overlap.Size}.");
+                $"{Describe(item.Target)} overlaps {Describe(other.Target)} by {overlap.Size}.");
         }
+    }
+
+    private static Rect VisibleBounds(Window window, Control target)
+    {
+        if (!target.IsEffectivelyVisible) return default;
+        var visible = BoundsIn(target, window).Intersect(new Rect(window.ClientSize));
+        foreach (var ancestor in target.GetSelfAndVisualAncestors())
+        {
+            if (ancestor.ClipToBounds) visible = visible.Intersect(BoundsIn(ancestor, window));
+            if (ancestor.Clip is { } clip)
+                visible = visible.Intersect(new Rect(ancestor.TranslatePoint(clip.Bounds.TopLeft, window)!.Value, clip.Bounds.Size));
+        }
+        return visible;
+    }
+
+    private static void AssertEntirelyVisible(Window window, Control target)
+    {
+        var visible = VisibleBounds(window, target);
+        Assert.True(visible.Width >= target.Bounds.Width - Tolerance && visible.Height >= target.Bounds.Height - Tolerance,
+            $"{Describe(target)} must be fully visible with the current stage.");
     }
 
     private static bool IsRenderedText(TextBlock text) =>
@@ -229,7 +292,7 @@ public class Prod17LayoutMatrixTests
             $"{Describe(text)} needs {layout.Height} DIP of height; it has {text.Bounds.Height}.");
     }
 
-    private static void AssertCanShow(Window window, Control target)
+    private static void AssertCanShow(Window window, Control target, Action checkSnapshot)
     {
         var clipping = target.GetVisualAncestors().Where(visual => visual.ClipToBounds).ToArray();
         // Measure long notes a rendered line at a time. The whole note can be taller
@@ -249,13 +312,18 @@ public class Prod17LayoutMatrixTests
 
         foreach (var fragment in fragments)
         {
+            var scrolled = false;
             foreach (var clip in clipping.OfType<ScrollContentPresenter>())
             {
                 var viewer = clip.GetVisualAncestors().OfType<ScrollViewer>().First();
                 var top = target.TranslatePoint(fragment.TopLeft, clip)!.Value.Y;
                 var delta = top < 0 ? top : Math.Max(0, top + fragment.Height - clip.Bounds.Height);
-                viewer.Offset = new(viewer.Offset.X, viewer.Offset.Y + delta);
-                Dispatcher.UIThread.RunJobs();
+                if (Math.Abs(delta) > Tolerance)
+                {
+                    viewer.Offset = new(viewer.Offset.X, viewer.Offset.Y + delta);
+                    Dispatcher.UIThread.RunJobs();
+                    scrolled = true;
+                }
             }
             foreach (var clip in clipping.Append(window))
             {
@@ -266,11 +334,13 @@ public class Prod17LayoutMatrixTests
                     within.Right <= viewport.Width + Tolerance && within.Bottom <= viewport.Height + Tolerance,
                     $"{Describe(target)} bounds {within} exceed {clip.GetType().Name} {viewport}.");
             }
+            if (scrolled) checkSnapshot();
         }
+        checkSnapshot();
     }
 
-    private static Rect BoundsIn(Control control, Visual visual) =>
-        new(control.TranslatePoint(default, visual)!.Value, control.Bounds.Size);
+    private static Rect BoundsIn(Visual target, Visual relativeTo) =>
+        new(target.TranslatePoint(default, relativeTo)!.Value, target.Bounds.Size);
 
     private static string Describe(Control control) =>
         AutomationProperties.GetAutomationId(control) is { Length: > 0 } id ? id :

@@ -421,6 +421,8 @@ public sealed partial class MainWindow
         panel.Children.Add(actions);
         _statusText=Identify(Txt(_presentation.Title,LauncherVisualTokens.FontBody,true),"operation-status","작업 상태");
         _percentText=Muted("",LauncherVisualTokens.FontSecondary);_stageLabel=Muted("",LauncherVisualTokens.FontSecondary);
+        AutomationProperties.SetAutomationId(_percentText, "operation-percent");
+        AutomationProperties.SetAutomationId(_stageLabel, "operation-stage");
         _progress=Identify(new ProgressBar {Minimum=0,Maximum=100,Height=6,
             Background=LauncherVisualTokens.Brush(LauncherVisualTokens.MutedSurfaceColor(IsDeveloper, HighContrast)),
             Foreground=StatusBrush(LauncherStatusTone.Progress)},"operation-progress","작업 진행률");
