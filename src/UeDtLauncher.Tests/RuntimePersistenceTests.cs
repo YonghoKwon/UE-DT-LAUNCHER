@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Xunit;
 namespace UeDtLauncher.Tests;
 
@@ -15,6 +16,42 @@ public sealed class RuntimePersistenceTests : IDisposable
     }
     public static IEnumerable<object[]> Failures => from operation in new[] {"begin","attach","started","complete","recover"}
         from boundary in new[] {"write","flush","replace","ack"} select new object[] {operation,boundary};
+
+    [Fact]
+    public void CompletionPublishesWhileRunningSnapshotIsOpen()
+    {
+        var config = Config();
+        var actor = RuntimeIdentities.Current();
+        var ticket = RuntimeStore.Begin(config, actor, actor.Executable);
+        RuntimeStore.Attach(config, ticket, actor, actor.Executable);
+        RuntimeStore.Report(config, ticket, actor, completed: false);
+
+        using var previous = File.Open(RuntimeStore.RecordPath(config), FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+        RuntimeStore.Report(config, ticket, actor, completed: true);
+
+        using var oldSnapshot = JsonDocument.Parse(previous);
+        Assert.Equal((int)RuntimeState.Running, oldSnapshot.RootElement.GetProperty("state").GetInt32());
+        Assert.Equal(ticket.AttemptId, oldSnapshot.RootElement.GetProperty("attemptId").GetString());
+        var current = RuntimeStore.Observe(config);
+        Assert.Equal(RuntimeState.Quiescent, current.State);
+        Assert.Equal(ticket.AttemptId, current.AttemptId);
+    }
+
+    [Fact]
+    public void HealthyPublishesWhileStartupSnapshotIsOpen()
+    {
+        var config = Config();
+        RuntimeServiceState.RequireSelection(config, "1");
+        RuntimeServiceState.Starting(config, backup: null);
+
+        using var previous = File.Open(RuntimeServiceState.SnapshotPath(config), FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+        RuntimeServiceState.Healthy(config);
+
+        using var oldSnapshot = JsonDocument.Parse(previous);
+        Assert.Equal((int)ServiceRuntimePhase.StartupHealthPending, oldSnapshot.RootElement.GetProperty("phase").GetInt32());
+        Assert.Equal(ServiceRuntimePhase.Ready, RuntimeServiceState.Read(config)!.Phase);
+    }
+
     [Theory][MemberData(nameof(Failures))]
     public void RuntimeWritesFailClosed(string operation,string boundary)
     {

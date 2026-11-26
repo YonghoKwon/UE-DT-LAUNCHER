@@ -40,10 +40,8 @@ public static class RuntimeStore
     }
     internal static RuntimeRecord? Read(LauncherConfig config)
     {
-        var path = RecordPath(config);
-        if (!File.Exists(path)) return null;
-        if (new FileInfo(path).Length > 64 * 1024) throw new InvalidDataException("Runtime record exceeds limit.");
-        using var document = JsonDocument.Parse(File.ReadAllText(path));
+        using var document = RuntimeStatePersistence.ReadSnapshot(RecordPath(config));
+        if (document is null) return null;
         RequireFields(document.RootElement, "schemaVersion", "installationId", "state", "origin");
         if (document.RootElement.TryGetProperty("runtimeData", out var data) && data.ValueKind != JsonValueKind.Null)
         {
@@ -97,7 +95,7 @@ public static class RuntimeStore
         if (value.State == RuntimeState.Quiescent && value.Origin == "supervisor-completed") return;
         throw new InvalidDataException("Inconsistent runtime state.");
     }
-    internal static void Write(LauncherConfig config, RuntimeRecord record) => RuntimeStatePersistence.Write(RecordPath(config), record);
+    internal static void Write(LauncherConfig config, RuntimeRecord record) => RuntimeStatePersistence.WriteSnapshot(RecordPath(config), record);
 
     public static RuntimeObservation Observe(LauncherConfig config)
     {
