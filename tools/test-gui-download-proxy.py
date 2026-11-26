@@ -10,6 +10,57 @@ from unittest.mock import patch
 from gui_download_proxy import DownloadProxy
 
 class ProxyTests(unittest.TestCase):
+    def test_forward_proxy_holds_only_the_authorized_fixture_file(self):
+        path = '/releases/demo/files/cancellation.bin'
+        seen = []
+
+        class Upstream(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *_):
+                pass
+
+            def do_GET(self):
+                seen.append(self.path)
+                authorized = self.headers.get('Signature') == 'fixture-signature'
+                body = b'payload' if authorized else b''
+                self.send_response(200 if authorized else 401)
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Upstream)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as temporary:
+                proxy = DownloadProxy(temporary, 0, server.server_port, bytes_per_second=None, forward_proxy=True)
+                proxy.start()
+                connection = http.client.HTTPConnection('127.0.0.1', proxy.server.server_port, timeout=5)
+                try:
+                    origin = f'http://127.0.0.1:{server.server_port}'
+                    with proxy.hold_file(path) as entered:
+                        connection.request('GET', 'http://127.0.0.1:1' + path)
+                        self.assertEqual(403, connection.getresponse().status)
+                        connection.request('GET', origin + path)
+                        denied = connection.getresponse()
+                        self.assertEqual(401, denied.status)
+                        self.assertEqual(b'', denied.read())
+                        self.assertFalse(entered.is_set())
+                        connection.request('GET', origin + path + '?x=%2F', headers={'Signature': 'fixture-signature'})
+                        held = connection.getresponse()
+                        self.assertEqual(200, held.status)
+                        self.assertTrue(entered.wait(5))
+                        with proxy.lock:
+                            self.assertEqual(0, proxy.metrics['fileBytes'])
+                    self.assertEqual(b'payload', held.read())
+                    self.assertEqual([path, path + '?x=%2F'], seen)
+                finally:
+                    connection.close()
+                    proxy.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
     def test_restore_file_fault_runs_only_after_upstream_authorization(self):
         allowed=False
         class Upstream(http.server.BaseHTTPRequestHandler):
