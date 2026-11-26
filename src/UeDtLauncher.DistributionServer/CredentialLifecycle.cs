@@ -22,6 +22,11 @@ internal static class CredentialLifecycle
     }
     internal static void LatchExpiry(IntakeStore store, bool deviceKey, string id)
     {
+        if (CredentialAuthority.For(store) is { } authority)
+        {
+            authority.LatchExpiry(deviceKey, id);
+            return;
+        }
         using var operation = DistributionMaintenanceLease.Acquire(store.Root, false);
         using var write = store.DatabaseWrite(); using var db = store.Open(); using var tx = db.BeginTransaction();
         using var q = db.CreateCommand(); q.Transaction = tx;
