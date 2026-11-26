@@ -434,13 +434,14 @@ http {{
             if args.managed_client_proof:
                 from managed_display_fixture import prove_managed_display
                 summary['minimal_managed_client']=prove_managed_display(run,launcher,client,config)
-            if args.managed_rollback_proof:
-                from managed_rollback_fixture import prove_managed_rollback
-                summary['managed_rollback_outcome']=prove_managed_rollback(run,launcher,client,config,env['UE_DT_AGENT_ENDPOINT'])
+            # Cancellation needs a real file GET before the rollback proof's repair warms its cache.
             if args.operation_proof:
                 from operation_fixture_support import prove_operations
                 headless_phase('operation-cancellation')
                 summary['owned_operation_cancellation'] = prove_operations(root, client, launcher, env, flags, run, platform, operation_proxy)
+            if args.managed_rollback_proof:
+                from managed_rollback_fixture import prove_managed_rollback
+                summary['managed_rollback_outcome']=prove_managed_rollback(run,launcher,client,config,env['UE_DT_AGENT_ENDPOINT'])
             if args.promotion_proof:
                 from gui_fixture_evidence import agent_status
                 config['requestedVersion']='2.0.0'
