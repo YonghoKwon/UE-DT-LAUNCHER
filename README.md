@@ -96,5 +96,6 @@ flowchart TD
 | 실행 중 변경 차단·수동 복구 | [실행 안전성](docs/reference/runtime-safety.md) |
 | Agent·무인 점검·서비스 실행 설정 | [서비스 모드](docs/reference/service-mode.md) |
 | MSI/RPM 제작과 회사 이관 | [설치본·운영 인수](docs/reference/commercial-deployment.md) |
+| 개발용 Windows PC에서 로컬 ZIP 접수와 LAN 배포 시험 | [Windows 배포 시험 가이드](docs/reference/windows-lab/README.md) |
 | 목표·진척·검증 근거 확인 | [프로젝트 목표](PROJECT_GOALS.md) · [개선 대장](IMPROVEMENTS.md) · [검증 이력](docs/reference/archive/README.md) |
 | 문서 전체 탐색과 기여 규칙 확인 | [참고 문서 모음](docs/reference/README.md) · [개발 규칙](AGENTS.md) |
