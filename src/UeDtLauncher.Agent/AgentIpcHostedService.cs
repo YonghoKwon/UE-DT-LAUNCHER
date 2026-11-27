@@ -359,7 +359,9 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     throw new InvalidDataException("Release selection does not match this project/platform.");
                 config.Environment = request.Selection.Environment; config.Channel = request.Selection.Channel;
                 config.VersionPolicy = "exact"; config.RequestedVersion = request.Selection.Version;
-                config.ClientProfile = "developer"; // Server policy, not the presentation profile, authorizes this selection.
+                // A CLI restore revalidates with the same protected profile that listed the backup.
+                if (!request.Command.Equals("rollback-backup", StringComparison.OrdinalIgnoreCase))
+                    config.ClientProfile = "developer"; // Existing exact-selection commands defer authorization to the server.
             }
             var progress = new List<ManagedAgentProgress>();
             void AddProgress(LauncherProgress value)
