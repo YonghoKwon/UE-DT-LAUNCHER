@@ -637,12 +637,40 @@ public sealed class LauncherEngine : IDisposable
         {
             // Capture all pre-update data before marking the transaction as Applying.
             // If backup preparation is interrupted, recovery can discard it without touching live files.
-            await BackupManager.WriteBackupMetadataAsync(backupRoot, new BackupInfo
+            var backup = new BackupInfo
             {
                 PreviousVersion = localManifest?.Version,
                 NewVersion = remoteManifest.Version,
                 AddedPaths = addedPaths
-            }, _config.InstalledManifestPath, _config.InstallStatePath, cancellationToken);
+            };
+            if (_config.SelectedRelease is not null)
+            {
+                backup.AdditionalBackupHashes = new(StringComparer.Ordinal);
+                backup.PackageAddedPaths = [];
+                var tracked = (localManifest?.Files ?? []).Select(file => CanonicalRelativePath(file.Path))
+                    .ToHashSet(SafePath.FileSystemComparer);
+                var updated = plan.DownloadOrRepair.Select(file => CanonicalRelativePath(file.Path))
+                    .ToHashSet(SafePath.FileSystemComparer);
+                backup.UnchangedPreexistingPaths = remoteManifest.Files
+                    .Where(file => !tracked.Contains(CanonicalRelativePath(file.Path)) && !updated.Contains(CanonicalRelativePath(file.Path)))
+                    .Select(file => file.Path).ToList();
+                foreach (var file in plan.DownloadOrRepair.Where(file => !tracked.Contains(CanonicalRelativePath(file.Path))))
+                {
+                    var path = SafePath.ResolveInsideChecked(_config.InstallDir, file.Path);
+                    if (File.Exists(path))
+                        backup.AdditionalBackupHashes.Add(file.Path, await Hashing.Sha256FileAsync(path, cancellationToken));
+                }
+                foreach (var file in packageFiles)
+                {
+                    var path = SafePath.ResolveInsideChecked(_config.InstallDir, file.RelativeInstallPath);
+                    if (File.Exists(path))
+                        backup.AdditionalBackupHashes.Add(file.RelativeInstallPath, await Hashing.Sha256FileAsync(path, cancellationToken));
+                    else
+                        backup.PackageAddedPaths.Add(file.RelativeInstallPath);
+                }
+            }
+            await BackupManager.WriteBackupMetadataAsync(backupRoot, backup,
+                _config.InstalledManifestPath, _config.InstallStatePath, cancellationToken, includeInventoryDigest: _config.SelectedRelease is not null);
 
             foreach (var relativePath in plan.Remove)
             {

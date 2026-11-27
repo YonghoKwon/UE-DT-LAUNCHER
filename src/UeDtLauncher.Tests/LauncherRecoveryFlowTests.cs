@@ -311,7 +311,8 @@ public class LauncherRecoveryFlowTests
             var payload = Path.Combine(config.InstallDir, "data");
             await File.WriteAllTextAsync(payload, "good");
             var manifest = new LauncherManifest
-            { AppId = "demo", Version = Selection.Version, Files = [new() { Path = "data", Size = 4, Sha256 = await Hashing.Sha256FileAsync(payload) }] };
+            { AppId = "demo", Version = Selection.Version, Platform = Selection.Platform, EntryPoint = "data",
+                Files = [new() { Path = "data", Size = 4, Sha256 = await Hashing.Sha256FileAsync(payload) }] };
             if (!restoringUninstalled) await JsonFiles.WriteAsync(config.InstalledManifestPath, manifest);
             var backup = BackupManager.CreateBackupRoot(config.BackupDir);
             if (!restoringUninstalled) File.Copy(payload, Path.Combine(backup, "data"));

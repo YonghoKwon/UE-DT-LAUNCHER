@@ -347,7 +347,7 @@ public sealed partial class MainWindow : Window
                 EndCancellableUiPhase();
                 try
                 {
-                    var preview = context.Managed ? await _managedRollbackPreview(config) : await Task.Run(() => RollbackPreviewService.ReadAsync(config));
+                    var preview = context.Managed ? await _managedRollbackPreview(config) : await Task.Run(() => BackupManager.ReadSelectionPreviewAsync(config));
                     if (preview is { CanRestore: true } && await ConfirmPreviewAsync(preview)) await RestoreUiPreviewAsync(context, config, preview);
                     else MarkError(ex, "문제 해결 실패");
                 }
@@ -379,7 +379,7 @@ public sealed partial class MainWindow : Window
             }
             var preview = config.IsManagedDeployment
                 ? await _managedRollbackPreview(config)
-                : await Task.Run(() => RollbackPreviewService.ReadAsync(config));
+                : await Task.Run(() => BackupManager.ReadSelectionPreviewAsync(config));
             if (preview is null || !preview.CanRestore)
             { _presentation.Retry = CurrentContext(LauncherUiOperation.Check); SetStatus("복원할 수 있는 백업 정보를 확인해 주세요."); return; }
             if (!await ConfirmPreviewAsync(preview))

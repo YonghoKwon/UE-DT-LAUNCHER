@@ -194,55 +194,86 @@ public static partial class Program
     private static async Task<int> RollbackAsync(string[] args)
     {
         var configPath = Get(args, "--config") ?? "launcher.config.json";
-        var config = await LauncherPaths.LoadResolvedAsync(configPath);
-        if (config.IsManagedDeployment)
+        var display = await JsonFiles.ReadAsync<LauncherConfig>(configPath);
+        var listOnly = Has(args, "--list");
+        var requested = Get(args, "--backup");
+        if (string.IsNullOrWhiteSpace(requested)) requested = null;
+        if (display.IsManagedDeployment)
+            return await RollbackManagedAsync(display, listOnly, requested);
+
+        var config = await LauncherPaths.LoadResolvedAsync(configPath, readOnly: listOnly);
+        if (!string.IsNullOrWhiteSpace(config.DistributionServerUrl))
+            await ResolveCatalogForCliAsync(config);
+
+        if (listOnly)
         {
-            var managedResponse = await new ManagedAgentClient().SendAsync("rollback", config.ProjectId);
-            PrintAgentResponse(managedResponse);
-            return managedResponse.Success ? 0 : 1;
-        }
-        var backups = BackupManager.List(config.BackupDir);
-
-        if (Has(args, "--list"))
-        {
-            if (backups.Count == 0)
-            {
-                Console.WriteLine("No backups found in: " + config.BackupDir);
-                return 0;
-            }
-
-            Console.WriteLine("Available backups (newest first):");
-            foreach (var (backupRoot, info) in backups)
-            {
-                var name = Path.GetFileName(backupRoot);
-                Console.WriteLine($"  {name}  previous: {info?.PreviousVersion ?? "?"}  updated to: {info?.NewVersion ?? "?"}  created: {info?.CreatedAtUtc ?? "?"}");
-            }
-
+            PrintRollbackList(BackupManager.ListForRollback(config));
             return 0;
         }
 
-        var requested = Get(args, "--backup");
-        var selected = string.IsNullOrWhiteSpace(requested)
-            ? backups.FirstOrDefault()
-            : backups.FirstOrDefault(backup => string.Equals(Path.GetFileName(backup.BackupRoot), requested, StringComparison.Ordinal));
-
-        if (selected.BackupRoot is null)
-        {
-            Console.Error.WriteLine(string.IsNullOrWhiteSpace(requested)
-                ? "No backups found. Use 'rollback --list' to inspect available backups."
-                : "Backup not found. Use 'rollback --list' to see available backups.");
-            return 1;
-        }
-
-        var fileLogger = new FileLogger(config.LogDir);
-        Console.WriteLine($"Rolling back using backup {Path.GetFileName(selected.BackupRoot)}...");
-        await BackupManager.RestoreAsync(selected.BackupRoot, config.InstallDir, config.InstalledManifestPath, config.InstallStatePath, message =>
-        {
-            Console.WriteLine("[Rollback] " + message);
-            fileLogger.Log("Rollback", message);
-        });
+        FileLogger? logger = null;
+        if (!await BackupManager.RestoreSelectionAsync(config, requested, message =>
+            {
+                Console.WriteLine("[Rollback] " + message);
+                (logger ??= new FileLogger(config.LogDir)).Log("Rollback", message);
+            }))
+            return MissingRollbackBackup(requested);
         Console.WriteLine("Rollback completed.");
         return 0;
+    }
+
+    private static async Task<int> RollbackManagedAsync(LauncherConfig display, bool listOnly, string? requested)
+    {
+        var config = ManagedClientContext.Create(display);
+        var client = new ManagedAgentClient();
+        var status = await client.SendAsync("status");
+        status.ThrowIfFailed();
+        if (!status.AgentCapabilities.Contains(ManagedAgentProtocol.RollbackListCapability))
+            throw new InvalidOperationException("Update the Agent before using launcher rollback.");
+
+        var target = new BackupTarget(config.Environment, config.Channel, config.TargetPlatform, config.VersionPolicy, config.RequestedVersion);
+        var response = await client.SendStreamingAsync("rollback-list", config.ProjectId, _ => { }, rollbackTarget: target);
+        response.ThrowIfFailed();
+        if (response.SelectedRelease is { } selection &&
+            (selection.ProjectId != config.ProjectId || selection.Environment != target.Environment || selection.Channel != target.Channel ||
+             selection.Platform != target.Platform || (target.VersionPolicy == "exact" && selection.Version != target.RequestedVersion)))
+            throw new InvalidDataException("Agent backup selection does not match the requested release.");
+        var backups = response.RollbackBackups ?? throw new InvalidDataException("Agent did not return the backup list.");
+        if (listOnly)
+        {
+            PrintRollbackList(backups);
+            return 0;
+        }
+
+        var selected = backups.FirstOrDefault(backup => requested is null || backup.Id == requested);
+        if (selected is null) return MissingRollbackBackup(requested);
+        var restored = await client.SendStreamingAsync("rollback-backup", config.ProjectId, _ => { },
+            selection: response.SelectedRelease, rollbackBackupId: selected.Id);
+        restored.ThrowIfFailed();
+        if (restored.SelectedRelease != response.SelectedRelease || restored.InstallationCommitted != true)
+            throw new InvalidDataException("Agent did not confirm restoration of the selected release.");
+        PrintAgentResponse(restored);
+        return 0;
+    }
+
+    private static void PrintRollbackList(IReadOnlyList<BackupListEntry> backups)
+    {
+        if (backups.Count == 0)
+        {
+            Console.WriteLine("No backups found.");
+            return;
+        }
+        Console.WriteLine("Available backups (newest first):");
+        foreach (var backup in backups)
+            Console.WriteLine($"  {backup.Id}  previous: {backup.PreviousVersion ?? "?"}  updated to: {backup.NewVersion ?? "?"}  created: {backup.CreatedAtUtc ?? "?"}");
+    }
+
+    private static int MissingRollbackBackup(string? requested)
+    {
+        Console.Error.WriteLine(requested is null
+            ? "No backups found. Use 'rollback --list' to inspect available backups."
+            : "Backup not found. Use 'rollback --list' to see available backups.");
+        return 1;
     }
 
     private static async Task ResolveCatalogForCliAsync(LauncherConfig config, Action<string, string, double?>? log = null)

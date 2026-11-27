@@ -2,7 +2,7 @@
 
 > 보존 자료 / 2026-09-22 분류: 아래 본문은 과거 설계·구축 당시 기록이며 현행 기능이나 회사 배포 완료의 증거가 아닙니다. 공개 정적 경로·HTTP·Basic Auth·직접 압축 게시 명령을 신규 운영에 적용하지 마세요. 현재 절차는 [통합 배포 운영](../distribution-workflow.md), 현재 기능과 미정 목표는 [프로젝트 README](../../../README.md)를 따릅니다.
 
-> 당시 관련 자료는 [보관된 서버 준비 입문](guides/guide-01-linux-server-setup.md)입니다. 회사 파일럿은 [dt2prod 설치와 nginx 전환](../distribution-workflow.md#dt2prod-설치와-nginx-전환)을 따릅니다.
+> 당시 관련 자료는 [RHEL 정적 배포·오프라인 반입 이력](redhat-distribution-server.md)입니다. 회사 파일럿은 [dt2prod 설치와 nginx 전환](../distribution-workflow.md#dt2prod-설치와-nginx-전환)을 따릅니다.
 
 이 문서는 `feature/launcher-production-hardening` 브랜치의 실제 런처 스키마에 맞춰 회사 RHEL 8.4 가상 서버에 UE-DT Launcher 업데이트 서버를 구축하는 절차입니다.
 
