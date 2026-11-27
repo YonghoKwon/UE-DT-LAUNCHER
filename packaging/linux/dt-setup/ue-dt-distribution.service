@@ -1,0 +1,14 @@
+[Unit]
+Description=UE-DT distribution server (dt2prod)
+After=network.target
+RequiresMountsFor=/dt/store /dt/publish
+
+[Service]
+UMask=0077
+ExecStart=/usr/bin/python3 -B /dt/tools/dt_setup_guard.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+
+[Install]
+WantedBy=default.target

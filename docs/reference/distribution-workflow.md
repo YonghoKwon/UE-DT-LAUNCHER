@@ -36,6 +36,59 @@ ZIP과 JSON은 별개 파일입니다. 내부 release.json은 분류에 사용�
 사이트 주소, 인증서, 크기 제한은 실제 패키지와 디스크 용량에 맞게 설정합니다. `packaging/linux/ue-dt-distribution.service` 사본의 실행 파일·설정·쓰기 경로를 예시 배치에 맞춰 지정합니다. [서비스 경로 설정](feature-workflow.md#a2-linux-서버-구성--관리자)에 따라 서비스와 `distribution-nginx.conf`를 배포합니다. nginx의 auth_request 모듈을 확인하고 `nginx -t` 후 적용합니다. backend 18500은 외부에 열지 않습니다.
 새 전용 HTTPS 가상 호스트에는 기존 `/projects`, `/catalogs`, json 확장자별 공개 location을 혼합하지 않습니다. 공개 파일 루트를 지정하지 않아 incoming/authority/키에 접근할 수 없습니다.
 
+### dt2prod 설치와 nginx 전환
+
+RHEL 8.4 x86-64의 기존 nginx 1.14.1 포트 80에서 request-signature-v1 파일럿을 준비합니다. 기존 정적 경로와 공존하는 `coexist`가 기본입니다. 회사에서 옛 클라이언트 사용 종료를 확인한 경우 `cutover`로 설정하면 정적 URL은 404로 응답합니다. 승인된 HTTP origin은 첫 게시 전에 확정하고 PC 보호 설정에도 같은 값을 사용합니다. 이 HTTP 경로는 요청 인증과 메타데이터 서명을 사용하며 전송은 평문입니다.
+
+#### dt2prod 운영자
+
+1. 전달받은 번들 SHA-256을 신뢰된 채널에서 대조합니다. Linux 터미널의 새 작업 폴더에서 번들을 풀고 `dt-setup.conf.example`을 `dt-setup.conf`로 복사합니다. `publicUrl`에 회사의 승인된 포트 80 origin, `signingKeyId`에 서명 키 ID, `legacyProbe`에 인증 없이 200인 옛 파일의 URL 경로를 입력합니다. 설정은 JSON입니다.
+2. `check`는 로컬 XFS `/dt`의 쓰기·실행 권한, 85% 디스크 중단선 및 배치 예상 공간, nginx PID와 리스너, backend 포트, 부팅 수단과 번들 무결성을 조회합니다. 70%부터 경고합니다. `/dt/config`, `/dt/keys`, `/dt/store`가 이미 있으면 dt2prod 소유의 비공개 디렉터리여야 합니다. 기존 키·설정·권위 저장소와 이름이 충돌하면 담당자가 경로별로 검토합니다. `/dt` 위임이 필요한 경우 해당 경로의 권한을 먼저 조정합니다.
+3. `install`은 서명키와 빈 권한 정책을 만든 뒤 `127.0.0.1:18500`의 Catalog 401을 확인합니다. `/dt/.dt-legacy`의 옛 정적 파일과 incoming은 별도 폴더로 보관합니다. 기존 nginx의 문서 루트는 호환 링크로 계속 접근합니다. `admin-request`로 생성한 요청서와 신뢰된 번들 해시를 담당자에게 전달합니다. 적용 완료 후 `verify`로 loopback·공개 Catalog 401과 옛 경로 200/coexist 또는 404/cutover를 확인합니다.
+
+```bash
+./dt-setup.sh check && ./dt-setup.sh install
+./dt-setup.sh admin-request
+./dt-setup.sh verify
+```
+
+설치 로그는 각 단계의 표준 출력과 서비스 로그에 남습니다. linger와 사용자 bus가 준비된 경우 `journalctl --user -u ue-dt-distribution.service`로 확인합니다. crond 예비안은 `/dt/.dt-setup/cron.log`를 사용하며, 부팅 후 서비스를 시작합니다. crond 예비안에서 프로세스가 종료되면 같은 번들의 `install`로 다시 시작하고 로그 크기는 호스트 정책으로 관리합니다. 프로세스와 운영자는 같은 UID를 쓰므로 키와 게시본의 접근 주체도 같습니다.
+
+새 번들에서 기존 설정을 지정해 `./dt-setup.sh update --config /승인경로/dt-setup.conf`를 실행합니다. 검증된 서버·CLI 쌍을 준비한 다음 서비스를 중지하고 `/dt/publish/dt-current`를 새 버전으로 바꿉니다. 시작이나 loopback 401 확인 실패 시 이전 게시본과 서비스를 복원합니다. 중단 기록이 있으면 설치된 번들의 `install`로 복구한 뒤 작업을 다시 시도합니다. `rollback`은 직전 update를 되돌리거나 첫 설치의 서비스를 해제하고 옛 경로를 돌려놓습니다. `/dt/store`, 권한 정책, 서명키 및 비활성 게시본은 보존합니다. 첫 설치 원복 시 담당자와 nginx 원복을 먼저 조율합니다. 옛 자료 삭제는 보관 절차를 따릅니다.
+
+서명 공개키는 `/dt/keys/release-public.pem`에 있습니다. 초기에는 dt2prod가 승인된 ZIP 및 외부 release.json을 `/dt/store/incoming`에 배치합니다. PC 등록 및 버전 권한은 [사내 HTTP 등록 절차](intranet-auth.md)를 따릅니다.
+
+서비스는 부팅 때 커밋된 게시본과 설치 때 확인한 저장소 신원 및 현재 HEAD를 검사합니다. 미완료 작업이나 신원이 다른 저장소는 시작을 차단합니다. 설치 기록의 신원이 누락되거나 journal 경로·신원이 일치하지 않으면 자료를 보존하고 담당자가 대조합니다. `verify`는 loopback·공개 origin의 서명 challenge 형식과 origin 결속도 검사합니다. 여러 번 갱신했다면 `rollback`을 반복해 이전 게시본을 순서대로 선택할 수 있습니다.
+
+#### nginx 담당자
+
+1. 요청서의 선택 모드와 loopback Catalog 401을 확인합니다. 신뢰된 채널의 번들 SHA-256 및 `SHA256SUMS`를 대조하고 root 통제 디렉터리에서 후보를 검토합니다. `nginx -T`로 기존 포트 80 default vhost, 공개·Basic 인증 경로, 캐시·오류·rewrite 상속, 접근 로그와 문서 루트 접근을 확인합니다. loopback 18500은 기존 nginx가 사용합니다.
+2. 선택한 후보의 세 include 위치에서 `nginx/uedt-signed-proxy.inc`를 펼쳐 `/root/ue-dt-updates.candidate` 하나를 준비합니다. `coexist`에서는 실서버 정적 규칙을 유지하고 세 signed location 및 전용 log_format만 합칩니다. `cutover`에서는 동일 포트 80 default vhost가 세 signed location을 처리하며 나머지 경로에는 404를 반환합니다. 새 경로에서는 기존 Basic 인증과 nginx auth_request를 해제하고, backend가 실제 연결 IP와 요청 서명을 검증합니다.
+   요청서에도 아래 명령이 생성됩니다. 검증한 번들은 `/root/ue-dt-server-rhel84`에 풀고 `mode`에 승인된 모드를 넣습니다.
+
+   ```bash
+   set -eu
+   bundle=/root/ue-dt-server-rhel84; mode=coexist
+   candidate=$(mktemp /root/.ue-dt-updates.XXXXXXXX)
+   awk 'FNR==NR { proxy[++n]=$0; next } /^[[:space:]]*include \/etc\/nginx\/uedt-signed-proxy\.inc;$/ { for (i=1;i<=n;i++) print "        " proxy[i]; ++hits; next } { print } END { if (hits!=3) exit 1 }' "$bundle/nginx/uedt-signed-proxy.inc" "$bundle/nginx/$mode/ue-dt-updates.conf" > "$candidate"
+   mv -T -- "$candidate" /root/ue-dt-updates.candidate
+   ```
+
+3. root 셸에서 요청서의 다섯 줄을 붙여 넣습니다. 기존 conf.d 파일을 glob 밖으로 보관한 뒤 후보를 원자 교체하고 `nginx -t` → reload를 수행합니다. 구문 검사 또는 reload가 실패하면 원본 설정을 복원하고 다시 검사·reload합니다. 출력된 백업 경로를 변경 기록에 남깁니다.
+4. 요청서의 공개 Catalog curl이 401을 반환하는지 확인합니다. 운영자가 `verify`로 같은 origin과 옛 경로를 확인합니다. 문제 발생 시 요청서의 백업 경로를 사용해 nginx를 원복합니다. 사용자 unit이 부팅 전부터 필요하고 linger가 비활성일 때 요청서의 `loginctl enable-linger dt2prod`를 적용할 수 있습니다. 설치된 crontab 방식을 systemd로 전환할 때에는 nginx·서비스 변경 창에서 설치 원복 후 같은 설정으로 재설치합니다. 회사 systemd 사용자 서비스, 실제 호스트 재부팅, 실제 PC 인증과 Range는 이관 시 확인합니다.
+
+#### 번들 제작
+
+저장소 루트에서 Linux x64 self-contained 다중 파일 게시본 두 개를 준비하고 Linux 또는 WSL에서 묶습니다. 현재 ELF 의존 버전과 x86-64를 검사하며 GLIBC 2.28 초과는 번들 제작을 중단합니다.
+
+```bash
+dotnet publish src/UeDtLauncher.DistributionServer -c Release -r linux-x64 --self-contained true -o publish/dt-server
+dotnet publish src/UeDtLauncher -c Release -r linux-x64 --self-contained true -o publish/dt-cli
+python3 tools/build-dt-setup-bundle.py --server publish/dt-server --cli publish/dt-cli --output publish/dt-bundle
+```
+
+제작기는 `ue-dt-server-rhel84.tar.gz`와 SHA-256을 출력합니다. 새 작업 폴더에 풀고 `sha256sum -c SHA256SUMS`로 파일 무결성을 확인합니다. [Rocky 8.4 시험 구성](../../tools/docker/prod-server/README.md)
+
 ## 2. 서명과 PC 권한
 
 ```text

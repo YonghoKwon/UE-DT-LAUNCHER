@@ -46,3 +46,23 @@ python tools/prepare_prod_server.py restart --run-id $id --work $work
 회사 배치는 [RHEL 설치 스크립트 초안](../../../scripts/install-server.sh)을 참고합니다. 기존 키·런처 파일은 파일별로 대조합니다. 후보 nginx 설정 검사 후 원자적으로 게시하며, 실제 구성 검사가 실패하면 해당 실행이 추가한 설정을 되돌립니다. 재실행은 이미 설치된 동일 파일을 보존합니다. SELinux가 활성화된 경우 설치 전에 대상의 fcontext 매핑을 확인합니다. 회사 서버와 실제 SELinux 정책은 인수 환경에서 확인합니다.
 
 설치 스크립트가 생성하는 `ue-dt-distribution.service`는 `Restart=on-failure`를 사용합니다. nginx는 별도 systemd 서비스로 실행하며 [서명 모드 nginx 설정](../../../packaging/linux/distribution-nginx-http-signature.conf)은 고정 loopback 주소 `127.0.0.1:18500`으로 요청을 전달합니다. 실서버 인수에서는 `systemctl restart ue-dt-distribution` 동안 공개 Catalog를 반복 조회하고, nginx의 `MainPID`가 유지되며 백엔드가 돌아온 뒤 미인증 401과 인증 다운로드가 복구되는지 기록합니다.
+
+## dt2prod 설치 도구 시험
+
+[운영 가이드](../../../docs/reference/distribution-workflow.md#dt2prod-설치와-nginx-전환)에 따라 서로 다른 서버·CLI 게시본으로 번들 두 개를 만듭니다. 이 시험은 01D와 같은 Rocky 8.4 digest 및 vault 패키지를 사용합니다. 마운트는 컨테이너 안의 새 backing 파일과 루프 장치 하나로 구성하며 외부 포트를 게시하지 않습니다.
+
+```powershell
+$id = 'dt-setup-' + [Guid]::NewGuid().ToString('N').Substring(0,12)
+$image = "uedt-dt-setup-test:${id}"
+docker --context desktop-linux build -f tools/docker/prod-server/dt-setup.Dockerfile --build-arg "RUN_ID=$id" -t $image .
+docker --context desktop-linux run --name $id --label "uedt.run=$id" --network none --privileged -d $image sleep infinity
+docker --context desktop-linux cp $firstBundle "${id}:/tmp/first.tar.gz"
+docker --context desktop-linux cp $nextBundle "${id}:/tmp/next.tar.gz"
+docker --context desktop-linux cp tools/docker/prod-server/test-dt-setup.sh "${id}:/tmp/test-dt-setup.sh"
+docker --context desktop-linux exec $id sed -i 's/\r$//' /tmp/test-dt-setup.sh
+docker --context desktop-linux exec $id bash /tmp/test-dt-setup.sh /tmp/first.tar.gz /tmp/next.tar.gz
+```
+
+`$firstBundle`과 `$nextBundle`은 각 tar.gz의 절대 경로입니다. 스크립트는 XFS·dt2prod·구 nginx 사이트를 만들고 사전 검사·롤백·공존·교체를 시험합니다. 일반 컨테이너에서는 cron에 등록된 부팅 명령을 dt2prod로 실행하고, 생성된 root 명령은 `systemctl reload nginx`만 `nginx -s reload`로 연결해 그대로 사용합니다. systemd 사용자 unit과 실제 재부팅은 이관에서 확인합니다.
+
+종료 후 컨테이너와 이미지의 `uedt.run`이 이번 ID인지 확인하고 해당 리소스를 제거합니다. 스크립트의 종료 훅이 이번 루프 장치를 해제합니다. 전후 Docker 리소스 인벤토리를 대조합니다.
