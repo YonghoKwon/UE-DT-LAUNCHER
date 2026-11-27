@@ -38,11 +38,13 @@ $Lab = '.\tools\windows-lab\WindowsLab.ps1'
 
 Linux ZIP에는 `-Platform linux-x64 -EntryPoint Demo.sh -ExecutablePaths Demo.sh`처럼 실제 실행 경로를 지정하세요. 콘솔에서 **pending 확인 → 승인 → 현재 revision 확인 → 명시 승격**합니다. v2도 같은 순서입니다. 이후 v1을 다시 승격해 추천 변경을 시험합니다. [콘솔 운영 절차](../distribution-workflow.md) · [release.json 만들기](../feature-workflow.md)
 
+개발자용 ZIP은 같은 명령에 `-Environment dev -Channel beta`를 추가하고 콘솔에서 **dev/beta** 트랙을 승인·승격합니다.
+
 ## 4. 다른 PC에서 확인
 
 ### Windows 고성능 클라이언트
 
-받은 묶음 옆에서 `UeDtLauncher.exe gui --config .\launcher.config.json`으로 열고 목록 → v1 설치·실행 → 앱 정상 종료 → v2 추천에서 업데이트를 확인합니다. v1 재승격 후 새로고침해 **권장 버전 변경 안내**를 확인합니다. 개발자 PC는 `Add-Client -Developer`로 `dev/beta`를 받고 개발자 EXE의 08D 화면에서 해당 트랙의 목록과 설치를 확인합니다.
+받은 묶음 옆에서 `UeDtLauncher.exe gui --config .\launcher.config.json`으로 열고 목록 → v1 설치·실행 → 앱 정상 종료 → v2 추천에서 업데이트를 확인합니다. v1 재승격 후 새로고침해 **권장 버전 변경 안내**를 확인합니다. 개발자 PC는 별도 PC ID·키·credential 이름으로 준비하고 `Add-Client -Developer`로 등록합니다. `UeDtLauncher.Developer.exe`의 08D 화면에서 `dev/beta` 목록과 설치를 확인합니다.
 
 ### Linux 스트리밍 서버
 
@@ -50,7 +52,9 @@ Linux ZIP에는 `-Platform linux-x64 -EntryPoint Demo.sh -ExecutablePaths Demo.s
 
 ### Windows 스트리밍 서버
 
-기존 관리형 환경에서 관리자 PowerShell로 `enroll prepare --storage managed`를 사용합니다. 전달받은 `setup.json`의 origin·프로젝트·키 ID·credential 이름과 배포 공개키로 Agent 운영 설정을 적용하고, 받은 `launcher.config.json`은 선택 전용으로 둡니다. Agent 설정 반영 → `doctor --online` → `run --no-launch` → 로그인한 스트리밍 사용자 세션에서 `run` 순으로 확인합니다. v2에서도 앱을 정상 종료한 뒤 반복하고, v1 재승격은 먼저 진단으로 확인합니다. [관리형 등록](../intranet-auth.md) · [무인 실행과 서비스 세션](../service-mode.md)
+기존 관리형 환경에서 관리자 PowerShell로 `enroll prepare --storage managed`를 사용합니다. 관리자 관리 경로 `%ProgramData%\UE-DT Launcher\config`에 공개키를 두고, `setup.json`의 origin·프로젝트·credential 이름·서명 키 ID로 `enroll finish --storage managed`를 실행합니다. 출력은 해당 관리 경로의 `launcher.config.json`이고, 운영 트랙은 `setup.json`과 맞춥니다. 기존 설정을 보존하고 관리자가 Agent에 반영합니다. 전달받은 묶음의 동명 파일은 선택 전용이므로 스트리밍 사용자 경로에 따로 둡니다.
+
+로그인한 스트리밍 사용자 세션에서 **`doctor --online --config .\launcher.config.json` → `run --no-launch --config .\launcher.config.json` → `run --config .\launcher.config.json`** 순서로 확인합니다. v2에서도 앱을 정상 종료한 뒤 반복하고, v1 재승격은 먼저 진단으로 확인합니다. [관리형 등록 및 Agent 반영](../intranet-auth.md) · [무인 실행과 서비스 세션](../service-mode.md)
 
 ## 5. 정리
 

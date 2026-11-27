@@ -38,6 +38,7 @@ $policy = Join-Path $Root 'access-policy.json'
 $caddy = Join-Path $Root 'caddy.exe'
 $caddyfile = Join-Path $Root 'Caddyfile'
 $journal = Join-Path $Root 'processes.json'
+$ownerSid = [Security.Principal.WindowsIdentity]::GetCurrent().User
 if ($Developer) {
     if ($Action -ne 'Add-Client' -or $ClientKind -ne 'WindowsClient' -or
         $PSBoundParameters.ContainsKey('Environment') -or $PSBoundParameters.ContainsKey('Channel')) {
@@ -52,6 +53,19 @@ function Assert-NoLink([string]$Path) {
         if ((Test-Path -LiteralPath $item) -and ([IO.File]::GetAttributes($item) -band [IO.FileAttributes]::ReparsePoint)) {
             throw "Reparse point is not supported: $item"
         }
+    }
+}
+
+function Assert-LabDirectory {
+    Assert-NoLink $Root
+    $acl = Get-Acl -LiteralPath $Root
+    $rules = @($acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]))
+    if ($acl.GetOwner([Security.Principal.SecurityIdentifier]) -ne $ownerSid -or
+        !$acl.AreAccessRulesProtected -or $rules.Count -ne 1 -or
+        $rules[0].IdentityReference -ne $ownerSid -or $rules[0].AccessControlType -ne 'Allow' -or
+        $rules[0].FileSystemRights -ne 'FullControl' -or
+        $rules[0].InheritanceFlags -ne 'ContainerInherit, ObjectInherit' -or $rules[0].PropagationFlags -ne 'None') {
+        throw 'The lab directory must have its original private ACL and current-user ownership.'
     }
 }
 
@@ -154,6 +168,46 @@ function Start-LabProcess([string]$Exe, [string]$Arguments, [string]$Name) {
     Start-Process @options
 }
 
+function Get-LaunchArguments([string]$RunId) {
+    if ($RunId -cnotmatch '\A[0-9a-f]{32}\z') { throw 'Invalid lab run identifier.' }
+    $dir = Join-Path $Root "run-$RunId"
+    @{
+        server = 'serve --config "' + (Join-Path $dir 'server.json') + '"'
+        proxy = 'run --config "' + (Join-Path $dir 'Caddyfile') + '" --adapter caddyfile'
+    }
+}
+
+function Get-UnrecordedProcess([string]$Exe, [string]$Arguments) {
+    # A durable, unique argument identifies a child even if Start exited before saving its PID.
+    $name = [IO.Path]::GetFileName($Exe)
+    $matches = @(Get-CimInstance Win32_Process -Filter "Name='$name'" | Where-Object {
+        $_.ExecutablePath -eq $Exe -and $_.CommandLine -and
+        $_.CommandLine.TrimEnd().EndsWith(' ' + $Arguments, [StringComparison]::Ordinal)
+    })
+    if ($matches.Count -gt 1) { throw 'Multiple processes match the recorded lab run.' }
+    if ($matches.Count -eq 1) {
+        $match = $matches[0]
+        $who = Invoke-CimMethod -InputObject $match -MethodName GetOwnerSid
+        if ($who.ReturnValue -ne 0 -or $who.Sid -ne $ownerSid.Value) { throw 'Cannot verify lab process ownership.' }
+        # WMI timestamps use microseconds, while Process.StartTime exposes 100 ns ticks.
+        $process = Get-Process -Id $match.ProcessId -ErrorAction SilentlyContinue
+        if (!$process) { return }
+        $owned = $false
+        try {
+            $null = $process.Handle
+            if ($process.HasExited) { return }
+            if ($process.Path -ne $Exe -or
+                [Math]::Abs($process.StartTime.ToUniversalTime().Ticks - $match.CreationDate.ToUniversalTime().Ticks) -ge 10) {
+                throw 'Lab process identity changed while checking the start intent.'
+            }
+            $owned = $true
+            return $process
+        } finally {
+            if (!$owned) { $process.Dispose() }
+        }
+    }
+}
+
 function Stop-LabProcess([Diagnostics.Process]$Process) {
     if ($Process -and !$Process.HasExited) {
         $Process.Kill()
@@ -163,6 +217,15 @@ function Stop-LabProcess([Diagnostics.Process]$Process) {
 
 function Get-ProcessRecord([Diagnostics.Process]$Process) {
     @{ pid = $Process.Id; started = $Process.StartTime.ToUniversalTime().Ticks.ToString() }
+}
+
+function Clear-LabRun([string]$RunId) {
+    $dir = Join-Path $Root "run-$RunId"
+    Assert-NoLink $dir
+    [IO.File]::Delete((Join-Path $dir 'server.json'))
+    [IO.File]::Delete((Join-Path $dir 'Caddyfile'))
+    [IO.Directory]::Delete($dir)
+    [IO.File]::Delete($journal)
 }
 
 function Show-Lab($Lab) {
@@ -198,6 +261,9 @@ function Initialize-Lab($Lab, [string]$Archive) {
 {
     admin off
     persist_config off
+    log {
+        exclude http.log.error
+    }
 }
 $($Lab.origin) {
     bind $(([uri]$Lab.origin).Host)
@@ -343,14 +409,15 @@ if (!(Test-Path -LiteralPath $Root)) {
     # Windows PowerShell 5.1 can apply the private ACL as part of directory creation.
     $acl = [Security.AccessControl.DirectorySecurity]::new()
     $acl.SetAccessRuleProtection($true, $false)
-    $uid = [Security.Principal.WindowsIdentity]::GetCurrent().User
-    $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($uid, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow'))
+    $acl.SetOwner($ownerSid)
+    $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($ownerSid, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow'))
     [void][IO.Directory]::CreateDirectory($Root, $acl)
     $newLab = @{ schema=1; server=$server; launcher=$launcher; origin="http://$($ip):$Port"; backend="http://127.0.0.1:$BackendPort" }
 } elseif (!(Test-Path -LiteralPath $marker -PathType Leaf)) {
     throw 'This directory has no completed lab setup. Use a fresh root and inspect the old directory manually.'
 }
 
+Assert-LabDirectory
 $lockPath = Join-Path $Root 'lab.lock'
 Assert-NoLink $lockPath
 $lock = [IO.File]::Open($lockPath, 'OpenOrCreate', 'ReadWrite', 'None')
@@ -364,8 +431,11 @@ try {
     if ($lab.schema -ne 1) { throw 'Unsupported lab metadata.' }
     if (Test-Path -LiteralPath $journal) {
         $records = Read-Json $journal
-        $serverProcess = Get-OwnedProcess $records.server $lab.server
-        $proxyProcess = Get-OwnedProcess $records.proxy $caddy
+        $launch = Get-LaunchArguments $records.runId
+        $serverProcess = if ($records.server) { Get-OwnedProcess $records.server $lab.server }
+                         else { Get-UnrecordedProcess $lab.server $launch.server }
+        $proxyProcess = if ($records.proxy) { Get-OwnedProcess $records.proxy $caddy }
+                        else { Get-UnrecordedProcess $caddy $launch.proxy }
     }
     switch ($Action) {
         'Start' {
@@ -387,18 +457,26 @@ try {
             if ($serverProcess -or $proxyProcess) { throw 'Partial run detected. Run Stop before Start.' }
             Assert-PortFree (Get-IPv4 ([uri]$lab.origin).Host) ([uri]$lab.origin).Port
             Assert-PortFree ([Net.IPAddress]::Loopback) ([uri]$lab.backend).Port
-            $records = @{ server=$null; proxy=$null }
+            $runId = [guid]::NewGuid().ToString('N')
+            $runDir = Join-Path $Root "run-$runId"
+            [void][IO.Directory]::CreateDirectory($runDir)
+            [IO.File]::Copy($config, (Join-Path $runDir 'server.json'))
+            [IO.File]::Copy($caddyfile, (Join-Path $runDir 'Caddyfile'))
+            $launch = Get-LaunchArguments $runId
+            $records = @{ runId=$runId; server=$null; proxy=$null }
+            Write-Json $journal $records
             try {
-                $serverProcess = Start-LabProcess $lab.server ('serve --config "' + $config + '"') 'server'
+                $serverProcess = Start-LabProcess $lab.server $launch.server 'server'
                 $records.server = Get-ProcessRecord $serverProcess
                 Write-Json $journal $records
                 Wait-Endpoints $lab.backend $serverProcess
-                $proxyProcess = Start-LabProcess $caddy ('run --config "' + $caddyfile + '" --adapter caddyfile') 'caddy'
+                $proxyProcess = Start-LabProcess $caddy $launch.proxy 'caddy'
                 $records.proxy = Get-ProcessRecord $proxyProcess
                 Write-Json $journal $records
                 Wait-Endpoints $lab.origin $proxyProcess
             } catch {
                 try { Stop-LabProcess $proxyProcess } finally { Stop-LabProcess $serverProcess }
+                Clear-LabRun $runId
                 throw
             }
             Show-Lab $lab
@@ -407,13 +485,13 @@ try {
         'Status' {
             [pscustomobject]@{
                 Origin=$lab.origin; Incoming=$incoming
-                ServerPid=$(if ($serverProcess) { $serverProcess.Id })
-                ProxyPid=$(if ($proxyProcess) { $proxyProcess.Id })
+                ServerPid=$(if ($serverProcess) { $serverProcess.Id } else { $null })
+                ProxyPid=$(if ($proxyProcess) { $proxyProcess.Id } else { $null })
             }
         }
         'Stop' {
             try { Stop-LabProcess $proxyProcess } finally { Stop-LabProcess $serverProcess }
-            [IO.File]::Delete($journal)
+            if ([IO.File]::Exists($journal)) { Clear-LabRun $records.runId }
             Write-Output 'Stopped owned processes. The lab data is available for restart.'
         }
         'Add-Client' { Add-LabClient $lab }
