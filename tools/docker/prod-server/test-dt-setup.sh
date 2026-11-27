@@ -183,6 +183,13 @@ rm "$bad/crontab"
 expect_failure setup "$one" check
 echo 'PASS interrupted install left a recovery record'
 
+fallocate -l 1740M /dt/disk-fixture
+expect_failure setup "$one" install
+[[ ! -e /dt/.dt-setup/pending.json && ! -e /dt/publish/dt-current ]]
+[[ ! -L /dt/ue-dt-updates && -f /dt/incoming/original ]]
+rm /dt/disk-fixture
+echo 'PASS interrupted install recovered before a fresh install was denied for disk space'
+
 setup "$one" install
 [[ ! -e /dt/.dt-setup/pending.json ]]
 [[ -L /dt/ue-dt-updates && -f /dt/.dt-legacy/incoming/original && ! -e /dt/incoming ]]

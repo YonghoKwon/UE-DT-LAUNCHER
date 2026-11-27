@@ -389,8 +389,11 @@ def check(config, state, bundle, recovery=False):
     row("OS", os_check)
     row("glibc", lambda: need(output("getconf", "GNU_LIBC_VERSION") == "glibc 2.28", "Expected glibc 2.28."))
     row("Filesystem", filesystem)
-    row("Disk", lambda: disk(sum((BUNDLE / name).stat().st_size for name in bundle[1]
-                                 if name.startswith(("linux-x64/", "server-linux-x64/")))))
+    if recovery:
+        row("Disk", lambda: "new publish capacity checked after recovery")
+    else:
+        row("Disk", lambda: disk(sum((BUNDLE / name).stat().st_size for name in bundle[1]
+                                     if name.startswith(("linux-x64/", "server-linux-x64/")))))
     row("/dt access", write_access)
     row("nginx :80", nginx80)
     row("Backend :18500", backend)
