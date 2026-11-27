@@ -643,21 +643,29 @@ public sealed class LauncherEngine : IDisposable
                 NewVersion = remoteManifest.Version,
                 AddedPaths = addedPaths
             };
-            if (_config.SelectedRelease is not null && packageFiles.Count > 0)
+            if (_config.SelectedRelease is not null)
             {
-                backup.PackageBackupHashes = new(StringComparer.Ordinal);
+                backup.AdditionalBackupHashes = new(StringComparer.Ordinal);
                 backup.PackageAddedPaths = [];
+                var tracked = (localManifest?.Files ?? []).Select(file => CanonicalRelativePath(file.Path))
+                    .ToHashSet(SafePath.FileSystemComparer);
+                foreach (var file in plan.DownloadOrRepair.Where(file => !tracked.Contains(CanonicalRelativePath(file.Path))))
+                {
+                    var path = SafePath.ResolveInsideChecked(_config.InstallDir, file.Path);
+                    if (File.Exists(path))
+                        backup.AdditionalBackupHashes.Add(file.Path, await Hashing.Sha256FileAsync(path, cancellationToken));
+                }
                 foreach (var file in packageFiles)
                 {
                     var path = SafePath.ResolveInsideChecked(_config.InstallDir, file.RelativeInstallPath);
                     if (File.Exists(path))
-                        backup.PackageBackupHashes.Add(file.RelativeInstallPath, await Hashing.Sha256FileAsync(path, cancellationToken));
+                        backup.AdditionalBackupHashes.Add(file.RelativeInstallPath, await Hashing.Sha256FileAsync(path, cancellationToken));
                     else
                         backup.PackageAddedPaths.Add(file.RelativeInstallPath);
                 }
             }
             await BackupManager.WriteBackupMetadataAsync(backupRoot, backup,
-                _config.InstalledManifestPath, _config.InstallStatePath, cancellationToken);
+                _config.InstalledManifestPath, _config.InstallStatePath, cancellationToken, includeInventoryDigest: _config.SelectedRelease is not null);
 
             foreach (var relativePath in plan.Remove)
             {

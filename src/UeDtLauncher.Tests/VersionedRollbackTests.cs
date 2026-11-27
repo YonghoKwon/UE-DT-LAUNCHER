@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json.Nodes;
 using Xunit;
 
 namespace UeDtLauncher.Tests;
@@ -50,6 +51,7 @@ public sealed class VersionedRollbackTests : IDisposable
     [InlineData("metadata")]
     [InlineData("extra-file")]
     [InlineData("extra-deletion")]
+    [InlineData("missing-deletion-property")]
     public async Task DamagedBackupIsRejectedBeforeDeletingOrReplacingLiveFiles(string damage)
     {
         var config = Bind("1.0.0");
@@ -63,10 +65,15 @@ public sealed class VersionedRollbackTests : IDisposable
         else
         {
             var infoPath = Path.Combine(backup, BackupManager.MetaDirName, "backup-info.json");
-            var info = await JsonFiles.ReadAsync<BackupInfo>(infoPath);
-            await File.WriteAllTextAsync(Path.Combine(config.InstallDir, "unrelated.bin"), "keep this");
-            info.AddedPaths.Add("unrelated.bin");
-            await JsonFiles.WriteAsync(infoPath, info);
+            var info = JsonNode.Parse(await File.ReadAllTextAsync(infoPath))!.AsObject();
+            if (damage == "missing-deletion-property")
+                info.Remove("addedPaths");
+            else
+            {
+                await File.WriteAllTextAsync(Path.Combine(config.InstallDir, "unrelated.bin"), "keep this");
+                info["addedPaths"]!.AsArray().Add("unrelated.bin");
+            }
+            await File.WriteAllTextAsync(infoPath, info.ToJsonString());
         }
         var before = Snapshot();
 
@@ -93,10 +100,12 @@ public sealed class VersionedRollbackTests : IDisposable
         var backup = await MakeBackupAsync(config, Latest);
         var infoPath = Path.Combine(backup, BackupManager.MetaDirName, "backup-info.json");
         var info = await JsonFiles.ReadAsync<BackupInfo>(infoPath);
-        info.PackageBackupHashes = new() { ["package.bin"] = Hash("prior-package") };
+        info.AdditionalBackupHashes = new() { ["package.bin"] = Hash("prior-package") };
         info.PackageAddedPaths = ["introduced.bin"];
         info.AddedPaths.Add("introduced.bin");
         await JsonFiles.WriteAsync(infoPath, info);
+        await File.WriteAllTextAsync(Path.Combine(backup, BackupManager.MetaDirName, "rollback-inventory.sha256"),
+            await Hashing.Sha256FileAsync(infoPath));
         await File.WriteAllTextAsync(Path.Combine(backup, "package.bin"), "prior-package");
         await File.WriteAllTextAsync(Path.Combine(config.InstallDir, "package.bin"), "current-package");
         await File.WriteAllTextAsync(Path.Combine(config.InstallDir, "introduced.bin"), "added package file");
@@ -104,6 +113,36 @@ public sealed class VersionedRollbackTests : IDisposable
         Assert.True(await BackupManager.RestoreSelectionAsync(config, null));
         Assert.Equal("prior-package", await File.ReadAllTextAsync(Path.Combine(config.InstallDir, "package.bin")));
         Assert.False(File.Exists(Path.Combine(config.InstallDir, "introduced.bin")));
+    }
+
+    [Fact]
+    public async Task PartialFirstInstallDeletionListCannotClearLiveManifestOrState()
+    {
+        var config = Bind("1.0.0");
+        var backup = await MakeBackupAsync(config, Latest);
+        var metadata = Path.Combine(backup, BackupManager.MetaDirName);
+        File.Delete(Path.Combine(metadata, "installed-manifest.json"));
+        File.Delete(Path.Combine(metadata, "install-state.json"));
+        File.Delete(Path.Combine(backup, "app.bin"));
+        await JsonFiles.WriteAsync(Path.Combine(metadata, "backup-info.json"),
+            new BackupInfo { NewVersion = "1.0.0", AddedPaths = ["app.bin"] });
+        var before = Snapshot();
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => BackupManager.RestoreSelectionAsync(config, null));
+        Assert.Equal(before, Snapshot());
+    }
+
+    [Fact]
+    public async Task ChangedVersionedInventoryDigestBlocksRestore()
+    {
+        var config = Bind("1.0.0");
+        var backup = await MakeBackupAsync(config, Latest);
+        var metadata = Path.Combine(backup, BackupManager.MetaDirName);
+        await File.WriteAllTextAsync(Path.Combine(metadata, "rollback-inventory.sha256"), new string('0', 64));
+        var before = Snapshot();
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => BackupManager.RestoreSelectionAsync(config, null));
+        Assert.Equal(before, Snapshot());
     }
 
     [Fact]
