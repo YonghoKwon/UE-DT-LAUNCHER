@@ -19,7 +19,7 @@ assert (reference / "archive/README.md").is_file()
 required_evidence = {"deployment-safety-validation.md", "distribution-validation.md", "intranet-auth-validation.md",
                      "managed-gui-safety-validation.md", "performance-validation.md", "runtime-safety-completion-validation.md"}
 assert required_evidence <= {p.name for p in (reference / "archive/validation").glob("*.md")}
-assert {"guide-01-linux-server-setup.md", "guide-02-publish-package.md"} <= {p.name for p in (reference / "archive/guides").glob("*.md")}
+assert (reference / "archive/redhat-distribution-server.md").is_file()
 assert (reference / "archive/validation/intranet-auth-load-results.json").is_file()
 files = sorted(root.glob("*.md")) + sorted((root / "docs").rglob("*.md"))
 errors = []

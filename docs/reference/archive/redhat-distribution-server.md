@@ -2,7 +2,72 @@
 
 > 보존 자료 / 2026-09-22 분류: 아래 본문은 과거 설계·구축 당시 기록이며 현행 기능이나 회사 배포 완료의 증거가 아닙니다. 공개 정적 경로·HTTP·Basic Auth·직접 압축 게시 명령을 신규 운영에 적용하지 마세요. 현재 절차는 [통합 배포 운영](../distribution-workflow.md), 현재 기능과 미정 목표는 [프로젝트 README](../../../README.md)를 따릅니다.
 
-> 당시 관련 자료는 [보관된 서버 준비 입문](guides/guide-01-linux-server-setup.md)입니다. 회사 파일럿은 [dt2prod 설치와 nginx 전환](../distribution-workflow.md#dt2prod-설치와-nginx-전환)을 따릅니다.
+> 초기 RHEL 정적 배포 가이드와 오프라인 설치 가이드를 통합했습니다. 오프라인 매체·RPM 반입 절차는 아래 보존 절에서 확인할 수 있습니다. 회사 파일럿은 [dt2prod 설치와 nginx 전환](../distribution-workflow.md#dt2prod-설치와-nginx-전환)을 따릅니다.
+
+## 인터넷이 안 되는 서버에서 Nginx 설치
+
+인터넷이 차단된 서버에서는 패키지를 직접 내려받을 수 없습니다. 보통 두 가지 방법 중 하나를 사용합니다.
+
+### 방법 A. RHEL 설치 ISO 또는 사내 미러 사용
+
+RHEL DVD ISO가 있거나 사내 오프라인 yum/dnf 미러가 있으면 그걸 repository로 등록합니다.
+
+예시:
+
+```bash
+sudo mkdir -p /mnt/rhel8
+sudo mount -o loop /path/to/rhel-8.x-x86_64-dvd.iso /mnt/rhel8
+```
+
+repo 파일 작성:
+
+```bash
+sudo tee /etc/yum.repos.d/rhel8-offline.repo > /dev/null <<'EOF'
+[rhel8-baseos]
+name=RHEL 8 BaseOS Offline
+baseurl=file:///mnt/rhel8/BaseOS
+enabled=1
+gpgcheck=0
+
+[rhel8-appstream]
+name=RHEL 8 AppStream Offline
+baseurl=file:///mnt/rhel8/AppStream
+enabled=1
+gpgcheck=0
+EOF
+```
+
+Nginx 모듈 확인 및 설치:
+
+```bash
+sudo dnf clean all
+sudo dnf module list nginx
+sudo dnf module enable nginx:1.14 -y
+sudo dnf install nginx -y
+```
+
+서버 환경에 따라 Nginx stream 버전은 다를 수 있습니다. `dnf module list nginx` 결과에 맞춰 선택합니다.
+
+### 방법 B. 인터넷 가능한 동일 OS 장비에서 RPM 묶음 준비
+
+인터넷이 가능한 별도 RHEL 8.x 장비에서 Nginx와 의존성 RPM을 내려받고, USB 또는 보안 반입 절차로 오프라인 서버에 옮깁니다.
+
+예시:
+
+```bash
+mkdir -p ~/nginx-rpms
+cd ~/nginx-rpms
+sudo dnf install dnf-plugins-core -y
+sudo dnf download --resolve --alldeps nginx
+```
+
+오프라인 서버로 복사 후:
+
+```bash
+sudo dnf install ./*.rpm -y
+```
+
+운영 환경에서는 보안 정책상 RPM 반입 절차, 무결성 검증, 승인 절차를 따릅니다.
 
 이 문서는 하나의 Linux 서버에서 여러 프로젝트의 Windows/Linux 패키징 파일을 관리하고, 클라이언트 유형별로 다른 업데이트를 제공하기 위한 권장 구조를 설명합니다.
 

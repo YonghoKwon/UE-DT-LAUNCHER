@@ -45,10 +45,10 @@
 
 ## 현재 문서에 통합한 입문 가이드
 
-| 보관 문서 | 현재 대체 문서 |
+| 입문 주제 | 현행 절차 |
 |---|---|
-| [서버 준비 입문](guides/guide-01-linux-server-setup.md) | [서버 운영](../distribution-workflow.md), [요청 서명](../intranet-auth.md) |
-| [ZIP 게시 입문](guides/guide-02-publish-package.md) | [기능 지도 B: 새 버전 배포](../feature-workflow.md) |
+| 서버 준비 입문 | [서버 운영](../distribution-workflow.md), [요청 서명](../intranet-auth.md) |
+| ZIP 게시 입문 | [기능 지도 B: 새 버전 배포](../feature-workflow.md) |
 
 ## 초기/구 운영 자료
 
@@ -56,8 +56,7 @@
 
 | 자료 | 현재 대신 확인 |
 |---|---|
-| [RHEL 이전 구성](redhat-distribution-server.md) | [서버 운영](../distribution-workflow.md) |
-| [오프라인 Linux 이전 구성](offline-linux-update-server-setup.md) | [서버 운영](../distribution-workflow.md) |
+| [RHEL 정적 배포·오프라인 반입 이력](redhat-distribution-server.md) | [서버 운영](../distribution-workflow.md) |
 | [회사 RHEL 8.4 이전 기록](company-rhel84-dt-update-server.md) | [설치본·운영 인수](../commercial-deployment.md); 회사 검증 완료의 근거 아님 |
 | [구 게시 스크립트](release-publish-scripts.md) | [현행 배포 명령](../feature-workflow.md) |
 | [구 일반/개발자 사용법](developer-and-general-launcher-usage.md) | [GUI 안내](../launcher-user-guide.md) |
