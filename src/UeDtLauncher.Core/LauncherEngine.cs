@@ -649,6 +649,11 @@ public sealed class LauncherEngine : IDisposable
                 backup.PackageAddedPaths = [];
                 var tracked = (localManifest?.Files ?? []).Select(file => CanonicalRelativePath(file.Path))
                     .ToHashSet(SafePath.FileSystemComparer);
+                var updated = plan.DownloadOrRepair.Select(file => CanonicalRelativePath(file.Path))
+                    .ToHashSet(SafePath.FileSystemComparer);
+                backup.UnchangedPreexistingPaths = remoteManifest.Files
+                    .Where(file => !tracked.Contains(CanonicalRelativePath(file.Path)) && !updated.Contains(CanonicalRelativePath(file.Path)))
+                    .Select(file => file.Path).ToList();
                 foreach (var file in plan.DownloadOrRepair.Where(file => !tracked.Contains(CanonicalRelativePath(file.Path))))
                 {
                     var path = SafePath.ResolveInsideChecked(_config.InstallDir, file.Path);

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace UeDtLauncher;
 
@@ -10,10 +11,12 @@ public sealed class BackupInfo
     public string CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow.ToString("O");
     // Paths that the update introduced; rollback deletes them so the install matches the previous file set.
     public List<string> AddedPaths { get; set; } = new();
-    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Dictionary<string, string>? AdditionalBackupHashes { get; set; }
-    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<string>? PackageAddedPaths { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? UnchangedPreexistingPaths { get; set; }
 }
 public sealed record BackupPruneResult(int RemovedCount,int FailedCount,int RemainingCount,IReadOnlyList<string> FailedBackupIds);
 public sealed record BackupListEntry(string Id, string? PreviousVersion, string? NewVersion, string? CreatedAtUtc);
@@ -25,7 +28,7 @@ public static class BackupManager
     private const string InfoFileName = "backup-info.json";
     private const string ManifestFileName = "installed-manifest.json";
     private const string StateFileName = "install-state.json";
-    private const string InventoryDigestFileName = "rollback-inventory.sha256";
+    private const string InventoryDigestFileName = "rollback-inventory.json";
     private const int MaxBackupMetadataBytes = 64 * 1024 * 1024;
 
     public static string CreateBackupRoot(string backupDir)
@@ -56,12 +59,26 @@ public static class BackupManager
         Directory.CreateDirectory(metaDir);
         var infoPath = Path.Combine(metaDir, InfoFileName);
         await JsonFiles.WriteAsync(infoPath, info, cancellationToken);
-        if (includeInventoryDigest)
-            await File.WriteAllTextAsync(Path.Combine(metaDir, InventoryDigestFileName),
-                await Hashing.Sha256FileAsync(infoPath, cancellationToken), cancellationToken);
         if (File.Exists(installedManifestPath)) File.Copy(installedManifestPath, Path.Combine(metaDir, ManifestFileName), overwrite: true);
         if (File.Exists(installStatePath)) File.Copy(installStatePath, Path.Combine(metaDir, StateFileName), overwrite: true);
+        if (includeInventoryDigest) await WriteRollbackInventoryAsync(metaDir, cancellationToken);
     }
+
+    private sealed record RollbackInventory(
+        [property: JsonRequired] string InfoSha256,
+        [property: JsonRequired] string? ManifestSha256,
+        [property: JsonRequired] string? StateSha256);
+
+    internal static async Task WriteRollbackInventoryAsync(string metadata, CancellationToken token = default)
+    {
+        var inventory = new RollbackInventory(await Hashing.Sha256FileAsync(Path.Combine(metadata, InfoFileName), token),
+            await OptionalMetadataHashAsync(Path.Combine(metadata, ManifestFileName), token),
+            await OptionalMetadataHashAsync(Path.Combine(metadata, StateFileName), token));
+        await JsonFiles.WriteAsync(Path.Combine(metadata, InventoryDigestFileName), inventory, token);
+    }
+
+    private static async Task<string?> OptionalMetadataHashAsync(string path, CancellationToken token) =>
+        File.Exists(path) ? await Hashing.Sha256FileAsync(path, token) : null;
 
     public static IReadOnlyList<(string BackupRoot, BackupInfo? Info)> List(string backupDir)
         => BackupDirectories(backupDir).Select(directory => (directory, ReadBackupInfo<BackupInfo>(directory))).ToArray();
@@ -212,10 +229,17 @@ public static class BackupManager
         var encoded = await File.ReadAllBytesAsync(path, token);
         var digestPath = SafePath.ResolveInsideChecked(root, $"{MetaDirName}/{InventoryDigestFileName}");
         var digestFile = new FileInfo(digestPath);
-        if (digestFile.Exists && (digestFile.Length != 64 ||
-            !string.Equals(await File.ReadAllTextAsync(digestPath, token),
-                Convert.ToHexString(SHA256.HashData(encoded)), StringComparison.OrdinalIgnoreCase)))
-            throw new InvalidDataException("Backup inventory digest differs from its metadata.");
+        if (digestFile.Exists)
+        {
+            if (digestFile.Length > 1024) throw new InvalidDataException("Backup inventory digest is too large.");
+            var inventory = await JsonFiles.ReadAsync<RollbackInventory>(digestPath, token);
+            var manifest = SafePath.ResolveInsideChecked(root, $"{MetaDirName}/{ManifestFileName}");
+            var state = SafePath.ResolveInsideChecked(root, $"{MetaDirName}/{StateFileName}");
+            if (!string.Equals(inventory.InfoSha256, Convert.ToHexString(SHA256.HashData(encoded)), StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(inventory.ManifestSha256, await OptionalMetadataHashAsync(manifest, token), StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(inventory.StateSha256, await OptionalMetadataHashAsync(state, token), StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Backup inventory digest differs from its saved metadata.");
+        }
 
         var payload = encoded.AsMemory();
         if (payload.Span.StartsWith(new byte[] { 0xef, 0xbb, 0xbf })) payload = payload[3..];
@@ -228,7 +252,8 @@ public static class BackupManager
             throw new InvalidDataException("Backup metadata must contain its complete deletion list.");
         var info = document.RootElement.Deserialize<BackupInfo>(JsonFiles.Options)
             ?? throw new InvalidDataException("Backup metadata is missing.");
-        if (!digestFile.Exists && (info.AdditionalBackupHashes is not null || info.PackageAddedPaths is not null))
+        if (!digestFile.Exists && (info.AdditionalBackupHashes is not null || info.PackageAddedPaths is not null ||
+            info.UnchangedPreexistingPaths is not null))
             throw new InvalidDataException("Backup payload inventory is missing its digest.");
         return info;
     }
@@ -253,8 +278,8 @@ public static class BackupManager
         if (info.PackageAddedPaths is null && File.Exists(config.InstallStatePath))
         {
             var liveState = await JsonFiles.ReadAsync<InstallState>(config.InstallStatePath, token);
-            if (liveState.AppliedPackageHashes.Count > 0)
-                throw new InvalidDataException("Legacy backup has no verifiable package deletion inventory.");
+            if (liveState.AppliedPackageHashes.Count > 0 || (info.PreviousVersion is not null && !File.Exists(statePath)))
+                throw new InvalidDataException("Legacy backup has no verifiable package inventory or saved installation state.");
         }
 
         LauncherManifest? previous = null;
@@ -283,13 +308,25 @@ public static class BackupManager
         }
 
         var copies = ReadBackupCopies(root, config.InstallDir, token);
+        var unchanged = (info.UnchangedPreexistingPaths ?? []).Select(path => RestorePath(config.InstallDir, path))
+            .ToHashSet(SafePath.FileSystemComparer);
         if (File.Exists(config.InstalledManifestPath))
         {
             var current = await ReadReleaseManifestAsync(config.InstalledManifestPath, release, token);
-            packageAdded.UnionWith(current.Files.Select(file => RestorePath(config.InstallDir, file.Path))
-                .Where(path => !before.ContainsKey(path) && !copies.ContainsKey(path)));
+            foreach (var file in current.Files)
+            {
+                var path = RestorePath(config.InstallDir, file.Path);
+                if (before.ContainsKey(path) || copies.ContainsKey(path)) continue;
+                if (unchanged.Remove(path))
+                {
+                    var actual = new FileInfo(path);
+                    if (!actual.Exists || actual.Length != file.Size || !await Hashing.Sha256MatchesAsync(path, file.Sha256, token))
+                        throw new InvalidDataException("Unchanged preexisting file no longer matches its recorded manifest.");
+                }
+                else packageAdded.Add(path);
+            }
         }
-        if (!deletes.SetEquals(packageAdded))
+        if (unchanged.Count != 0 || !deletes.SetEquals(packageAdded))
             throw new InvalidDataException("Backup deletion list is incomplete or contains unexpected paths.");
         foreach (var (target, source) in copies)
         {

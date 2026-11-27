@@ -104,8 +104,7 @@ public sealed class VersionedRollbackTests : IDisposable
         info.PackageAddedPaths = ["introduced.bin"];
         info.AddedPaths.Add("introduced.bin");
         await JsonFiles.WriteAsync(infoPath, info);
-        await File.WriteAllTextAsync(Path.Combine(backup, BackupManager.MetaDirName, "rollback-inventory.sha256"),
-            await Hashing.Sha256FileAsync(infoPath));
+        await BackupManager.WriteRollbackInventoryAsync(Path.GetDirectoryName(infoPath)!);
         await File.WriteAllTextAsync(Path.Combine(backup, "package.bin"), "prior-package");
         await File.WriteAllTextAsync(Path.Combine(config.InstallDir, "package.bin"), "current-package");
         await File.WriteAllTextAsync(Path.Combine(config.InstallDir, "introduced.bin"), "added package file");
@@ -138,7 +137,43 @@ public sealed class VersionedRollbackTests : IDisposable
         var config = Bind("1.0.0");
         var backup = await MakeBackupAsync(config, Latest);
         var metadata = Path.Combine(backup, BackupManager.MetaDirName);
-        await File.WriteAllTextAsync(Path.Combine(metadata, "rollback-inventory.sha256"), new string('0', 64));
+        await BackupManager.WriteRollbackInventoryAsync(metadata);
+        await File.AppendAllTextAsync(Path.Combine(metadata, "backup-info.json"), " ");
+        var before = Snapshot();
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => BackupManager.RestoreSelectionAsync(config, null));
+        Assert.Equal(before, Snapshot());
+    }
+
+    [Fact]
+    public async Task FirstInstallRollbackPreservesMatchingPreexistingFile()
+    {
+        var config = Bind("1.0.0");
+        var backup = await MakeBackupAsync(config, Latest);
+        var metadata = Path.Combine(backup, BackupManager.MetaDirName);
+        File.Delete(Path.Combine(metadata, "installed-manifest.json"));
+        File.Delete(Path.Combine(metadata, "install-state.json"));
+        File.Delete(Path.Combine(backup, "app.bin"));
+        await File.WriteAllTextAsync(Path.Combine(config.InstallDir, "app.bin"), Restored);
+        await JsonFiles.WriteAsync(Path.Combine(metadata, "backup-info.json"),
+            new BackupInfo { NewVersion = "1.0.0", AddedPaths = ["added.bin"], UnchangedPreexistingPaths = ["app.bin"] });
+        await BackupManager.WriteRollbackInventoryAsync(metadata);
+
+        Assert.True(await BackupManager.RestoreSelectionAsync(config, null));
+        Assert.Equal(Restored, await File.ReadAllTextAsync(Path.Combine(config.InstallDir, "app.bin")));
+        Assert.False(File.Exists(Path.Combine(config.InstallDir, "added.bin")));
+        Assert.False(File.Exists(config.InstalledManifestPath));
+        Assert.False(File.Exists(config.InstallStatePath));
+    }
+
+    [Fact]
+    public async Task MissingSavedStateCannotDeleteLiveInstallationState()
+    {
+        var config = Bind("1.0.0");
+        var backup = await MakeBackupAsync(config, Latest);
+        var metadata = Path.Combine(backup, BackupManager.MetaDirName);
+        await BackupManager.WriteRollbackInventoryAsync(metadata);
+        File.Delete(Path.Combine(metadata, "install-state.json"));
         var before = Snapshot();
 
         await Assert.ThrowsAsync<InvalidDataException>(() => BackupManager.RestoreSelectionAsync(config, null));
