@@ -2,8 +2,13 @@
 # Provision the empty authority store before starting the distribution service.
 set -euo pipefail
 
+user_mode=0
+if [[ ${1:-} == --user ]]; then
+    user_mode=1
+    shift
+fi
 if [[ $# -ne 1 || $1 != /* || $1 == / ]]; then
-    echo "Usage: $0 /absolute/path/to/store" >&2
+    echo "Usage: $0 [--user] /absolute/path/to/store" >&2
     exit 2
 fi
 
@@ -20,4 +25,9 @@ if [[ -e "$store" ]]; then
     [[ -z "$first_entry" ]] || { echo 'The store must be empty.' >&2; exit 1; }
 fi
 
-install -d -o uedt-distribution -g uedt-distribution -m 0711 -- "$store"
+if (( user_mode )); then
+    [[ $EUID != 0 ]] || { echo 'Run --user as the service account.' >&2; exit 1; }
+    install -d -m 0700 -- "$store"
+else
+    install -d -o uedt-distribution -g uedt-distribution -m 0711 -- "$store"
+fi

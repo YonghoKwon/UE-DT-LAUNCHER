@@ -40,15 +40,15 @@ done
 [[ -d "$DT_BASE" && ! -L "$store" && ( ! -e "$store" || -d "$store" ) ]] || die "Prepare a canonical store under $DT_BASE"
 
 check_storage() {
-    local filesystem source percent
+    local filesystem source percent warning stop usage
     read -r filesystem source < <(findmnt -no FSTYPE,SOURCE --target "$1")
     printf 'Filesystem %s source %s at %s\n' "$filesystem" "$source" "$1"
     [[ $filesystem == xfs || $filesystem == ext4 ]] || die 'The store requires XFS or ext4.'
     df -Pk -- "$1"
-    percent=$(df -Pk -- "$1" | awk 'NR==2 {sub(/%/, "", $5); print $5}')
-    [[ $percent =~ ^[0-9]+$ ]] || die 'Could not check disk capacity.'
-    if (( percent >= 85 )); then die 'Storage is at or above the 85% stop threshold.'; fi
-    if (( percent >= 70 )); then echo 'Storage is at or above the 70% warning threshold.' >&2; fi
+    usage=$(bash "$script_dir/server-disk-usage.sh" "$1") || die 'Could not check disk capacity.'
+    read -r _ _ percent warning stop <<< "$usage"
+    if (( percent >= stop )); then die 'Storage is at or above the 85% stop threshold.'; fi
+    if (( percent >= warning )); then echo 'Storage is at or above the 70% warning threshold.' >&2; fi
 }
 if [[ -d "$store" ]]; then check_storage "$store"; else check_storage "$DT_BASE"; fi
 

@@ -1,0 +1,14 @@
+[Unit]
+Description=UE-DT distribution server (dt2prod)
+After=network.target
+RequiresMountsFor=/dt/store /dt/publish
+
+[Service]
+UMask=0077
+ExecStart=/dt/publish/dt-current/server-linux-x64/UeDtLauncher.DistributionServer serve --config /dt/config/server.json
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+
+[Install]
+WantedBy=default.target

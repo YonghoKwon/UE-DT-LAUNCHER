@@ -71,7 +71,7 @@ dotnet publish src/UeDtLauncher.DistributionServer -c Release -r linux-x64 --sel
 
 ## 처음 준비할 것
 
-1. Linux 서버에 DistributionServer·nginx·systemd 설정. 신규 사내 HTTP는 request-signature-v1을 명시합니다.
+1. Linux 서버에 DistributionServer·nginx·systemd 설정. 기존 RHEL 8.4 nginx 80을 사용하는 사내 서명 HTTP 파일럿은 [dt2prod 설치 및 담당자 전환](docs/reference/distribution-workflow.md#dt2prod-설치와-nginx-전환)을 따릅니다.
 2. 서버 배포 서명키를 준비하고 배포 서명 공개키를 PC 관리자에게 전달합니다.
 3. 사내 HTTP PC는 `enroll prepare`로 공개키 묶음을 만들고, 서버 관리자가 `client-enroll`로 PC별 IP와 허용 트랙을 등록합니다. PC 개인키는 보호 저장소에 남습니다. 기존 HTTPS/Bearer는 토큰 절차를 사용합니다.
 4. PC 관리자가 `enroll finish`로 운영 설정과 진단 결과를 저장합니다. 관리형은 시스템 Agent 설정 폴더에 관리자 보호 공개키를 먼저 배치한 뒤 `finish`를 실행합니다. 관리자가 운영 설정을 업데이트 서비스에 반영한 뒤 `doctor --online`을 다시 실행합니다. 개별 설정은 `sample-config`로 생성할 수 있습니다.
