@@ -4,7 +4,7 @@
 
 ## 1. 서버 준비와 시작
 
-- 같은 소스의 자체 포함 **win-x64 DistributionServer**와 **일반 win-x64 런처** 게시 폴더를 준비합니다. [.NET 게시 명령](../../../README.md)을 참고하세요. 서버 게시에는 README의 서버 명령에서 RID를 `win-x64`로 지정합니다.
+- 같은 소스의 자체 포함 **win-x64 DistributionServer**와 **일반 win-x64 런처** 게시 폴더를 준비합니다. [기능 지도 A1의 .NET 게시 명령](../feature-workflow.md#a1-실행-프로그램-만들기--개발-pc-저장소-루트)을 참고하고, 서버 게시 명령의 RID를 `win-x64`로 지정합니다.
 - [공식 Caddy 2.11.9 Windows amd64 ZIP](https://github.com/caddyserver/caddy/releases/download/v2.11.9/caddy_2.11.9_windows_amd64.zip)을 압축 상태로 준비합니다. 도구가 ZIP과 실행 파일의 SHA-256을 확인합니다.
 - 현재 사용자로 PowerShell을 열고 `WindowsLab.cmd`를 사용하세요. 실행 정책 옵션은 래퍼가 시작한 프로세스에만 적용됩니다.
 - `Get-ExecutionPolicy -List`로 확인하세요. GPO의 `MachinePolicy` 또는 `UserPolicy`가 우선하므로, 서명을 요구하면 승인된 서명본을 사용하고 스크립트가 금지된 PC에서는 실행할 수 없습니다.
