@@ -320,8 +320,7 @@ printf '%s\n' "$before"
 
     def direct(self):
         network = self.project + "_default"
-        dist = self.compose("ps", "-q", "dist")
-        ip = self.container_address(dist, network)
+        ip = self.frontend_address()
         run("docker", "build", "--platform", "linux/amd64", "--build-arg", f"RUN_ID={self.run_id}",
             "--build-arg", f"OWNER_TOKEN={self.ownership['owner']}",
             "-t", self.sim_image, self.work / "sim-context", timeout=900)
@@ -368,6 +367,9 @@ printf '%s\n' "$before"
         entry = json.loads(run("docker", "inspect", container))[0]
         return str(ipaddress.IPv4Address(entry["NetworkSettings"]["Networks"][network]["IPAddress"]))
 
+    def frontend_address(self):
+        return self.container_address(self.compose("ps", "-q", "frontend-net"), self.project + "_default")
+
     def save(self, name, value):
         (self.work / name).write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
@@ -382,7 +384,7 @@ printf '%s\n' "$before"
                 raise RuntimeError("Compose service exited during startup")
             healthy = {item["Service"] for item in services if item.get("Health") == "healthy"}
             running = {item["Service"] for item in services if item["State"] == "running"}
-            if running == {"dist", "nginx", "sshd"} and healthy == {"dist", "nginx"}:
+            if running == {"frontend-net", "dist", "nginx", "sshd"} and healthy == {"dist", "nginx"}:
                 return services
             time.sleep(2)
         raise TimeoutError("Compose services did not become healthy")
@@ -548,24 +550,39 @@ printf '%s\n' "$before"
 
     def restart_proof(self):
         command = 'cd "$1" && find authority releases -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum'
+        def frontend_instances():
+            ids = [self.compose("ps", "-q", service) for service in ("frontend-net", "nginx", "sshd")]
+            return [run("docker", "inspect", "--format", "{{.Id}} {{.State.StartedAt}}", cid) for cid in ids]
+
+        def catalog_status():
+            return run("curl.exe", "--noproxy", "*", "--max-time", "5", "-sS", "-o", "NUL",
+                       "-w", "%{http_code}", f"{ORIGIN}/api/v1/catalog")
+
+        frontends = frontend_instances()
+        if catalog_status() != "401":
+            raise RuntimeError("Public Catalog was not ready before restart")
         before = self.dist("bash", "-e", "-o", "pipefail", "-c", command, "_", ROOT)
         (self.work / "restart-before.sha256").write_text(before + "\n", encoding="utf-8")
-        # nginx shares dist's network namespace. Bring the frontends back only
-        # after the restarted backend has established its new namespace.
-        self.compose("stop", "nginx", "sshd")
-        self.compose("restart", "--no-deps", "dist")
-        container = self.compose("ps", "--all", "-q", "dist")
+        self.compose("stop", "dist")
+        try:
+            during = catalog_status()
+        finally:
+            started = time.monotonic()
+            self.compose("start", "dist")
+        statuses = []
         for _ in range(45):
-            state = json.loads(run("docker", "inspect", "--format", "{{json .State}}", container))
-            if state["Health"]["Status"] == "healthy":
+            statuses.append(catalog_status())
+            if statuses[-1] == "401":
                 break
-            if not state["Running"]:
-                raise RuntimeError("dist stopped during ordered restart")
             time.sleep(1)
-        else:
-            raise TimeoutError("dist did not become healthy after restart")
-        self.compose("restart", "--no-deps", "nginx", "sshd")
+        self.save("restart-http.json", {"duringStop": during, "afterStart": statuses,
+                                        "secondsTo401": round(time.monotonic() - started, 3)
+                                        if statuses[-1] == "401" else None})
+        if during != "502" or statuses[-1] != "401":
+            raise RuntimeError("Public Catalog did not transition from backend failure to ready")
         self.ready()
+        if frontends != frontend_instances():
+            raise RuntimeError("A frontend restarted during the dist-only exercise")
         after = self.dist("bash", "-e", "-o", "pipefail", "-c", command, "_", ROOT)
         (self.work / "restart-after.sha256").write_text(after + "\n", encoding="utf-8")
         if before != after:

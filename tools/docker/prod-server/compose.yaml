@@ -7,6 +7,15 @@ x-image: &image
     uedt.owner: ${UEDT_OWNER_TOKEN:?run stage first}
 
 services:
+  # Keep loopback and the published endpoint alive while either process restarts.
+  frontend-net:
+    <<: *image
+    entrypoint: ["/usr/bin/sleep", "infinity"]
+    user: "20001:20001"
+    cap_drop: [ALL]
+    read_only: true
+    ports:
+      - "192.168.0.2:18080:80"
   dist:
     <<: *image
     build:
@@ -16,8 +25,7 @@ services:
         OWNER_TOKEN: ${UEDT_OWNER_TOKEN:?run stage first}
         ROCKY_IMAGE: docker.io/rockylinux/rockylinux:8.4@sha256:f0d7460b97156f6c8ea2ae73152bc11fe410d272387d60ddff36dfcea22ef689
     command: [dist]
-    ports:
-      - "192.168.0.2:18080:80"
+    network_mode: "service:frontend-net"
     volumes:
       - store:/dt/store
       - config:/dt/config:ro
@@ -30,7 +38,7 @@ services:
   nginx:
     <<: *image
     command: [nginx]
-    network_mode: "service:dist"
+    network_mode: "service:frontend-net"
     depends_on:
       dist:
         condition: service_healthy

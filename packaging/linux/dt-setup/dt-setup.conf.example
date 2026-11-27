@@ -1,0 +1,7 @@
+# JSON. Set the approved HTTP port-80 origin before the first install.
+{
+  "publicUrl": "http://updates.example.com",
+  "signingKeyId": "company-release-1",
+  "nginxMode": "coexist",
+  "legacyProbe": "/catalogs/general/catalog.json"
+}

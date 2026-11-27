@@ -30,7 +30,7 @@ AgentWorker의 자동 스케줄러는 미구현입니다(OPS-07). Windows 서비
 
 ## Windows MSI와 LocalService
 
-2026-11-27 PROD-10 [로컬] WiX 소스와 설치 절차 대조입니다. 07M/07A의 설치·서비스 계정 연결 결과는 이 기준에서 확보하지 못했습니다. 실제 MSI 수명주기와 LocalService 인증·설치는 로컬 미검증이며 회사 T8·T10으로 이관합니다. [이관 체크리스트](commercial-deployment.md#실환경-이관-체크리스트)
+2026-11-27 PROD-07M [로컬] 일반·개발자 1.0.0/1.0.1 unsigned MSI 4개를 만들고 내장 EXE 10개를 게시본과 대조했습니다. Windows 엔진 권한 승인 단계에서 실설치를 중단했습니다. MSI 수명주기는 T10, PROD-07A의 LocalService 인증 Catalog·설치는 T6·T8에 남아 있습니다. [이관 체크리스트](commercial-deployment.md#실환경-이관-체크리스트)
 
 PC 관리자는 격리된 Windows 시험 PC에서 서명·해시가 확인된 정확한 MSI 파일을 사용합니다. General MSI에는 일반 EXE와 Agent, Developer MSI에는 일반·개발자 EXE와 Agent가 들어갑니다. 업그레이드/제거 전 앱을 정상 종료하고 운영 설정·설치 상태·사용자 데이터의 인벤토리와 백업을 확보합니다.
 

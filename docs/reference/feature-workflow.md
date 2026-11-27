@@ -4,7 +4,7 @@
 
 > 개발자가 ZIP과 설명서를 올리면 서버가 검사합니다. 관리자가 승인·실행 버전 승격을 하면, 허용된 PC의 사용자가 설치하고 DT 프로그램을 실행합니다.
 
-2026-11-27 PROD-10 [로컬] 문서 대조입니다. 표의 기준은 병합된 PROD 기능입니다. PROD-04B는 격리 SSH 전송과 게시·승격 상태를 확인했습니다. 회사 SSH·RHEL·PC는 미검증이며 동일 후보 리허설 근거는 **TODO(09/09L/25 결과 반영)**입니다. [SPRINT-01 Windows 합성 이력](archive/validation/sprint-01-quality-admin-validation.md) · [회사 이관 체크리스트](commercial-deployment.md#실환경-이관-체크리스트)
+2026-11-27 PROD-10 [로컬] 문서 대조입니다. PROD-04B는 격리 SSH 전송과 게시·승격 상태를 확인했습니다. PROD-25의 09L 고정 게시본은 96/97 PASS이며 개발자 portable의 복구 후속 한 건을 남겼습니다. 회사 SSH·RHEL·PC와 11L 사용자 리허설은 미실행입니다. [GUI 수용 범위](guide-03-launcher-usage.md#현재-gui-수용-체크리스트) · [회사 이관 체크리스트](commercial-deployment.md#실환경-이관-체크리스트)
 
 ## 추가 운영 — 마우스 없이 가능한 작업
 
@@ -63,7 +63,7 @@ flowchart LR
 | 구분 | 순서 | 누가 / 어디서 | 입력·동작 | 끝났을 때 |
 |---|---:|---|---|---|
 | 처음 한 번 | A1 | 개발 담당 / 소스 저장소 | 런처·Agent·배포 서버 `dotnet publish` | OS별 실행 폴더 준비 |
-| 처음 한 번 | A2 | 서버 관리자 / RHEL Bash | `/dt` 입력·권한 검토 → `install-server.sh --apply` → nginx/systemd 활성화 확인 | 로컬 ext4/XFS, 서비스 active, 미인증 Catalog 401 |
+| 처음 한 번 | A2 | `dt2prod`·root / RHEL Bash | 번들 검사 → `check`·`install`·`admin-request` → root의 nginx 적용 → `verify`. 사용자 unit 전제인 linger는 필요 시 설치 전에 준비 | 로컬 `/dt` XFS, 사용자 서비스와 loopback·공개 Catalog 401 |
 | PC 추가 시 | A3 | 관리자 / 서버와 PC | 사내 HTTP `enroll prepare` → 서버 `client-enroll`; 기존 HTTPS는 토큰 | 공개키, PC IP와 허용 트랙 등록 |
 | PC 추가 시 | A4 | 관리자 / 클라이언트 PC | `enroll finish`로 운영 설정, 관리형은 별도 GUI 표시 설정과 서비스 반영 | Portable 온라인 진단, 관리형은 반영 후 진단 |
 | 버전마다 | B1 | 개발자 / Unreal·작업 PC | Windows/Linux 각각 패키징·ZIP | 완성된 ZIP |
@@ -91,7 +91,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    publishA["A1 개발 담당: OS별 게시"] --> installA["A2 서버 관리자: /dt 배치와 nginx/systemd 확인"]
+    publishA["A1 개발 담당: OS별 게시"] --> installA["A2 dt2prod 설치 · root nginx 적용 · dt2prod 검증"]
     installA --> prepareA["A3 PC 관리자: enroll prepare"]
     prepareA --> enrollA["A3 서버 관리자: client-enroll dry-run과 적용"]
     enrollA --> finishA["A4 PC 관리자: enroll finish, 서비스 반영과 doctor"]
@@ -112,46 +112,32 @@ $Launcher = (Resolve-Path .\publish\client-win-x64\UeDtLauncher.exe).Path
 
 ### A2. Linux 서버 구성 — 관리자
 
-신규 회사 배치는 RHEL 8.4에서 승인된 설치 창에 진행합니다. 관리자 Bash에서 아래 인자에 검토한 실제 입력 경로를 넣습니다. 설정 폴더에는 `server.json`과 `access-policy.json`, 키 폴더에는 `signing.pem`과 `release-public.pem`을 준비합니다. 마지막 인자는 회사 주소에 맞춰 검토한 HTTP 요청 서명 nginx 설정 파일입니다. root가 관리하는 `/dt/tools`에 `install-server.sh`와 `prepare-server-store.sh`를 함께 둡니다. SELinux가 활성화되어 있으면 적용 전에 대상 경로의 승인된 fcontext를 설정합니다.
+회사 RHEL 8.4에서 `dt2prod`가 승인된 Linux x64 번들의 SHA-256을 대조하고 `dt-setup.conf`에 포트 80의 승인된 HTTP origin과 서명 키 ID를 지정합니다. 기존 정적 경로를 쓸 때는 `coexist`를 유지합니다. systemd 사용자 unit을 선택하려면 설치 전에 linger와 사용자 bus가 준비돼야 합니다. linger가 비활성이면 필요 시 root가 `loginctl enable-linger dt2prod`를 적용합니다. 번들 폴더의 Linux 터미널에서 실행합니다.
 
 ```bash
-sudo bash /dt/tools/install-server.sh --apply "$server_publish" "$launcher_publish" "$config_source" "$key_source" "$nginx_source"
+./dt-setup.sh check
+./dt-setup.sh install
+./dt-setup.sh admin-request
 ```
 
-정상 결과는 `/dt/store/authority/HEAD` 초기화, nginx 구문 검사, `/etc/systemd/system/ue-dt-distribution.service`와 `/etc/nginx/conf.d/ue-dt-distribution.conf` 배치입니다. 관리자가 SELinux 컨텍스트·방화벽·바인딩을 확인한 뒤 아래 systemd/nginx 확인을 실행합니다. 회사 HTTP 요청 서명 배치에서는 `curl`에 실제 HTTP origin을 사용합니다. [권한·구조·용량](distribution-workflow.md#1-서버-준비)
+`check`에서 로컬 `/dt` XFS·디스크·권한·포트를 확인합니다. `install`은 `/dt/store`의 권위와 `127.0.0.1:18500`의 미인증 Catalog 401을 준비합니다. `dt2prod`는 공개키 `/dt/keys/release-public.pem`만 PC 관리자에게 전달합니다.
 
-관리자가 먼저 nginx 설치, 회사 DNS/TLS 인증서, SSH 업로드 계정, 전용 서비스 계정과 디렉터리 권한을 준비합니다. OS 패키지 설치·인증서 발급 방법은 회사 정책에 따라 달라지므로 여기서 임의의 회사 설정을 확정하지 않습니다.
-
-| 준비물 | 배치 위치 / 입력 내용 | 확인할 점 |
-|---|---|---|
-| 배포 서버 publish 폴더 전체 | `/dt/publish/server-linux-x64/` | Linux 실행 권한과 네이티브 의존성 |
-| 서버 설정 | `/dt/config/server.json` | root·publicUrl·서명키·policy 경로 |
-| 접근 정책 | `/dt/config/access-policy.json` | PC별 IP와 허용 프로젝트/트랙 |
-| 업로드 경로 | `/dt/store/incoming/` | 업로더 쓰기 + 서비스 계정 읽기/폴더 접근 |
-| 업로드 상태 | `/dt/store/upload-status/` | 서비스 계정 쓰기 + 업로더 읽기/폴더 접근 |
-| 비공개 처리·보관 | 같은 root의 authority·processing·releases | 서비스 계정만 쓰기 |
-| 서명키 | 서버 개인키, PC 공개키 | ZIP/JSON에 개인키·토큰을 넣지 않음 |
-
-서명키 생성 예시 — Windows 개발 도구에서 **처음 한 번**, 출력 파일이 없는 폴더에서 실행:
-
-```powershell
-New-Item -ItemType Directory -Force "$env:USERPROFILE\DT-Deploy\keys" | Out-Null
-& $Launcher generate-signing-key --private-key "$env:USERPROFILE\DT-Deploy\keys\release-private.pem" --public-key "$env:USERPROFILE\DT-Deploy\keys\release-public.pem" | Out-Host
-```
-
-개인키는 서버 관리자가 안전한 경로로 받아 예시 배치의 `/dt/keys/signing.pem`에 저장하고 서버 서비스/승인 운영자만 읽도록 보호합니다. 공개키만 PC에 전달합니다. 이미 운영 중인 키를 배포할 때마다 새로 만들지 않습니다. TLS 인증서와 이 배포 서명키는 서로 다른 용도입니다.
-
-서버 설정 JSON과 정책 예시는 [통합 운영 가이드](distribution-workflow.md)를 사용합니다. 설치 스크립트는 서비스 계정의 `list --config /dt/config/server.json`으로 초기 HEAD를 만들고 업로더 권한을 적용합니다. 배치된 unit의 `ExecStart`가 `/dt/publish/server-linux-x64/UeDtLauncher.DistributionServer serve --config /dt/config/server.json`을 실행하고 `ReadWritePaths=/dt/store`인지 확인합니다. 아래 예시의 origin을 회사 `publicUrl`로 바꿔 실행합니다.
+root는 최초 한 번 요청서에 따라 기존 nginx 포트 80 설정을 백업하고 후보를 적용합니다. `nginx -t`와 reload 성공을 확인합니다. `dt2prod`는 아래 명령으로 공개·loopback의 미인증 Catalog 401, 서명 challenge 및 기존 정적 경로의 응답을 확인합니다.
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now ue-dt-distribution
-sudo systemctl status ue-dt-distribution --no-pager
-sudo nginx -t && sudo systemctl reload nginx
-curl --silent --output /dev/null --write-out '%{http_code}\n' http://updates.example.com/api/v1/catalog
+./dt-setup.sh verify
+systemctl --user status ue-dt-distribution.service --no-pager
 ```
 
-**결과:** 서비스 active, nginx 설정 검사 성공, 서명 없는 Catalog 요청은 `401`. 등록 PC에서 A4 온라인 진단과 실제 설치까지 확인합니다. API 포트 18500은 외부에 열지 않고 공개 정적 경로를 섞지 않습니다.
+위 상태 명령은 systemd 사용자 서비스 구성에서 사용합니다. `crond` 예비안을 선택한 서버는 `/dt/.dt-setup/cron.log`를 확인합니다. 버전 갱신과 원복은 `dt2prod`가 `./dt-setup.sh update`와 `./dt-setup.sh rollback`으로 진행합니다. [관리자 적용·원복 상세](distribution-workflow.md#dt2prod-설치와-nginx-전환)
+
+다음 단계의 서버 운영 명령은 `dt2prod`의 Linux 터미널에서 활성 게시본을 지정해 실행합니다.
+
+```bash
+Server=/dt/publish/dt-current/server-linux-x64/UeDtLauncher.DistributionServer
+```
+
+별도 관리자 관리 설치를 검토할 때는 전용 계정과 배치 경로를 해당 운영 설정에 맞춥니다. [서버 권한·구조·용량](distribution-workflow.md#1-서버-준비)
 
 ### A3. PC 권한·토큰 등록 — 관리자
 
@@ -409,7 +395,7 @@ if ($LASTEXITCODE -ne 0) { throw 'JSON 이름 변경 실패. 서버 폴더 상�
 **쉬운 방법:** 서버 운영자는 터미널에서 다음 명령으로 번호 안내를 엽니다. 1접수 현황 → 2상세 또는 3승인 목록의 번호(전체 ID도 가능) → 비공개 snapshot 프로젝트·버전·플랫폼·ZIP 크기·오류 확인 순서입니다. 3승인은 화면의 버전, 4거절·5재시도는 작업 ID 앞8자를 재입력합니다. 목록 표시 후나 확인 후 대상이 바뀌면 적용하지 않습니다. 불일치/EOF는 무변경입니다.
 
 ```bash
-sudo -u uedt-distribution /dt/publish/server-linux-x64/UeDtLauncher.DistributionServer console --config /dt/config/server.json
+"$Server" console --config /dt/config/server.json
 ```
 
 정상 결과는 해당 ID의 `published`입니다. 승인만으로 추천은 바뀌지 않습니다. 리디렉션 입력은 거부하며 변경 없이 종료합니다. 각 동작만 유지보수 lease를 잡으므로 메뉴/확인 입력 대기 동안 세션 전체 잠금을 보유하지 않습니다.
@@ -430,9 +416,9 @@ sudo -u uedt-distribution /dt/publish/server-linux-x64/UeDtLauncher.Distribution
 `serve` 서비스는 폴더를 주기적으로 확인합니다. 자동 검사를 기다리거나, 수동 접수를 요청합니다.
 
 ```bash
-sudo -u uedt-distribution /dt/publish/server-linux-x64/UeDtLauncher.DistributionServer ingest /dt/store/incoming/upload-001 --config /dt/config/server.json
-sudo -u uedt-distribution /dt/publish/server-linux-x64/UeDtLauncher.DistributionServer list --config /dt/config/server.json
-sudo -u uedt-distribution /dt/publish/server-linux-x64/UeDtLauncher.DistributionServer inspect JOB_ID --config /dt/config/server.json
+"$Server" ingest /dt/store/incoming/upload-001 --config /dt/config/server.json
+"$Server" list --config /dt/config/server.json
+"$Server" inspect JOB_ID --config /dt/config/server.json
 ```
 
 `JOB_ID`를 실제 값으로 치환합니다. `inspect`는 작업 상태·진행·`snapshot` 경로를 보여줍니다. 상태가 pending인 작업의 **snapshot 경로 안에 있는 release.json**을 읽어 프로젝트·버전·OS·환경·실행 경로를 확인합니다. 업로드자가 수정할 수 있는 incoming 원본 대신 승인에 실제 사용되는 비공개 사본을 확인하는 것입니다.
@@ -440,9 +426,9 @@ sudo -u uedt-distribution /dt/publish/server-linux-x64/UeDtLauncher.Distribution
 ```bash
 # 아래 값을 inspect에 출력된 실제 snapshot 절대 경로로 치환
 SNAPSHOT='/dt/store/processing/실제-snapshot-폴더'
-sudo -u uedt-distribution cat "$SNAPSHOT/release.json"
+cat "$SNAPSHOT/release.json"
 # 내용이 맞고 승인 가능한 배포인 것을 확인한 뒤 실행
-sudo -u uedt-distribution /dt/publish/server-linux-x64/UeDtLauncher.DistributionServer approve JOB_ID --config /dt/config/server.json
+"$Server" approve JOB_ID --config /dt/config/server.json
 ```
 
 **pending은 아직 공개가 아닙니다.** 업로드 프로그램을 서버에서 실행하지 않습니다.
@@ -471,8 +457,8 @@ sudo -u uedt-distribution /dt/publish/server-linux-x64/UeDtLauncher.Distribution
 **직접 실행:**
 
 ```bash
-./UeDtLauncher.DistributionServer promotion inspect --project-id demo --environment prod --channel stable --platform windows-x64 --config /dt/config/server.json
-./UeDtLauncher.DistributionServer promote --project-id demo --environment prod --channel stable --platform windows-x64 --version 1.2.0 --expected-revision N --reason '개발자 검증 통과' --config /dt/config/server.json
+"$Server" promotion inspect --project-id demo --environment prod --channel stable --platform windows-x64 --config /dt/config/server.json
+"$Server" promote --project-id demo --environment prod --channel stable --platform windows-x64 --version 1.2.0 --expected-revision N --reason '개발자 검증 통과' --config /dt/config/server.json
 ```
 
 N은 inspect 결과로 치환합니다. 승격은 자동 설치나 실행 전환이 아니며, 사용자는 다음 상태 확인 후 주 버튼으로 작업합니다. [권한별 추천과 파일 저장소 초기화](distribution-workflow.md)
@@ -492,7 +478,7 @@ flowchart TD
     cards -->|"사용자: 카드 선택"| detail
     detail -->|"사용자: 뒤로 (카드 목록에서 온 경우)"| cards
     cards -->|"사용자: 카드에서 상태별 작업 선택"| click["사용자: 상태별 작업 버튼 클릭"]
-    detail -->|"현재 권장 버전이 같은 트랙의 이전 설치 기록보다 낮음"| recommendation["권장 버전 변경 안내"]
+    detail -->|"현재 권장 버전이 같은 트랙에서 실행 중이거나 마지막으로 설치·실행한 버전보다 낮음"| recommendation["권장 버전 변경 안내"]
     recommendation -->|"사용자: 나중에"| detail
     recommendation -->|"사용자: 권장 버전으로 변경"| click
     detail --> click
@@ -523,7 +509,7 @@ flowchart TD
 | 미설치 | 설치 후 실행 | 필요한 파일 설치 후 실행 |
 | 변경·업데이트 필요 | 업데이트 후 실행 | 필요한 파일 갱신 후 실행 |
 | 최신 상태 | 실행 | 배포 확인 경로를 거친 뒤 변경 없으면 실행 |
-| 권장 버전 변경 | 권장 버전으로 변경 / 나중에 | 권장 버전과 이전 설치의 실행 상태를 읽기 전용으로 확인한 뒤 기존 권장 버전 설치·실행 / 안내를 닫고 배지 유지. 재개 시에도 이전 설치의 실행 상태를 다시 확인 |
+| 권장 버전 변경 | 권장 버전으로 변경 / 나중에 | 권장 버전이 이미 설치돼 있어도 안내. 권장 버전과 이전 설치의 실행 상태를 확인한 뒤 필요한 경우 설치하고 실행 / 안내를 닫고 배지 유지. 재개 시에도 이전 설치의 실행 상태를 다시 확인 |
 | 확인 실패 | 다시 확인 / 문제 해결 | 안내에 따라 연결·파일 상태 점검 |
 
 ‘실행’도 네트워크 없이 로컬 파일만 즉시 실행하는 오프라인 기능으로 해석하지 않습니다. 인증된 동일 프로젝트/환경/채널/OS의 이전 설치 기록을 확인하면 `기존 설치 버전 / 최신 배포 버전 / 업데이트 후 실행`으로 안내합니다. 이전 기록을 확인하지 못하면 미설치로 표시할 수 있습니다. 새 버전은 별도 경로에 설치하며 이전 설치를 덮어쓰거나 자동 삭제하지 않습니다. Portable은 `로컬 모드`로 표시하고 Agent 없이 현재 계정의 엔진과 runtime을 사용합니다.
@@ -625,7 +611,7 @@ Linux는 `./UeDtLauncher`를 사용합니다. 단순 Healthy/종료0 대신 준�
 
 ### 로컬 리허설 R-1~R-3
 
-리허설은 회사 운영과 분리한 승인된 시험 키·패키지·저장소를 사용합니다. 모든 단계에서 같은 후보 게시본과 같은 서명 origin을 사용합니다. 단계마다 걸린 시간·막힌 위치·지원 ID와 결과를 기록합니다. 최종 후보와 장애 시험 증거는 **TODO(09/09L/25 결과 반영)**입니다.
+리허설은 회사 운영과 분리한 승인된 시험 키·패키지·저장소를 사용합니다. 모든 단계에서 같은 후보 게시본과 같은 서명 origin을 사용합니다. 단계마다 걸린 시간·막힌 위치·지원 ID와 결과를 기록합니다. 09L의 Docker 재기동·재개와 PROD-25의 GUI 증거는 [장애 런북](commercial-deployment.md#장애-대응-런북)과 [GUI 수용 체크리스트](guide-03-launcher-usage.md#현재-gui-수용-체크리스트)에 있습니다.
 
 | 단계 | 담당 / 실행 위치 | 입력·동작 | 정상 결과 |
 |---|---|---|---|

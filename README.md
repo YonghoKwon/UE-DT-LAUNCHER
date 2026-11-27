@@ -7,7 +7,7 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 ## 현재 상태
 
 - 2026-11-27 PROD-10 [로컬] 문서 대조 기준은 `3eb100d`(PROD PR #10~#41 중 병합분)입니다. 배포 서버는 별도 DB 없이 `/dt/store`의 불변 파일 세대와 `authority/HEAD`를 사용합니다. 운영 설정 `/dt/config`와 서명키 `/dt/keys`는 저장소 밖에 둡니다. 회사 실환경은 미검증입니다.
-- [일반 사용자 한 장 안내](docs/reference/launcher-user-guide.md#일반-사용자-한-장-안내) · [A~D 운영 순서](docs/reference/feature-workflow.md#2-한눈에-보는-전체-순서) · [장애 런북과 회사 이관](docs/reference/commercial-deployment.md#장애-대응-런북). 최종 후보 수용은 **TODO(09/09L/25 결과 반영)**입니다.
+- [로컬] PROD-25는 09L 고정 게시본의 필수 GUI 사례 97개 중 96개 통과, 1개 미실행입니다. 회사 이관과 사용자 리허설은 별도입니다. [일반 사용자 한 장 안내](docs/reference/launcher-user-guide.md#일반-사용자-한-장-안내) · [A~D 운영 순서](docs/reference/feature-workflow.md#2-한눈에-보는-전체-순서) · [장애 런북과 회사 이관](docs/reference/commercial-deployment.md#장애-대응-런북)
 - **합성 앱 기반 배포·설치·실행·복구는 로컬에서 활용 가능한 단계이며, 회사 정식 운영 인수(G1~G6)는 미완료입니다.**
 - 실제 회사 인증서·서비스 계정·RHEL·실제 UE 업데이트/복구·MSI/RPM 설치 수명주기는 아직 검증하지 않았습니다. 원격 CI는 기준 cef9f53의 과거 build 성공을 확인했으며 이번 스프린트 커밋은 원격 실행하지 않았습니다.
 - 2026-11-12 SPRINT-01: CLI 오류 정제·429/stale 안내·인수 검증, `upload`·서버 `console`, View 책임 분리를 추가했습니다. Windows 기본 환경 테스트890건과 고정 게시본 readiness8/headless3가 통과했습니다. 실제 GUI는 이번에 실행하지 않았고 과거 고정 게시본의 수용 이력은 별도로 보존합니다. [실행 범위·실패 이력](docs/reference/archive/validation/sprint-01-quality-admin-validation.md)
@@ -35,7 +35,7 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 - 일반 화면은 첫 실행에 설치·업데이트·지원 안내를 표시합니다. 설정의 일반·정보·화면·문제 해결 탭과 배포 목록의 현재·이전 버전 변경 내역은 [GUI 사용법](docs/reference/launcher-user-guide.md)을 참고하세요.
 - 런처 창은 시작할 때 화면 작업 영역 가운데에 열립니다. 개발자 버전 목록에서 방향키로 선택하면 화면에 표시된 선택 행에 포커스를 유지합니다.
 - 현재 OS에 허용된 프로그램이 여러 개면 일반 화면의 **내 프로그램**에서 각각의 설치·실행 상태를 확인하고 프로그램을 선택합니다. 하나면 해당 프로그램 화면이 바로 열립니다.
-- 현재 권장 버전이 이 PC의 같은 배포 트랙에 남은 이전 설치 기록보다 낮으면 일반 화면에 **권장 버전 변경**을 표시합니다. 프로그램 화면의 안내에서 변경을 선택하면 권장 버전을 기존 설치·실행 절차로 실행합니다.
+- 현재 권장 버전이 이 PC의 같은 배포 트랙에서 실행 중이거나 마지막으로 설치·실행한 버전보다 낮으면 일반 화면에 **권장 버전 변경**을 표시합니다. 권장 버전이 이미 설치된 경우에도 안내하며, 변경을 선택하면 실행 상태 확인 후 권장 버전을 실행합니다.
 - 일반 GUI는 자동 점검만 하며 설치는 사용자 클릭 후 수행합니다. 관리형 런처 자체 갱신은 MSI/RPM, 게임 콘텐츠 갱신은 Agent 책임입니다.
 - 기존 HTTPS/Bearer와 schema 3 사내 HTTP 요청 서명을 지원하며 Metadata 서명·해시·권한 검증을 유지합니다. nginx 뒤 API는 loopback에 바인딩합니다.
 
@@ -73,7 +73,7 @@ dotnet publish src/UeDtLauncher.DistributionServer -c Release -r linux-x64 --sel
 
 ## 처음 준비할 것
 
-1. 서버 관리자가 신규 사내 HTTP의 `/dt` 설정·서명키와 게시본을 준비한 뒤 `install-server.sh --apply`로 배치합니다. nginx·systemd와 미인증 Catalog 401을 확인합니다. [A2 실행 명령](docs/reference/feature-workflow.md#a2-linux-서버-구성--관리자)
+1. 회사 RHEL 8.4에서 `dt2prod`가 `dt-setup.sh`로 설치·검증합니다. root는 최초 한 번 기존 nginx 80에 서명 경로를 적용하고, 사용자 서비스를 로그인 전부터 시작해야 할 때 linger를 설정합니다. 이후 버전 갱신·원복은 `dt2prod`가 진행합니다. [A2 실행 순서](docs/reference/feature-workflow.md#a2-linux-서버-구성--관리자) · [설치 및 관리자 인계](docs/reference/distribution-workflow.md#dt2prod-설치와-nginx-전환)
 2. 서버 배포 서명키를 준비하고 배포 서명 공개키를 PC 관리자에게 전달합니다.
 3. 사내 HTTP PC는 `enroll prepare`로 공개키 묶음을 만들고, 서버 관리자가 `client-enroll`로 PC별 IP와 허용 트랙을 등록합니다. PC 개인키는 보호 저장소에 남습니다. 기존 HTTPS/Bearer는 토큰 절차를 사용합니다.
 4. PC 관리자가 `enroll finish`로 운영 설정과 진단 결과를 저장합니다. 관리형은 시스템 Agent 설정 폴더에 관리자 보호 공개키를 먼저 배치한 뒤 `finish`를 실행합니다. 관리자가 운영 설정을 업데이트 서비스에 반영한 뒤 `doctor --online`을 다시 실행합니다. 개별 설정은 `sample-config`로 생성할 수 있습니다.

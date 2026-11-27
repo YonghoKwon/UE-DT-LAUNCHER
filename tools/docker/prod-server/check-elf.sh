@@ -1,12 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 export LC_ALL=C
-server=/dt/publish/server-linux-x64
-DOTNET_BUNDLE_EXTRACT_BASE_DIR=$(mktemp -d)
-export DOTNET_BUNDLE_EXTRACT_BASE_DIR
-echo 'Single-file apphost and extracted native files:'
-"$server/UeDtLauncher.DistributionServer" --help
-
 check() {
     local path file requirements version maximum=0 count=0 sqlite
     sqlite=$(find "$@" -iname '*sqlite*' -print)
@@ -17,6 +11,11 @@ check() {
     for path in "$@"; do
         while IFS= read -r -d '' file; do
             [[ $(od -An -tx1 -N4 "$file") == ' 7f 45 4c 46' ]] || continue
+            if [[ ${strict_machine:-0} == 1 ]] &&
+                ! readelf -h "$file" | awk '/Machine:.*X86-64/{ found=1 } END{ exit !found }'; then
+                printf 'Expected x86-64 ELF: %s\n' "$file" >&2
+                return 1
+            fi
             ((count+=1))
             sha256sum "$file"
             requirements=$(readelf --wide --version-info "$file")
@@ -30,6 +29,19 @@ check() {
     ((count > 0)) && [[ $(printf '2.28\n%s\n' "$maximum" | sort -V | tail -1) == '2.28' ]]
 }
 
+if [[ ${1:-} == --multi-only ]]; then
+    shift
+    (( $# > 0 ))
+    strict_machine=1
+    check "$@"
+    exit
+fi
+
+server=/dt/publish/server-linux-x64
+DOTNET_BUNDLE_EXTRACT_BASE_DIR=$(mktemp -d)
+export DOTNET_BUNDLE_EXTRACT_BASE_DIR
+echo 'Single-file apphost and extracted native files:'
+"$server/UeDtLauncher.DistributionServer" --help
 check "$server" "$DOTNET_BUNDLE_EXTRACT_BASE_DIR"
 echo 'Multi-file publish:'
 check /mnt/server-multi

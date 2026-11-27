@@ -104,7 +104,7 @@ class Run:
         (self.fx.context / "access-policy.json").write_text(json.dumps(policy) + "\n", encoding="utf-8")
         overlay = {
             "networks": {"default": {"ipam": {"config": [{"subnet": str(subnet)}]}}},
-            "services": {"dist": {"networks": {"default": {"ipv4_address": dist}}}},
+            "services": {"frontend-net": {"networks": {"default": {"ipv4_address": dist}}}},
         }
         for role in ROLES:
             overlay["services"][f"sim-{role}"] = {

@@ -63,7 +63,8 @@ class DownloadProxy:
                     self.send_response(response.status)
                     for key,value in response.getheaders():
                         if key.lower() not in ('connection','transfer-encoding','server','date'):self.send_header(key,value)
-                    self.close_connection=response.getheader('Content-Length') is None
+                    content_length = response.getheader('Content-Length')
+                    self.close_connection=content_length is None
                     if self.close_connection:self.send_header('Connection','close')
                     self.end_headers()
                     if self.command=='GET' and response.status in (200,206):
@@ -77,7 +78,12 @@ class DownloadProxy:
                     if self.command!='HEAD':
                         while not owner.stop.is_set():
                             chunk=response.read(32768)
-                            if not chunk:break
+                            if not chunk:
+                                # An incremental read can return EOF after a truncated upstream body.
+                                # Close the downstream socket so its client can detect the short response.
+                                if content_length is not None and sent < int(content_length):
+                                    self.close_connection = True
+                                break
                             if throttled and not (owner.control/'proxy-unthrottle').exists():
                                 delay=(sent+len(chunk))/owner.rate-(time.monotonic()-started)
                                 if delay>0 and owner.stop.wait(delay):break

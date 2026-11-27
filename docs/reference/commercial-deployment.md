@@ -92,7 +92,9 @@ UeDtLauncher import-install --config C:\ue-dt\launcher.config.json --destination
 
 ## 장애 대응 런북
 
-사용자는 오류 화면에서 **지원 정보 복사**로 시각·지원 ID·PC 이름·런처 버전을 전달합니다. PC 관리자는 `doctor --online`과 업데이트 서비스 상태를 확인합니다. 서버 관리자는 같은 시각의 서비스·nginx 로그와 업로드 ID를 확인합니다. 전달 자료에는 인증 헤더·키·토큰을 넣지 않습니다. 회사값은 승인된 설정을 사용합니다. **TODO(09/09L/25 결과 반영)**
+사용자는 오류 화면에서 **지원 정보 복사**로 시각·지원 ID·PC 이름·런처 버전을 전달합니다. PC 관리자는 `doctor --online`과 업데이트 서비스 상태를 확인합니다. 서버 관리자는 같은 시각의 서비스·nginx 로그와 업로드 ID를 확인합니다. 전달 자료에는 인증 헤더·키·토큰을 넣지 않습니다. 회사값은 승인된 설정을 사용합니다.
+
+09L [로컬] Docker 첫 서버 장애 시도에서는 공개 HTTP가 복구되지 않았습니다. 시험 스택 수정 후 backend만 재기동하여 502에서 401로 복귀했고 CLI 재개 뒤 두 버전 각 326/326 파일과 UserDir 해시를 보존했습니다. 회사 사용자 서비스 재기동과 호스트 재부팅은 T1에서 관측합니다. [Docker 장애 재시험](https://github.com/YonghoKwon/UE-DT-LAUNCHER/pull/44)
 
 | 증상 | 담당 / 실행 위치 | 입력·조치 | 복귀 확인 |
 |---|---|---|---|
@@ -103,16 +105,16 @@ UeDtLauncher import-install --config C:\ue-dt\launcher.config.json --destination
 | 한 PC만 실패 | PC 관리자 / PowerShell, 서버 관리자 / Bash | `doctor --online`. 401이면 PC 키·폐기, 403이면 관측 IP/CIDR·grant 확인. 정상 Catalog 0건이면 grants·OS별 공개판, 추천 대기면 명시 승격 이력 확인 | 해당 PC의 허용 배포와 추천 확인. [등록과 IP 변경](intranet-auth.md#d-문제-해결키-교체) |
 | 저장소 손상, 최신 원본 생존 | 서버 관리자 / Bash | 작업 정지 → `backup verify` → 빈 전용 root로 `restore stage` → 최신 원본과 정책·순번·승격·파일 대조 후 `restore activate --confirm`. staging 펜스가 남으면 공개 중단 유지 | 새 root·반환한 정책 경로와 기존 origin/signer로 연결. 인증 Catalog와 파일 확인. [복원 명령](distribution-workflow.md#1-서버-준비) |
 | 원본 저장소까지 완전 유실 | 서버 관리자·개발자 / Bash·PowerShell | 원본 패키지 보관 위치 확인 → 깨끗한 `/dt/store`에 서버 재구축. 운영 책임자가 서명·클라이언트 신뢰 절차를 승인한 뒤 필요한 버전별 `upload` → 수동 승인 → 명시 승격 | 기존 보안·순번 보호를 유지한 운영 절차에서 인증 목록과 실행 확인. 주간 백업 목표 RPO 1주, 회사 RTO는 T4 실측 |
-| 전원 차단·최장 경로·디스크 소진 | PC 관리자 / Windows 시험 PC | 런처와 앱 상태, 여유 공간, 설치 경로 확인. 이전 앱을 정상 종료하고 [실행 안전성](runtime-safety.md)의 읽기 전용 진단부터 진행 | 이전 설치와 사용자 데이터 해시, 차단/복구 결과 기록. **TODO(09/09L/25 결과 반영)** |
+| 전원 차단·최장 경로·디스크 소진 | PC 관리자 / Windows 시험 PC | 런처와 앱 상태, 여유 공간, 설치 경로 확인. 이전 앱을 정상 종료하고 [실행 안전성](runtime-safety.md)의 읽기 전용 진단부터 진행 | 이전 설치와 사용자 데이터 해시, 차단/복구 결과 기록. 09L [로컬] 프로세스 중단·긴 경로는 확인, VHD 디스크 고갈은 미실행 |
 
 ## 실환경 이관 체크리스트
 
-PROD-10 초안의 T1~T19는 모두 회사 **미실행**입니다. 필수 항목이 미실행인 동안 전사 배포를 보류합니다. 계획의 5~10대·2주는 파일럿 제안값이며 승인 범위와 동시 PC 수는 이관에서 정합니다.
+T1~T19의 회사 실행은 **미실행**입니다. 필수 항목을 충족할 때까지 전사 배포를 보류합니다. 계획 기준은 5~10대·2주와 동시 업데이트 10대이며 실제 승인 범위와 분모를 기록합니다. 회사 서버 배치는 `dt2prod`가 설치·서비스를 맡고 root가 기존 nginx 포트 80을 처음 전환합니다. [회사 배치](distribution-workflow.md#dt2prod-설치와-nginx-전환)
 
 | ID | 확인 항목 | 담당 | 필수 증거 | 구분 | 상태 |
 |---|---|---|---|---|---|
-| T1 | 실제 서버 설치와 재부팅 | 서버 관리자 | RHEL 8.4(Ootpa)·16 GB·약 250 GB, `install-server.sh` 적용, systemd active와 재부팅 후 미인증 401 | 필수 | 미실행 |
-| T2 | SELinux·방화벽 | 서버 관리자 | enforcing 상태의 프록시·incoming 허용과 관련 거부 로그 0, 원격에서 18500 차단 | 필수 | 미실행 |
+| T1 | 실제 서버 설치와 재부팅 | 서버 관리자 | RHEL 8.4(Ootpa)·16 GB·약 250 GB, `dt-setup.sh check/install/admin-request/verify`, 사용자 unit active, 재부팅 후 공개·loopback Catalog 401 | 필수 | 미실행 |
+| T2 | SELinux·방화벽 | 서버 관리자 | 사용자 제공 실측은 SELinux disabled. 현행 enforcing 기준은 미충족이며 보안 담당자가 정책·기준을 결정. 실제 프록시·incoming 권한 및 원격 18500 차단을 확인 | 필수 | 미실행 |
 | T3 | nginx 대용량 | 서버 관리자 | 회사 nginx의 20 GB 다운로드 Range 206와 최종 해시 | 필수 | 미실행 |
 | T4 | 주간 백업·복원 | 서버 관리자 | 오프라인 백업, 생존 원본으로 복원 훈련 1회, 전손 시 재게시 리허설 및 RPO/RTO 실측 | 필수 | 미실행 |
 | T5 | 사내망 성능 | 서버·망 담당 | 확정 동시 PC 수, 다운로드 시도·실패 분모와 p95 | 필수 | 미실행 |

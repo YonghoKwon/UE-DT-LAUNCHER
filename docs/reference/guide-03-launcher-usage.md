@@ -196,11 +196,20 @@ GUI 설정에서 **연결·준비 상태 점검**을 열면 오프라인 설정 
 
 ### 현재 GUI 수용 체크리스트
 
-2026-11-27 PROD-10 [로컬] 문서 대조. 아래 사례는 동일 후보에 적용할 현재 체크리스트입니다. PROD-25 최종 게시본 직접 수용과 회사 T16은 모두 이 문서 개정에서 미실행입니다. **TODO(09/09L/25 결과 반영)** [회사 이관](commercial-deployment.md#실환경-이관-체크리스트)
+2026-11-27 PROD-25 [로컬]. 09L의 소스 `0703ce0` 고정 게시본 파일 372개 해시를 대조했습니다. Windows RDP 1920×1080, OS 배율 100%에서 필수 97개 중 **96 PASS·0 FAIL·1 NOT_RUN**입니다.
+
+| 조합 | PASS | FAIL | NOT_RUN |
+|---|---:|---:|---|
+| 일반 portable | 26 | 0 | 0 |
+| 일반 관리형 | 26 | 0 | 0 |
+| 개발자 portable | 22 | 0 | 1 · `B-repair-followup` 부분 관측 |
+| 개발자 관리형 | 22 | 0 | 0 |
+
+계속 확인할 개발자 portable 사례는 정상 설치의 조회, 미설치 안내, 설치된 대상의 손상 복구와 commit 뒤 조회 오류에서 재적용 0회를 한 후보에서 확인합니다. OS 배율 125/150%는 RDP 제약으로 사용자가 생략했습니다. 실환경 T16·LocalService 인증과 PR #42 병합 후보의 직접 GUI 시험은 미실행입니다. [회사 이관](commercial-deployment.md#실환경-이관-체크리스트)
 
 2026-11-12 SPRINT-01의 새 제품 게시본은 실제 GUI를 실행하지 않았습니다. 아래 고정 게시본의 8/51 이력은 [이전 생성 진행표](archive/history/local-completion-progress-pre-sprint-01.json)에 보존하며 새 게시본의 통과로 합산하지 않습니다. 당시 Windows 전체 자동화890건(일부 headless UI 검사 포함)과 게시 CLI readiness8/headless3는 [별도 기록](archive/validation/sprint-01-quality-admin-validation.md)을 따릅니다. 이 체크리스트의 남은 직접 수용 조건은 그대로 유지합니다.
 
-기존 고정 게시본의 사례별 판정은 [로컬 보완 스프린트 검증](archive/validation/local-completion-validation.md#현재-새-gui-수용과-미완료)과 [보존한 진행표](archive/history/local-completion-progress-pre-sprint-01.json)를 따릅니다. 이번 게시본의 실제 GUI는 전체 미실행이며 [현재 생성 진행표](archive/validation/local-completion-progress.md)에 분리합니다. 아래 사례 하나의 전체 조건을 같은 고정 게시본에서 모두 충족한 경우만 통과로 계산하고, 부분 관측이나 이전 후보의 통과를 합산하지 않습니다.
+이전 후보의 사례별 판정은 [로컬 보완 스프린트 검증](archive/validation/local-completion-validation.md#현재-새-gui-수용과-미완료)과 [생성 진행표](archive/validation/local-completion-progress.md)에 보존합니다. 한 사례의 전체 조건을 동일 게시본에서 충족할 때 통과입니다.
 
 동일 제품 snapshot/cohort에서 accept-mg(관리형 일반), accept-md(관리형 개발자), accept-pg(portable 일반), accept-pd(portable 개발자)를 순차 준비했습니다. CLI 선설치가 없고 각 root/IPC가 독립적입니다. 제품을 다시 수정하면 영향받는 실제 GUI 수용을 새 게시본으로 수행합니다.
 

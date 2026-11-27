@@ -8,9 +8,12 @@ internal sealed record RecommendationChange(ReleaseSelection Recommended, Releas
 {
     internal static RecommendationChange? Find(string policy, CatalogReleaseOption? selected, ManagedProjectStatus? status)
     {
+        var previous = status?.RecommendationHistory is { } history
+            ? history.LastActiveRelease
+            : status?.PreviousInstallation?.Release;
         if (policy != "latest" || selected is not { IsLatest: true } release ||
-            status?.PreviousInstallation?.Release is not { } previous ||
-            !string.Equals(status.AvailableVersion, release.Version, StringComparison.OrdinalIgnoreCase))
+            previous is null ||
+            !string.Equals(status?.AvailableVersion, release.Version, StringComparison.OrdinalIgnoreCase))
             return null;
 
         var recommended = new ReleaseSelection(release.ProjectId, release.Environment, release.Channel, release.Platform, release.Version);

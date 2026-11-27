@@ -114,7 +114,7 @@ P0=회사 투입 전 검증 조건, P1=초기 운영 안정성, P2=후속 개선
 
 ## 운영·배포
 
-2026-11-27 PROD-10 [로컬] 문서 대조에서 병합본의 증거를 아래에 연결했습니다. OPS-02의 실제 MSI/LocalService, UI-04의 최종 후보 직접 수용, 회사 인수는 미검증입니다. [T1~T19 이관 초안](docs/reference/commercial-deployment.md#실환경-이관-체크리스트) · **TODO(09/09L/25 결과 반영)**
+2026-11-27 PROD-10 [로컬]. 25는 09L 고정 게시본에서 96/97 PASS이며 개발자 portable 복구 후속 한 건과 RDP 125/150% 배율을 남겼습니다. 07M은 MSI 4종을 준비했으며 실제 MSI 수명주기·07A LocalService 인증·회사 이관은 미실행입니다. [GUI 수용](docs/reference/guide-03-launcher-usage.md#현재-gui-수용-체크리스트) · [T1~T19 이관](docs/reference/commercial-deployment.md#실환경-이관-체크리스트)
 
 | ID/우선 | 진행률 | 상태 | 현재 근거·영향 | 보완 방향·완료 조건 |
 |---|---:|---|---|---|
@@ -159,7 +159,7 @@ PROD-02D [로컬] 대용량 측정에서 환경 적합 M2 동시 10의 최종 �
 | UI-01/P1 | 100% | 완료 · 1920×1080 범위 한정 | 고정8ce5060 양 모드/두 프로필 실제 GUI 및 화면 진단 확인:1920×1080·OS100%·글자100%·고대비 끔. 2026-09-29 사용자 합의로 수용 범위 조정 | **추가 테스트 필요:**1366×768·1280×720 등 다른 해상도, OS125/150%·큰 글자/고대비 최악 조건. 미검증을 지원 보장으로 표현하지 않음. [증거·범위 변경](docs/reference/archive/validation/ui-acceptance-finalization.md) |
 | UI-02/P1 | 75% | 부분 · 최종 GUI 수용 진행 중 | 재시도·완료 후 조회·정리 결과·설정 재읽기 구현, 후보별 실제 수용은 [현재 증거](docs/reference/archive/validation/client-acceptance-closure-validation.md) | 네 조합 잔여 수용은 [단일 체크리스트](docs/reference/guide-03-launcher-usage.md#현재-gui-수용-체크리스트) 참조. 이전 후보 합산 금지 |
 | UI-03/P2 | 75% | 부분 · 음성 보류/OS 대기 | 제목 배율·Tab/focus·대화창 고대비, 연결된 framework peer 이름 변경·byte tick 억제 회귀. 사전 게시본 실제 글자200%/Tab·prefs 원복 확인 | 새 후보 키보드 전체 흐름·OS 고대비 확인. 내레이터 실행/녹음/청취는 후속 보류하며 코드/UIA 통과로 대체하지 않음 |
-| UI-04/P1 | 50% | 부분 · 트레이 구현 및 자동 검증 | PROD-19에서 창 닫기·트레이 종료 분리, 추천 배지·조회 전용 확인 추가 | [Windows 트레이 직접 수용](docs/reference/guide-03-launcher-usage.md#현재-gui-수용-체크리스트) 및 최종 네 조합 확인 |
+| UI-04/P1 | 50% | 부분 · 09L 후보 로컬 수용 | PROD-25 트레이 20/20 PASS. 사용자 네이티브 트레이 조작과 게시본의 네 조합 조회·배지를 관측 | 회사 PC 알림 영역 및 제품 변경 시 해당 흐름 재검증. [Windows 트레이 수용 범위](docs/reference/guide-03-launcher-usage.md#현재-gui-수용-체크리스트) |
 
 ## 보안·확장·유지보수
 
