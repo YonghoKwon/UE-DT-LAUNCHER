@@ -15,19 +15,18 @@
 
 ```mermaid
 flowchart LR
-    uploader["개발자 PC"]
+    uploader["개발자 PC"] -->|"ZIP과 JSON 접수"| server
     subgraph server["Linux 배포 서버"]
-        store["/dt/store<br/>접수·권위·릴리스"]
-        dist["DistributionServer<br/>loopback 백엔드"]
+        direction TB
         nginx["nginx<br/>클라이언트 접속"]
-        store --- dist
-        dist --- nginx
+        dist["DistributionServer<br/>loopback 백엔드"]
+        store["/dt/store<br/>접수·권위·릴리스"]
+        nginx --- dist --- store
     end
-    uploader -->|"ZIP과 release.json 접수"| store
-    nginx --> linuxStream["Linux 스트리밍 서버"]
-    nginx --> windowsStream["Windows 스트리밍 서버"]
-    nginx --> client["Windows 고성능 클라이언트 PC"]
-    nginx --> developer["개발자 PC · 검증용 수신"]
+    server --> linuxStream["Linux<br/>스트리밍 서버"]
+    server --> windowsStream["Windows<br/>스트리밍 서버"]
+    server --> client["Windows<br/>고성능 클라이언트 PC"]
+    server --> developer["개발자 PC<br/>검증용 수신"]
 ```
 
 nginx를 통해 허용된 PC가 Catalog·파일을 받습니다. 관리형에서는 업데이트 서비스가 설치하고, 런처는 사용자 세션에서 앱을 실행합니다.
@@ -38,7 +37,7 @@ nginx를 통해 허용된 PC가 Catalog·파일을 받습니다. 관리형에서
 flowchart TD
     subgraph publishing["접수와 게시"]
         direction LR
-        upload["개발자<br/>ZIP과 JSON 업로드"] --> intake["서버<br/>접수·자동 검사"]
+        upload["개발자<br/>ZIP·외부 JSON<br/>업로드"] --> intake["서버<br/>접수·자동 검사"]
         intake --> approve["운영자<br/>수동 승인 후 게시"]
     end
     subgraph rollout["권장판 배포"]
@@ -48,7 +47,7 @@ flowchart TD
     end
     subgraph recall["회수 대응"]
         direction LR
-        previous["운영자<br/>이전 버전 재승격"] --> notice["다음 조회<br/>권장 버전 변경 안내"]
+        previous["운영자<br/>이전 버전 재승격"] --> notice["다음 조회<br/>권장 버전<br/>변경 안내"]
     end
     publishing --> rollout
     rollout -. 필요 시 .-> recall
