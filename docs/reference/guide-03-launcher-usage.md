@@ -116,7 +116,7 @@ UeDtLauncher diagnostics export --config launcher.config.json --output diagnosti
 - `--repair`: 파일 해시를 재검증하고 손상·누락 파일을 복구합니다.
 - `agent update`: 보호 설정으로 설치만 수행하며 UE 앱을 실행하지 않습니다. 명시 버전 선택은 DistributionServer 설정이 필요합니다.
 - GUI는 현재 OS 패키지만 선택합니다. CLI/Agent 플랫폼도 실행 PC와 일치하게 설정하세요.
-- 이전 버전 사용은 개발자 `exact` 선택과 해당 버전 설치로 수행합니다. 배포 서버 모드의 버전별 백업은 런처에서 해당 버전을 선택하고 **백업 복원** 미리보기를 확인한 뒤 적용합니다. 기본 portable 배포 설정을 사용한 CLI `rollback --list`는 버전별 백업을 찾지 못하며, 같은 설정으로 `rollback`을 실행하면 종료 코드 1을 반환합니다. [사용자 복원 절차](launcher-user-guide.md#개발자-선택복구)
+- 이전 버전 사용은 개발자 `exact` 선택과 해당 버전 설치로 수행합니다. 배포 서버 모드의 백업은 GUI에서 해당 버전을 선택하거나 CLI 설정의 추천/정확한 버전 정책으로 선택합니다. `UeDtLauncher rollback --config launcher.config.json --list`로 선택 버전의 목록을 보고, `rollback --config launcher.config.json`으로 최신 백업을 복원합니다. 다른 백업은 `--backup <목록의 ID>`로 지정합니다. 관리형은 이 명령을 지원하는 Agent가 목록·복원을 처리합니다. 실행 중이거나 백업이 손상된 경우 복원은 실패합니다. [사용자 복원 절차](launcher-user-guide.md#개발자-선택복구)
 
 portable Linux CLI는 같은 설정에서 `deploymentMode=portable`로 지정하고 현재 계정이 쓸 수 있는 경로를 사용합니다. 같은 업데이트 엔진을 거치지만 보호된 Agent 경계는 사용하지 않습니다.
 

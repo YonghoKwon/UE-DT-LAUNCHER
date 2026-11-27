@@ -113,7 +113,7 @@ public sealed partial class MainWindow : Window
         _managedRollbackPreview = managedRollbackPreview ?? PreviewManagedRollbackAsync;
         _restorePreview = restorePreview ?? ((config, preview) => config.IsManagedDeployment
             ? RestoreManagedPreviewAsync(config, preview)
-            : Task.Run(async () => { await RollbackPreviewService.RestoreExpectedAsync(config, preview.BackupId, preview.MetadataFingerprint); return new LauncherRestoreResult(LauncherRestoreDisposition.Applied); }));
+            : Task.Run(async () => { await BackupManager.RestoreSelectionAsync(config, preview.BackupId, expectedFingerprint: preview.MetadataFingerprint); return new LauncherRestoreResult(LauncherRestoreDisposition.Applied); }));
         _catalogLoader = catalogLoader ?? CatalogSnapshotService.LoadAsync;
         _doctor = doctor ?? ((path, online, target, token) => LauncherDoctor.RunAsync(path, online, token, target: target));
         _agentStatusProbe = agentStatusProbe ?? (() => new ManagedAgentClient().SendAsync("status", timeout: TimeSpan.FromSeconds(2)));

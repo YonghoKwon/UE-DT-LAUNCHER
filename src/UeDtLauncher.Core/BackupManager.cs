@@ -9,6 +9,7 @@ public sealed class BackupInfo
     public List<string> AddedPaths { get; set; } = new();
 }
 public sealed record BackupPruneResult(int RemovedCount,int FailedCount,int RemainingCount,IReadOnlyList<string> FailedBackupIds);
+public sealed record BackupListEntry(string Id, string? PreviousVersion, string? NewVersion, string? CreatedAtUtc);
 
 public static class BackupManager
 {
@@ -131,6 +132,102 @@ public static class BackupManager
     {
         using var lease = InstallationMutationLease.Acquire(config);
         await RestoreUnderLeaseAsync(backupRoot, config, lease, log, cancellationToken);
+    }
+
+    internal static IReadOnlyList<BackupListEntry> ListForRollback(LauncherConfig config) =>
+        ReadRollbackEntries(config).Select(backup => new BackupListEntry(Path.GetFileName(backup.BackupRoot),
+            backup.Info?.PreviousVersion, backup.Info?.NewVersion, backup.Info?.CreatedAtUtc)).ToArray();
+
+    private static IReadOnlyList<(string BackupRoot, BackupInfo? Info)> ReadRollbackEntries(LauncherConfig config)
+    {
+        if (File.Exists(UpdateTransactionManager.JournalPath(config)))
+            throw new InvalidOperationException("Backup is changing; check again after the installation operation.");
+        return List(config.BackupDir);
+    }
+
+    internal static async Task<bool> RestoreSelectionAsync(LauncherConfig config, string? backupId,
+        Action<string>? log = null, CancellationToken cancellationToken = default, string? expectedFingerprint = null)
+    {
+        if (expectedFingerprint is null && !Directory.Exists(config.BackupDir)) return false;
+        using var lease = InstallationMutationLease.AcquireMaintenance(config);
+        if (expectedFingerprint is not null)
+        {
+            var preview = await RollbackPreviewService.ReadAsync(config, cancellationToken);
+            if (preview is null || !preview.CanRestore || preview.BackupId != backupId ||
+                preview.MetadataFingerprint != expectedFingerprint)
+                throw new RollbackPreviewChangedException();
+        }
+
+        var selected = ReadRollbackEntries(config).FirstOrDefault(backup =>
+            backupId is null || string.Equals(Path.GetFileName(backup.BackupRoot), backupId, StringComparison.Ordinal));
+        if (selected.BackupRoot is null)
+        {
+            if (expectedFingerprint is not null) throw new RollbackPreviewChangedException();
+            return false;
+        }
+        var root = SafePath.ResolveInsideChecked(config.BackupDir, Path.GetFileName(selected.BackupRoot));
+        if (config.SelectedRelease is { } release)
+            await ValidateReleaseBackupAsync(root, selected.Info, config, release, cancellationToken);
+        await RestoreUnderLeaseAsync(root, config, lease, log, cancellationToken);
+        return true;
+    }
+
+    private static async Task ValidateReleaseBackupAsync(string root, BackupInfo? info, LauncherConfig config,
+        ReleaseSelection release, CancellationToken token)
+    {
+        if (info is null || info.AddedPaths is null || info.NewVersion != release.Version)
+            throw new InvalidDataException("Backup metadata is missing, invalid, or belongs to another release.");
+        var manifestPath = SafePath.ResolveInsideChecked(root, $"{MetaDirName}/{ManifestFileName}");
+        var statePath = SafePath.ResolveInsideChecked(root, $"{MetaDirName}/{StateFileName}");
+        _ = SafePath.ResolveInsideChecked(root, $"{MetaDirName}/{InfoFileName}");
+        var removed = info.AddedPaths.Select(path => SafePath.ResolveInsideChecked(config.InstallDir, path))
+            .ToHashSet(SafePath.FileSystemComparer);
+
+        // Scan without descending through reparse points. Check restore destinations before any mutation.
+        var pending = new Stack<string>();
+        pending.Push(root);
+        while (pending.TryPop(out var folder))
+        {
+            foreach (var entry in Directory.EnumerateFileSystemEntries(folder))
+            {
+                if ((File.GetAttributes(entry) & FileAttributes.ReparsePoint) != 0)
+                    throw new InvalidDataException("Backup contains a linked entry.");
+                var relative = Path.GetRelativePath(root, entry);
+                if (SafePath.FileSystemComparer.Equals(relative, MetaDirName)) continue;
+                _ = SafePath.ResolveInsideChecked(config.InstallDir, relative);
+                if (Directory.Exists(entry)) pending.Push(entry);
+            }
+        }
+
+        if (File.Exists(statePath))
+        {
+            var state = await JsonFiles.ReadAsync<InstallState>(statePath, token);
+            if (state.Version != release.Version || (state.Channel is not null && state.Channel != release.Channel) ||
+                (state.Environment is not null && state.Environment != release.Environment) ||
+                (state.Platform is not null && state.Platform != release.Platform))
+                throw new InvalidDataException("Backup installation state belongs to another release.");
+        }
+        if (!File.Exists(manifestPath))
+        {
+            if (info.PreviousVersion is null && !File.Exists(statePath) && removed.Count > 0) return;
+            throw new InvalidDataException("Backup manifest is missing.");
+        }
+        var manifest = await JsonFiles.ReadAsync<LauncherManifest>(manifestPath, token);
+        LauncherEngine.ValidateManifest(manifest);
+        if (info.PreviousVersion != release.Version || manifest.Version != release.Version ||
+            manifest.AppId != release.ProjectId || manifest.Channel != release.Channel || manifest.Platform != release.Platform)
+            throw new InvalidDataException("Backup manifest belongs to another release.");
+        foreach (var file in manifest.Files)
+        {
+            var installed = SafePath.ResolveInsideChecked(config.InstallDir, file.Path);
+            var saved = SafePath.ResolveInsideChecked(root, file.Path);
+            if (!File.Exists(saved) && removed.Contains(installed))
+                throw new InvalidDataException("Backup would delete a required installation file.");
+            var source = File.Exists(saved) ? saved : installed;
+            var details = new FileInfo(source);
+            if (!details.Exists || details.Length != file.Size || !await Hashing.Sha256MatchesAsync(source, file.Sha256, token))
+                throw new InvalidDataException("Backup payload does not match the previous installation manifest.");
+        }
     }
 
     internal static async Task RestoreUnderLeaseAsync(string backupRoot, LauncherConfig config, InstallationMutationLease lease, Action<string>? log = null, CancellationToken cancellationToken = default)

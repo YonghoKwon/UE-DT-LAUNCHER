@@ -195,7 +195,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
             response = Error(request, "invalid-request", ex.Message, identity);
         }
 
-        response.AgentCapabilities = [ManagedAgentProtocol.RuntimeCapability, RollbackPreviewService.Capability, RuntimeDataPolicy.Capability, DoctorPresentation.Capability, OperationRegistry.Capability, ManagedOperationCoordinator.Capability,ManagedClientPresentation.Capability];
+        response.AgentCapabilities = [ManagedAgentProtocol.RuntimeCapability, RollbackPreviewService.Capability, ManagedAgentProtocol.RollbackListCapability, RuntimeDataPolicy.Capability, DoctorPresentation.Capability, OperationRegistry.Capability, ManagedOperationCoordinator.Capability,ManagedClientPresentation.Capability];
         await ManagedAgentFrameCodec.WriteAsync(stream, response, cancellationToken);
     }
 
@@ -482,14 +482,34 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     if (request.Selection is not null) VersionedReleasePaths.Bind(config, request.Selection);
                     var preview = await RollbackPreviewService.ReadAsync(config, cancellationToken);
                     return new() { CorrelationId=request.CorrelationId, Success=true, Status="preview", RollbackPreview=preview, SelectedRelease=config.SelectedRelease };
+                case "rollback-list":
+                    if (request.Selection is not null) VersionedReleasePaths.Bind(config, request.Selection);
+                    else if (!string.IsNullOrWhiteSpace(config.DistributionServerUrl))
+                    {
+                        using var http = SecureHttpClientFactory.Create(config);
+                        await CatalogResolver.ResolveAsync(config, http, cancellationToken: cancellationToken);
+                    }
+                    var backups = BackupManager.ListForRollback(config);
+                    if (backups.Count > 4096) throw new InvalidDataException("Too many backups to list in a single response.");
+                    return new() { CorrelationId = request.CorrelationId, Success = true, Status = "backups",
+                        RollbackBackups = backups, SelectedRelease = config.SelectedRelease };
                 case "rollback":
                     if (request.Selection is not null) VersionedReleasePaths.Bind(config, request.Selection);
+                    else if (!string.IsNullOrWhiteSpace(config.DistributionServerUrl))
+                    {
+                        using var http = SecureHttpClientFactory.Create(config);
+                        await CatalogResolver.ResolveAsync(config, http, cancellationToken: cancellationToken);
+                    }
                     if (request.ExpectedBackupId is not null || request.ExpectedBackupFingerprint is not null)
                     {
                         if (request.ExpectedBackupId is null || request.ExpectedBackupFingerprint is null) throw new InvalidDataException("Both backup expectation fields are required.");
                         var restored=await ManagedRestoreCompletion.RunAsync(
-                            ()=>RollbackPreviewService.RestoreExpectedAsync(config, request.ExpectedBackupId, request.ExpectedBackupFingerprint,
-                                message => AddProgress(new LauncherProgress("Rollback", message, null)), cancellationToken),
+                            async () =>
+                            {
+                                await BackupManager.RestoreSelectionAsync(config, request.ExpectedBackupId,
+                                    message => AddProgress(new LauncherProgress("Rollback", message, null)), cancellationToken,
+                                    request.ExpectedBackupFingerprint);
+                            },
                             async ()=>
                             {
                                 if(!File.Exists(config.InstalledManifestPath))return new(false,null,null,true,0,0,BackupManager.List(config.BackupDir).Count>0);
@@ -500,13 +520,9 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                         restoredResponse.InstallationCommitted=true;restoredResponse.ClientPresentation=Presentation(config,restored.Status?.IsInstalled==true);
                         return restoredResponse;
                     }
-                    var backup = BackupManager.List(config.BackupDir).FirstOrDefault();
-                    if (backup.BackupRoot is null) return Error(request, "no-backup", "No rollback backup is available.", identity);
-                    await BackupManager.RestoreAsync(
-                            backup.BackupRoot,
-                            config,
-                            message => progress.Add(new ManagedAgentProgress("Rollback", DiagnosticRedactor.Redact(message), null)),
-                            cancellationToken);
+                    if (!await BackupManager.RestoreSelectionAsync(config, request.RollbackBackupId,
+                            message => AddProgress(new LauncherProgress("Rollback", message, null)), cancellationToken))
+                        return Error(request, "no-backup", "No rollback backup is available.", identity);
                     var legacyRestored=Success(request, identity, "completed", "Rollback completed.", progress,selectedRelease:config.SelectedRelease);
                     legacyRestored.InstallationCommitted=true;return legacyRestored;
                 case "service-run":
