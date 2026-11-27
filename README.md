@@ -9,7 +9,7 @@
 | Windows 고성능 클라이언트 PC | 일반 GUI. 관리형 또는 portable 설정 | `stable` 추천판 | [일반 사용자 한 장 안내](docs/reference/launcher-user-guide.md#일반-사용자-한-장-안내) |
 | 개발자 PC | 클라이언트 PC와 같은 구성에 별도 개발자 GUI와 배포 CLI 사용 | 권한 있는 `stable`·`dev`·`beta`. 승인된 특정 버전을 선택해 검증 | [개발자 선택과 복구](docs/reference/launcher-user-guide.md#개발자-선택복구) |
 
-회사 파일럿은 `stable` 단일 채널로 운영합니다. 개발자 화면은 PC에 부여된 서버 권한 범위에서만 버전을 보여줍니다. 실제 회사 서버·PC 인수 항목은 [실환경 이관 체크리스트](docs/reference/commercial-deployment.md#실환경-이관-체크리스트)에서 확인합니다.
+위 표의 채널은 운영 예시이며 회사 파일럿 정책은 `stable` 단일 채널입니다. 개발자 화면은 PC에 부여된 서버 권한 범위에서 버전을 보여줍니다. 회사 서버·PC 인수는 예정 상태입니다. [실환경 이관 체크리스트](docs/reference/commercial-deployment.md#실환경-이관-체크리스트)
 
 ## 전체 구성
 
@@ -36,16 +36,22 @@ nginx를 통해 허용된 PC가 Catalog·파일을 받습니다. 관리형에서
 
 ```mermaid
 flowchart TD
-    upload["개발자: upload로 ZIP과 release.json 전송"]
-    intake["서버: 접수·자동 검사"]
-    approve["운영자: 수동 승인 · 서버 게시"]
-    verify["개발자: 승인판의 정확한 버전 검증"]
-    promote["운영자: 권장 버전 명시 승격"]
-    install["사용자: 설치 또는 업데이트"]
-    recall["운영자: 이전 버전 재승격으로 회수 대응"]
-    notice["다음 조회: 권장 버전 변경 안내"]
-    upload --> intake --> approve --> verify --> promote --> install
-    install --> recall --> notice
+    subgraph publishing["접수와 게시"]
+        direction LR
+        upload["개발자<br/>ZIP과 JSON 업로드"] --> intake["서버<br/>접수·자동 검사"]
+        intake --> approve["운영자<br/>수동 승인 후 게시"]
+    end
+    subgraph rollout["권장판 배포"]
+        direction LR
+        verify["개발자<br/>승인판 검증"] --> promote["운영자<br/>권장 버전 승격"]
+        promote --> install["사용자<br/>설치·업데이트"]
+    end
+    subgraph recall["회수 대응"]
+        direction LR
+        previous["운영자<br/>이전 버전 재승격"] --> notice["다음 조회<br/>권장 버전 변경 안내"]
+    end
+    publishing --> rollout
+    rollout -. 필요 시 .-> recall
 ```
 
 승인과 승격을 따로 진행합니다. 이전 버전을 다시 권장해도 파일이나 실행 중인 앱은 자동으로 전환되지 않습니다.
