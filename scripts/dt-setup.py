@@ -2,6 +2,7 @@
 """Unprivileged installer for the port-80 request-signature deployment."""
 
 import argparse
+import base64
 import contextlib
 import fcntl
 import hashlib
@@ -19,6 +20,8 @@ import sys
 import tempfile
 import time
 import uuid
+from dt_setup_guard import (SetupError, UUID, identity, need, process_stamp,
+                            read_control, recognized_store, version_path)
 
 BASE = Path("/dt")
 CONTROL = BASE / ".dt-setup"
@@ -30,21 +33,13 @@ LEGACY = BASE / ".dt-legacy"
 UNIT_NAME = "ue-dt-distribution.service"
 UNIT = Path.home() / ".config/systemd/user" / UNIT_NAME
 RUNNER = BASE / "tools/dt-setup-cron.py"
+GUARD = BASE / "tools/dt_setup_guard.py"
 CRON_JOB = "@reboot /usr/bin/python3 -B " + str(RUNNER) + " boot # uedt-dt-setup"
 SERVER = "server-linux-x64/UeDtLauncher.DistributionServer"
 LAUNCHER = "linux-x64/UeDtLauncher"
 CATALOG = "/api/v1/catalog"
 LOOPBACK = "http://127.0.0.1:18500"
 BUNDLE = Path(__file__).resolve().parent
-
-
-class SetupError(Exception):
-    pass
-
-
-def need(condition, message):
-    if not condition:
-        raise SetupError(message)
 
 
 def command(*args, **kwargs):
@@ -166,7 +161,7 @@ def bundle_info():
         need(file.is_file() and file.resolve() == file and digest(file) == sha,
              "Bundle hash mismatch: {}".format(relative))
         entries[relative] = sha
-    required = {"dt-setup.sh", "dt-setup.py", "dt-setup-cron.py", "dt-setup.conf.example",
+    required = {"dt-setup.sh", "dt-setup.py", "dt-setup-cron.py", "dt_setup_guard.py", "dt-setup.conf.example",
                 "prepare-server-store.sh", "server-disk-usage.sh", UNIT_NAME, "ABI.txt", SERVER, LAUNCHER,
                 "nginx/uedt-signed-proxy.inc", "nginx/coexist/ue-dt-updates.conf",
                 "nginx/cutover/ue-dt-updates.conf"}
@@ -188,6 +183,26 @@ def listener(port):
 def curl_code(url):
     return output("curl", "--noproxy", "*", "-sS", "--max-time", "4", "-o", "/dev/null",
                   "-w", "%{http_code}", url)
+
+
+def signed_challenge(endpoint, origin):
+    probe = "dt-setup-probe"
+    body = output("curl", "--noproxy", "*", "-fsS", "--max-time", "4", "--max-filesize", "4096",
+                  endpoint + "/api/v1/auth/challenge?keyId=" + probe)
+    document = json.loads(body)
+    need(isinstance(document, dict) and set(document) == {"challenge", "expiresInSeconds"} and
+         type(document["expiresInSeconds"]) is int and document["expiresInSeconds"] == 60 and
+         isinstance(document["challenge"], str) and len(document["challenge"]) <= 2048,
+         "Unexpected signed challenge document at {}.".format(endpoint))
+    match = re.fullmatch(r"([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]{43})", document["challenge"])
+    need(match, "Unexpected signed challenge format at {}.".format(endpoint))
+    def decode(token):
+        return base64.urlsafe_b64decode(token + "=" * (-len(token) % 4))
+    payload = json.loads(decode(match[1]))
+    need(isinstance(payload, dict) and set(payload) == {"Origin", "KeyId", "Deadline"} and
+         payload["Origin"] == origin.lower() and payload["KeyId"] == probe and
+         type(payload["Deadline"]) is int and payload["Deadline"] > 0 and len(decode(match[2])) == 32,
+         "Signed challenge is not bound to the expected origin and probe key.")
 
 
 def nginx80():
@@ -231,7 +246,7 @@ def inode(path):
 
 def read_state():
     owned_directory(CONTROL, private=True)
-    return read_json(STATE)
+    return read_control(STATE) if exists(STATE) else None
 
 
 def previous_value(path):
@@ -247,6 +262,8 @@ def managed_paths(config, state):
          (state and state["active"] and previous_value(CURRENT) == state["active"]),
          "Unmanaged active publish link.")
     if state:
+        need(state.get("store_id") is not None, "Installed authority identity is missing. Review the existing authority.")
+        recognized_store(state["store_id"])
         need(read_json(BASE / "config/server.json") == server_config(config),
              "The installed origin, signing identity or server settings differ.")
         for name, mode in (("signing.pem", 0o400), ("release-public.pem", 0o644)):
@@ -262,12 +279,14 @@ def managed_paths(config, state):
         need(generated_public.stdout == recorded_public.stdout, "The installed signing key pair no longer matches.")
         need(RUNNER.is_file() and not RUNNER.is_symlink() and digest(RUNNER) == state["runner"],
              "Cron supervisor differs from the installed file.")
+        need(GUARD.is_file() and not GUARD.is_symlink() and digest(GUARD) == state["guard"],
+             "Startup guard differs from the installed file.")
         if state["active"] and state["boot"] == "systemd":
             need(UNIT.is_file() and not UNIT.is_symlink() and digest(UNIT) == state["unit"],
                  "User unit differs from the installed file.")
     else:
         for relative in ("config/server.json", "config/access-policy.json", "keys/signing.pem",
-                         "keys/release-public.pem", "tools/dt-setup-cron.py"):
+                         "keys/release-public.pem", "tools/dt-setup-cron.py", "tools/dt_setup_guard.py"):
             need(not exists(BASE / relative), "Unmanaged destination: /dt/{}".format(relative))
         store = BASE / "store"
         need(not exists(store) or not any(store.iterdir()), "An existing authority needs separate review.")
@@ -392,8 +411,10 @@ def check(config, state, bundle, recovery=False):
     if recovery:
         row("Disk", lambda: "new publish capacity checked after recovery")
     else:
-        row("Disk", lambda: disk(sum((BUNDLE / name).stat().st_size for name in bundle[1]
-                                     if name.startswith(("linux-x64/", "server-linux-x64/")))))
+        saved = VERSIONS / ("release-" + bundle[0])
+        needed = 0 if exists(saved) else sum((BUNDLE / name).stat().st_size for name in bundle[1]
+                                            if name.startswith(("linux-x64/", "server-linux-x64/")))
+        row("Disk", lambda: disk(needed))
     row("/dt access", write_access)
     row("nginx :80", nginx80)
     row("Backend :18500", backend)
@@ -503,8 +524,10 @@ class Transaction:
         self.data = {"id": uuid.uuid4().hex, "operation": operation, "undo": [],
                      "mode": None, "restart": False, "created_control": created}
         self.stage = CONTROL / self.data["id"]
-        self.save()
         self.stage.mkdir(mode=0o700)
+        self.data["stage_id"] = identity(self.stage, stat.S_ISDIR)
+        write_json(self.stage / ".owner.json", {"transaction": self.data["id"], "stage": self.data["stage_id"]})
+        self.save()
 
     def save(self):
         write_json(PENDING, self.data)
@@ -513,29 +536,40 @@ class Transaction:
         action["kind"] = kind
         self.data["undo"].append(action)
         self.save()
+        return action
 
     def directory(self, path, mode=0o700):
         if not exists(path):
             self.directory(path.parent)
-            self.record("directory", path=str(path))
+            action = self.record("directory", path=str(path), after=None)
             path.mkdir(mode=mode)
             # umask 077 would prevent nginx from traversing the legacy backup.
             path.chmod(mode)
+            action["after"] = identity(path, stat.S_ISDIR)
+            self.save()
             sync_dir(path.parent)
 
     def move(self, source, dest):
-        self.record("rename", src=str(source), dest=str(dest), inode=inode(source))
+        self.record("rename", src=str(source), dest=str(dest), inode=inode(source),
+                    uid=source.lstat().st_uid)
         rename(source, dest)
 
     def file(self, path, contents):
-        self.record("file", path=str(path), old=file_content(path), new=contents)
+        action = self.record("file", path=str(path), old=file_content(path), new=contents,
+                             before=control_identity(path, stat.S_ISREG), after=None)
         set_file(path, contents)
+        action["after"] = control_identity(path, stat.S_ISREG)
+        self.save()
 
     def link(self, path, target):
         need(not exists(path) or path.is_symlink(), "Link target is occupied: {}".format(path))
         temporary = path.parent / (".dt-setup-link-" + self.data["id"])
-        self.record("link", path=str(path), temp=str(temporary), old=previous_value(path), new=target)
+        need(not exists(temporary), "Unexpected temporary link: {}".format(temporary))
+        action = self.record("link", path=str(path), old=previous_value(path), new=target,
+                             before=control_identity(path, stat.S_ISLNK), after=None)
         set_link(path, target, temporary)
+        action["after"] = control_identity(path, stat.S_ISLNK)
+        self.save()
 
     def service(self, mode, restart):
         self.data["mode"] = mode
@@ -543,48 +577,212 @@ class Transaction:
         self.save()
 
     def commit(self, state):
+        validate_journal(self.data)
         state["last_tx"] = self.data["id"]
         write_json(STATE, state)
         finish_transaction(self.data)
 
+    def start_service(self, mode, target, store_id):
+        start_pending(self.data, mode, target, store_id)
+
+
+def control_identity(path, kind):
+    return identity(path, kind) if exists(path) else None
+
+
+def inode_record(value):
+    return isinstance(value, list) and len(value) == 2 and all(type(n) is int and n >= 0 for n in value)
+
+
+def validate_journal(data):
+    need(isinstance(data, dict) and isinstance(data.get("id"), str) and UUID.fullmatch(data["id"]) and
+         inode_record(data.get("stage_id")) and isinstance(data.get("undo"), list) and
+         data.get("operation") in ("install", "update", "rollback") and
+         data.get("mode") in (None, "cron", "systemd") and type(data.get("restart")) is bool and
+         type(data.get("created_control")) is bool,
+         "Invalid transaction journal; preserve it for review.")
+    operation = data["operation"]
+    need(not data["created_control"] or operation == "install", "Invalid journal control creation.")
+    stage = CONTROL / data["id"]
+    if exists(stage):
+        need(stage.resolve() == stage and identity(stage, stat.S_ISDIR) == data["stage_id"],
+             "Transaction staging directory identity changed.")
+        need(read_control(stage / ".owner.json") ==
+             {"transaction": data["id"], "stage": data["stage_id"]},
+             "Transaction staging marker changed.")
+    else:
+        need(data.get("cleaning") is True, "Transaction staging directory is missing.")
+
+    legacy_pairs = {(str(BASE / name), str(LEGACY / name)) for name in ("incoming", "ue-dt-updates")}
+    install_pairs = {(str(stage / "store"), str(BASE / "store")),
+                     (str(BASE / "store"), str(stage / "empty-store"))} | legacy_pairs
+    for folder, names in (("config", ("server.json", "access-policy.json")),
+                          ("keys", ("signing.pem", "release-public.pem"))):
+        install_pairs.update((str(stage / name), str(BASE / folder / name)) for name in names)
+    rollback_pairs = {(dest, src) for src, dest in legacy_pairs}
+    directories = {str(BASE / folder) for folder in ("config", "keys", "publish", "tools")}
+    directories.update(str(p) for p in (LEGACY, VERSIONS, UNIT.parent, UNIT.parent.parent))
+    for action in data["undo"]:
+        need(isinstance(action, dict), "Invalid journal action.")
+        kind = action.get("kind")
+        path = action.get("path")
+        if kind == "rename":
+            source, dest = action.get("src"), action.get("dest")
+            need(isinstance(source, str) and isinstance(dest, str), "Invalid journal rename paths.")
+            publish = source == str(stage / "publish") and version_path(dest)
+            allowed = (operation == "install" and ((source, dest) in install_pairs or publish) or
+                       operation == "update" and publish or
+                       operation == "rollback" and (source, dest) in rollback_pairs)
+            need(allowed and inode_record(action.get("inode")) and type(action.get("uid")) is int,
+                 "Journal rename is outside the operation's permitted paths.")
+        elif kind == "directory":
+            need(operation == "install" and isinstance(path, str) and path in directories and
+                 (action.get("after") is None or inode_record(action["after"])),
+                 "Journal directory is outside the operation's permitted paths.")
+        elif kind in ("file", "link"):
+            old, new = action.get("old"), action.get("new")
+            if kind == "file":
+                allowed = ((path in (str(RUNNER), str(GUARD)) and operation == "install" and old is None) or
+                           (path == str(UNIT) and data["mode"] == "systemd" and
+                            (operation == "install" and old is None or operation == "rollback" and new is None)))
+                allowed = allowed and (old is None) != (new is None) and isinstance(old or new, str)
+            else:
+                need(all(value is None or isinstance(value, str) for value in (old, new)),
+                     "Invalid journal link value.")
+                allowed = (path == str(CURRENT) and all(value is None or version_path(value)
+                                                       for value in (old, new)) or
+                           path == str(BASE / "ue-dt-updates") and operation in ("install", "rollback") and
+                           {old, new} == {None, str(LEGACY / "ue-dt-updates")})
+            need(allowed and all(action.get(key) is None or inode_record(action[key])
+                                 for key in ("before", "after")), "Unrecognized journal {} target.".format(kind))
+        elif kind == "cron":
+            old, new = action.get("old"), action.get("new")
+            need(data["mode"] == "cron" and operation in ("install", "rollback") and
+                 all(value is None or isinstance(value, str) for value in (old, new)),
+                 "Invalid journal cron action.")
+            without, with_job = (old, new) if operation == "install" else (new, old)
+            lines = (with_job or "").splitlines(keepends=True)
+            need(lines.count(CRON_JOB + "\n") == 1 and
+                 "".join(line for line in lines if line != CRON_JOB + "\n") == (without or ""),
+                 "Journal cron action would change unrelated entries.")
+        elif kind == "systemd":
+            need(data["mode"] == "systemd" and operation in ("install", "rollback") and
+                 action.get("enable") is (operation == "rollback"), "Invalid journal systemd action.")
+        else:
+            raise SetupError("Unrecognized journal action.")
+        for key in ("path", "src", "dest"):
+            if key in action:
+                item = Path(action[key])
+                need(item.parent.resolve() == item.parent, "Linked journal parent: {}".format(item))
+    return stage
+
+
+def unchanged_rename(path, action):
+    if not exists(path):
+        return False
+    info = path.lstat()
+    return (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)) and \
+        [info.st_dev, info.st_ino] == action["inode"] and info.st_uid == action["uid"]
+
+
+def validate_undo_identities(data, state):
+    # Validate entries visible now before stopping a live service. Reverse replay
+    # verifies the intermediate identities as newer actions uncover them.
+    affected = set()
+    for action in reversed(data["undo"]):
+        kind = action["kind"]
+        if kind == "rename":
+            source, dest = Path(action["src"]), Path(action["dest"])
+            if not affected.intersection((source, dest)):
+                need(unchanged_rename(source, action) or unchanged_rename(dest, action),
+                     "Moved entry identity changed: {}".format(dest))
+            affected.update((source, dest))
+        elif kind in ("link", "file", "directory"):
+            path = Path(action["path"])
+            if kind == "file" and path == UNIT and action["old"] is not None:
+                need(state and hashlib.sha256(action["old"].encode("utf-8")).hexdigest() == state["unit"],
+                     "Former user unit identity changed in the journal.")
+            if path not in affected:
+                if kind == "directory":
+                    need(not exists(path) or identity(path, stat.S_ISDIR) == action["after"],
+                         "Created directory identity changed: {}".format(path))
+                else:
+                    file_type, read_value = (stat.S_ISLNK, previous_value) if kind == "link" else \
+                        (stat.S_ISREG, file_content)
+                    current = (control_identity(path, file_type), read_value(path))
+                    need(current in ((action["before"], action["old"]), (action["after"], action["new"])),
+                         "Managed control identity changed: {}".format(path))
+            affected.add(path)
+    mode = data["mode"]
+    if mode == "cron" and exists(RUNNER):
+        expected = state["runner"] if state else digest(BUNDLE / "dt-setup-cron.py")
+        need(RUNNER.is_file() and RUNNER.resolve() == RUNNER and digest(RUNNER) == expected,
+             "Recovery supervisor identity changed.")
+    if mode == "systemd" and exists(UNIT):
+        expected = state.get("unit") if state and state["active"] else digest(BUNDLE / UNIT_NAME)
+        need(UNIT.is_file() and UNIT.resolve() == UNIT and digest(UNIT) == expected,
+             "Recovery user unit identity changed.")
+
 
 def finish_transaction(data):
-    stage = CONTROL / data["id"]
-    if stage.is_dir():
+    stage = validate_journal(data)
+    data["cleaning"] = True
+    write_json(PENDING, data)
+    if exists(stage):
+        allowed = {".owner.json", "publish", "store", "empty-store", "server.json",
+                   "access-policy.json", "signing.pem", "release-public.pem"}
+        need(all(entry.name in allowed for entry in stage.iterdir()), "Unexpected files in transaction staging.")
+        for parent, dirs, files in os.walk(str(stage), followlinks=False):
+            for name in dirs + files:
+                item = Path(parent) / name
+                info = item.lstat()
+                need(info.st_uid == os.getuid() and info.st_dev == data["stage_id"][0] and
+                     (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)),
+                     "Unexpected ownership, device or type in staging: {}".format(item))
         shutil.rmtree(str(stage))
     PENDING.unlink()
     sync_dir(CONTROL)
 
 
-def undo_action(action):
+def start_pending(data, mode, target, store_id):
+    data["start"] = {"owner": process_stamp(os.getpid()), "active": target, "store_id": store_id}
+    write_json(PENDING, data)
+    try:
+        start(mode)
+    finally:
+        data.pop("start")
+        write_json(PENDING, data)
+
+
+def undo_action(action, transaction_id):
     kind = action["kind"]
     if kind == "rename":
         source, dest = Path(action["src"]), Path(action["dest"])
-        if exists(dest) and inode(dest) == action["inode"]:
+        if unchanged_rename(dest, action):
             rename(dest, source)
         else:
-            need(exists(source) and inode(source) == action["inode"],
+            need(unchanged_rename(source, action) and not exists(dest),
                  "Moved entry changed: {}".format(dest))
     elif kind == "link":
-        path, temp = Path(action["path"]), Path(action["temp"])
-        need((not exists(path) or path.is_symlink()) and
-             previous_value(path) in (action["old"], action["new"]),
-             "Active or legacy link changed: {}".format(path))
-        if exists(temp):
-            need(temp.is_symlink() and previous_value(temp) in (action["old"], action["new"]),
-                 "Temporary link changed.")
-            temp.unlink()
-        set_link(path, action["old"], temp)
+        path = Path(action["path"])
+        temp = path.parent / (".dt-setup-link-" + transaction_id)
+        need(not exists(temp), "Unrecognized temporary link: {}".format(temp))
+        current = (control_identity(path, stat.S_ISLNK), previous_value(path))
+        before = (action["before"], action["old"])
+        if current != before:
+            need(current == (action["after"], action["new"]), "Active or legacy link changed: {}".format(path))
+            set_link(path, action["old"], temp)
     elif kind == "directory":
         path = Path(action["path"])
         if exists(path):
+            need(identity(path, stat.S_ISDIR) == action["after"], "Created directory identity changed: {}".format(path))
             path.rmdir()
             sync_dir(path.parent)
     elif kind == "file":
         path = Path(action["path"])
-        need(file_content(path) in (action["old"], action["new"]),
-             "Control file changed: {}".format(path))
-        if file_content(path) != action["old"]:
+        current = (control_identity(path, stat.S_ISREG), file_content(path))
+        if current != (action["before"], action["old"]):
+            need(current == (action["after"], action["new"]), "Control file changed: {}".format(path))
             set_file(path, action["old"])
     elif kind == "cron":
         need(cron_lines() in (action["old"], action["new"]), "Crontab changed during the operation.")
@@ -597,13 +795,17 @@ def undo_action(action):
 
 
 def recover_pending():
-    pending = read_json(PENDING)
-    if not pending:
+    if not exists(PENDING):
         return
+    pending = read_control(PENDING)
+    validate_journal(pending)
     state = read_state()
     if state and state.get("last_tx") == pending["id"]:
         finish_transaction(pending)
         return
+    need(not pending.get("cleaning") or not pending["undo"],
+         "Uncommitted journal entered cleanup before undo completed.")
+    validate_undo_identities(pending, state)
     print("Restoring interrupted or failed {}.".format(pending["operation"]), flush=True)
     mode = pending["mode"]
     if mode and not pending.get("undo_started"):
@@ -615,15 +817,17 @@ def recover_pending():
         pending["undo_started"] = True
         write_json(PENDING, pending)
     while pending["undo"]:
-        undo_action(pending["undo"][-1])
+        undo_action(pending["undo"][-1], pending["id"])
         pending["undo"].pop()
         write_json(PENDING, pending)
     if pending["restart"]:
-        start(mode)
+        need(state and state.get("store_id"), "Missing installed authority identity for recovery.")
+        start_pending(pending, mode, state["active"], state["store_id"])
     if pending["created_control"] and not exists(STATE):
         for name in ("cron.log", "cron.lock", "cron.sock"):
             path = CONTROL / name
             if exists(path):
+                identity(path, stat.S_ISSOCK if name == "cron.sock" else stat.S_ISREG)
                 path.unlink()
     finish_transaction(pending)
     if pending["created_control"] and not exists(STATE):
@@ -734,6 +938,11 @@ def install(config, state, bundle):
         public_key = prepare_authority(tx, config, candidate, state)
         if not state:
             tx.file(RUNNER, (BUNDLE / "dt-setup-cron.py").read_text(encoding="utf-8"))
+            tx.file(GUARD, (BUNDLE / GUARD.name).read_text(encoding="utf-8"))
+            # Bootstrap is limited to the store created by this install.
+            command(Path(candidate) / SERVER, "list", "--config", BASE / "config/server.json",
+                    stdout=subprocess.DEVNULL)
+        store_id = recognized_store(state["store_id"] if state else None)
         legacy = {}
         print("Backing up legacy paths without deleting their contents.", flush=True)
         tx.directory(LEGACY, 0o711)
@@ -752,9 +961,10 @@ def install(config, state, bundle):
         tx.service(mode, False)
         configure_boot(tx, mode, True)
         print("Starting {} service and checking loopback Catalog.".format(mode), flush=True)
-        start(mode)
-        tx.commit({"active": candidate, "previous": None, "boot": mode,
+        tx.start_service(mode, candidate, store_id)
+        tx.commit({"active": candidate, "history": [], "boot": mode,
                    "legacy": legacy, "public_key": public_key, "runner": digest(RUNNER),
+                   "store_id": store_id, "guard": digest(GUARD),
                    "unit": digest(UNIT) if mode == "systemd" else None})
         print("Install complete. Generate the one-time administrator request.")
 
@@ -776,14 +986,15 @@ def update(state, bundle):
         print("Stopping the service and selecting the new publish.", flush=True)
         stop(state["boot"])
         tx.link(CURRENT, candidate)
-        start(state["boot"])
-        tx.commit(dict(state, active=candidate, previous=state["active"]))
+        tx.start_service(state["boot"], candidate, state["store_id"])
+        tx.commit(dict(state, active=candidate, history=state["history"] + [state["active"]]))
         print("Update complete.")
 
 
 def rollback(state):
     need(state and state["active"], "There is no active install or update to roll back.")
-    mode, previous = state["boot"], state["previous"]
+    mode, history = state["boot"], state["history"]
+    previous = history[-1] if history else None
     if previous:
         check_version(previous)
     with mutation("rollback") as tx:
@@ -791,14 +1002,14 @@ def rollback(state):
         stop(mode)
         tx.link(CURRENT, previous)
         if previous:
-            start(mode)
+            tx.start_service(mode, previous, state["store_id"])
         else:
             configure_boot(tx, mode, False)
             for name in reversed(list(state["legacy"])):
                 if name == "ue-dt-updates":
                     tx.link(BASE / name, None)
                 tx.move(LEGACY / name, BASE / name)
-        tx.commit(dict(state, active=previous, previous=None))
+        tx.commit(dict(state, active=previous, history=history[:-1]))
         print("Rollback complete. Authority, access policy and signing keys are preserved.")
 
 
@@ -815,6 +1026,9 @@ def verify(config, state):
         actual = curl_code(url)
         need(actual == expected, "{} returned {}; expected {}.".format(name, actual, expected))
         print("PASS {} HTTP {}".format(name, actual))
+    for endpoint in (LOOPBACK, config["publicUrl"]):
+        signed_challenge(endpoint, config["publicUrl"])
+        print("PASS signed challenge at {}".format(endpoint))
     print("PASS {} service and disk {}".format(state["boot"], disk()))
 
 
@@ -852,6 +1066,14 @@ restore=$(mktemp /etc/nginx/conf.d/.ue-dt-updates.restore.XXXXXXXX) &&
         "in /root/ue-dt-updates.candidate. For coexist, merge the signed locations and log format",
         "into the actual original vhost if its legacy rules differ. Compare with nginx -T.",
         "Check inherited authentication, rewrites, cache, errors, logging and root traversal.",
+        "",
+        "Prepare the candidate (root shell, after extracting the verified bundle under /root):",
+        "set -eu",
+        "bundle=/root/ue-dt-server-rhel84; mode=" + mode,
+        'candidate=$(mktemp /root/.ue-dt-updates.XXXXXXXX)',
+        r"""awk 'FNR==NR { proxy[++n]=$0; next } /^[[:space:]]*include \/etc\/nginx\/uedt-signed-proxy\.inc;$/ { for (i=1;i<=n;i++) print "        " proxy[i]; ++hits; next } { print } END { if (hits!=3) exit 1 }' "$bundle/nginx/uedt-signed-proxy.inc" "$bundle/nginx/$mode/ue-dt-updates.conf" > "$candidate" """.rstrip(),
+        'mv -T -- "$candidate" /root/ue-dt-updates.candidate',
+        "",
         "Confirm loopback Catalog HTTP 401 before proceeding. Keep the current root session open.",
         "",
         "Apply (five lines in a root shell):", root_commands,
@@ -927,7 +1149,7 @@ def main():
                 managed_paths(config, state)
                 rollback(state)
         return 0
-    except (SetupError, ValueError, OSError, subprocess.SubprocessError) as error:
+    except (SetupError, ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError) as error:
         print("FAIL {}".format(error), file=sys.stderr)
         return 1
 

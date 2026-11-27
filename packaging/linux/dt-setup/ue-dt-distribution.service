@@ -5,7 +5,7 @@ RequiresMountsFor=/dt/store /dt/publish
 
 [Service]
 UMask=0077
-ExecStart=/dt/publish/dt-current/server-linux-x64/UeDtLauncher.DistributionServer serve --config /dt/config/server.json
+ExecStart=/usr/bin/python3 -B /dt/tools/dt_setup_guard.py
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=45

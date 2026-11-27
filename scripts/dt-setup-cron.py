@@ -13,8 +13,7 @@ import time
 CONTROL = Path("/dt/.dt-setup")
 SOCKET = str(CONTROL / "cron.sock")
 LOCK = CONTROL / "cron.lock"
-SERVER = "/dt/publish/dt-current/server-linux-x64/UeDtLauncher.DistributionServer"
-COMMAND = [SERVER, "serve", "--config", "/dt/config/server.json"]
+COMMAND = [sys.executable, "-B", "/dt/tools/dt_setup_guard.py"]
 
 
 def request(message, timeout):

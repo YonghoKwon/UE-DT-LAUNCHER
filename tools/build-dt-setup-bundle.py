@@ -21,7 +21,8 @@ def normalized_scripts(stage):
             dest = stage / source.relative_to(REPO / "packaging/linux/dt-setup")
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(source.read_bytes().replace(b"\r\n", b"\n"))
-    for name in ("dt-setup.sh", "dt-setup.py", "dt-setup-cron.py", "prepare-server-store.sh", "server-disk-usage.sh"):
+    for name in ("dt-setup.sh", "dt-setup.py", "dt-setup-cron.py", "dt_setup_guard.py",
+                 "prepare-server-store.sh", "server-disk-usage.sh"):
         dest = stage / name
         dest.write_bytes((REPO / "scripts" / name).read_bytes().replace(b"\r\n", b"\n"))
         dest.chmod(0o755)

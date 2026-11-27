@@ -58,10 +58,22 @@ RHEL 8.4 x86-64의 기존 nginx 1.14.1 포트 80에서 request-signature-v1 파�
 
 서명 공개키는 `/dt/keys/release-public.pem`에 있습니다. 초기에는 dt2prod가 승인된 ZIP 및 외부 release.json을 `/dt/store/incoming`에 배치합니다. PC 등록 및 버전 권한은 [사내 HTTP 등록 절차](intranet-auth.md)를 따릅니다.
 
+서비스는 부팅 때 커밋된 게시본과 설치 때 확인한 저장소 신원 및 현재 HEAD를 검사합니다. 미완료 작업이나 신원이 다른 저장소는 시작을 차단합니다. 설치 기록의 신원이 누락되거나 journal 경로·신원이 일치하지 않으면 자료를 보존하고 담당자가 대조합니다. `verify`는 loopback·공개 origin의 서명 challenge 형식과 origin 결속도 검사합니다. 여러 번 갱신했다면 `rollback`을 반복해 이전 게시본을 순서대로 선택할 수 있습니다.
+
 #### nginx 담당자
 
 1. 요청서의 선택 모드와 loopback Catalog 401을 확인합니다. 신뢰된 채널의 번들 SHA-256 및 `SHA256SUMS`를 대조하고 root 통제 디렉터리에서 후보를 검토합니다. `nginx -T`로 기존 포트 80 default vhost, 공개·Basic 인증 경로, 캐시·오류·rewrite 상속, 접근 로그와 문서 루트 접근을 확인합니다. loopback 18500은 기존 nginx가 사용합니다.
 2. 선택한 후보의 세 include 위치에서 `nginx/uedt-signed-proxy.inc`를 펼쳐 `/root/ue-dt-updates.candidate` 하나를 준비합니다. `coexist`에서는 실서버 정적 규칙을 유지하고 세 signed location 및 전용 log_format만 합칩니다. `cutover`에서는 동일 포트 80 default vhost가 세 signed location을 처리하며 나머지 경로에는 404를 반환합니다. 새 경로에서는 기존 Basic 인증과 nginx auth_request를 해제하고, backend가 실제 연결 IP와 요청 서명을 검증합니다.
+   요청서에도 아래 명령이 생성됩니다. 검증한 번들은 `/root/ue-dt-server-rhel84`에 풀고 `mode`에 승인된 모드를 넣습니다.
+
+   ```bash
+   set -eu
+   bundle=/root/ue-dt-server-rhel84; mode=coexist
+   candidate=$(mktemp /root/.ue-dt-updates.XXXXXXXX)
+   awk 'FNR==NR { proxy[++n]=$0; next } /^[[:space:]]*include \/etc\/nginx\/uedt-signed-proxy\.inc;$/ { for (i=1;i<=n;i++) print "        " proxy[i]; ++hits; next } { print } END { if (hits!=3) exit 1 }' "$bundle/nginx/uedt-signed-proxy.inc" "$bundle/nginx/$mode/ue-dt-updates.conf" > "$candidate"
+   mv -T -- "$candidate" /root/ue-dt-updates.candidate
+   ```
+
 3. root 셸에서 요청서의 다섯 줄을 붙여 넣습니다. 기존 conf.d 파일을 glob 밖으로 보관한 뒤 후보를 원자 교체하고 `nginx -t` → reload를 수행합니다. 구문 검사 또는 reload가 실패하면 원본 설정을 복원하고 다시 검사·reload합니다. 출력된 백업 경로를 변경 기록에 남깁니다.
 4. 요청서의 공개 Catalog curl이 401을 반환하는지 확인합니다. 운영자가 `verify`로 같은 origin과 옛 경로를 확인합니다. 문제 발생 시 요청서의 백업 경로를 사용해 nginx를 원복합니다. 사용자 unit이 부팅 전부터 필요하고 linger가 비활성일 때 요청서의 `loginctl enable-linger dt2prod`를 적용할 수 있습니다. 설치된 crontab 방식을 systemd로 전환할 때에는 nginx·서비스 변경 창에서 설치 원복 후 같은 설정으로 재설치합니다. 회사 systemd 사용자 서비스, 실제 호스트 재부팅, 실제 PC 인증과 Range는 이관 시 확인합니다.
 
