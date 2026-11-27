@@ -6,7 +6,7 @@ Unreal Engine Windows/Linux 패키징 프로그램을 사내 서버에 등록하
 
 ## 현재 상태
 
-- 2026-11-27 PROD-10 [로컬] 문서 대조 기준은 `3eb100d`(PROD PR #10~#41 중 병합분)입니다. 배포 서버는 별도 DB 없이 `/dt/store`의 불변 파일 세대와 `authority/HEAD`를 사용합니다. 운영 설정 `/dt/config`와 서명키 `/dt/keys`는 저장소 밖에 둡니다. 회사 실환경은 미검증입니다.
+- 2026-11-27 PROD-10 [로컬] 문서 대조에 main `d02b221`의 dt-setup과 PROD-25 결과를 반영했습니다. 배포 서버는 별도 DB 없이 `/dt/store`의 불변 파일 세대와 `authority/HEAD`를 사용합니다. 운영 설정 `/dt/config`와 서명키 `/dt/keys`는 저장소 밖에 둡니다. 회사 실환경은 미검증입니다.
 - [로컬] PROD-25는 09L 고정 게시본의 필수 GUI 사례 97개 중 96개 통과, 1개 미실행입니다. 회사 이관과 사용자 리허설은 별도입니다. [일반 사용자 한 장 안내](docs/reference/launcher-user-guide.md#일반-사용자-한-장-안내) · [A~D 운영 순서](docs/reference/feature-workflow.md#2-한눈에-보는-전체-순서) · [장애 런북과 회사 이관](docs/reference/commercial-deployment.md#장애-대응-런북)
 - **합성 앱 기반 배포·설치·실행·복구는 로컬에서 활용 가능한 단계이며, 회사 정식 운영 인수(G1~G6)는 미완료입니다.**
 - 실제 회사 인증서·서비스 계정·RHEL·실제 UE 업데이트/복구·MSI/RPM 설치 수명주기는 아직 검증하지 않았습니다. 원격 CI는 기준 cef9f53의 과거 build 성공을 확인했으며 이번 스프린트 커밋은 원격 실행하지 않았습니다.
@@ -74,7 +74,7 @@ dotnet publish src/UeDtLauncher.DistributionServer -c Release -r linux-x64 --sel
 ## 처음 준비할 것
 
 1. 회사 RHEL 8.4에서 `dt2prod`가 `dt-setup.sh`로 설치·검증합니다. root는 최초 한 번 기존 nginx 80에 서명 경로를 적용하고, 사용자 서비스를 로그인 전부터 시작해야 할 때 linger를 설정합니다. 이후 버전 갱신·원복은 `dt2prod`가 진행합니다. [A2 실행 순서](docs/reference/feature-workflow.md#a2-linux-서버-구성--관리자) · [설치 및 관리자 인계](docs/reference/distribution-workflow.md#dt2prod-설치와-nginx-전환)
-2. 서버 배포 서명키를 준비하고 배포 서명 공개키를 PC 관리자에게 전달합니다.
+2. `dt2prod`가 설치에서 준비한 배포 서명 공개키를 PC 관리자에게 전달합니다.
 3. 사내 HTTP PC는 `enroll prepare`로 공개키 묶음을 만들고, 서버 관리자가 `client-enroll`로 PC별 IP와 허용 트랙을 등록합니다. PC 개인키는 보호 저장소에 남습니다. 기존 HTTPS/Bearer는 토큰 절차를 사용합니다.
 4. PC 관리자가 `enroll finish`로 운영 설정과 진단 결과를 저장합니다. 관리형은 시스템 Agent 설정 폴더에 관리자 보호 공개키를 먼저 배치한 뒤 `finish`를 실행합니다. 관리자가 운영 설정을 업데이트 서비스에 반영한 뒤 `doctor --online`을 다시 실행합니다. 개별 설정은 `sample-config`로 생성할 수 있습니다.
 5. 일반 또는 개발자 빌드의 실행 파일을 배포합니다. 관리형은 런처 옆 화면 설정에 프로젝트·트랙·OS·버전 선택을 지정합니다.
