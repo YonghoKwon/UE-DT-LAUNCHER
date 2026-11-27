@@ -2,6 +2,8 @@
 
 이 문서는 schema 3 `request-signature-v1`용이다. 기존 HTTPS/Bearer 설치는 그대로 유지되며 자동 이전하지 않는다. **HTTP 내용은 암호화되지 않는다.** 도청·실시간 중계 위험은 남고, 회사 운영 수용은 별도이다. 코드서명 인증서(MSI)와 무관한 기능이다.
 
+2026-11-27 PROD-10 [로컬] 문서 대조. PROD-06B는 Rocky 8.4 합성 PC에서 dry-run 무변경, 키 4개 등록, 허용 2대 설치(각 2/2 파일 해시 일치), 폐기 401 및 새 키의 200을 관측했다. 회사 DHCP 변경, 서비스 계정 설치 및 회사 프록시는 미검증이다. [회사 T6/T8/T9](commercial-deployment.md#실환경-이관-체크리스트)
+
 ## A. 최초 준비 — 관리자 작업
 
 서버 CLI 수명 관리: `client-key add ... --expires-at 2030-01-01T00:00:00Z`, `token-issue pc --expires-at ...`, `token-list`, `token-revoke-id --id 관리ID`. 생략하면 기존처럼 무기한이다. 새 자격 등록·실제 연결 성공 후 이전 자격을 폐기한다. 폐기·만료와 감사 이벤트는 HEAD 세대 하나에서 반영된다. 서버는 요청마다 같은 HEAD의 자격과 릴리스 색인을 확인한다. 정책 파일과 파일 저장소의 장애는 모두 503으로 응답하며 운영 계측에서는 원인을 구분한다. 관리 목록에는 token/hash를 출력하지 않는다. `maxApiRequestsPerSecond`/`maxConcurrentDownloads`는 기본 null(비활성), 명시한 양수 한도 초과는429/Retry-After다. 실제 HTTP 슬롯 반환·만료/audit 원자성의 로컬 검증과 회사 계정/프록시 인수를 구분한다.
@@ -23,11 +25,12 @@ Windows PC 예시(관리형은 상승된 PowerShell, portable은 `--storage port
 .\UeDtLauncher.exe enroll finish --server-url http://10.20.30.40 --project-id ue-dt-simulator --platform windows-x64 --credential-name ue-dt-device --signing-key-id release-1 --public-key "$env:ProgramData\UE-DT Launcher\config\release-public.pem" --output "$env:ProgramData\UE-DT Launcher\config\launcher.config.json"
 ```
 
-Linux 서버 예시(초기화된 저장소와 정책을 가리키는 `--config` 사용):
+Linux 서버 예시입니다. 회사 파일럿에서는 `dt2prod`가 공개 등록 묶음만 `/dt/keys/enroll/`에 모으고 활성 게시본을 지정합니다. [활성 서버 배치](distribution-workflow.md#dt2prod-설치와-nginx-전환)
 
 ```bash
-UeDtLauncher.DistributionServer client-enroll --from /dt/keys/enroll/ --grant ue-dt-simulator:prod:stable --config /dt/config/server.json --dry-run
-UeDtLauncher.DistributionServer client-enroll --from /dt/keys/enroll/ --grant ue-dt-simulator:prod:stable --config /dt/config/server.json
+Server=/dt/publish/dt-current/server-linux-x64/UeDtLauncher.DistributionServer
+"$Server" client-enroll --from /dt/keys/enroll/ --grant ue-dt-simulator:prod:stable --config /dt/config/server.json --dry-run
+"$Server" client-enroll --from /dt/keys/enroll/ --grant ue-dt-simulator:prod:stable --config /dt/config/server.json
 ```
 
 `--grant project:environment:channel`은 트랙마다 반복할 수 있다. `--address-source observed`는 기본값이다. NAT·DHCP 등으로 관측값을 사용할 수 없으면 `--address-source file:/dt/config/enroll-addresses.csv`를 두 서버 명령에 넣고, UTF-8 CSV에 `clientId,address` 헤더와 주소마다 `pc-001,10.10.20.15/32` 같은 행을 적는다. CSV에는 정규 형식 IP 또는 CIDR을 사용한다. IPv4는 네 개의 10진수 옥텟을 쓰고, CIDR은 정규 네트워크 주소와 앞자리 0 없는 prefix를 지정한다. CSV를 선택하면 모든 묶음에 관리자 지정 주소가 필요하다. 관리자는 묶음의 출처와 주소를 검토하고 적용 중 다른 정책 편집을 피한다.
@@ -46,7 +49,7 @@ UeDtLauncher.DistributionServer client-enroll --from /dt/keys/enroll/ --grant ue
 | 2 | Linux 서버 관리자 | `packaging/linux/distribution-nginx-http-signature.conf`의 예시 IP를 실제 IP로 바꾸어 배치, `nginx -t` 후 운영 절차에 따라 반영 | 파일은 backend를 한 번만 통과. backend 원격 노출·공개 static alias 금지 |
 | 3 | Windows PC의 관리자 PowerShell | 아래 키 생성 명령 실행 | 개인키는 보호된 저장소, 내보낸 JSON에는 공개키만 존재 |
 | 4 | 관리자 간 신뢰된 경로 | `pc-001-public.json`을 배포 서버로 전달하고 공개키 fingerprint/출처 확인 | 개인키는 PC 밖으로 복사하지 않음 |
-| 5 | Linux 서버 관리자 | `UeDtLauncher.DistributionServer client-key add --client pc-001 --public-key /tmp/pc-001-public.json --config /etc/ue-dt-distribution/server.json` | key ID 등록. 같은 ID 재등록/재배정 거부 |
+| 5 | Linux 서버 관리자 | `UeDtLauncher.DistributionServer client-key add --client pc-001 --public-key /dt/keys/enroll/pc-001-public.json --config /dt/config/server.json` | key ID 등록. 같은 ID 재등록/재배정 거부 |
 | 6 | Linux 서버 관리자 | 기존 access-policy.json에 `pc-001`의 실제 IP/CIDR와 허용 프로젝트·환경·채널·버전 설정 | 등록만으로 권한이 부여되지 않으며 미등록/빈 grants는 거부 |
 | 7 | 클라이언트 관리자 | 서버의 **배포 서명 공개키**를 신뢰된 경로로 받아 설정 옆 `release-public.pem`에 설치 | PC 요청 인증키와 다른 키임. 개인키를 설정에 넣지 않음 |
 | 8 | 클라이언트 관리자 | 아래 sample-config 생성 → 검토 → Agent의 관리 설정 위치에 배치 | Windows 실제 ProgramData, Linux /etc 설정 사용. 기존 파일은 명시적 교체 전 보존 |
@@ -101,10 +104,12 @@ ZIP + 외부 release.json 생성·접수·수동 승인 순서는 [기능 지도
 교체: **새 이름/key ID로 생성 → 공개키 등록 → 새 설정 연결 확인 → 이전 key ID 폐기**.
 
 ```bash
-UeDtLauncher.DistributionServer client-key revoke --key-id pc-001-v1 --config /etc/ue-dt-distribution/server.json
+UeDtLauncher.DistributionServer client-key revoke --key-id pc-001-v1 --config /dt/config/server.json
 ```
 
 `credential delete --name …`는 로컬 파일만 삭제한다. 서버 키 폐기와 구분한다. 키 수명 자동화·회사 API·무인 주기는 후속 범위이다.
+
+**IP 변경:** PC 관리자는 `doctor --online`을 실행하고 서버 관리자는 nginx가 관측한 주소·PC ID·기존 grant를 확인한다. `client-enroll` 재실행은 기존 PC 주소를 유지한다. 기존 주소를 갱신하는 관리 CLI는 현재 없다. 회사 T9에서 승인된 정책 편집 절차를 정한 뒤, 서버 관리자가 `/dt/config/access-policy.json`의 해당 PC `addresses`만 수정할 후보를 준비한다. 스키마와 주소를 확인하고 소유자·모드·ACL을 보존한 같은 디렉터리의 파일을 원자 교체한다. 배치 등록과 정책 편집은 겹치지 않게 운영한다. 같은 PC의 서명된 Catalog 및 grant 확인으로 복구를 판정한다. PROD-06B는 주소가 달라졌을 때 403, 원주소 복귀 후 200을 확인했다. 정책 편집에 의한 복구는 미실행이다.
 
 ## 호환·검증 한계
 

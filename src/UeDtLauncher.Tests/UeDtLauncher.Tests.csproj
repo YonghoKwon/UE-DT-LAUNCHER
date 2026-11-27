@@ -15,6 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../UeDtLauncher.Agent/UeDtLauncher.Agent.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../UeDtLauncher.DistributionServer/UeDtLauncher.DistributionServer.csproj" />
     <ProjectReference Include="..\UeDtLauncher\UeDtLauncher.csproj" />
     <ProjectReference Include="..\UeDtLauncher.Core\UeDtLauncher.Core.csproj" />

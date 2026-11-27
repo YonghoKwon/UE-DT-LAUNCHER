@@ -43,9 +43,7 @@ python tools/prepare_prod_server.py restart --run-id $id --work $work
 
 시험 직후 `python tools/prepare_prod_server.py down --run-id $id --work $work`를 실행합니다. `stage`가 만든 `docker-ownership.json`은 정리까지 유지합니다. 각 볼륨은 생성 시 기록한 소유 표식·생성 시각·마운트 지점과 사용 및 삭제 직전 값을 대조합니다. 동일 이름의 다른 볼륨이 있으면 중단해 그대로 보존합니다. 시작 전과 정리 후 Docker 리소스 목록을 대조합니다. 빌드 캐시 수치는 `docker system df`에 기록합니다.
 
-회사 배치는 [RHEL 설치 스크립트 초안](../../../scripts/install-server.sh)을 참고합니다. 기존 키·런처 파일은 파일별로 대조합니다. 후보 nginx 설정 검사 후 원자적으로 게시하며, 실제 구성 검사가 실패하면 해당 실행이 추가한 설정을 되돌립니다. 재실행은 이미 설치된 동일 파일을 보존합니다. SELinux가 활성화된 경우 설치 전에 대상의 fcontext 매핑을 확인합니다. 회사 서버와 실제 SELinux 정책은 인수 환경에서 확인합니다.
-
-설치 스크립트가 생성하는 `ue-dt-distribution.service`는 `Restart=on-failure`를 사용합니다. nginx는 별도 systemd 서비스로 실행하며 [서명 모드 nginx 설정](../../../packaging/linux/distribution-nginx-http-signature.conf)은 고정 loopback 주소 `127.0.0.1:18500`으로 요청을 전달합니다. 실서버 인수에서는 `systemctl restart ue-dt-distribution` 동안 공개 Catalog를 반복 조회하고, nginx의 `MainPID`가 유지되며 백엔드가 돌아온 뒤 미인증 401과 인증 다운로드가 복구되는지 기록합니다.
+회사 파일럿은 [dt2prod 운영 가이드](../../../docs/reference/distribution-workflow.md#dt2prod-설치와-nginx-전환)를 따릅니다. nginx는 기존 80에서 loopback `127.0.0.1:18500`으로 프록시합니다. `dt2prod`의 systemd 사용자 서비스 인수에서는 `systemctl --user restart ue-dt-distribution.service` 전후로 공개 Catalog를 조회합니다. nginx의 `MainPID` 유지, 미인증 401 복귀, 인증 다운로드 복구를 기록합니다. 실제 재부팅과 SELinux 정책은 회사 이관에서 확인합니다.
 
 ## dt2prod 설치 도구 시험
 

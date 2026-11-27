@@ -92,7 +92,8 @@ public static partial class Program
         output.WriteLine("Current commands (distribution server mode):");
         output.WriteLine("  upload init --output upload.profile.json [--force]");
         output.WriteLine("  upload project-init --output ma0t10.project.json [--force]");
-        output.WriteLine("  upload check --profile upload.profile.json (또는 --server user@host --remote-incoming /dt/store/incoming)");
+        output.WriteLine("  upload check [--profile upload.profile.json] [--server user@host --remote-incoming /dt/store/incoming] [--port 22] [--identity-file path] [--format text|json]");
+        output.WriteLine("    접속 프로필 또는 서버와 incoming 경로를 지정하세요. 명령줄 접속 옵션은 프로필 값보다 우선합니다.");
         output.WriteLine("    키 인증 전용(BatchMode): 비밀번호를 묻지 않습니다. 최초 호스트 키 등록은 터미널 ssh로 확인하세요.");
         output.WriteLine("  upload status --upload-id <ID> [--profile upload.profile.json] [--remote-status /dt/store/upload-status] [--wait] [--timeout <초>] [--interval <초>] [--format text|json]");
         output.WriteLine("    읽기 전용 SSH 조회. --wait 기본 제한 1800초, 간격 5초. 종료 0 성공, 1 조회 실패, 2 입력 오류, 3 검사 실패·거절, 4 제한시간 초과.");
@@ -108,7 +109,10 @@ public static partial class Program
         output.WriteLine("  runtime recover --config <file> --dry-run|--confirm-stopped [--version <exact version>] [--service-selection]");
         output.WriteLine("  release-metadata --zip <zip> --project-id <id> --version <version> --platform <platform> --entry-point <path> [--payload-root <path>] [--output <release.json>]");
         output.WriteLine("  release-metadata --project-profile ma0t10.project.json --zip Windows.zip --version 1.4.0 [--notes-file notes.md] [--output release.json]");
-        output.WriteLine("  gui                 (also: --gui forces GUI; --cli forces CLI -> defaults to 'run')");
+        output.WriteLine("    Optional metadata: --display-name --environment --channel --executable-paths --hero-path --thumbnail-path");
+        output.WriteLine("    Use either --notes <text> or --notes-file <UTF-8 file, up to 64 KiB>.");
+        output.WriteLine("  gui [--config <display-config.json>] (also: --gui [--config <display-config.json>])");
+        output.WriteLine("    --cli forces CLI and defaults to 'run'.");
         output.WriteLine("  sample-config --output launcher.config.json [--mode distribution|managed-client|legacy-catalog] [--force]");
         output.WriteLine("    managed-client: --project-id id [--platform windows-x64|linux-x64] [--environment prod|dev] [--channel stable|beta|dev] [--version-policy latest|exact] [--version exact-version]");
         output.WriteLine("    [--server-url http://10.20.30.40] [--project-id id] [--platform windows-x64|linux-x64] [--profile general|developer]");
@@ -123,7 +127,11 @@ public static partial class Program
         output.WriteLine("  credential repair-permissions --name name --dry-run|--apply [--storage managed|portable]");
         output.WriteLine("  run --config launcher.config.json [--repair] [--no-launch]");
         output.WriteLine("  rollback --config launcher.config.json [--list] [--backup <timestamp>]");
+        output.WriteLine("  import-install --config <legacy-config.json> --destination-root <app-root> [--apply]");
+        output.WriteLine("    Preview by default. --apply copies the installation without deleting the source.");
         output.WriteLine("  agent [status] [--endpoint <pipe-or-socket>] [--project <id>]");
+        output.WriteLine("  agent <check|update|repair> [--endpoint <pipe-or-socket>] [--project <id>]");
+        output.WriteLine("    For an exact release, specify --project <id> --version <version> [--environment prod] [--channel stable] [--platform windows-x64|linux-x64].");
         output.WriteLine("  credential <set|status|delete> --name <credential-name>");
         output.WriteLine("  generate-signing-key --private-key <private.pem> --public-key <public.pem>");
         output.WriteLine("  doctor --config launcher.config.json [--online] [--format json|text]");

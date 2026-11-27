@@ -2,7 +2,7 @@
 
 > 현재 가이드 / 문서 점검 2026-10-03 / codex/operations-hardening-closure. 현재 기능은 [README](../../README.md), 미완료 항목은 [보완 목록](../../IMPROVEMENTS.md)을 따릅니다.
 
-현재 기본 경로는 DistributionServer의 ZIP + 외부 `release.json` 접수·승인 → 서버 권한 확인 → 서명된 메타데이터/파일 다운로드 → 버전별 설치입니다. 서버·토큰 준비는 [통합 운영](distribution-workflow.md)을 따릅니다.
+2026-11-27 PROD-10 [로컬] 문서 대조. 현재 표준은 `/dt`의 파일 저장소, 사내 HTTP 요청 서명, SSH `upload`, 수동 승인, `stable`의 명시적 추천 승격입니다. 회사 실환경은 미검증입니다. [서버 배치](distribution-workflow.md) · [PC 등록](intranet-auth.md)
 
 이 문서는 패키징 소스와 현장 점검 절차입니다. MSI machine-wide 설치·실제 RHEL 8 RPM 배포·실제 UE 운영 검증 완료를 뜻하지 않습니다. 초기 통합 결과는 [배포 이력](archive/validation/distribution-validation.md), 최신 합성 앱 실행·복구·rollback 결과는 [관리형 GUI 이력](archive/validation/managed-gui-safety-validation.md)을 따릅니다. 문서 점검이 새 설치 수명주기 시험을 뜻하지 않습니다.
 
@@ -53,7 +53,7 @@ Linux는 `--platform rhel8 --package <정확한-RPM>`을 사용합니다. 도구
 
 1. 격리된 관리자 테스트 PC/실제 RHEL에서 설치·업그레이드·제거를 확인합니다.
 2. 보호 설정에 distributionServerUrl, 설치·상태·로그 루트, 공개키, credential 이름을 지정합니다.
-3. PC 토큰을 안전하게 전달하고 Agent 계정이 읽을 수 있는 credential 저장소에 등록합니다.
+3. 사내 HTTP PC는 `enroll prepare` → `client-enroll` → `enroll finish`로 등록합니다. 기존 HTTPS/Bearer 설치를 유지하는 경우에만 토큰을 안전하게 전달하고 Agent 계정의 credential 저장소에 등록합니다.
 4. Linux credential은 0600이므로 소유자도 확인합니다. Windows는 DPAPI LocalMachine만으로 계정 격리가 보장되지 않으므로 ACL도 확인합니다.
 5. 서비스·서버 연결, 허용/거부 프로젝트·버전, 설치·repair·실제 UE 실행을 확인합니다.
 
@@ -74,12 +74,11 @@ UeDtLauncher diagnostics export --config launcher.config.json
 
 ```text
 UeDtLauncher.Agent migrate --config C:\ue-dt\launcher.config.json
-UeDtLauncher.Agent migrate --config C:\ue-dt\launcher.config.json --dry-run
 UeDtLauncher import-install --config C:\ue-dt\launcher.config.json --destination-root C:\ue-dt\apps
 UeDtLauncher import-install --config C:\ue-dt\launcher.config.json --destination-root C:\ue-dt\apps --apply
 ```
 
-`migrate`는 현재 계획 출력만 지원합니다. 기존 InstallDir를 공유하는 apply는 소유권 충돌 위험으로 차단되며 config/state를 생성하지 않습니다. 기존 공유 구성이 있다면 자동 이전 대신 별도 정비 계획이 필요합니다. `import-install`은 정지 확인·잠금 후 버전 설치 루트에 검사·복사하는 별도 경로이며 원본을 삭제하지 않습니다. UE 저장 데이터 이전은 USER-01의 별도 정책 대상입니다. [수동 점검](runtime-safety.md)
+`migrate --config`는 기본으로 계획을 출력합니다. 기존 예제의 `--dry-run`을 붙여도 동일한 계획을 출력합니다. 기존 InstallDir를 공유하는 apply는 소유권 충돌 위험으로 차단되며 config/state를 생성하지 않습니다. `UeDtLauncher.Agent --help`(또는 `-h`, `help`)는 설정을 읽거나 서비스를 시작하기 전에 사용법을 출력합니다. 저장소의 `cleanup`은 배포 서버 실행 파일에서 제공하는 조회 명령입니다. 기존 공유 구성이 있다면 별도 정비 계획이 필요합니다. `import-install`은 정지 확인·잠금 후 버전 설치 루트에 검사·복사하는 별도 경로이며 원본을 삭제하지 않습니다. UE 저장 데이터 이전은 USER-01의 별도 정책 대상입니다. [수동 점검](runtime-safety.md)
 
 ## 운영 승인 전 확인
 
@@ -87,6 +86,49 @@ UeDtLauncher import-install --config C:\ue-dt\launcher.config.json --destination
 - 서명된 MSI/RPM 설치·업그레이드·제거 및 설치 payload 서명
 - Agent 계정별 credential·IPC·파일 권한
 - 실제 UE 의존성·대용량 패키지·재시작·복구·저장 데이터
-- 서버 DB/서명키/릴리스 백업·복원과 sequence replay 방어
+- 파일 권위 저장소·별도 서명키·릴리스 백업/복원과 sequence replay 방어
 
 레거시 `publish-release`/정적 catalog는 기존 설치 호환 경로입니다. 새 통합 서버에 공개 /projects·/catalogs location을 섞지 않습니다. 우선순위·미완료 개선은 [IMPROVEMENTS](../../IMPROVEMENTS.md)에서 관리합니다.
+
+## 장애 대응 런북
+
+사용자는 오류 화면에서 **지원 정보 복사**로 시각·지원 ID·PC 이름·런처 버전을 전달합니다. PC 관리자는 `doctor --online`과 업데이트 서비스 상태를 확인합니다. 서버 관리자는 같은 시각의 서비스·nginx 로그와 업로드 ID를 확인합니다. 전달 자료에는 인증 헤더·키·토큰을 넣지 않습니다. 회사값은 승인된 설정을 사용합니다.
+
+09L [로컬] Docker 첫 서버 장애 시도에서는 공개 HTTP가 복구되지 않았습니다. 시험 스택 수정 후 backend만 재기동하여 502에서 401로 복귀했고 CLI 재개 뒤 두 버전 각 326/326 파일과 UserDir 해시를 보존했습니다. 회사 사용자 서비스 재기동과 호스트 재부팅은 T1에서 관측합니다. [Docker 장애 재시험](https://github.com/YonghoKwon/UE-DT-LAUNCHER/pull/44)
+
+| 증상 | 담당 / 실행 위치 | 입력·조치 | 복귀 확인 |
+|---|---|---|---|
+| 업로드가 전송 완료/대기에 머묾 | 개발자 / PowerShell, 서버 관리자 / Bash | `upload status --upload-id ID --wait` → 서버 `list`/`inspect`로 두 최종 파일, `.uploading`, 서비스 계정의 읽기 권한과 `serve` 확인. 불완전 전송은 원인 해결 후 새 ID로 재전송 | 정상 파일 쌍 검사를 거쳐 `pending` |
+| 검사 실패 또는 거절 | 개발자 / PowerShell, 운영자 / 서버 콘솔 | `upload status --upload-id ID`, 콘솔 2 상세. ZIP/외부 메타데이터 오류를 수정해 새 ID로 업로드 | 새 ID가 `pending`, 운영자 수동 승인 가능 |
+| 다운로드 실패 다수 | 서버·망 담당 / Bash | nginx 오류와 `df`, `usage --config /dt/config/server.json`, 서비스 상태 확인. 원인을 고치고 `nginx -t` 후 적용. 서비스 재시작은 승인된 창에서 수행 | 미인증 Catalog 401, 등록 PC의 인증된 목록·파일 조회. Range 장애는 206과 최종 해시까지 확인 |
+| 새 권장 버전에 결함 | 개발자 / Windows, 운영자 / 서버 콘솔 | 지원 ID·진단 ZIP으로 영향 확인. 권한 있는 개발자가 이전 공개판을 exact 검증하고 운영자가 콘솔 6에서 현재 추천/revision 확인 후 이전 판을 명시 승격 | PC가 다음 조회에서 허용 추천을 확인. 실행 중인 앱은 사용자가 관리 |
+| 한 PC만 실패 | PC 관리자 / PowerShell, 서버 관리자 / Bash | `doctor --online`. 401이면 PC 키·폐기, 403이면 관측 IP/CIDR·grant 확인. 정상 Catalog 0건이면 grants·OS별 공개판, 추천 대기면 명시 승격 이력 확인 | 해당 PC의 허용 배포와 추천 확인. [등록과 IP 변경](intranet-auth.md#d-문제-해결키-교체) |
+| 저장소 손상, 최신 원본 생존 | 서버 관리자 / Bash | 작업 정지 → `backup verify` → 빈 전용 root로 `restore stage` → 최신 원본과 정책·순번·승격·파일 대조 후 `restore activate --confirm`. staging 펜스가 남으면 공개 중단 유지 | 새 root·반환한 정책 경로와 기존 origin/signer로 연결. 인증 Catalog와 파일 확인. [복원 명령](distribution-workflow.md#1-서버-준비) |
+| 원본 저장소까지 완전 유실 | 서버 관리자·개발자 / Bash·PowerShell | 원본 패키지 보관 위치 확인 → 깨끗한 `/dt/store`에 서버 재구축. 운영 책임자가 서명·클라이언트 신뢰 절차를 승인한 뒤 필요한 버전별 `upload` → 수동 승인 → 명시 승격 | 기존 보안·순번 보호를 유지한 운영 절차에서 인증 목록과 실행 확인. 주간 백업 목표 RPO 1주, 회사 RTO는 T4 실측 |
+| 전원 차단·최장 경로·디스크 소진 | PC 관리자 / Windows 시험 PC | 런처와 앱 상태, 여유 공간, 설치 경로 확인. 이전 앱을 정상 종료하고 [실행 안전성](runtime-safety.md)의 읽기 전용 진단부터 진행 | 이전 설치와 사용자 데이터 해시, 차단/복구 결과 기록. 09L [로컬] 프로세스 중단·긴 경로는 확인, VHD 디스크 고갈은 미실행 |
+
+## 실환경 이관 체크리스트
+
+T1~T19의 회사 실행은 **미실행**입니다. 필수 항목을 충족할 때까지 전사 배포를 보류합니다. 계획 기준은 5~10대·2주와 동시 업데이트 10대이며 실제 승인 범위와 분모를 기록합니다. 회사 서버 배치는 `dt2prod`가 설치·서비스를 맡고 root가 기존 nginx 포트 80을 처음 전환합니다. [회사 배치](distribution-workflow.md#dt2prod-설치와-nginx-전환)
+
+| ID | 확인 항목 | 담당 | 필수 증거 | 구분 | 상태 |
+|---|---|---|---|---|---|
+| T1 | 실제 서버 설치와 재부팅 | 서버 관리자 | RHEL 8.4(Ootpa)·16 GB·약 250 GB, `dt-setup.sh check/install/admin-request/verify`, 사용자 unit active, 재부팅 후 공개·loopback Catalog 401 | 필수 | 미실행 |
+| T2 | SELinux·방화벽 | 서버 관리자 | 사용자 제공 실측은 SELinux disabled. 현행 enforcing 기준은 미충족이며 보안 담당자가 정책·기준을 결정. 실제 프록시·incoming 권한 및 원격 18500 차단을 확인 | 필수 | 미실행 |
+| T3 | nginx 대용량 | 서버 관리자 | 회사 nginx의 20 GB 다운로드 Range 206와 최종 해시 | 필수 | 미실행 |
+| T4 | 주간 백업·복원 | 서버 관리자 | 오프라인 백업, 생존 원본으로 복원 훈련 1회, 전손 시 재게시 리허설 및 RPO/RTO 실측 | 필수 | 미실행 |
+| T5 | 사내망 성능 | 서버·망 담당 | 확정 동시 PC 수, 다운로드 시도·실패 분모와 p95 | 필수 | 미실행 |
+| T6 | 회사 프록시 | PC 관리자 | LocalService가 회사 프록시 경유로 인증된 Catalog 조회 | 필수 | 미실행 |
+| T7 | 회사 업로드 계정 | 개발자·서버 관리자 | 실제 SSH 계정·known-host·incoming 권한으로 `upload` 후 같은 ID의 `pending` | 필수 | 미실행 |
+| T8 | PC 등록·설치 | PC 관리자 | 파일럿 PC마다 업데이트 서비스의 실제 인증 Catalog와 한 버전의 설치 결과 | 필수 | 미실행 |
+| T9 | DHCP·키 폐기 | 서버 관리자 | DHCP 변경 뒤 403과 정책 갱신 후 복구, 키 폐기 401과 새 키 등록 이후 복구 | 필수 | 미실행 |
+| T10 | 설치본 수명주기 | PC 관리자 | 회사 표준 이미지에서 이전 MSI → 새 MSI, 업그레이드 실패 후 복구, 제거·재부팅 후 데이터 보존 | 필수 | 미실행 |
+| T11 | Agent/GUI 불일치 | PC 관리자 | 서로 다른 버전의 갱신 안내와 지원되지 않는 변경 요청 차단 | 필수 | 미실행 |
+| T12 | EDR·백신 | 보안 담당·PC 관리자 | 정책 적용 PC에서 실행. 차단 시 회사 서명본으로 실제 정상 실행 | 필수 | 미실행 |
+| T13 | 현장 장애 | PC 관리자 | 실제 전원 차단·재부팅, 회사 최장 경로, 디스크 소진 이후 이전 설치·사용자 데이터 해시 | 필수 | 미실행 |
+| T14 | 회사 UE | 개발자 | 실행 파일이 달라진 회사 UE 빌드 업데이트·실행 및 데이터 보존 | 필수 | 미실행 |
+| T15 | 일괄 배포 | IT | 채택한 GPO/SCCM 적용의 성공·실패 PC 목록 | 조건부 | 미실행 |
+| T16 | 화면·접근성 | 사용자 대표 | 현업 해상도·배율의 잘림 0, 필요 시 내레이터 관측 | 필수 | 미실행 |
+| T17 | 현업 파일럿 | 사용자 대표 | 승인 범위와 기간, 첫 시도/최종 성공 각각의 분자·분모, 문의 건수 | 필수 | 미실행 |
+| T18 | 운영 인계 | 운영 책임자 | 담당자 배정, 런북 리허설, SEC-04 잔여 위험 수용서 | 필수 | 미실행 |
+| T19 | `/dt/store` 파일시스템 | 서버 관리자 | `findmnt -no FSTYPE,SOURCE --target /dt/store`의 로컬 ext4 또는 XFS 결과 | 필수 | 미실행 |
