@@ -73,6 +73,8 @@ dotnet publish src/UeDtLauncher.DistributionServer -c Release -r linux-x64 --sel
 
 ## 처음 준비할 것
 
+개발용 Windows PC에서 로컬 ZIP 접수와 LAN 배포를 시험하려면 [Windows 배포 시험 가이드](docs/reference/windows-lab/README.md)를 따르세요.
+
 1. 회사 RHEL 8.4에서 `dt2prod`가 `dt-setup.sh`로 설치·검증합니다. root는 최초 한 번 기존 nginx 80에 서명 경로를 적용하고, 사용자 서비스를 로그인 전부터 시작해야 할 때 linger를 설정합니다. 이후 버전 갱신·원복은 `dt2prod`가 진행합니다. [A2 실행 순서](docs/reference/feature-workflow.md#a2-linux-서버-구성--관리자) · [설치 및 관리자 인계](docs/reference/distribution-workflow.md#dt2prod-설치와-nginx-전환)
 2. `dt2prod`가 설치에서 준비한 배포 서명 공개키를 PC 관리자에게 전달합니다.
 3. 사내 HTTP PC는 `enroll prepare`로 공개키 묶음을 만들고, 서버 관리자가 `client-enroll`로 PC별 IP와 허용 트랙을 등록합니다. PC 개인키는 보호 저장소에 남습니다. 기존 HTTPS/Bearer는 토큰 절차를 사용합니다.
