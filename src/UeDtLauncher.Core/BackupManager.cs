@@ -185,6 +185,22 @@ public static class BackupManager
         return BackupDirectories(config.BackupDir, 4096);
     }
 
+    internal static async Task<RollbackPreview?> ReadSelectionPreviewAsync(LauncherConfig config, CancellationToken token = default)
+    {
+        var preview = await RollbackPreviewService.ReadAsync(config, token);
+        if (preview is not { CanRestore: false } || config.SelectedRelease is not { } release) return preview;
+        var backup = SafePath.ResolveInsideChecked(config.BackupDir, preview.BackupId);
+        var metadata = Path.Combine(backup, MetaDirName);
+        if (!File.Exists(SafePath.ResolveInsideChecked(backup, $"{MetaDirName}/{InventoryDigestFileName}")) ||
+            File.Exists(Path.Combine(metadata, ManifestFileName)) || File.Exists(Path.Combine(metadata, StateFileName)))
+            return preview;
+
+        var info = await ReadReleaseBackupInfoAsync(backup, token);
+        return info.PreviousVersion is null && info.NewVersion == release.Version && info.AdditionalBackupHashes is { Count: > 0 }
+            ? preview with { RestoresUninstalledState = true, CanRestore = true }
+            : preview;
+    }
+
     internal static async Task<bool> RestoreSelectionAsync(LauncherConfig config, string? backupId,
         Action<string>? log = null, CancellationToken cancellationToken = default, string? expectedFingerprint = null)
     {
@@ -192,7 +208,7 @@ public static class BackupManager
         using var lease = InstallationMutationLease.AcquireMaintenance(config);
         if (expectedFingerprint is not null)
         {
-            var preview = await RollbackPreviewService.ReadAsync(config, cancellationToken);
+            var preview = await ReadSelectionPreviewAsync(config, cancellationToken);
             if (preview is null || !preview.CanRestore || preview.BackupId != backupId ||
                 preview.MetadataFingerprint != expectedFingerprint)
                 throw new RollbackPreviewChangedException();
@@ -289,7 +305,8 @@ public static class BackupManager
                 throw new InvalidDataException("Backup version differs from its release.");
             previous = await ReadReleaseManifestAsync(manifestPath, release, token);
         }
-        else if (info.PreviousVersion is not null || File.Exists(statePath) || info.AddedPaths.Count == 0)
+        else if (info.PreviousVersion is not null || File.Exists(statePath) ||
+            (info.AddedPaths.Count == 0 && info.AdditionalBackupHashes is not { Count: > 0 }))
             throw new InvalidDataException("Backup manifest is missing.");
 
         var before = (previous?.Files ?? []).ToDictionary(file => RestorePath(config.InstallDir, file.Path),

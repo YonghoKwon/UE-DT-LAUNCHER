@@ -181,6 +181,32 @@ public sealed class VersionedRollbackTests : IDisposable
     }
 
     [Fact]
+    public async Task ReplacementOnlyFirstInstallOffersPreviewAndRestoresOriginalBytes()
+    {
+        var config = Bind("1.0.0");
+        var backup = await MakeBackupAsync(config, Latest);
+        var metadata = Path.Combine(backup, BackupManager.MetaDirName);
+        File.Delete(Path.Combine(metadata, "installed-manifest.json"));
+        File.Delete(Path.Combine(metadata, "install-state.json"));
+        File.Delete(Path.Combine(config.InstallDir, "added.bin"));
+        var current = await JsonFiles.ReadAsync<LauncherManifest>(config.InstalledManifestPath);
+        current.Files.RemoveAll(file => file.Path == "added.bin");
+        await JsonFiles.WriteAsync(config.InstalledManifestPath, current);
+        var missing = Path.Combine(root.FullName, "never-installed.json");
+        await BackupManager.WriteBackupMetadataAsync(backup,
+            new BackupInfo { NewVersion = "1.0.0", AdditionalBackupHashes = new() { ["app.bin"] = Hash(Restored) } },
+            missing, missing, includeInventoryDigest: true);
+
+        var preview = await BackupManager.ReadSelectionPreviewAsync(config);
+        Assert.NotNull(preview);
+        Assert.True(preview.CanRestore && preview.RestoresUninstalledState);
+        Assert.True(await BackupManager.RestoreSelectionAsync(config, preview.BackupId, expectedFingerprint: preview.MetadataFingerprint));
+        Assert.Equal(Restored, await File.ReadAllTextAsync(Path.Combine(config.InstallDir, "app.bin")));
+        Assert.False(File.Exists(config.InstalledManifestPath));
+        Assert.False(File.Exists(config.InstallStatePath));
+    }
+
+    [Fact]
     public async Task InterruptedInstallationBlocksListingAndRestore()
     {
         var config = Bind("1.0.0");

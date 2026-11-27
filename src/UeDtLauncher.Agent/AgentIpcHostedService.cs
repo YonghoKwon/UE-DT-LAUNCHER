@@ -480,7 +480,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     }
                 case "rollback-preview":
                     if (request.Selection is not null) VersionedReleasePaths.Bind(config, request.Selection);
-                    var preview = await RollbackPreviewService.ReadAsync(config, cancellationToken);
+                    var preview = await BackupManager.ReadSelectionPreviewAsync(config, cancellationToken);
                     return new() { CorrelationId=request.CorrelationId, Success=true, Status="preview", RollbackPreview=preview, SelectedRelease=config.SelectedRelease };
                 case "rollback-list":
                     var target = request.RollbackTarget!;
