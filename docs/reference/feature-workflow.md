@@ -99,8 +99,17 @@ flowchart LR
 
 ### A1. 실행 프로그램 만들기 — 개발 PC, 저장소 루트
 
+.NET 8을 대상으로 빌드·시험합니다. Release 빌드 전에 restore를 실행합니다.
+
 ```powershell
 dotnet restore UeDtLauncher.sln
+dotnet build UeDtLauncher.sln -c Release --no-restore
+dotnet test src/UeDtLauncher.Tests/UeDtLauncher.Tests.csproj -c Release --no-build
+```
+
+일반 런처·Agent·배포 서버는 아래 목록으로 게시합니다.
+
+```powershell
 dotnet publish src/UeDtLauncher/UeDtLauncher.csproj -c Release -r win-x64 --self-contained true -o publish/client-win-x64
 dotnet publish src/UeDtLauncher.Agent/UeDtLauncher.Agent.csproj -c Release -r win-x64 --self-contained true -o publish/agent-win-x64
 dotnet publish src/UeDtLauncher.DistributionServer -c Release -r linux-x64 --self-contained true -o publish/distribution-server
@@ -109,6 +118,12 @@ $Launcher = (Resolve-Path .\publish\client-win-x64\UeDtLauncher.exe).Path
 ```
 
 **결과:** 클라이언트, Agent, Linux 배포 서버의 출력 폴더 3개. 실행 파일 하나만 복사하지 말고 **폴더 전체**를 전달합니다. Linux 클라이언트/Agent가 필요하면 해당 프로젝트를 `-r linux-x64`로 publish합니다. 회사용 설치본은 별도 MSI/RPM 제작·서명·실기기 검증이 필요합니다.
+
+개발자 GUI는 별도 빌드입니다. Windows에서는 `dotnet publish src/UeDtLauncher -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:LauncherEdition=Developer`로 게시합니다. `--build-info`로 에디션을 확인하고, 공통 runtime-host인 일반 EXE를 개발자 배포에도 포함합니다.
+
+하나의 커밋에서 두 에디션·Agent·서버와 시험용 합성 앱을 함께 게시하려면 `python tools/publish_runtime_cohort.py --output <새폴더> --rid win-x64`를 사용합니다. `--source-ref <커밋>`을 생략하면 HEAD가 기준입니다. 게시된 런처의 `--build-info`와 `cohort.json`의 소스 커밋·파일 해시·에디션·SDK를 대조합니다.
+
+문서 변경은 `python tools/check-documentation.py`와 `python tools/check-improvement-ledger.py`로 검사합니다. [개발 규칙](../../AGENTS.md)
 
 ### A2. Linux 서버 구성 — 관리자
 

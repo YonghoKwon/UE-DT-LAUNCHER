@@ -4,6 +4,12 @@
 
 ## README.md에서 이동
 
+### PROD-27 이전 README의 검증 이력
+
+- 2026-11-12 SPRINT-01은 CLI 오류 안내, `upload`, 서버 `console`, View 책임 분리를 검증했습니다. Windows 자동화 890건과 게시본 readiness 8건·headless 3건이 통과했고 GUI 직접 검증은 미실행이었습니다. [SPRINT-01 검증 기록](../validation/sprint-01-quality-admin-validation.md)
+- 2026-11-12~13 fix-01은 한국어 업로드 출력, 연결 사전 점검, 작업 사본 정리, 번호 기반 콘솔을 보완했습니다. 1차 리뷰 입력 `35dde8a`의 926건과 제품 입력 `2e4b8f9`의 966건은 별도 검증입니다. [fix-01 검증 기록](../validation/sprint-01-quality-admin-validation.md)
+- 2026-11-27 PROD-10은 dt-setup과 PROD-25의 로컬 관측을 README에 반영했습니다. PROD-25는 09L 고정 게시본의 GUI 97사례 중 96개 통과·1개 미실행입니다. 회사 인수 항목은 [이관 체크리스트](../../commercial-deployment.md#실환경-이관-체크리스트), 미실행 GUI 항목은 [GUI 수용 체크리스트](../../guide-03-launcher-usage.md#현재-gui-수용-체크리스트)에 있습니다.
+
 ### 원래 위치: 직전 후보와 공통 사용 안내
 
 문서 점검: **2026-10-06**, 작업 기준: `codex/client-acceptance-closure`. 일반 `UeDtLauncher.exe`와 개발자 `UeDtLauncher.Developer.exe`는 별도 빌드이며 설정으로 GUI 종류를 바꾸지 못합니다. 복원 preview·정리 재시도의 정확한 작업 결속, 복구 적용 후 조회/취소 상태, 정리의 부분 실패·실제 잔여 수, 최소 화면 설정 생성과 개발자 설정 재읽기를 보완했습니다. 최종 제품 `75ea591`에서 Windows **789개 통과**, WSL **788개 통과·Windows 전용 1개 명시적 제외**, 양 에디션/Agent/서버 Release publish와 HTTP 요청 서명·Linux HTTPS/Bearer E2E를 확인했습니다. **최종 네 조합 전체 GUI 수용은 미완료**이며 과거 후보의 설치/복원 통과를 합산하지 않습니다. [현재 검증과 남은 사례](../validation/client-acceptance-closure-validation.md), [이전 후보 이력](../validation/client-usability-validation.md)을 구분하세요.

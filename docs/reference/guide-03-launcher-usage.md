@@ -143,7 +143,7 @@ portable Linux CLI는 같은 설정에서 `deploymentMode=portable`로 지정하
 
 기존 설치 repair는 재사용하지 않습니다. hard link·공용 콘텐츠 캐시는 사용하지 않으며 transaction 적용/rollback은 직렬입니다. 큰 pak 파일 내용이 바뀌면 파일 전체를 받을 수 있어 합성 시험의 90% 절감이 실제 UE에 보장되지는 않습니다.
 
-서버 설정의 `intakeWorkers`는 기본 1, 허용값 1 또는 2입니다. bounded queue는 worker 수의 2배이며 초과 업로드는 다음 스캔에서 다시 발견합니다. 2 worker는 선택 기능이고 자동 승인을 추가하지 않습니다. inspect 진행/공간 추정은 공간 예약이나 게시 성공 보장이 아닙니다. DB 교체 전 기존 프로세스를 중지하고 백업해야 합니다.
+서버 설정의 `intakeWorkers`는 기본 1, 허용값 1 또는 2입니다. 큐 한도는 worker 수의 2배이며 초과 업로드는 다음 스캔에서 다시 발견합니다. 두 worker를 선택해도 승인은 수동으로 진행합니다. `inspect` 진행·공간 추정치는 운영 점검에 사용합니다. 서버 교체나 복원에 앞서 기존 프로세스를 중지하고 파일 권위 저장소를 백업합니다. [저장소 유지보수](distribution-workflow.md#1-서버-준비)
 
 [과거 측정·재현 조건](archive/validation/performance-validation.md)은 이력입니다. PERF-03 지연 미달과 회사 실측 조건은 [개선 대장](../../IMPROVEMENTS.md)에 계속 남습니다.
 

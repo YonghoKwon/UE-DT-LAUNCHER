@@ -14,7 +14,10 @@ expected = {"README.md", "feature-workflow.md", "distribution-workflow.md", "int
             "guide-03-launcher-usage.md", "launcher-user-guide.md", "launcher-ui-customization.md",
             "runtime-safety.md", "service-mode.md", "commercial-deployment.md"}
 assert {p.name for p in reference.iterdir() if p.is_file()} == expected
-assert {p.name for p in (root / "docs").iterdir()} == {"reference"}
+assert {p.name for p in (root / "docs").iterdir()} == {"reference", "images"}
+screenshots = tuple((root / "docs/images").iterdir())
+assert screenshots
+assert all(path.is_file() and path.suffix == ".png" for path in screenshots)
 assert (reference / "archive/README.md").is_file()
 required_evidence = {"deployment-safety-validation.md", "distribution-validation.md", "intranet-auth-validation.md",
                      "managed-gui-safety-validation.md", "performance-validation.md", "runtime-safety-completion-validation.md"}
