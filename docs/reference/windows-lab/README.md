@@ -6,10 +6,11 @@
 
 - 같은 소스의 자체 포함 **win-x64 DistributionServer**와 **일반 win-x64 런처** 게시 폴더를 준비합니다. [.NET 게시 명령](../../../README.md)을 참고하세요. 서버 게시에는 README의 서버 명령에서 RID를 `win-x64`로 지정합니다.
 - [공식 Caddy 2.11.9 Windows amd64 ZIP](https://github.com/caddyserver/caddy/releases/download/v2.11.9/caddy_2.11.9_windows_amd64.zip)을 압축 상태로 준비합니다. 도구가 ZIP과 실행 파일의 SHA-256을 확인합니다.
-- 현재 사용자로 Windows PowerShell 5.1을 엽니다. 조직 정책이 서명 스크립트만 허용하면 승인된 서명본을 사용하세요.
+- 현재 사용자로 PowerShell을 열고 `WindowsLab.cmd`를 사용하세요. 실행 정책 옵션은 래퍼가 시작한 프로세스에만 적용됩니다.
+- `Get-ExecutionPolicy -List`로 확인하세요. GPO의 `MachinePolicy` 또는 `UserPolicy`가 우선하므로, 서명을 요구하면 승인된 서명본을 사용하고 스크립트가 금지된 PC에서는 실행할 수 없습니다.
 
 ```powershell
-$Lab = '.\tools\windows-lab\WindowsLab.ps1'
+$Lab = '.\tools\windows-lab\WindowsLab.cmd'
 & $Lab Start -Address 192.168.50.10 -ServerExe .\publish\server-win-x64\UeDtLauncher.DistributionServer.exe -LauncherExe .\publish\client-win-x64\UeDtLauncher.exe -CaddyZip .\caddy_2.11.9_windows_amd64.zip
 ```
 
@@ -44,7 +45,7 @@ Linux ZIP에는 `-Platform linux-x64 -EntryPoint Demo.sh -ExecutablePaths Demo.s
 
 ### Windows 고성능 클라이언트
 
-받은 묶음 옆에서 `UeDtLauncher.exe gui --config .\launcher.config.json`으로 열고 목록 → v1 설치·실행 → 앱 정상 종료 → v2 추천에서 업데이트를 확인합니다. v1 재승격 후 새로고침해 **권장 버전 변경 안내**를 확인합니다. 개발자 PC는 별도 PC ID·키·credential 이름으로 준비하고 `Add-Client -Developer`로 등록합니다. `UeDtLauncher.Developer.exe`의 08D 화면에서 `dev/beta` 목록과 설치를 확인합니다.
+받은 묶음 옆에서 `UeDtLauncher.exe gui --config .\launcher.config.json`으로 열고 목록 → v1 설치·실행 → 앱 정상 종료 → v2 추천에서 업데이트를 확인합니다. v1 재승격 후 새로고침해 **권장 버전 변경 안내**를 확인합니다. 개발자 PC는 별도 PC ID·키·credential 이름으로 준비하고 `& $Lab Add-Client`에 `-Developer`를 추가해 등록합니다. `UeDtLauncher.Developer.exe`의 08D 화면에서 `dev/beta` 목록과 설치를 확인합니다.
 
 ### Linux 스트리밍 서버
 
