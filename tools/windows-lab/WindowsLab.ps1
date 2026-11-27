@@ -222,9 +222,11 @@ function Get-ProcessRecord([Diagnostics.Process]$Process) {
 function Clear-LabRun([string]$RunId) {
     $dir = Join-Path $Root "run-$RunId"
     Assert-NoLink $dir
-    [IO.File]::Delete((Join-Path $dir 'server.json'))
-    [IO.File]::Delete((Join-Path $dir 'Caddyfile'))
-    [IO.Directory]::Delete($dir)
+    if ([IO.Directory]::Exists($dir)) {
+        [IO.File]::Delete((Join-Path $dir 'server.json'))
+        [IO.File]::Delete((Join-Path $dir 'Caddyfile'))
+        [IO.Directory]::Delete($dir)
+    }
     [IO.File]::Delete($journal)
 }
 
@@ -457,6 +459,7 @@ try {
             if ($serverProcess -or $proxyProcess) { throw 'Partial run detected. Run Stop before Start.' }
             Assert-PortFree (Get-IPv4 ([uri]$lab.origin).Host) ([uri]$lab.origin).Port
             Assert-PortFree ([Net.IPAddress]::Loopback) ([uri]$lab.backend).Port
+            if ([IO.File]::Exists($journal)) { Clear-LabRun $records.runId }
             $runId = [guid]::NewGuid().ToString('N')
             $runDir = Join-Path $Root "run-$runId"
             [void][IO.Directory]::CreateDirectory($runDir)
