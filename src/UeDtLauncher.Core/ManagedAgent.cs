@@ -15,10 +15,10 @@ public static class ManagedAgentProtocol
     public const string DefaultLinuxSocketPath = "/run/ue-dt-launcher/agent-v1.sock";
     public const string RuntimeCapability = "runtime-supervision-v1";
     public const string RollbackListCapability = "rollback-list-v1";
-    public static bool RequiresRuntimeCapability(string command) => command.ToLowerInvariant() is "update" or "repair" or "rollback" or "service-run" or "runtime-recover" or "operation-resume" || command.StartsWith("launch-", StringComparison.OrdinalIgnoreCase);
+    public static bool RequiresRuntimeCapability(string command) => command.ToLowerInvariant() is "update" or "repair" or "rollback" or "rollback-backup" or "service-run" or "runtime-recover" or "operation-resume" || command.StartsWith("launch-", StringComparison.OrdinalIgnoreCase);
 
     public static readonly IReadOnlySet<string> AllowedCommands = new HashSet<string>(
-        ["status", "catalog", "check", "update", "repair", "rollback", "rollback-preview", "rollback-list", "service-run", "diagnostics", "project-asset", "doctor", "launch-begin", "launch-abort", "launch-attach", "launch-started", "launch-complete", "runtime-inspect", "runtime-recover", "operation-status", "operation-cancel", "operation-resume", "operation-discard"],
+        ["status", "catalog", "check", "update", "repair", "rollback", "rollback-preview", "rollback-list", "rollback-backup", "service-run", "diagnostics", "project-asset", "doctor", "launch-begin", "launch-abort", "launch-attach", "launch-started", "launch-complete", "runtime-inspect", "runtime-recover", "operation-status", "operation-cancel", "operation-resume", "operation-discard"],
         StringComparer.OrdinalIgnoreCase);
 
     public static string ResolveEndpoint()
@@ -34,11 +34,16 @@ public static class ManagedAgentProtocol
         if (string.IsNullOrWhiteSpace(request.CorrelationId)) return "correlationId is required.";
         if (!AllowedCommands.Contains(request.Command)) return $"Agent command is not allowed: {request.Command}.";
         if (request.ProjectId is { Length: > 128 }) return "projectId is too long.";
-        if (request.RollbackBackupId is { } backupId &&
-            (!request.Command.Equals("rollback", StringComparison.OrdinalIgnoreCase) ||
-             request.ExpectedBackupId is not null || request.ExpectedBackupFingerprint is not null ||
-             !System.Text.RegularExpressions.Regex.IsMatch(backupId, @"\A[0-9]{14}(?:-[0-9]{2})?\z")))
+        var selectedBackup = request.Command.Equals("rollback-backup", StringComparison.OrdinalIgnoreCase);
+        if (selectedBackup != (request.RollbackBackupId is not null) ||
+            (selectedBackup && (request.ExpectedBackupId is not null || request.ExpectedBackupFingerprint is not null ||
+             !System.Text.RegularExpressions.Regex.IsMatch(request.RollbackBackupId!, @"\A[0-9]{14}(?:-[0-9]{2})?\z"))))
             return "A selected backup ID requires a rollback request without preview fields.";
+        var listsBackups = request.Command.Equals("rollback-list", StringComparison.OrdinalIgnoreCase);
+        if (listsBackups != (request.RollbackTarget is not null) ||
+            (listsBackups && (request.Selection is not null || request.ExpectedBackupId is not null ||
+             request.ExpectedBackupFingerprint is not null)))
+            return "Listing backups requires a display target without preview fields.";
         if (request.Command.StartsWith("operation-", StringComparison.Ordinal) &&
             (!Guid.TryParseExact(request.OperationId, "N", out _) ||
              (request.Selection is not null && request.Command!="operation-resume") || request.RuntimeTicket is not null))
@@ -76,6 +81,8 @@ public sealed class ManagedAgentRequest
     public string? ExpectedBackupFingerprint { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? RollbackBackupId { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public BackupTarget? RollbackTarget { get; set; }
     public string? OperationId { get; set; }
 }
 
@@ -416,7 +423,8 @@ public sealed class ManagedAgentClient(string? endpoint = null)
         RollbackPreview? expectedBackup = null,
         string? operationId = null,
         string? resumeOperationId = null,
-        string? rollbackBackupId = null)
+        string? rollbackBackupId = null,
+        BackupTarget? rollbackTarget = null)
     {
         if (ManagedAgentProtocol.RequiresRuntimeCapability(command)) await RequireCapabilitiesAsync(cancellationToken);
         ArgumentNullException.ThrowIfNull(onProgress);
@@ -429,6 +437,7 @@ public sealed class ManagedAgentClient(string? endpoint = null)
             ExpectedBackupId = expectedBackup?.BackupId,
             ExpectedBackupFingerprint = expectedBackup?.MetadataFingerprint,
             RollbackBackupId = rollbackBackupId,
+            RollbackTarget = rollbackTarget,
             CorrelationId = operationId ?? Guid.NewGuid().ToString("N"),
             OperationId = resumeOperationId,
             ClientCapabilities = [ManagedAgentProtocol.RuntimeCapability]

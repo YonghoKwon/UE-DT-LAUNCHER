@@ -483,23 +483,53 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                     var preview = await RollbackPreviewService.ReadAsync(config, cancellationToken);
                     return new() { CorrelationId=request.CorrelationId, Success=true, Status="preview", RollbackPreview=preview, SelectedRelease=config.SelectedRelease };
                 case "rollback-list":
-                    if (request.Selection is not null) VersionedReleasePaths.Bind(config, request.Selection);
-                    else if (!string.IsNullOrWhiteSpace(config.DistributionServerUrl))
+                    var target = request.RollbackTarget!;
+                    KnownValues.ValidateReleaseTuple(target.Platform, target.Environment, target.Channel);
+                    if (target.Platform != config.TargetPlatform || target.VersionPolicy is not ("latest" or "exact") ||
+                        (target.VersionPolicy == "exact" && string.IsNullOrWhiteSpace(target.RequestedVersion)))
+                        throw new InvalidDataException("Backup target does not match this Agent platform or selection policy.");
+                    if (target.VersionPolicy == "exact") ReleaseSidecar.Segment(target.RequestedVersion!);
+                    if (!string.IsNullOrWhiteSpace(config.DistributionServerUrl))
                     {
+                        config.Environment = target.Environment;
+                        config.Channel = target.Channel;
+                        config.VersionPolicy = target.VersionPolicy;
+                        config.RequestedVersion = target.RequestedVersion;
                         using var http = SecureHttpClientFactory.Create(config);
                         await CatalogResolver.ResolveAsync(config, http, cancellationToken: cancellationToken);
                     }
+                    else if (target.Environment != config.Environment || target.Channel != config.Channel ||
+                        target.VersionPolicy != config.VersionPolicy ||
+                        (target.VersionPolicy == "exact" && target.RequestedVersion != config.RequestedVersion))
+                        throw new InvalidDataException("Legacy Agent backup target differs from its configured selection.");
                     var backups = BackupManager.ListForRollback(config);
-                    if (backups.Count > 4096) throw new InvalidDataException("Too many backups to list in a single response.");
-                    return new() { CorrelationId = request.CorrelationId, Success = true, Status = "backups",
+                    var listed = new ManagedAgentResponse { CorrelationId = request.CorrelationId, Success = true, Status = "backups",
                         RollbackBackups = backups, SelectedRelease = config.SelectedRelease };
-                case "rollback":
-                    if (request.Selection is not null) VersionedReleasePaths.Bind(config, request.Selection);
-                    else if (!string.IsNullOrWhiteSpace(config.DistributionServerUrl))
+                    if (JsonSerializer.SerializeToUtf8Bytes(listed, JsonFiles.Options).Length > ManagedAgentProtocol.MaxFrameBytes - 8192)
+                        throw new InvalidDataException("Backup list exceeds the Agent response limit.");
+                    return listed;
+                case "rollback-backup":
+                    if (!string.IsNullOrWhiteSpace(config.DistributionServerUrl))
                     {
+                        if (request.Selection is null) throw new InvalidDataException("Release selection is required for rollback.");
                         using var http = SecureHttpClientFactory.Create(config);
                         await CatalogResolver.ResolveAsync(config, http, cancellationToken: cancellationToken);
+                        if (config.SelectedRelease != request.Selection)
+                            throw new InvalidDataException("Authenticated release differs from the requested backup target.");
                     }
+                    if (!await BackupManager.RestoreSelectionAsync(config, request.RollbackBackupId,
+                            message => AddProgress(new LauncherProgress("Rollback", message, null)), cancellationToken))
+                        return Error(request, "no-backup", "No rollback backup is available.", identity);
+                    var restoredBackup = Success(request, identity, "completed", "Rollback completed.", progress, selectedRelease: config.SelectedRelease);
+                    restoredBackup.InstallationCommitted = true;
+                    return restoredBackup;
+                case "rollback":
+                    if (!string.IsNullOrWhiteSpace(config.DistributionServerUrl) &&
+                        (request.Selection is null || request.ExpectedBackupId is null || request.ExpectedBackupFingerprint is null))
+                    {
+                        return Error(request, "client-upgrade-required", "Versioned rollback requires a selected backup or confirmed preview.", identity);
+                    }
+                    if (request.Selection is not null) VersionedReleasePaths.Bind(config, request.Selection);
                     if (request.ExpectedBackupId is not null || request.ExpectedBackupFingerprint is not null)
                     {
                         if (request.ExpectedBackupId is null || request.ExpectedBackupFingerprint is null) throw new InvalidDataException("Both backup expectation fields are required.");
@@ -520,7 +550,7 @@ internal sealed class AgentIpcHostedService(ILogger<AgentIpcHostedService> logge
                         restoredResponse.InstallationCommitted=true;restoredResponse.ClientPresentation=Presentation(config,restored.Status?.IsInstalled==true);
                         return restoredResponse;
                     }
-                    if (!await BackupManager.RestoreSelectionAsync(config, request.RollbackBackupId,
+                    if (!await BackupManager.RestoreSelectionAsync(config, null,
                             message => AddProgress(new LauncherProgress("Rollback", message, null)), cancellationToken))
                         return Error(request, "no-backup", "No rollback backup is available.", identity);
                     var legacyRestored=Success(request, identity, "completed", "Rollback completed.", progress,selectedRelease:config.SelectedRelease);

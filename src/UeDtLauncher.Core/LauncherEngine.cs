@@ -637,12 +637,27 @@ public sealed class LauncherEngine : IDisposable
         {
             // Capture all pre-update data before marking the transaction as Applying.
             // If backup preparation is interrupted, recovery can discard it without touching live files.
-            await BackupManager.WriteBackupMetadataAsync(backupRoot, new BackupInfo
+            var backup = new BackupInfo
             {
                 PreviousVersion = localManifest?.Version,
                 NewVersion = remoteManifest.Version,
                 AddedPaths = addedPaths
-            }, _config.InstalledManifestPath, _config.InstallStatePath, cancellationToken);
+            };
+            if (_config.SelectedRelease is not null && packageFiles.Count > 0)
+            {
+                backup.PackageBackupHashes = new(StringComparer.Ordinal);
+                backup.PackageAddedPaths = [];
+                foreach (var file in packageFiles)
+                {
+                    var path = SafePath.ResolveInsideChecked(_config.InstallDir, file.RelativeInstallPath);
+                    if (File.Exists(path))
+                        backup.PackageBackupHashes.Add(file.RelativeInstallPath, await Hashing.Sha256FileAsync(path, cancellationToken));
+                    else
+                        backup.PackageAddedPaths.Add(file.RelativeInstallPath);
+                }
+            }
+            await BackupManager.WriteBackupMetadataAsync(backupRoot, backup,
+                _config.InstalledManifestPath, _config.InstallStatePath, cancellationToken);
 
             foreach (var relativePath in plan.Remove)
             {

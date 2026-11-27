@@ -7,9 +7,14 @@ public sealed class BackupInfo
     public string CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow.ToString("O");
     // Paths that the update introduced; rollback deletes them so the install matches the previous file set.
     public List<string> AddedPaths { get; set; } = new();
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, string>? PackageBackupHashes { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? PackageAddedPaths { get; set; }
 }
 public sealed record BackupPruneResult(int RemovedCount,int FailedCount,int RemainingCount,IReadOnlyList<string> FailedBackupIds);
 public sealed record BackupListEntry(string Id, string? PreviousVersion, string? NewVersion, string? CreatedAtUtc);
+public sealed record BackupTarget(string Environment, string Channel, string Platform, string VersionPolicy, string? RequestedVersion);
 
 public static class BackupManager
 {
@@ -49,38 +54,40 @@ public static class BackupManager
     }
 
     public static IReadOnlyList<(string BackupRoot, BackupInfo? Info)> List(string backupDir)
-    {
-        if (!Directory.Exists(backupDir)) return Array.Empty<(string, BackupInfo?)>();
+        => BackupDirectories(backupDir).Select(directory => (directory, ReadBackupInfo<BackupInfo>(directory))).ToArray();
 
-        var results = new List<(string, BackupInfo?)>();
-        foreach (var directory in Directory.EnumerateDirectories(backupDir).OrderByDescending(Path.GetFileName, StringComparer.Ordinal))
+    private static IEnumerable<string> BackupDirectories(string backupDir, int? maximumDirectories = null)
+    {
+        if (!Directory.Exists(backupDir)) return [];
+        var directories = Directory.EnumerateDirectories(backupDir);
+        if (maximumDirectories is { } maximum)
+        {
+            var bounded = directories.Take(maximum + 1).ToArray();
+            if (bounded.Length > maximum) throw new InvalidDataException("Too many entries in the backup directory.");
+            directories = bounded;
+        }
+        return directories.Where(directory =>
         {
             var name = Path.GetFileName(directory);
-            var timestamp = name.Length >= 14 ? name[..14] : string.Empty;
-            var suffixValid = name.Length == 14
-                              || (name.Length == 17
-                                  && name[14] == '-'
-                                  && name[15..].All(char.IsAsciiDigit));
-            if (!suffixValid || !timestamp.All(char.IsAsciiDigit)) continue;
+            return (name.Length == 14 || name.Length == 17 && name[14] == '-' && name[15..].All(char.IsAsciiDigit))
+                && name[..14].All(char.IsAsciiDigit);
+        }).OrderByDescending(Path.GetFileName, StringComparer.Ordinal);
+    }
 
-            BackupInfo? info = null;
-            var infoPath = Path.Combine(directory, MetaDirName, InfoFileName);
-            if (File.Exists(infoPath))
-            {
-                try
-                {
-                    info = JsonFiles.ReadAsync<BackupInfo>(infoPath).GetAwaiter().GetResult();
-                }
-                catch (Exception)
-                {
-                    // Unreadable metadata still allows a file-level restore.
-                }
-            }
-
-            results.Add((directory, info));
+    private static T? ReadBackupInfo<T>(string directory, bool bounded = false) where T : class
+    {
+        var path = Path.Combine(directory, MetaDirName, InfoFileName);
+        if (!File.Exists(path)) return null;
+        try
+        {
+            if (bounded && new FileInfo(path).Length > 64 * 1024 * 1024) return null;
+            return JsonFiles.ReadAsync<T>(path).GetAwaiter().GetResult();
         }
-
-        return results;
+        catch (Exception)
+        {
+            // Preserve the legacy listing of directories with unreadable metadata.
+            return null;
+        }
     }
 
     public static void Prune(string backupDir, int keepCount, Action<string>? log = null)
@@ -135,14 +142,20 @@ public static class BackupManager
     }
 
     internal static IReadOnlyList<BackupListEntry> ListForRollback(LauncherConfig config) =>
-        ReadRollbackEntries(config).Select(backup => new BackupListEntry(Path.GetFileName(backup.BackupRoot),
-            backup.Info?.PreviousVersion, backup.Info?.NewVersion, backup.Info?.CreatedAtUtc)).ToArray();
+        RollbackDirectories(config).Select(directory =>
+        {
+            var info = ReadBackupInfo<BackupListEntry>(directory, bounded: true);
+            return new BackupListEntry(Path.GetFileName(directory), BoundedDisplay(info?.PreviousVersion),
+                BoundedDisplay(info?.NewVersion), BoundedDisplay(info?.CreatedAtUtc));
+        }).ToArray();
 
-    private static IReadOnlyList<(string BackupRoot, BackupInfo? Info)> ReadRollbackEntries(LauncherConfig config)
+    private static string? BoundedDisplay(string? value) => value is { Length: <= 128 } && !value.Any(char.IsControl) ? value : null;
+
+    private static IEnumerable<string> RollbackDirectories(LauncherConfig config)
     {
         if (File.Exists(UpdateTransactionManager.JournalPath(config)))
             throw new InvalidOperationException("Backup is changing; check again after the installation operation.");
-        return List(config.BackupDir);
+        return BackupDirectories(config.BackupDir, 4096);
     }
 
     internal static async Task<bool> RestoreSelectionAsync(LauncherConfig config, string? backupId,
@@ -158,47 +171,38 @@ public static class BackupManager
                 throw new RollbackPreviewChangedException();
         }
 
-        var selected = ReadRollbackEntries(config).FirstOrDefault(backup =>
-            backupId is null || string.Equals(Path.GetFileName(backup.BackupRoot), backupId, StringComparison.Ordinal));
-        if (selected.BackupRoot is null)
+        var selected = RollbackDirectories(config).FirstOrDefault(directory =>
+            backupId is null || string.Equals(Path.GetFileName(directory), backupId, StringComparison.Ordinal));
+        if (selected is null)
         {
             if (expectedFingerprint is not null) throw new RollbackPreviewChangedException();
             return false;
         }
-        var root = SafePath.ResolveInsideChecked(config.BackupDir, Path.GetFileName(selected.BackupRoot));
+        var root = SafePath.ResolveInsideChecked(config.BackupDir, Path.GetFileName(selected));
         if (config.SelectedRelease is { } release)
-            await ValidateReleaseBackupAsync(root, selected.Info, config, release, cancellationToken);
-        await RestoreUnderLeaseAsync(root, config, lease, log, cancellationToken);
+        {
+            var plan = await BuildReleaseRestorePlanAsync(root, ReadBackupInfo<BackupInfo>(root, bounded: true),
+                config, release, cancellationToken);
+            lease.Validate(config);
+            ApplyReleaseRestore(plan, config, cancellationToken);
+            log?.Invoke($"Restored backup {Path.GetFileName(root)}.");
+        }
+        else await RestoreUnderLeaseAsync(root, config, lease, log, cancellationToken);
         return true;
     }
 
-    private static async Task ValidateReleaseBackupAsync(string root, BackupInfo? info, LauncherConfig config,
-        ReleaseSelection release, CancellationToken token)
+    private sealed record ReleaseRestorePlan(IReadOnlyList<string> Deletes, IReadOnlyDictionary<string, string> Copies,
+        string Manifest, string State);
+
+    private static async Task<ReleaseRestorePlan> BuildReleaseRestorePlanAsync(string root, BackupInfo? info,
+        LauncherConfig config, ReleaseSelection release, CancellationToken token)
     {
         if (info is null || info.AddedPaths is null || info.NewVersion != release.Version)
             throw new InvalidDataException("Backup metadata is missing, invalid, or belongs to another release.");
+
         var manifestPath = SafePath.ResolveInsideChecked(root, $"{MetaDirName}/{ManifestFileName}");
         var statePath = SafePath.ResolveInsideChecked(root, $"{MetaDirName}/{StateFileName}");
         _ = SafePath.ResolveInsideChecked(root, $"{MetaDirName}/{InfoFileName}");
-        var removed = info.AddedPaths.Select(path => SafePath.ResolveInsideChecked(config.InstallDir, path))
-            .ToHashSet(SafePath.FileSystemComparer);
-
-        // Scan without descending through reparse points. Check restore destinations before any mutation.
-        var pending = new Stack<string>();
-        pending.Push(root);
-        while (pending.TryPop(out var folder))
-        {
-            foreach (var entry in Directory.EnumerateFileSystemEntries(folder))
-            {
-                if ((File.GetAttributes(entry) & FileAttributes.ReparsePoint) != 0)
-                    throw new InvalidDataException("Backup contains a linked entry.");
-                var relative = Path.GetRelativePath(root, entry);
-                if (SafePath.FileSystemComparer.Equals(relative, MetaDirName)) continue;
-                _ = SafePath.ResolveInsideChecked(config.InstallDir, relative);
-                if (Directory.Exists(entry)) pending.Push(entry);
-            }
-        }
-
         if (File.Exists(statePath))
         {
             var state = await JsonFiles.ReadAsync<InstallState>(statePath, token);
@@ -207,27 +211,125 @@ public static class BackupManager
                 (state.Platform is not null && state.Platform != release.Platform))
                 throw new InvalidDataException("Backup installation state belongs to another release.");
         }
-        if (!File.Exists(manifestPath))
+
+        LauncherManifest? previous = null;
+        if (File.Exists(manifestPath))
         {
-            if (info.PreviousVersion is null && !File.Exists(statePath) && removed.Count > 0) return;
-            throw new InvalidDataException("Backup manifest is missing.");
+            if (info.PreviousVersion != release.Version)
+                throw new InvalidDataException("Backup version differs from its release.");
+            previous = await ReadReleaseManifestAsync(manifestPath, release, token);
         }
-        var manifest = await JsonFiles.ReadAsync<LauncherManifest>(manifestPath, token);
-        LauncherEngine.ValidateManifest(manifest);
-        if (info.PreviousVersion != release.Version || manifest.Version != release.Version ||
-            manifest.AppId != release.ProjectId || manifest.Channel != release.Channel || manifest.Platform != release.Platform)
-            throw new InvalidDataException("Backup manifest belongs to another release.");
-        foreach (var file in manifest.Files)
+        else if (info.PreviousVersion is not null || File.Exists(statePath) || info.AddedPaths.Count == 0)
+            throw new InvalidDataException("Backup manifest is missing.");
+
+        var before = (previous?.Files ?? []).ToDictionary(file => RestorePath(config.InstallDir, file.Path),
+            SafePath.FileSystemComparer);
+        var packageBackups = (info.PackageBackupHashes ?? []).ToDictionary(
+            entry => RestorePath(config.InstallDir, entry.Key), entry => entry.Value, SafePath.FileSystemComparer);
+        var packageAdded = (info.PackageAddedPaths ?? []).Select(path => RestorePath(config.InstallDir, path))
+            .ToHashSet(SafePath.FileSystemComparer);
+
+        var deletes = new HashSet<string>(SafePath.FileSystemComparer);
+        if (info.AddedPaths.Count > 0)
         {
-            var installed = SafePath.ResolveInsideChecked(config.InstallDir, file.Path);
-            var saved = SafePath.ResolveInsideChecked(root, file.Path);
-            if (!File.Exists(saved) && removed.Contains(installed))
-                throw new InvalidDataException("Backup would delete a required installation file.");
-            var source = File.Exists(saved) ? saved : installed;
+            var current = await ReadReleaseManifestAsync(config.InstalledManifestPath, release, token);
+            var allowed = current.Files.Select(file => RestorePath(config.InstallDir, file.Path)).ToHashSet(SafePath.FileSystemComparer);
+            allowed.UnionWith(packageAdded);
+            foreach (var relative in info.AddedPaths)
+            {
+                var path = RestorePath(config.InstallDir, relative);
+                if (!allowed.Contains(path) || !deletes.Add(path) || Directory.Exists(path))
+                    throw new InvalidDataException("Backup contains an unexpected deletion.");
+            }
+            if (!packageAdded.IsSubsetOf(deletes))
+                throw new InvalidDataException("Backup package removal inventory differs from its deletion list.");
+        }
+
+        var copies = ReadBackupCopies(root, config.InstallDir, token);
+        foreach (var (target, source) in copies)
+        {
+            if (before.ContainsKey(target)) continue;
+            if (!packageBackups.TryGetValue(target, out var hash) || !await Hashing.Sha256MatchesAsync(source, hash, token))
+                throw new InvalidDataException("Backup contains unexpected or damaged payload data.");
+        }
+        if (packageBackups.Keys.Any(path => !copies.ContainsKey(path)))
+            throw new InvalidDataException("Backup package payload is missing.");
+        foreach (var (target, file) in before)
+        {
+            if (!copies.TryGetValue(target, out var source))
+            {
+                if (deletes.Contains(target))
+                    throw new InvalidDataException("Backup would delete a required installation file.");
+                source = target;
+            }
             var details = new FileInfo(source);
             if (!details.Exists || details.Length != file.Size || !await Hashing.Sha256MatchesAsync(source, file.Sha256, token))
                 throw new InvalidDataException("Backup payload does not match the previous installation manifest.");
         }
+        return new(deletes.ToArray(), copies, manifestPath, statePath);
+    }
+
+    private static async Task<LauncherManifest> ReadReleaseManifestAsync(string path, ReleaseSelection release, CancellationToken token)
+    {
+        var manifest = await JsonFiles.ReadAsync<LauncherManifest>(path, token);
+        LauncherEngine.ValidateManifest(manifest);
+        if (manifest.Version != release.Version || manifest.AppId != release.ProjectId ||
+            manifest.Channel != release.Channel || manifest.Platform != release.Platform)
+            throw new InvalidDataException("Backup manifest belongs to another release.");
+        return manifest;
+    }
+
+    private static string RestorePath(string root, string relative)
+    {
+        var path = SafePath.ResolveInsideChecked(root, relative);
+        var top = Path.GetRelativePath(root, path).Split(Path.DirectorySeparatorChar)[0];
+        if (top == "." || SafePath.FileSystemComparer.Equals(top, MetaDirName))
+            throw new InvalidDataException("Backup payload path is reserved.");
+        return path;
+    }
+
+    private static Dictionary<string, string> ReadBackupCopies(string root, string installDir, CancellationToken token)
+    {
+        var copies = new Dictionary<string, string>(SafePath.FileSystemComparer);
+        var pending = new Stack<string>();
+        pending.Push(root);
+        var entries = 0;
+        while (pending.TryPop(out var folder))
+        {
+            foreach (var entry in Directory.EnumerateFileSystemEntries(folder))
+            {
+                token.ThrowIfCancellationRequested();
+                if (++entries > 500000 || (File.GetAttributes(entry) & FileAttributes.ReparsePoint) != 0)
+                    throw new InvalidDataException("Backup exceeds its inventory limit or contains a linked entry.");
+                var relative = Path.GetRelativePath(root, entry);
+                if (SafePath.FileSystemComparer.Equals(relative, MetaDirName)) continue;
+                var target = RestorePath(installDir, relative);
+                if (Directory.Exists(entry))
+                {
+                    if (File.Exists(target)) throw new InvalidDataException("Backup directory conflicts with an installed file.");
+                    pending.Push(entry);
+                }
+                else if (Directory.Exists(target) || !copies.TryAdd(target, entry))
+                    throw new InvalidDataException("Duplicate or conflicting backup destination.");
+            }
+        }
+        return copies;
+    }
+
+    private static void ApplyReleaseRestore(ReleaseRestorePlan plan, LauncherConfig config, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        foreach (var path in plan.Deletes)
+        {
+            File.Delete(path);
+        }
+        foreach (var (target, source) in plan.Copies)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.Copy(source, target, overwrite: true);
+        }
+        RestoreMetaFile(plan.Manifest, config.InstalledManifestPath);
+        RestoreMetaFile(plan.State, config.InstallStatePath);
     }
 
     internal static async Task RestoreUnderLeaseAsync(string backupRoot, LauncherConfig config, InstallationMutationLease lease, Action<string>? log = null, CancellationToken cancellationToken = default)

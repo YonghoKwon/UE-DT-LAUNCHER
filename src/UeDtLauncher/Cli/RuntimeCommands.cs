@@ -201,7 +201,7 @@ public static partial class Program
         if (display.IsManagedDeployment)
             return await RollbackManagedAsync(display, listOnly, requested);
 
-        var config = await LauncherPaths.LoadResolvedAsync(configPath);
+        var config = await LauncherPaths.LoadResolvedAsync(configPath, readOnly: listOnly);
         if (!string.IsNullOrWhiteSpace(config.DistributionServerUrl))
             await ResolveCatalogForCliAsync(config);
 
@@ -231,20 +231,12 @@ public static partial class Program
         if (!status.AgentCapabilities.Contains(ManagedAgentProtocol.RollbackListCapability))
             throw new InvalidOperationException("Update the Agent before using launcher rollback.");
 
-        ReleaseSelection? selection = null;
-        if (!string.IsNullOrWhiteSpace(display.DistributionServerUrl) ||
-            (string.IsNullOrWhiteSpace(display.ManifestUrl) && string.IsNullOrWhiteSpace(display.CatalogUrl)))
-        {
-            var authenticated = await client.SendStreamingAsync("catalog", config.ProjectId, _ => { });
-            authenticated.ThrowIfFailed();
-            var catalog = authenticated.Catalog ?? throw new InvalidDataException("Agent did not return its catalog.");
-            var release = CatalogResolver.SelectRelease(catalog, config);
-            selection = new ReleaseSelection(config.ProjectId!, release.Environment, release.Channel, release.Platform, release.Version);
-        }
-
-        var response = await client.SendStreamingAsync("rollback-list", config.ProjectId, _ => { }, selection: selection);
+        var target = new BackupTarget(config.Environment, config.Channel, config.TargetPlatform, config.VersionPolicy, config.RequestedVersion);
+        var response = await client.SendStreamingAsync("rollback-list", config.ProjectId, _ => { }, rollbackTarget: target);
         response.ThrowIfFailed();
-        if (selection is not null && response.SelectedRelease != selection)
+        if (response.SelectedRelease is { } selection &&
+            (selection.ProjectId != config.ProjectId || selection.Environment != target.Environment || selection.Channel != target.Channel ||
+             selection.Platform != target.Platform || (target.VersionPolicy == "exact" && selection.Version != target.RequestedVersion)))
             throw new InvalidDataException("Agent backup selection does not match the requested release.");
         var backups = response.RollbackBackups ?? throw new InvalidDataException("Agent did not return the backup list.");
         if (listOnly)
@@ -255,7 +247,7 @@ public static partial class Program
 
         var selected = backups.FirstOrDefault(backup => requested is null || backup.Id == requested);
         if (selected is null) return MissingRollbackBackup(requested);
-        var restored = await client.SendStreamingAsync("rollback", config.ProjectId, _ => { },
+        var restored = await client.SendStreamingAsync("rollback-backup", config.ProjectId, _ => { },
             selection: response.SelectedRelease, rollbackBackupId: selected.Id);
         restored.ThrowIfFailed();
         if (restored.SelectedRelease != response.SelectedRelease || restored.InstallationCommitted != true)
