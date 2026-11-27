@@ -25,7 +25,7 @@ ZIP과 JSON은 별개 파일입니다. 내부 release.json은 분류에 사용�
 
 확인형 정리: `retention inspect --config server.json`, `retention plan --jobs 실패ID --output 계획.json --config server.json`(또는 명시 `--temporary processing/폴더`). 원인/크기/선택을 확인하고 서버/watch를 정지한 뒤 `retention apply --plan 계획.json --confirm --config server.json`. 공개판·모든 승격판·승인 대기·활성 작업은 보호합니다. stale/재생성 자료는 새 계획이 필요하며 중단은 같은 승인 journal로 재개합니다. 공개판 자동 삭제는 하지 않습니다. 비공개 자료의 보관 기간은 미정입니다.
 
-오프라인 유지보수(2026-10-03): 서버/watch/작업을 정상 중지 → `backup plan --config server.json` → `backup create --output 새백업 --config server.json` → `backup verify --backup 새백업 --config server.json`. private key는 별도 보관한다. 복원은 `restore stage --backup ... --target 빈폴더 --config 원본server.json` 후 `restore activate --target ... --confirm --config 원본server.json`이며 최신 생존 원본의 파일·보안·순번·승격·정책을 대조한다. 누락/불명이면 staged로 차단한다. 반환한 policyPath와 새 root를 운영 설정에 명시하고 별도 서명키를 준비한다. 회사 완전 유실 복구/RPO·RTO는 미검증이다.
+오프라인 유지보수는 저장소를 소유한 서비스 계정으로 수행합니다. 회사 파일럿에서는 `dt2prod`입니다. 서버/watch/작업을 정상 중지 → `backup plan --config server.json` → `backup create --output 새백업 --config server.json` → `backup verify --backup 새백업 --config server.json` 순입니다. 서명 개인키는 별도 보관합니다. 복원은 `restore stage --backup ... --target 빈폴더 --config 원본server.json` 후 `restore activate --target ... --confirm --config 원본server.json`으로 최신 생존 원본의 파일·보안·순번·승격·정책을 대조합니다. 누락·불명이면 staged 상태로 차단합니다. 반환한 policyPath와 새 root를 운영 설정에 명시하고 별도 서명키를 준비합니다. 회사 완전 유실 복구와 RPO·RTO는 이관에서 확인합니다.
 
 별도 관리자 관리 설치에서는 `scripts/install-server.sh`와 [저장소 준비 스크립트](../../scripts/prepare-server-store.sh)의 전용 `uedt-distribution` 계정과 `uedt-upload` 그룹을 사용합니다. 서비스 계정이 같은 마운트의 빈 `/dt/store`를 초기화하고, 업로더에는 incoming 쓰기와 상태 읽기만 허용합니다. 서버는 구형·혼합·손상·미인식 저장소를 변경 전에 거부합니다.
 
@@ -44,7 +44,7 @@ ZIP과 JSON은 별개 파일입니다. 내부 release.json은 분류에 사용�
 }
 ```
 
-사이트 주소와 크기 제한은 실제 배치에 맞게 설정합니다. 신규 HTTP는 `packaging/linux/distribution-nginx-http-signature.conf`를 회사 주소에 맞게 검토하여 [A2 설치](feature-workflow.md#a2-linux-서버-구성--관리자)의 입력으로 사용합니다. 기존 HTTPS/Bearer 예시는 `packaging/linux/distribution-nginx.conf`이며 TLS 인증서와 nginx의 auth_request 모듈을 확인합니다. nginx 설정은 `nginx -t` 후 적용하고 backend 18500은 외부에 열지 않습니다.
+사이트 주소와 크기 제한은 실제 배치에 맞게 설정합니다. 별도 관리자 관리 HTTP 설치는 `packaging/linux/distribution-nginx-http-signature.conf`가 예시입니다. 회사 파일럿은 아래의 dt2prod 번들에 든 공존/전환 후보를 사용합니다. 기존 HTTPS/Bearer 예시는 `packaging/linux/distribution-nginx.conf`이며 TLS 인증서와 nginx의 auth_request 모듈을 확인합니다. nginx 설정은 `nginx -t` 후 적용하고 backend 18500은 외부에 열지 않습니다.
 새 전용 HTTPS 가상 호스트에는 기존 `/projects`, `/catalogs`, json 확장자별 공개 location을 혼합하지 않습니다. 공개 파일 루트를 지정하지 않아 incoming/authority/키에 접근할 수 없습니다.
 
 ### dt2prod 설치와 nginx 전환
@@ -136,7 +136,7 @@ UeDtLauncher credential set --name company-distribution
 
 ## 3. 접수 및 승인
 
-쉬운 방법은 개발 PC의 `UeDtLauncher upload`와 서버 운영자의 `UeDtLauncher.DistributionServer console --config server.json`입니다. Windows PowerShell·Linux 터미널의 입력과 정상 결과는 [B2~B6 실행 안내](feature-workflow.md#b2-releasejson-만들기--개발-pc-powershell)에 있습니다. OpenSSH/known-host·incoming 권한은 최초 준비이며 이후 버전마다 새 업로드 ID를 사용합니다. `--profile`은 접속 값과 identity 경로를 읽고 `--project-profile`은 프로젝트와 ZIP 내부 경로를 읽습니다. 명령줄 값이 우선합니다. dry-run은 로컬 ZIP을 검사해 생성 예정 파일과 전송 계획을 보여줍니다.
+전용 SSH 계정을 승인·인수한 환경은 개발 PC의 `UeDtLauncher upload`를 사용합니다. 초기 dt2prod 파일럿은 승인된 ZIP과 외부 release.json을 운영자가 배치합니다. 서버 운영자는 [A2의 활성 게시본](feature-workflow.md#a2-linux-서버-구성--관리자)에서 `"$Server" console --config /dt/config/server.json`을 실행합니다. OpenSSH 호스트 키와 incoming 권한은 최초 준비이며 이후 버전마다 새 업로드 ID를 사용합니다. 명령줄 값은 `--profile`의 접속 값과 `--project-profile`의 ZIP·프로젝트 값보다 우선합니다. `--dry-run`은 로컬 ZIP을 검사하고 전송 계획을 표시합니다. [B2~B6 실행 안내](feature-workflow.md#b2-releasejson-만들기--개발-pc-powershell)
 
 콘솔 1·2는 번호 또는 전체 ID로 선택한 비공개 snapshot을 한국어 표/상세로 표시합니다. 3승인은 버전, 4거절·5실패 재시도는 작업 ID 앞8자를 확인 값으로 입력합니다. 선택 후와 확인 후 대상을 다시 읽으며 바뀐 대상은 적용하지 않습니다. 6승격은 트랙별 현재 추천 표시 → 번호 선택 → revision·사유 → 버전 재입력 순서입니다. 승인과 승격은 합치지 않습니다. 각 작업 뒤 메뉴로 돌아가고 잘못된 메뉴는 다시 묻습니다. EOF와 메뉴0은 종료합니다.
 

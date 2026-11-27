@@ -225,6 +225,8 @@ Agent 운영 설정은 보통 `C:\ProgramData\UE-DT Launcher\config\launcher.con
 
 ## B. 새 버전마다: ZIP → 승인된 배포
 
+독립 SSH 업로드는 T7에서 전용 계정을 인수한 환경과 격리 리허설에서 사용합니다. 초기 `dt2prod` 파일럿에서는 운영자가 승인된 ZIP과 외부 release.json을 incoming에 배치한 뒤 같은 콘솔 절차로 진행합니다. [회사 파일럿 운영](distribution-workflow.md#dt2prod-설치와-nginx-전환)
+
 ```mermaid
 flowchart TD
     setup["개발자: 최초 접속·프로젝트 프로필 준비"] --> preflight["개발자: upload check 조회"]

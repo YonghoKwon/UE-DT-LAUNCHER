@@ -25,11 +25,12 @@ Windows PC 예시(관리형은 상승된 PowerShell, portable은 `--storage port
 .\UeDtLauncher.exe enroll finish --server-url http://10.20.30.40 --project-id ue-dt-simulator --platform windows-x64 --credential-name ue-dt-device --signing-key-id release-1 --public-key "$env:ProgramData\UE-DT Launcher\config\release-public.pem" --output "$env:ProgramData\UE-DT Launcher\config\launcher.config.json"
 ```
 
-Linux 서버 예시(초기화된 저장소와 정책을 가리키는 `--config` 사용):
+Linux 서버 예시입니다. 회사 파일럿에서는 `dt2prod`가 공개 등록 묶음만 `/dt/keys/enroll/`에 모으고 활성 게시본을 지정합니다. [활성 서버 배치](distribution-workflow.md#dt2prod-설치와-nginx-전환)
 
 ```bash
-UeDtLauncher.DistributionServer client-enroll --from /dt/keys/enroll/ --grant ue-dt-simulator:prod:stable --config /dt/config/server.json --dry-run
-UeDtLauncher.DistributionServer client-enroll --from /dt/keys/enroll/ --grant ue-dt-simulator:prod:stable --config /dt/config/server.json
+Server=/dt/publish/dt-current/server-linux-x64/UeDtLauncher.DistributionServer
+"$Server" client-enroll --from /dt/keys/enroll/ --grant ue-dt-simulator:prod:stable --config /dt/config/server.json --dry-run
+"$Server" client-enroll --from /dt/keys/enroll/ --grant ue-dt-simulator:prod:stable --config /dt/config/server.json
 ```
 
 `--grant project:environment:channel`은 트랙마다 반복할 수 있다. `--address-source observed`는 기본값이다. NAT·DHCP 등으로 관측값을 사용할 수 없으면 `--address-source file:/dt/config/enroll-addresses.csv`를 두 서버 명령에 넣고, UTF-8 CSV에 `clientId,address` 헤더와 주소마다 `pc-001,10.10.20.15/32` 같은 행을 적는다. CSV에는 정규 형식 IP 또는 CIDR을 사용한다. IPv4는 네 개의 10진수 옥텟을 쓰고, CIDR은 정규 네트워크 주소와 앞자리 0 없는 prefix를 지정한다. CSV를 선택하면 모든 묶음에 관리자 지정 주소가 필요하다. 관리자는 묶음의 출처와 주소를 검토하고 적용 중 다른 정책 편집을 피한다.
